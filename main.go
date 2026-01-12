@@ -2,35 +2,25 @@ package main
 
 import (
 	"log"
-	"net/http"
-	"strconv"
 
-	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+	"github.com/injoyai/frame/fbr"
 	"github.com/injoyai/strategy-tail/model"
 	"github.com/injoyai/strategy-tail/service"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
 func main() {
-	r := gin.Default()
+	r := fbr.Default()
 
 	// Initialize Service
 	dataService := service.NewDataService()
 	go dataService.StartMarketUpdate() // Start simulating market updates
 
 	// API Routes
-	api := r.Group("/api")
-	{
-		api.GET("/stocks", func(c *gin.Context) {
+	r.Group("/api", func(g fbr.Grouper) {
+		g.GET("/stocks", func(c fbr.Ctx) {
 			// Get filter params
-			minMarketCap, _ := strconv.ParseFloat(c.Query("min_market_cap"), 64)
-			maxMarketCap, _ := strconv.ParseFloat(c.Query("max_market_cap"), 64)
+			minMarketCap := c.GetFloat64("min_market_cap")
+			maxMarketCap := c.GetFloat64("max_market_cap")
 
 			filter := model.StockFilter{
 				MinMarketCap: minMarketCap,
@@ -39,49 +29,41 @@ func main() {
 			}
 
 			stocks := dataService.GetStocks(filter)
-			c.JSON(http.StatusOK, stocks)
+			c.Succ(stocks)
 		})
 
-		api.POST("/backtest", func(c *gin.Context) {
+		g.POST("/backtest", func(c fbr.Ctx) {
 			var params model.BacktestParams
-			if err := c.ShouldBindJSON(&params); err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-				return
-			}
+			c.Parse(&params)
 			result := service.RunBacktest(dataService, params)
-			c.JSON(http.StatusOK, result)
+			c.Succ(result)
 		})
-	}
 
-	// WebSocket for real-time updates
-	r.GET("/ws", func(c *gin.Context) {
-		wsHandler(c.Writer, c.Request, dataService)
 	})
 
-	log.Println("Server starting on :8080")
-	r.Run(":8080")
+	// WebSocket for real-time updates
+	r.GET("/ws", func(c fbr.Ctx) {
+		wsHandler(c, dataService)
+	})
+
+	r.Run()
 }
 
-func wsHandler(w http.ResponseWriter, r *http.Request, ds *service.DataService) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("Upgrade error:", err)
-		return
-	}
-	defer conn.Close()
+func wsHandler(c fbr.Ctx, ds *service.DataService) {
+	c.Websocket(func(ws *fbr.Websocket) {
+		// Subscribe to updates
+		updateChan := ds.Subscribe()
+		defer ds.Unsubscribe(updateChan)
 
-	// Subscribe to updates
-	updateChan := ds.Subscribe()
-	defer ds.Unsubscribe(updateChan)
-
-	for {
-		select {
-		case stocks := <-updateChan:
-			// Send updated stock data (simplified for bandwidth)
-			if err := conn.WriteJSON(stocks); err != nil {
-				log.Println("Write error:", err)
-				return
+		for {
+			select {
+			case stocks := <-updateChan:
+				// Send updated stock data (simplified for bandwidth)
+				if err := ws.WriteJSON(stocks); err != nil {
+					log.Println("Write error:", err)
+					return
+				}
 			}
 		}
-	}
+	})
 }
