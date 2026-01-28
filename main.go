@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/injoyai/goutil/oss"
+	"github.com/injoyai/goutil/str/bar/v2"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
@@ -42,23 +44,31 @@ func init() {
 	if updated, err := update.Updated(key); err != nil || !updated {
 		err = Pull.Update(Manage)
 		logs.PanicErr(err)
-		update.Update(key)
+		err = update.Update(key)
+		logs.PanicErr(err)
 	}
 
 }
 
 func main() {
 	now := time.Now()
-	ls, err := Backtest(s1{}, Manage.Codes.GetStockCodes(), now.AddDate(0, -4, 0), now)
+	codes := Manage.Codes.GetStockCodes()
+
+	ls, err := Backtest(s1{}, codes, now.AddDate(0, -4, 0), now)
 	logs.PanicErr(err)
-	for _, l := range ls {
-		logs.Debug(l)
-	}
+
+	Analyze(ls)
 }
 
 func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp, error) {
 	result := make([]BacktestResp, 0, len(codes))
+	b := bar.New(
+		bar.WithTotal(int64(len(codes))),
+		bar.WithPrefix("[回测][xx000000]"),
+	)
+	defer b.Close()
 	for _, code := range codes {
+		b.SetPrefix("[回测][" + code + "]")
 		resp := BacktestResp{Code: code}
 		dks, err := getDayKlines(code, start, end)
 		if err != nil {
@@ -70,7 +80,10 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp,
 		}
 		resp.Trades = DoStrategy(s, dks, mks)
 		result = append(result, resp)
+		b.Add(1)
+		b.Flush()
 	}
+	b.Close()
 	return result, nil
 }
 
@@ -184,7 +197,10 @@ func getMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
 		wg.Add(1)
 		go func(code string, year int) {
 			defer wg.Done()
-			filename := filepath.Join(MinKlineDir, code+"-"+strconv.Itoa(year)+".db")
+			filename := filepath.Join(MinKlineDir, code, code+"-"+strconv.Itoa(year)+".db")
+			if !oss.Exists(filename) {
+				return
+			}
 			db, err := xorms.NewSqlite(filename)
 			if err != nil {
 				logs.Err(err)
