@@ -3,6 +3,7 @@ package main
 import (
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -52,7 +53,13 @@ func init() {
 
 func main() {
 	now := time.Now()
-	codes := Manage.Codes.GetStockCodes()
+
+	codes := []string(nil)
+	for _, v := range Manage.Codes.GetStockCodes() {
+		if strings.HasPrefix(v, "sh60") || strings.HasPrefix(v, "sz000") {
+			codes = append(codes, v)
+		}
+	}
 
 	ls, err := Backtest(s1{}, codes, now.AddDate(0, -4, 0), now)
 	logs.PanicErr(err)
