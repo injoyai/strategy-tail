@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	DatabaseDir = "./data/database"
+	DatabaseDir = tdx.DefaultDatabaseDir
 	DayKlineDir = filepath.Join(DatabaseDir, "day-kline")
 	MinKlineDir = filepath.Join(DatabaseDir, "min-kline")
 	Pull        *extend.PullKline
@@ -72,6 +72,10 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp,
 		result = append(result, resp)
 	}
 	return result, nil
+}
+
+func Screen(s Strategy, codes []string) {
+
 }
 
 /*
@@ -144,16 +148,6 @@ type Trade struct {
 	Time time.Time
 	Buy  protocol.Price
 	Sell protocol.Price
-}
-
-/*
-
-
-
- */
-
-func Screen(s Strategy) {
-
 }
 
 /*
