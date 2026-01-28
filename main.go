@@ -61,6 +61,8 @@ func main() {
 		}
 	}
 
+	//codes = codes[:200]
+
 	ls, err := Backtest(s1{}, codes, now.AddDate(0, -4, 0), now)
 	logs.PanicErr(err)
 

@@ -43,5 +43,66 @@ func (s1) Signal(dks extend.Klines, mks protocol.Klines) bool {
 		}
 	}
 
+	if !priceMostlyAboveMA(mks, 20, 0.8) {
+		return false
+	}
+
+	if !slowRising(mks, 20, 0.003, 0.03) {
+		return false
+	}
+
 	return true
+}
+
+func priceMostlyAboveMA(mks protocol.Klines, window int, ratio float64) bool {
+	if window <= 1 || len(mks) < window {
+		return false
+	}
+	sum := 0.0
+	for i := 0; i < window; i++ {
+		sum += mks[i].Close.Float64()
+	}
+	aboveCount := 0
+	total := 0
+	for i := window - 1; i < len(mks); i++ {
+		ma := sum / float64(window)
+		if mks[i].Close.Float64() >= ma {
+			aboveCount++
+		}
+		total++
+		if i+1 < len(mks) {
+			sum += mks[i+1].Close.Float64()
+			sum -= mks[i-window+1].Close.Float64()
+		}
+	}
+	return total > 0 && float64(aboveCount)/float64(total) >= ratio
+}
+
+func slowRising(mks protocol.Klines, window int, minRise, maxRise float64) bool {
+	if len(mks) < window {
+		return false
+	}
+	first := mks[0].Close.Float64()
+	last := mks[len(mks)-1].Close.Float64()
+	if first <= 0 {
+		return false
+	}
+	rise := (last - first) / first
+	if rise < minRise || rise > maxRise {
+		return false
+	}
+	firstMA := averageClose(mks[:window])
+	lastMA := averageClose(mks[len(mks)-window:])
+	return lastMA > firstMA
+}
+
+func averageClose(mks protocol.Klines) float64 {
+	if len(mks) == 0 {
+		return 0
+	}
+	sum := 0.0
+	for _, v := range mks {
+		sum += v.Close.Float64()
+	}
+	return sum / float64(len(mks))
 }
