@@ -71,28 +71,37 @@ func main() {
 
 func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp, error) {
 	result := make([]BacktestResp, 0, len(codes))
-	b := bar.New(
-		bar.WithTotal(int64(len(codes))),
+	mu := sync.Mutex{}
+	b := bar.NewCoroutine(
+		len(codes),
+		10,
 		bar.WithPrefix("[回测][xx000000]"),
 	)
 	defer b.Close()
 	for _, code := range codes {
-		b.SetPrefix("[回测][" + code + "]")
-		resp := BacktestResp{Code: code}
-		dks, err := getDayKlines(code, start, end)
-		if err != nil {
-			return nil, err
-		}
-		mks, err := getMinKlines(code, start, end)
-		if err != nil {
-			return nil, err
-		}
-		resp.Trades = DoStrategy(s, dks, mks)
-		result = append(result, resp)
-		b.Add(1)
-		b.Flush()
+		b.Go(func() {
+			b.SetPrefix("[回测][" + code + "]")
+			resp := BacktestResp{Code: code}
+			dks, err := getDayKlines(code, start, end)
+			if err != nil {
+				b.Logf("[错误] %s", err)
+				b.Flush()
+				return
+			}
+			mks, err := getMinKlines(code, start, end)
+			if err != nil {
+				b.Logf("[错误] %s", err)
+				b.Flush()
+				return
+			}
+			resp.Trades = DoStrategy(s, dks, mks)
+			mu.Lock()
+			defer mu.Unlock()
+			result = append(result, resp)
+		})
+
 	}
-	b.Close()
+	b.Wait()
 	return result, nil
 }
 
