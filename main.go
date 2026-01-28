@@ -1,69 +1,221 @@
 package main
 
 import (
-	"log"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"time"
 
-	"github.com/injoyai/frame/fbr"
-	"github.com/injoyai/strategy-tail/model"
-	"github.com/injoyai/strategy-tail/service"
+	"github.com/injoyai/logs"
+	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/protocol"
 )
 
-func main() {
-	r := fbr.Default()
+var (
+	DatabaseDir = "./data/database"
+	DayKlineDir = filepath.Join(DatabaseDir, "day-kline")
+	MinKlineDir = filepath.Join(DatabaseDir, "min-kline")
+	Pull        *extend.PullKline
+	Manage      *tdx.Manage
+)
 
-	// Initialize Service
-	dataService := service.NewDataService()
-	go dataService.StartMarketUpdate() // Start simulating market updates
+func init() {
 
-	// API Routes
-	r.Group("/api", func(g fbr.Grouper) {
-		g.GET("/stocks", func(c fbr.Ctx) {
-			// Get filter params
-			minMarketCap := c.GetFloat64("min_market_cap")
-			maxMarketCap := c.GetFloat64("max_market_cap")
+	db, err := xorms.NewSqlite(filepath.Join(DatabaseDir, "update.db"))
+	logs.PanicErr(err)
 
-			filter := model.StockFilter{
-				MinMarketCap: minMarketCap,
-				MaxMarketCap: maxMarketCap,
-				// Add more filters as needed
-			}
+	update, err := tdx.NewUpdated(db, 15, 1)
+	logs.PanicErr(err)
 
-			stocks := dataService.GetStocks(filter)
-			c.Succ(stocks)
-		})
+	Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
+	logs.PanicErr(err)
 
-		g.POST("/backtest", func(c fbr.Ctx) {
-			var params model.BacktestParams
-			c.Parse(&params)
-			result := service.RunBacktest(dataService, params)
-			c.Succ(result)
-		})
-
+	Pull = extend.NewPullKline(extend.PullKlineConfig{
+		Tables:     []string{extend.Day},
+		Dir:        DayKlineDir,
+		Goroutines: 10,
 	})
 
-	// WebSocket for real-time updates
-	r.GET("/ws", func(c fbr.Ctx) {
-		wsHandler(c, dataService)
-	})
+	key := "pull"
+	if updated, err := update.Updated(key); err != nil || !updated {
+		err = Pull.Update(Manage)
+		logs.PanicErr(err)
+		update.Update(key)
+	}
 
-	r.Run()
 }
 
-func wsHandler(c fbr.Ctx, ds *service.DataService) {
-	c.Websocket(func(ws *fbr.Websocket) {
-		// Subscribe to updates
-		updateChan := ds.Subscribe()
-		defer ds.Unsubscribe(updateChan)
+func main() {
+	now := time.Now()
+	ls, err := Backtest(s1{}, Manage.Codes.GetStockCodes(), now.AddDate(0, -4, 0), now)
+	logs.PanicErr(err)
+	for _, l := range ls {
+		logs.Debug(l)
+	}
+}
 
-		for {
-			select {
-			case stocks := <-updateChan:
-				// Send updated stock data (simplified for bandwidth)
-				if err := ws.WriteJSON(stocks); err != nil {
-					log.Println("Write error:", err)
-					return
-				}
-			}
+func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp, error) {
+	result := make([]BacktestResp, 0, len(codes))
+	for _, code := range codes {
+		resp := BacktestResp{Code: code}
+		dks, err := getDayKlines(code, start, end)
+		if err != nil {
+			return nil, err
 		}
-	})
+		mks, err := getMinKlines(code, start, end)
+		if err != nil {
+			return nil, err
+		}
+		resp.Trades = DoStrategy(s, dks, mks)
+		result = append(result, resp)
+	}
+	return result, nil
+}
+
+/*
+
+
+
+ */
+
+func DoStrategy(s Strategy, dks extend.Klines, mks protocol.Klines) []Trade {
+	mmks := map[string]protocol.Klines{}
+	for _, mk := range mks {
+		key := mk.Time.Format(time.DateOnly)
+		mmks[key] = append(mmks[key], mk)
+	}
+	ts := []Trade(nil)
+	for i, dk := range dks {
+		if i+1 >= len(dks) {
+			continue
+		}
+		mk0, ok := mmks[dk.Time.Format(time.DateOnly)]
+		if !ok {
+			continue
+		}
+		mk1, ok := mmks[dks[i+1].Time.Format(time.DateOnly)]
+		if !ok {
+			continue
+		}
+		if s.Signal(dks[:i+1], mk0) {
+			t := Trade{
+				Time: dk.Time,
+				Buy: func() protocol.Price {
+					for _, v := range mk0 {
+						//到达买点,按最高价+1分买入,提升成交成功率
+						if v.Time.Format(time.TimeOnly) == "14:50:00" {
+							return v.High + protocol.Yuan(0.01)
+						}
+					}
+					//否则按最高价,增加容错
+					return dk.High
+				}(),
+				Sell: func() protocol.Price {
+					for _, v := range mk1 {
+						//到达卖点,按最低价-1分卖出,提升成交成功率
+						if v.Time.Format(time.TimeOnly) == "10:00:00" {
+							return v.Low - protocol.Yuan(0.01)
+						}
+					}
+					//否则按最低价,增加容错
+					return dk.Low
+				}(),
+			}
+			ts = append(ts, t)
+		}
+	}
+	return ts
+}
+
+/*
+
+
+
+ */
+
+type BacktestResp struct {
+	Code   string  //代码
+	Trades []Trade //交易记录
+}
+
+type Trade struct {
+	Time time.Time
+	Buy  protocol.Price
+	Sell protocol.Price
+}
+
+/*
+
+
+
+ */
+
+func Screen(s Strategy) {
+
+}
+
+/*
+
+
+
+
+ */
+
+func getDayKlines(code string, start, end time.Time) (extend.Klines, error) {
+	ks, err := Pull.DayKlines(code)
+	if err != nil {
+		return nil, err
+	}
+	ls := extend.Klines{}
+	for _, k := range ks {
+		if k.Time.Before(start) || k.Time.After(end) {
+			continue
+		}
+		ls = append(ls, k)
+	}
+	return ls, nil
+}
+
+func getMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
+	years := []int(nil)
+	for i := start.Year(); i <= end.Year(); i++ {
+		years = append(years, i)
+	}
+	ks := protocol.Klines{}
+	mu := sync.Mutex{}
+	wg := sync.WaitGroup{}
+	for _, year := range years {
+		wg.Add(1)
+		go func(code string, year int) {
+			defer wg.Done()
+			filename := filepath.Join(MinKlineDir, code+"-"+strconv.Itoa(year)+".db")
+			db, err := xorms.NewSqlite(filename)
+			if err != nil {
+				logs.Err(err)
+				return
+			}
+			defer db.Close()
+			ls := protocol.Klines{}
+			err = db.Find(&ls)
+			if err != nil {
+				logs.Err(err)
+				return
+			}
+			res := protocol.Klines{}
+			for _, l := range ls {
+				if l.Time.Year() != year {
+					continue
+				}
+				res = append(res, l)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			ks = append(ks, res...)
+		}(code, year)
+	}
+	wg.Wait()
+	ks.Sort()
+	return ks, nil
 }
