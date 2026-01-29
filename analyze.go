@@ -6,12 +6,7 @@ import (
 	"sort"
 )
 
-func Analyze(results []BacktestResp) {
-	// 1. 收集所有交易
-	allTrades := []Trade{}
-	for _, res := range results {
-		allTrades = append(allTrades, res.Trades...)
-	}
+func Analyze(allTrades []Trade) {
 
 	// 2. 按时间排序，为了计算资金曲线和回撤
 	sort.Slice(allTrades, func(i, j int) bool {

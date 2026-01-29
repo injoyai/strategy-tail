@@ -61,21 +61,26 @@ func main() {
 		}
 	}
 
-	//codes = codes[:200]
+	s := s1{
+		BuyTime:        "14:40:00",
+		SellTime:       "10:00:00",
+		MinMarketValue: protocol.Yuan(50 * 1e8),
+		MaxMarketValue: protocol.Yuan(200 * 1e8),
+	}
 
 	year := 2018
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
-	ls, err := Backtest(s1{}, codes, start, end)
+	ls, err := Backtest(s, codes, start, end)
 	logs.PanicErr(err)
 
 	fmt.Printf("回测年份: %d\n", year)
 	Analyze(ls)
 }
 
-func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp, error) {
-	result := make([]BacktestResp, 0, len(codes))
+func Backtest(s Strategy, codes []string, start, end time.Time) ([]Trade, error) {
+	result := []Trade(nil)
 	mu := sync.Mutex{}
 	b := bar.NewCoroutine(
 		len(codes),
@@ -86,7 +91,6 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp,
 	for _, code := range codes {
 		b.Go(func() {
 			b.SetPrefix("[回测][" + code + "]")
-			resp := BacktestResp{Code: code}
 			dks, err := getDayKlines(code, start, end)
 			if err != nil {
 				b.Logf("[错误] %s", err)
@@ -99,10 +103,10 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]BacktestResp,
 				b.Flush()
 				return
 			}
-			resp.Trades = DoStrategy(s, dks, mks)
+			ts := DoStrategy(s, code, dks, mks)
 			mu.Lock()
 			defer mu.Unlock()
-			result = append(result, resp)
+			result = append(result, ts...)
 		})
 
 	}
@@ -120,7 +124,7 @@ func Screen(s Strategy, codes []string) {
 
  */
 
-func DoStrategy(s Strategy, dks extend.Klines, mks protocol.Klines) []Trade {
+func DoStrategy(s Strategy, code string, dks extend.Klines, mks protocol.Klines) []Trade {
 	mmks := map[string]protocol.Klines{}
 	for _, mk := range mks {
 		key := mk.Time.Format(time.DateOnly)
@@ -139,32 +143,25 @@ func DoStrategy(s Strategy, dks extend.Klines, mks protocol.Klines) []Trade {
 		if !ok {
 			continue
 		}
-		if s.Signal(dks[:i+1], mk0) {
-			t := Trade{
-				Time: dk.Time,
-				Buy: func() protocol.Price {
-					for _, v := range mk0 {
-						//到达买点,按最高价+1分买入,提升成交成功率
-						if v.Time.Format(time.TimeOnly) == "14:50:00" {
-							return v.High + protocol.Yuan(0.01)
-						}
-					}
-					//否则按最高价,增加容错
-					return dk.High
-				}(),
-				Sell: func() protocol.Price {
-					for _, v := range mk1 {
-						//到达卖点,按最低价-1分卖出,提升成交成功率
-						if v.Time.Format(time.TimeOnly) == "10:00:00" {
-							return v.Low - protocol.Yuan(0.01)
-						}
-					}
-					//否则按最低价,增加容错
-					return dk.Low
-				}(),
-			}
-			ts = append(ts, t)
+
+		buy := s.Buy(code, dks[:i+1], mk0)
+		if buy == nil {
+			continue
 		}
+
+		sell := s.Sell(code, dks[:i+1], mk1)
+		if sell == nil {
+			continue
+		}
+
+		tr := Trade{
+			Code: code,
+			Time: dk.Time,
+			Buy:  buy.Price + protocol.Yuan(0.01),
+			Sell: sell.Price - protocol.Yuan(0.01),
+		}
+
+		ts = append(ts, tr)
 	}
 	return ts
 }
@@ -174,11 +171,6 @@ func DoStrategy(s Strategy, dks extend.Klines, mks protocol.Klines) []Trade {
 
 
  */
-
-type BacktestResp struct {
-	Code   string  //代码
-	Trades []Trade //交易记录
-}
 
 type Trade struct {
 	Code string

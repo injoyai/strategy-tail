@@ -7,56 +7,89 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
+type trade struct {
+	Code  string
+	Buy   bool
+	Time  time.Time
+	Price protocol.Price
+}
+
 type Strategy interface {
-	// Signal 传入 日线[上市,日期A] 分钟线[日期A]
-	Signal(dks extend.Klines, mk protocol.Klines) bool
+	// Buy 传入 日线[上市,日期A] 分钟线[日期A]
+	Buy(code string, dks extend.Klines, mk protocol.Klines) *trade
+	Sell(code string, dks extend.Klines, mk protocol.Klines) *trade
 }
 
 // 策略1
 type s1 struct {
-	BuyTime        string
-	SellTime       string
-	MinMarketValue protocol.Price
-	MaxMarketValue protocol.Price
+	BuyTime        string         //"14:40:00"
+	SellTime       string         //"10:00:00"
+	MinMarketValue protocol.Price //最小市值
+	MaxMarketValue protocol.Price //最大市值
 }
 
-func (s1) Signal(dks extend.Klines, mks protocol.Klines) bool {
+func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
 	if len(dks) == 0 || len(mks) == 0 {
-		return false
+		return nil
 	}
 
 	dk := dks[len(dks)-1]
 
 	//过滤市值过大或者过小的股票
 	value := protocol.Price(dk.TotalStock) * dk.Open
-	if value.Float64() > 200*1e8 || value < 50*1e8 {
-		return false
+	if value > s.MaxMarketValue || value < s.MinMarketValue {
+		return nil
 	}
 
 	//过滤换手率过大或者过小的股票
 	if dk.Turnover > 5 || dk.Turnover < 2 {
-		return false
+		return nil
+	}
+
+	t := &trade{
+		Code:  code,
+		Buy:   true,
+		Time:  time.Time{},
+		Price: 0,
 	}
 
 	//过滤收盘价和收盘价
 	for _, v := range mks {
-		if v.Time.Format(time.TimeOnly) >= "14:40:00" {
+		if v.Time.Format(time.TimeOnly) >= s.BuyTime {
 			if (dk.High-v.High).Float64()/dk.High.Float64() > 0.1 {
-				return false
+				return nil
 			}
+			t.Time = v.Time
+			t.Price = v.High
 			break
 		}
 	}
 
 	if !priceMostlyAboveMA(mks, 20, 0.8) {
-		return false
+		return nil
 	}
 
 	if !slowRising(mks, 20, 0.003, 0.03) {
-		return false
+		return nil
 	}
 
-	return true
+	return t
+}
+
+func (s s1) Sell(code string, dks extend.Klines, mk protocol.Klines) *trade {
+	t := &trade{Code: code, Buy: false}
+	for _, v := range mk {
+		//到达卖点,按最低价-1分卖出,提升成交成功率
+		if v.Time.Format(time.TimeOnly) == s.SellTime {
+			t.Time = v.Time
+			t.Price = v.Low
+			return t
+		}
+		if t.Price == 0 || t.Price > v.Low {
+			t.Price = v.Low
+		}
+	}
+	return t
 }
 
 func priceMostlyAboveMA(mks protocol.Klines, window int, ratio float64) bool {
