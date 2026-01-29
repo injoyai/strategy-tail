@@ -14,6 +14,8 @@ type trade struct {
 	Price protocol.Price
 }
 
+type Price = protocol.Price
+
 type Strategy interface {
 	// Buy 传入 日线[上市,日期A] 分钟线[日期A]
 	Buy(code string, dks extend.Klines, mk protocol.Klines) *trade
