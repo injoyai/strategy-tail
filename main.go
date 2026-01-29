@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -63,9 +64,13 @@ func main() {
 
 	//codes = codes[:200]
 
-	ls, err := Backtest(s1{}, codes, now.AddDate(0, -4, 0), now)
+	start := now.AddDate(-5, 0, 0)
+	end := now.AddDate(-4, 0, 0)
+
+	ls, err := Backtest(s1{}, codes, start, end)
 	logs.PanicErr(err)
 
+	fmt.Printf("回测日期范围: %s - %s\n", start.Format(time.DateOnly), end.Format(time.DateOnly))
 	Analyze(ls)
 }
 
