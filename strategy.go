@@ -13,7 +13,12 @@ type Strategy interface {
 }
 
 // 策略1
-type s1 struct{}
+type s1 struct {
+	BuyTime        string
+	SellTime       string
+	MinMarketValue protocol.Price
+	MaxMarketValue protocol.Price
+}
 
 func (s1) Signal(dks extend.Klines, mks protocol.Klines) bool {
 	if len(dks) == 0 || len(mks) == 0 {

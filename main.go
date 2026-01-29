@@ -181,6 +181,7 @@ type BacktestResp struct {
 }
 
 type Trade struct {
+	Code string
 	Time time.Time
 	Buy  protocol.Price
 	Sell protocol.Price
