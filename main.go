@@ -60,12 +60,14 @@ func main() {
 			codes = append(codes, v)
 		}
 	}
-
-	s := s1{
-		BuyTime:        "14:40:00",
-		SellTime:       "10:00:00",
-		MinMarketValue: protocol.Yuan(50 * 1e8),
-		MaxMarketValue: protocol.Yuan(200 * 1e8),
+	// s := s1{
+	// 	BuyTime:        "14:40:00",
+	// 	SellTime:       "10:00:00",
+	// 	MinMarketValue: protocol.Yuan(50 * 1e8),
+	// 	MaxMarketValue: protocol.Yuan(200 * 1e8),
+	// }
+	s := volume{
+		SellTime: "10:00:00",
 	}
 
 	year := 2018
