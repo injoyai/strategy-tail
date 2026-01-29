@@ -53,7 +53,6 @@ func init() {
 }
 
 func main() {
-	now := time.Now()
 
 	codes := []string(nil)
 	for _, v := range Manage.Codes.GetStockCodes() {
@@ -64,13 +63,14 @@ func main() {
 
 	//codes = codes[:200]
 
-	start := now.AddDate(-5, 0, 0)
-	end := now.AddDate(-4, 0, 0)
+	year := 2018
+	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
 	ls, err := Backtest(s1{}, codes, start, end)
 	logs.PanicErr(err)
 
-	fmt.Printf("回测日期范围: %s - %s\n", start.Format(time.DateOnly), end.Format(time.DateOnly))
+	fmt.Printf("回测年份: %d\n", year)
 	Analyze(ls)
 }
 

@@ -78,10 +78,10 @@ func Analyze(results []BacktestResp) {
 	if totalTrades > 0 {
 		winRate := float64(winCount) / float64(totalTrades) * 100
 		fmt.Printf("胜率: \t\t%.2f%%\n", winRate)
-		fmt.Printf("总盈亏: \t\t%.4f/手\n", totalProfit*100)
-		fmt.Printf("平均每笔盈亏: \t%.4f/手\n", totalProfit/float64(totalTrades)*100)
-		fmt.Printf("最大单笔盈利: \t%.4f/手\n", maxProfit*100)
-		fmt.Printf("最大单笔亏损: \t%.4f/手\n", maxLoss*100)
+		fmt.Printf("总盈亏: \t\t%.2f元/手\n", totalProfit*100)
+		fmt.Printf("平均每笔盈亏: \t%.2f元/手\n", totalProfit/float64(totalTrades)*100)
+		fmt.Printf("最大单笔盈利: \t%.2f元/手\n", maxProfit*100)
+		fmt.Printf("最大单笔亏损: \t%.2f元/手\n", maxLoss*100)
 
 		profitFactor := 0.0
 		if grossLoss != 0 {
@@ -91,7 +91,7 @@ func Analyze(results []BacktestResp) {
 			fmt.Printf("盈亏比: \t\t∞ (无亏损)\n")
 		}
 
-		fmt.Printf("最大回撤: \t\t%.4f/手\n", maxDrawdown*100)
+		fmt.Printf("最大回撤: \t\t%.2f元/手\n", maxDrawdown*100)
 	}
 	fmt.Printf("======================================================\n")
 }
