@@ -44,7 +44,12 @@ func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
 	}
 
 	//过滤换手率过大或者过小的股票
-	if dk.Turnover > 5 || dk.Turnover < 2 {
+	if dk.Turnover > 10 || dk.Turnover < 1 {
+		return nil
+	}
+
+	//过滤涨幅过大的
+	if dk.RiseRate() > 8 {
 		return nil
 	}
 

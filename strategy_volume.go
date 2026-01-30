@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/injoyai/tdx/extend"
@@ -11,115 +10,138 @@ import (
 var _ Strategy = volume{}
 
 type volume struct {
+	BuyTime  string
 	SellTime string
 }
 
-func (v volume) Buy(code string, dks extend.Klines, mk protocol.Klines) *trade {
-	if len(dks) < 20 { // TJ4需要20天
+func (s volume) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
+	if len(dks) < 20 || len(mks) == 0 {
 		return nil
 	}
 
-	i := len(dks) - 1
-	dk := dks[i]
-
-	// 准备数据
-	// TJ1: 倍量:=V/REF(V,1)>=2.9;
-	vol := float64(dk.Volume)
-	refVol1 := float64(dks[i-1].Volume)
-	if refVol1 == 0 {
+	// === 倍量选股核心 ===
+	if !matchMultipleVolumeSPK(dks) {
 		return nil
 	}
-	beiLiang := vol/refVol1 >= 2.9
-	if !beiLiang {
-		return nil
-	}
-	//fmt.Printf("[%s] TJ1 met: Vol/RefVol=%.2f\n", code, vol/refVol1)
 
-	// TJ2: C>REF(C,1)&&H>C&&H=HHV(H,6);
-	close := dk.Close
-	refClose1 := dks[i-1].Close
-	high := dk.High
-
-	isHighestHigh6 := true
-	for j := 0; j < 6; j++ {
-		if dks[i-j].High > high {
-			isHighestHigh6 = false
-			break
-		}
-	}
-
-	tj2 := close > refClose1 && high > close && isHighestHigh6
-	if !tj2 {
-		return nil
-	}
-	//fmt.Printf("[%s] TJ2 met\n", code)
-
-	// TJ3: REF(LLV(L,10),1)>=REF(HHV(H,10),1)*0.8;
-	llv10 := dks[i-1].Low
-	hhv10 := dks[i-1].High
-	for j := 1; j < 10; j++ {
-		idx := i - 1 - j
-		if idx < 0 {
-			break
-		}
-		if dks[idx].Low < llv10 {
-			llv10 = dks[idx].Low
-		}
-		if dks[idx].High > hhv10 {
-			hhv10 = dks[idx].High
-		}
-	}
-
-	tj3 := float64(llv10) >= float64(hhv10)*0.8
-	if !tj3 {
-		return nil
-	}
-	//fmt.Printf("[%s] TJ3 met\n", code)
-
-	// TJ4: LLV(L,5)>LLV(L,20);
-	llv5 := dk.Low
-	for j := 0; j < 5; j++ { // LLV(L,5) includes today? Yes usually.
-		if dks[i-j].Low < llv5 {
-			llv5 = dks[i-j].Low
-		}
-	}
-
-	llv20 := dk.Low
-	for j := 0; j < 20; j++ {
-		if dks[i-j].Low < llv20 {
-			llv20 = dks[i-j].Low
-		}
-	}
-
-	tj4 := llv5 > llv20
-	if !tj4 {
-		return nil
-	}
-	fmt.Printf("[%s] ALL Conditions met on %s\n", code, dk.Time.Format("2006-01-02"))
+	dk := dks[len(dks)-1]
 
 	t := &trade{
-		Code:  code,
-		Buy:   true,
-		Time:  time.Time{},
-		Price: 0,
+		Code: code,
+		Buy:  true,
 	}
 
-	found := false
-	for _, k := range mk {
-		if k.Time.Format(time.TimeOnly) >= "14:50:00" {
-			t.Time = k.Time
-			t.Price = k.High + protocol.Yuan(0.01)
-			found = true
+	// 分钟线买点
+	for _, v := range mks {
+		if v.Time.Format(time.TimeOnly) >= s.BuyTime {
+			if (dk.High-v.High).Float64()/dk.High.Float64() > 0.1 {
+				return nil
+			}
+			t.Time = v.Time
+			t.Price = v.High
 			break
 		}
 	}
 
-	if !found {
-		t.Time = dk.Time
-		t.Price = dk.Close
+	if t.Price == 0 {
+		return nil
+	}
+
+	if !priceMostlyAboveMA(mks, 20, 0.8) {
+		return nil
+	}
+
+	if !slowRising(mks, 20, 0.003, 0.03) {
+		return nil
 	}
 
 	return t
+}
+
+func matchMultipleVolumeSPK(dks extend.Klines) bool {
+	n := len(dks)
+	if n < 20 {
+		return false
+	}
+
+	i := n - 1
+	dk := dks[i]
+
+	// TJ1：倍量
+	TJ1 := isMultipleVolume(dks, i)
+
+	// TJ2：收盘上涨 + 6日新高 + 有上影
+	TJ2 := false
+	if i >= 6 {
+		TJ2 =
+			dk.Close > dks[i-1].Close &&
+				dk.High > dk.Close &&
+				dk.High.Float64() == hhvHigh(dks, i, 6)
+	}
+
+	// TJ3：10日区间不弱（低点 >= 高点 * 0.8）
+	TJ3 := false
+	if i >= 10 {
+		llv := llvLow(dks, i-1, 10)
+		hhv := hhvHigh(dks, i-1, 10)
+		if hhv > 0 {
+			TJ3 = llv >= hhv*0.8
+		}
+	}
+
+	// TJ4：短期低点抬高
+	TJ4 := llvLow(dks, i, 5) > llvLow(dks, i, 20)
+
+	return TJ1 && TJ2 && TJ3 && TJ4
+}
+
+func isMultipleVolume(dks extend.Klines, i int) bool {
+	if i <= 0 {
+		return false
+	}
+	v := dks[i].Volume
+	prev := dks[i-1].Volume
+	if prev <= 0 {
+		return false
+	}
+	return float64(v)/float64(prev) >= 2.9
+}
+
+func hhvHigh(dks extend.Klines, end, n int) float64 {
+	start := end - n + 1
+	if start < 0 {
+		start = 0
+	}
+	max := dks[start].High.Float64()
+	for i := start + 1; i <= end; i++ {
+		if dks[i].High.Float64() > max {
+			max = dks[i].High.Float64()
+		}
+	}
+	return max
+}
+
+func llvLow(dks extend.Klines, end, n int) float64 {
+	start := end - n + 1
+	if start < 0 {
+		start = 0
+	}
+	min := dks[start].Low.Float64()
+	for i := start + 1; i <= end; i++ {
+		if dks[i].Low.Float64() < min {
+			min = dks[i].Low.Float64()
+		}
+	}
+	return min
+}
+
+func barsLastMultiple(dks extend.Klines, end int) int {
+	for i := end - 1; i >= 0; i-- {
+		if isMultipleVolume(dks, i) {
+			return end - i
+		}
+	}
+	return end + 1
 }
 
 func (v volume) Sell(code string, dks extend.Klines, mk protocol.Klines) *trade {
