@@ -68,7 +68,7 @@ func Analyze(allTrades []Trade) {
 
 	// 输出统计结果
 	fmt.Printf("\n==================== 回测统计报告 ====================\n")
-	fmt.Printf("总交易次数: \t%d\n", totalTrades*2)
+	fmt.Printf("总交易次数: \t%d*2\n", totalTrades)
 
 	if totalTrades > 0 {
 		winRate := float64(winCount) / float64(totalTrades) * 100
@@ -86,7 +86,7 @@ func Analyze(allTrades []Trade) {
 			fmt.Printf("盈亏比: \t\t∞ (无亏损)\n")
 		}
 
-		fmt.Printf("最大回撤: \t\t%.2f元/手\n", maxDrawdown*100)
+		fmt.Printf("最大回撤: \t\t%.2f元\n", maxDrawdown*100)
 	}
 	fmt.Printf("======================================================\n")
 }

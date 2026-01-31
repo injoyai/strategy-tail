@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -56,22 +55,22 @@ func main() {
 
 	codes := []string(nil)
 	for _, v := range Manage.Codes.GetStockCodes() {
-		if strings.HasPrefix(v, "sh60") || strings.HasPrefix(v, "sz000") {
-			codes = append(codes, v)
-		}
+		//if strings.HasPrefix(v, "sh60") || strings.HasPrefix(v, "sz000") {
+		codes = append(codes, v)
+		//}
 	}
-	s := s1{
-		BuyTime:        "14:40:00",
-		SellTime:       "10:00:00",
-		MinMarketValue: protocol.Yuan(50 * 1e8),
-		MaxMarketValue: protocol.Yuan(500 * 1e8),
-	}
-	//s := volume{
-	//	BuyTime:  "14:40:00",
-	//	SellTime: "10:00:00",
+	//s := s1{
+	//	BuyTime:        "14:40:00",
+	//	SellTime:       "10:00:00",
+	//	MinMarketValue: protocol.Yuan(50 * 1e8),
+	//	MaxMarketValue: protocol.Yuan(500 * 1e8),
 	//}
+	s := volume{
+		BuyTime:  "14:40:00",
+		SellTime: "10:00:00",
+	}
 
-	year := 2024
+	year := 2022
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
@@ -134,15 +133,16 @@ func DoStrategy(s Strategy, code string, dks extend.Klines, mks protocol.Klines)
 		mmks[key] = append(mmks[key], mk)
 	}
 	ts := []Trade(nil)
+	n := 2
 	for i, dk := range dks {
-		if i+1 >= len(dks) {
+		if i+n >= len(dks) {
 			continue
 		}
 		mk0, ok := mmks[dk.Time.Format(time.DateOnly)]
 		if !ok {
 			continue
 		}
-		mk1, ok := mmks[dks[i+1].Time.Format(time.DateOnly)]
+		mk1, ok := mmks[dks[i+n].Time.Format(time.DateOnly)]
 		if !ok {
 			continue
 		}
