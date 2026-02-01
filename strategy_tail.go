@@ -7,19 +7,10 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-type trade struct {
-	Code  string
-	Buy   bool
-	Time  time.Time
-	Price protocol.Price
-}
-
-type Price = protocol.Price
-
 type Strategy interface {
 	// Buy 传入 日线[上市,日期A] 分钟线[日期A]
 	Buy(code string, dks extend.Klines, mk protocol.Klines) *trade
-	Sell(code string, dks extend.Klines, mk protocol.Klines) *trade
+	Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade
 }
 
 // 策略1
@@ -83,9 +74,16 @@ func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
 	return t
 }
 
-func (s s1) Sell(code string, dks extend.Klines, mk protocol.Klines) *trade {
+func (s s1) Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade {
 	t := &trade{Code: code, Buy: false}
 	for _, v := range mk {
+		// 止损：亏损 > 10%
+		if buyPrice > 0 && (float64(v.Close)-float64(buyPrice))/float64(buyPrice) < -0.10 {
+			t.Time = v.Time
+			t.Price = v.Close
+			return t
+		}
+
 		//到达卖点,按最低价-1分卖出,提升成交成功率
 		if v.Time.Format(time.TimeOnly) == s.SellTime {
 			t.Time = v.Time

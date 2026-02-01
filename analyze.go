@@ -35,8 +35,8 @@ func Analyze(allTrades []Trade) {
 
 	for _, t := range allTrades {
 		// Price 是 int64 类型, 单位是厘 (0.001元)
-		buy := float64(t.Buy) / 1000.0
-		sell := float64(t.Sell) / 1000.0
+		buy := float64(t.BuyPrice) / 1000.0
+		sell := float64(t.SellPrice) / 1000.0
 		profit := sell - buy
 
 		totalProfit += profit
@@ -102,14 +102,16 @@ func Analyze(allTrades []Trade) {
 	fmt.Printf("======================================================\n")
 
 	data := [][]any{
-		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格"},
+		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格", "盈亏", "持有天数"},
 	}
 
 	for _, v := range allTrades {
 		data = append(data, []any{
 			v.Code,
-			v.BuyTime.Format(time.DateTime), v.Buy.Float64(),
-			v.SellTime.Format(time.DateTime), v.Sell.Float64(),
+			v.BuyTime.Format(time.DateTime), v.BuyPrice.Float64(),
+			v.SellTime.Format(time.DateTime), v.SellPrice.Float64(),
+			(v.SellPrice - v.BuyPrice).Float64() * 100,
+			v.SellTime.Sub(v.BuyTime).String(),
 		})
 	}
 
@@ -125,7 +127,7 @@ func calculateRequiredCapital(allTrades []Trade) float64 {
 	m := map[string][]Trade{}
 
 	for _, v := range allTrades {
-		m[v.Time.Format(time.DateOnly)] = append(m[v.Time.Format(time.DateOnly)], v)
+		m[v.BuyTime.Format(time.DateOnly)] = append(m[v.BuyTime.Format(time.DateOnly)], v)
 	}
 
 	if len(m) == 0 {
@@ -137,7 +139,7 @@ func calculateRequiredCapital(allTrades []Trade) float64 {
 		xx = append(xx, func() float64 {
 			x := float64(0)
 			for _, v := range ls {
-				x += v.Buy.Float64() * 100
+				x += v.BuyPrice.Float64() * 100
 			}
 			return x
 		}())

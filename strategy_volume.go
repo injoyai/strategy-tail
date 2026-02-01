@@ -65,9 +65,16 @@ func LLV(dks extend.Klines, i int) protocol.Price {
 	return ls[0].Low
 }
 
-func (v volume) Sell(code string, dks extend.Klines, mk protocol.Klines) *trade {
+func (v volume) Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade {
 	t := &trade{Code: code, Buy: false}
 	for _, k := range mk {
+		// 止损：亏损 > 10%
+		if buyPrice > 0 && (float64(k.Close)-float64(buyPrice))/float64(buyPrice) < -0.10 {
+			t.Time = k.Time
+			t.Price = k.Close
+			return t
+		}
+
 		//到达卖点,按最低价-1分卖出,提升成交成功率
 		if k.Time.Format(time.TimeOnly) == v.SellTime {
 			t.Time = k.Time
