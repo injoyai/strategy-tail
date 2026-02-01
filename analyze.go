@@ -3,14 +3,20 @@ package main
 import (
 	"fmt"
 	"math"
+	"path/filepath"
 	"sort"
+	"time"
+
+	"github.com/injoyai/goutil/g"
+	"github.com/injoyai/goutil/oss"
+	"github.com/injoyai/goutil/other/csv"
 )
 
 func Analyze(allTrades []Trade) {
 
 	// 2. 按时间排序，为了计算资金曲线和回撤
 	sort.Slice(allTrades, func(i, j int) bool {
-		return allTrades[i].Time.Before(allTrades[j].Time)
+		return allTrades[i].BuyTime.Before(allTrades[j].BuyTime)
 	})
 
 	var totalTrades int = len(allTrades)
@@ -88,5 +94,55 @@ func Analyze(allTrades []Trade) {
 
 		fmt.Printf("最大回撤: \t\t%.2f元\n", maxDrawdown*100)
 	}
+	requiredCapital := calculateRequiredCapital(allTrades)
+	fmt.Printf("所需最低本金: \t\t%.2f元\n", requiredCapital)
+	if requiredCapital > 0 {
+		fmt.Printf("年化收益率: \t\t%.2f%%\n", totalProfit*100/requiredCapital*100)
+	}
 	fmt.Printf("======================================================\n")
+
+	data := [][]any{
+		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格"},
+	}
+
+	for _, v := range allTrades {
+		data = append(data, []any{
+			v.Code,
+			v.BuyTime.Format(time.DateTime), v.Buy.Float64(),
+			v.SellTime.Format(time.DateTime), v.Sell.Float64(),
+		})
+	}
+
+	buf, err := csv.Export(data)
+	if err == nil {
+		output := filepath.Join("./output/", time.Now().Format("20060102150415")+".csv")
+		oss.New(output, buf)
+	}
+}
+
+func calculateRequiredCapital(allTrades []Trade) float64 {
+
+	m := map[string][]Trade{}
+
+	for _, v := range allTrades {
+		m[v.Time.Format(time.DateOnly)] = append(m[v.Time.Format(time.DateOnly)], v)
+	}
+
+	if len(m) == 0 {
+		return 0
+	}
+
+	xx := make([]float64, 0, len(m))
+	for _, ls := range m {
+		xx = append(xx, func() float64 {
+			x := float64(0)
+			for _, v := range ls {
+				x += v.Buy.Float64() * 100
+			}
+			return x
+		}())
+	}
+
+	return g.Max(0., xx...)
+
 }
