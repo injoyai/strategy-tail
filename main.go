@@ -68,15 +68,19 @@ func main() {
 		SellTime: "10:00:00",
 	}
 
-	//screen(s, codes)
-	backtest(s, codes)
+	screen(s, codes)
+	//backtest(s, codes)
 }
 
 func screen(s Strategy, codes []string) {
+
+	err := Pull.Update(Manage)
+	logs.PanicErr(err)
+
 	end := time.Now()
 
-	end = time.Date(2026, 1, 15, 15, 0, 0, 0, time.Local)
-	codes = []string{"sz002077"}
+	//end = time.Date(2026, 1, 15, 15, 0, 0, 0, time.Local)
+	//codes = []string{"sz002077"}
 
 	logs.Debug("选股时间:", end.Format(time.DateOnly))
 	bs, err := Screen(s, codes, end.AddDate(0, -4, 0), end)
@@ -87,7 +91,7 @@ func screen(s Strategy, codes []string) {
 }
 
 func backtest(s Strategy, codes []string) {
-	years := []int{2022, 2023, 2024, 2025, 2026}
+	years := []int{2022, 2023, 2024, 2025}
 
 	for _, year := range years {
 		start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
