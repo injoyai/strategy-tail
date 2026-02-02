@@ -124,7 +124,7 @@ func (s StrategyMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *tr
 	}
 
 	//过滤涨停的
-	if dk.RiseRate() >= 0.95 {
+	if dk.RiseRate() >= 0.5 {
 		return nil
 	}
 

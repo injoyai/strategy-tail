@@ -68,8 +68,8 @@ func main() {
 		SellTime: "10:00:00",
 	}
 
-	screen(s, codes)
-	//backtest(s, codes)
+	//screen(s, codes)
+	backtest(s, codes)
 }
 
 func screen(s Strategy, codes []string) {
