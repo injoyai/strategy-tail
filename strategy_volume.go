@@ -2,20 +2,19 @@ package main
 
 import (
 	"sort"
-	"time"
 
 	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 
-var _ Strategy = volume{}
+var _ Strategy = StrategyVolume{}
 
-type volume struct {
+type StrategyVolume struct {
 	BuyTime  string
 	SellTime string
 }
 
-func (v volume) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
+func (v StrategyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *Buy {
 	if len(dks) < 20 {
 		return nil
 	}
@@ -25,7 +24,7 @@ func (v volume) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade 
 	yesterday := dks[n-2]
 
 	// TJ1：倍量
-	TJ1 := float64(today.Volume)/float64(yesterday.Volume) >= 2.9
+	TJ1 := float64(today.Volume)/float64(yesterday.Volume) >= 1.4 // 2.9
 
 	// TJ2：收盘上涨 + 6日新高 + 有上影
 	TJ2 := today.Close > yesterday.Close && //收盘上涨
@@ -44,9 +43,8 @@ func (v volume) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade 
 
 	dk := dks[len(dks)-1]
 
-	return &trade{
+	return &Buy{
 		Code:  code,
-		Buy:   true,
 		Time:  dk.Time,
 		Price: dk.Close,
 	}
@@ -65,25 +63,30 @@ func LLV(dks extend.Klines, i int) protocol.Price {
 	return ls[0].Low
 }
 
-func (v volume) Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade {
-	t := &trade{Code: code, Buy: false}
-	for _, k := range mk {
-		// 止损：亏损 > 10%
-		if buyPrice > 0 && (float64(k.Close)-float64(buyPrice))/float64(buyPrice) < -0.10 {
-			t.Time = k.Time
-			t.Price = k.Close
-			return t
-		}
+func (v StrategyVolume) Sell(code string, dks extend.Klines, mk protocol.Klines, buy Buy) *Sell {
+	dk := dks[len(dks)-1]
 
-		//到达卖点,按最低价-1分卖出,提升成交成功率
-		if k.Time.Format(time.TimeOnly) == v.SellTime {
-			t.Time = k.Time
-			t.Price = k.Low
-			return t
-		}
-		if t.Price == 0 || t.Price > k.Low {
-			t.Price = k.Low
-		}
+	t := &Sell{
+		Code:  code,
+		Time:  dk.Time,
+		Price: dk.Close,
 	}
+
+	//for _, k := range mk {
+	//	// 止损：亏损 > 10%
+	//	if buy.Price > 0 && (float64(k.Close)-float64(buy.Price))/float64(buy.Price) < -0.05 {
+	//		t.Time = k.Time
+	//		t.Price = k.Close
+	//		return t
+	//	}
+	//
+	//	////到达卖点,按最低价-1分卖出,提升成交成功率
+	//	//if k.Time.Format(time.TimeOnly) == v.SellTime {
+	//	//	t.Time = k.Time
+	//	//	t.Price = k.Low
+	//	//	return t
+	//	//}
+	//
+	//}
 	return t
 }

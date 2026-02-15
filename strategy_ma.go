@@ -7,7 +7,7 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-// 均线多头排列策略
+// StrategyMA 均线多头排列策略
 // 1. 5日线 > 10日线 > 20日线 > 30日线
 // 2. 相对于之前20个交易日没有太大的放量 (当日成交量 < 20日均量 * 2)
 type StrategyMA struct {
@@ -15,14 +15,29 @@ type StrategyMA struct {
 	SellTime string // "10:00:00"
 }
 
-func (s StrategyMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
+func (s StrategyMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *Buy {
 	// 需要至少31根K线来计算昨日MA30
-	if len(dks) < 31 {
+	if len(dks) < 60 {
 		return nil
 	}
 
 	// 获取最后一天的数据
 	dk := dks[len(dks)-1]
+
+	//剔除股价过高的
+	if dk.Close.Float64() >= 100 {
+		return nil
+	}
+
+	//剔除市值过低的
+	if float64(dk.FloatStock)*dk.Close.Float64() <= 50*1e8 {
+		return nil
+	}
+
+	//过滤涨幅过大的
+	if dk.RiseRate() >= 9.8 {
+		return nil
+	}
 
 	// 1. 计算当日均线
 	ma5 := MA(dks, 5)
@@ -60,151 +75,98 @@ func (s StrategyMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *tr
 
 	avgVol := AverageVolume(historyDks)
 	if len(historyDks) > 0 {
-		if float64(dk.Volume) > avgVol*2.0 {
+		if float64(dk.Volume) > avgVol*1.4 {
 			return nil
 		}
 	}
 
-	// 3.2 历史放巨量：近60个交易日到近20个交易日 (即 dks[len-60 : len-20]) 出现过放巨量
-	// 巨量定义：单日成交量 > 该区间平均成交量 * 3
-	if len(dks) >= 60 {
-		// 3.3 底部抬高：近20天的最低点 > 近60天的最低点
-		// 近20天最低点
-		last20 := dks[len(dks)-20:]
-		min20 := LowestLow(last20)
+	// 3.3 底部抬高：近20天的最低点 > 近60天的最低点
+	// 近20天最低点
+	if LowestLow(dks[len(dks)-20:]) <= LowestLow(dks[len(dks)-60:]) {
+		return nil
+	}
 
-		// 近60天最低点
-		last60 := dks[len(dks)-60:]
-		min60 := LowestLow(last60)
-
-		if min20 <= min60 {
-			return nil
+	// 取区间 [len-60, len-20]
+	historyRange := dks[len(dks)-60 : len(dks)-20]
+	avgVolRange := AverageVolume(historyRange)
+	hasHugeVol := false
+	for _, k := range historyRange {
+		if float64(k.Volume) > avgVolRange*2.8 {
+			hasHugeVol = true
+			break
 		}
-
-		// 取区间 [len-60, len-20]
-		hugeVolStart := len(dks) - 60
-		hugeVolEnd := len(dks) - 20
-		historyRange := dks[hugeVolStart:hugeVolEnd]
-
-		avgVolRange := AverageVolume(historyRange)
-		hasHugeVol := false
-		for _, k := range historyRange {
-			if float64(k.Volume) > avgVolRange*3.0 {
-				hasHugeVol = true
-				break
-			}
-		}
-		if !hasHugeVol {
-			return nil
-		}
-	} else {
-		// 数据不足60天，无法判断历史巨量，保守起见不买入
+	}
+	if !hasHugeVol {
 		return nil
 	}
 
 	// 满足条件，寻找买点
-	t := &trade{
+	b := &Buy{
 		Code:  code,
-		Buy:   true,
-		Time:  time.Time{},
-		Price: 0,
+		Time:  dk.Time,
+		Price: dk.Close,
 	}
 
-	// 计算昨日收盘价，用于判断涨停
-	prevClose := float64(dks[len(dks)-2].Close)
-
-	// 判断涨停幅度
-	limitRatio := 0.10
-	if len(code) >= 3 {
-		// 简单判断科创板和创业板
-		if code[:3] == "688" || code[:3] == "300" || (len(code) >= 5 && (code[:5] == "sh688" || code[:5] == "sz300")) {
-			limitRatio = 0.20
-		}
-		// 北交所 30% 暂时不考虑，数据中可能没有
-	}
-
-	//过滤涨停的
-	if dk.RiseRate() >= 0.5 {
-		return nil
-	}
-
-	if len(mks) == 0 {
-		return &trade{
-			Code:  code,
-			Buy:   true,
-			Time:  dk.Time,
-			Price: dk.Close,
-		}
-	}
-
-	// 在分钟线中寻找买入时间点
-	for _, v := range mks {
-		if v.Time.Format(time.TimeOnly) >= s.BuyTime {
-			// 检查是否涨停
-			// 如果当前价格接近涨停价（涨幅超过 LimitRatio - 0.2%），则不买入
-			currPrice := float64(v.Close)
-			increaseRate := (currPrice - prevClose) / prevClose
-			if increaseRate >= (limitRatio - 0.002) {
-				return nil
-			}
-
-			t.Time = v.Time
-			t.Price = v.High
-			return t
-		}
-	}
-
-	return nil
+	return b
 }
 
-func (s StrategyMA) Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade {
-	// 1. 检查止损 (优先)
-	if buyPrice > 0 {
-		for _, v := range mk {
-			// 如果亏损超过 10%，立马卖出
-			if (v.Close-buyPrice).Float64()/buyPrice.Float64() < -0.20 {
-				//return &trade{
-				//	Code:  code,
-				//	Buy:   false,
-				//	Time:  v.Time,
-				//	Price: v.Close,
-				//}
-			}
-		}
-	}
+func (s StrategyMA) Sell(code string, dks extend.Klines, mk protocol.Klines, buy Buy) *Sell {
 
 	// 获取当日K线
 	if len(dks) < 21 {
 		return nil
 	}
+
 	dk := dks[len(dks)-1]
+	if dk.Time.Sub(buy.Time).Hours() > 24*1 {
+		return &Sell{
+			Code:  code,
+			Time:  dk.Time,
+			Price: dk.Open,
+		}
+	}
+
+	// 1. 检查止损 (优先)
+	//for _, v := range mk {
+	//	// 如果亏损超过 10%，立马卖出
+	//	if (v.Close-buy.Price).Float64()/buy.Price.Float64() < -0.20 {
+	//		//return &trade{
+	//		//	Code:  code,
+	//		//	Buy:   false,
+	//		//	Time:  v.Time,
+	//		//	Price: v.Close,
+	//		//}
+	//	}
+	//}
 
 	// 计算过去20日（不包含当日）均量
 	historyDks := dks[len(dks)-21 : len(dks)-1]
 	avgVol := AverageVolume(historyDks)
 
 	// 判断是否放量：当日成交量 > 2.5倍均量
-	isHugeVol := float64(dk.Volume) > avgVol*2.5
+	isHugeVol := float64(dk.Volume) > avgVol*1.6
 
 	// 如果放量，则卖出
 	if isHugeVol {
-		t := &trade{Code: code, Buy: false}
+		t := &Sell{
+			Code:  code,
+			Time:  dk.Time,
+			Price: dk.Close,
+		}
+
 		// 卖出时间：如果是尾盘战法，通常在尾盘确认放量后卖出，或者收盘卖出
 		// 这里简化为：如果在 14:40 之后
 		// 或者直接取收盘价
 
 		// 寻找合适的卖出点：如果全天放量，可能在尾盘卖出比较稳妥
 		for _, v := range mk {
-			if v.Time.Format(time.TimeOnly) >= "14:50:00" {
+			if v.Time.Format(time.TimeOnly) >= s.SellTime {
 				t.Time = v.Time
 				t.Price = v.Close // 用收盘附近的Close
 				return t
 			}
 		}
-		// 如果没找到尾盘时间（数据缺失等），就用最后一条
-		last := mk[len(mk)-1]
-		t.Time = last.Time
-		t.Price = last.Close
+
 		return t
 	}
 

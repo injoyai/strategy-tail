@@ -7,12 +7,6 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-type Strategy interface {
-	// Buy 传入 日线[上市,日期A] 分钟线[日期A]
-	Buy(code string, dks extend.Klines, mk protocol.Klines) *trade
-	Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade
-}
-
 // 策略1
 type s1 struct {
 	BuyTime        string         //"14:40:00"
@@ -21,7 +15,7 @@ type s1 struct {
 	MaxMarketValue protocol.Price //最大市值
 }
 
-func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
+func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *Buy {
 	if len(dks) == 0 || len(mks) == 0 {
 		return nil
 	}
@@ -44,9 +38,8 @@ func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
 		return nil
 	}
 
-	t := &trade{
+	t := &Buy{
 		Code:  code,
-		Buy:   true,
 		Time:  time.Time{},
 		Price: 0,
 	}
@@ -74,11 +67,11 @@ func (s s1) Buy(code string, dks extend.Klines, mks protocol.Klines) *trade {
 	return t
 }
 
-func (s s1) Sell(code string, dks extend.Klines, mk protocol.Klines, buyPrice protocol.Price) *trade {
-	t := &trade{Code: code, Buy: false}
+func (s s1) Sell(code string, dks extend.Klines, mk protocol.Klines, buy Buy) *Sell {
+	t := &Sell{Code: code}
 	for _, v := range mk {
 		// 止损：亏损 > 10%
-		if buyPrice > 0 && (float64(v.Close)-float64(buyPrice))/float64(buyPrice) < -0.10 {
+		if buy.Price > 0 && (float64(v.Close)-float64(buy.Price))/float64(buy.Price) < -0.10 {
 			t.Time = v.Time
 			t.Price = v.Close
 			return t

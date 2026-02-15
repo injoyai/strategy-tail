@@ -63,35 +63,37 @@ func main() {
 		}
 	}
 
-	s := StrategyMA{
+	s := StrategyVolume{
 		BuyTime:  "14:40:00",
 		SellTime: "10:00:00",
 	}
 
 	//screen(s, codes)
-	backtest(s, codes)
+
+	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
+	years = []int{2026}
+	backtest(s, codes, years)
 }
 
 func screen(s Strategy, codes []string) {
 
-	err := Pull.Update(Manage)
-	logs.PanicErr(err)
+	var err error
+	//err := Pull.Update(Manage)
+	//logs.PanicErr(err)
 
-	end := time.Now()
+	now := time.Now().Add(-time.Hour * 24 * 7)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 15, 1, 0, 0, time.Local)
 
 	//end = time.Date(2026, 1, 15, 15, 0, 0, 0, time.Local)
-	//codes = []string{"sz002077"}
+	//codes = []string{"sz002830"}
 
-	logs.Debug("选股时间:", end.Format(time.DateOnly))
-	bs, err := Screen(s, codes, end.AddDate(0, -4, 0), end)
+	fmt.Println("[时间]", end.Format(time.DateOnly))
+	err = Screen(s, codes, end.AddDate(0, -4, 0), end)
 	logs.PanicErr(err)
-	for _, v := range bs {
-		logs.Info(v.Code, v.Time.Format(time.DateTime), v.Price.Float64())
-	}
+
 }
 
-func backtest(s Strategy, codes []string) {
-	years := []int{2022, 2023, 2024, 2025}
+func backtest(s Strategy, codes []string, years []int) {
 
 	for _, year := range years {
 		start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
@@ -123,7 +125,8 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]Trade, error)
 				b.Flush()
 				return
 			}
-			mks, err := getMinKlines(code, start, end)
+			var mks protocol.Klines
+			mks, err = getMinKlines(code, start, end)
 			if err != nil {
 				b.Logf("[错误] %s", err)
 				b.Flush()
@@ -140,9 +143,7 @@ func Backtest(s Strategy, codes []string, start, end time.Time) ([]Trade, error)
 	return result, nil
 }
 
-func Screen(s Strategy, codes []string, start, end time.Time) ([]*Buy, error) {
-	result := []*Buy(nil)
-	mu := sync.Mutex{}
+func Screen(s Strategy, codes []string, start, end time.Time) error {
 	b := bar.NewCoroutine(
 		len(codes),
 		10,
@@ -157,24 +158,23 @@ func Screen(s Strategy, codes []string, start, end time.Time) ([]*Buy, error) {
 				b.Flush()
 				return
 			}
-			mks, err := getMinKlines(code, start, end)
-			if err != nil {
-				b.Logf("[错误] %s", err)
-				b.Flush()
-				return
-			}
-			buy := DoStrategyBuy(s, code, dks, mks)
+			//mks, err := getMinKlines(code, start, end)
+			//if err != nil {
+			//	b.Logf("[错误] %s", err)
+			//	b.Flush()
+			//	return
+			//}
+			buy := DoStrategyBuy(s, code, dks, nil)
 			if buy == nil {
 				return
 			}
-			mu.Lock()
-			defer mu.Unlock()
-			result = append(result, buy)
+			b.Logf("[选股] %s %s %f", buy.Code, buy.Time.Format(time.DateTime), buy.Price.Float64())
+			b.Flush()
 		})
 
 	}
 	b.Wait()
-	return result, nil
+	return nil
 }
 
 /*
@@ -203,14 +203,14 @@ func DoStrategy(s Strategy, code string, dks extend.Klines, mks protocol.Klines)
 	}
 	ts := []Trade(nil)
 
-	var currentBuy *trade
+	var currentBuy *Buy
 	var buyIndex int
 
 	for i := 0; i < len(dks); i++ {
 		dk := dks[i]
 		mk, ok := mmks[dk.Time.Format(time.DateOnly)]
 		if !ok {
-			continue
+			//continue
 		}
 
 		if currentBuy == nil {
@@ -224,7 +224,7 @@ func DoStrategy(s Strategy, code string, dks extend.Klines, mks protocol.Klines)
 			// 持仓中，检查卖出条件
 			// 必须是 T+1 之后 (i > buyIndex)
 			if i > buyIndex {
-				sell := s.Sell(code, dks[:i+1], mk, currentBuy.Price)
+				sell := s.Sell(code, dks[:i+1], mk, *currentBuy)
 				// 这里我们可以传入持仓天数，或者让 Sell 方法自己判断
 				// 为了简单，我们假定 Sell 方法决定是否卖出
 
