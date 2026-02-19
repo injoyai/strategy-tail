@@ -71,7 +71,7 @@ func main() {
 	//screen(s, codes)
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
-	years = []int{2026}
+	//years = []int{2026}
 	backtest(s, codes, years)
 }
 
@@ -96,7 +96,7 @@ func screen(s Strategy, codes []string) {
 func backtest(s Strategy, codes []string, years []int) {
 
 	for _, year := range years {
-		start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+		start := time.Date(year-1, 11, 1, 0, 0, 0, 0, time.Local)
 		end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
 		ls, err := Backtest(s, codes, start, end)
@@ -204,46 +204,47 @@ func DoStrategy(s Strategy, code string, dks extend.Klines, mks protocol.Klines)
 	ts := []Trade(nil)
 
 	var currentBuy *Buy
-	var buyIndex int
+	//var buyIndex int
 
 	for i := 0; i < len(dks); i++ {
-		dk := dks[i]
-		mk, ok := mmks[dk.Time.Format(time.DateOnly)]
-		if !ok {
-			//continue
-		}
+		//dk := dks[i]
+		//mk, ok := mmks[dk.Time.Format(time.DateOnly)]
+		//if !ok {
+		//continue
+		//}
+		var mk protocol.Klines
 
 		if currentBuy == nil {
 			// 尝试买入
 			buy := s.Buy(code, dks[:i+1], mk)
 			if buy != nil {
 				currentBuy = buy
-				buyIndex = i
+				//buyIndex = i
 			}
 		} else {
 			// 持仓中，检查卖出条件
 			// 必须是 T+1 之后 (i > buyIndex)
-			if i > buyIndex {
-				sell := s.Sell(code, dks[:i+1], mk, *currentBuy)
-				// 这里我们可以传入持仓天数，或者让 Sell 方法自己判断
-				// 为了简单，我们假定 Sell 方法决定是否卖出
+			//if i > buyIndex {
+			sell := s.Sell(code, dks[:i+1], mk, *currentBuy)
+			// 这里我们可以传入持仓天数，或者让 Sell 方法自己判断
+			// 为了简单，我们假定 Sell 方法决定是否卖出
 
-				// 强制最大持仓天数兜底，例如 20 天，防止无限持仓 (可选，用户没说先不加，完全交给策略)
-				// if i - buyIndex > 20 { ... }
+			// 强制最大持仓天数兜底，例如 20 天，防止无限持仓 (可选，用户没说先不加，完全交给策略)
+			// if i - buyIndex > 20 { ... }
 
-				if sell != nil {
-					tr := Trade{
-						Code:      code,
-						BuyTime:   currentBuy.Time,
-						SellTime:  sell.Time,
-						BuyPrice:  currentBuy.Price + protocol.Yuan(0.01),
-						SellPrice: sell.Price - protocol.Yuan(0.01),
-					}
-					ts = append(ts, tr)
-					currentBuy = nil
-					buyIndex = 0
+			if sell != nil {
+				tr := Trade{
+					Code:      code,
+					BuyTime:   currentBuy.Time,
+					SellTime:  sell.Time,
+					BuyPrice:  currentBuy.Price + protocol.Yuan(0.01),
+					SellPrice: sell.Price - protocol.Yuan(0.01),
 				}
+				ts = append(ts, tr)
+				currentBuy = nil
+				//buyIndex = 0
 			}
+			//}
 		}
 	}
 	return ts
