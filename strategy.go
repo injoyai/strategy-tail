@@ -8,13 +8,19 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-type Strategy interface {
-	// Buy 传入 日线[上市,日期A] 分钟线[日期A]
+type IStrategy interface {
 	Buy(code string, dks extend.Klines, mk protocol.Klines) *Buy
 	Sell(code string, dks extend.Klines, mk protocol.Klines, buy Buy) *Sell
 }
 
-type Price = protocol.Price
+type Strategy struct {
+	Buyer
+	Seller
+}
+
+func (this Strategy) String() string {
+	return this.Buyer.Name() + "买入," + this.Seller.Name() + "卖出"
+}
 
 type Trade struct {
 	Code      string
@@ -22,6 +28,13 @@ type Trade struct {
 	SellTime  time.Time
 	BuyPrice  protocol.Price
 	SellPrice protocol.Price
+}
+
+type Price = protocol.Price
+
+type Buyer interface {
+	Name() string
+	Buy(code string, dks extend.Klines, mk protocol.Klines) *Buy
 }
 
 type Buy struct {
@@ -32,14 +45,4 @@ type Buy struct {
 
 func (this *Buy) String() string {
 	return fmt.Sprintf("代码: %s  买入价: %.2f", this.Code, this.Price.Float64())
-}
-
-type Sell struct {
-	Code  string
-	Time  time.Time
-	Price protocol.Price
-}
-
-func (this *Sell) String() string {
-	return fmt.Sprintf("代码: %s  卖出价: %.2f", this.Code, this.Price.Float64())
 }

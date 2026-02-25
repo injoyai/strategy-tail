@@ -7,14 +7,15 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-var _ Strategy = StrategyVolume{}
+var _ Buyer = BuyVolume{}
 
-type StrategyVolume struct {
-	BuyTime  string
-	SellTime string
+type BuyVolume struct{}
+
+func (v BuyVolume) Name() string {
+	return "倍量"
 }
 
-func (v StrategyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *Buy {
+func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *Buy {
 	if len(dks) < 20 {
 		return nil
 	}
@@ -56,18 +57,18 @@ func (v StrategyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines)
 		}
 	}
 
-	TJ1 = TJ1 && today.High == HHV(dks, 6)
+	TJ1 = TJ1 && today.High == dks.HHV(6)
 
 	// TJ2：收盘上涨 + 6日新高 + 有上影
 	TJ2 := today.Close > yesterday.Close && //收盘上涨
 		today.High > today.Close && //有上影
-		today.High == HHV(dks, 6) //6日新高
+		today.High == dks.HHV(6) //6日新高
 
 	// TJ3：10日区间不弱（低点 >= 高点 * 0.8）
-	TJ3 := LLV(dks, 10).Float64() >= HHV(dks, 10).Float64()*0.8
+	TJ3 := dks.LLV(10).Float64() >= dks.HHV(10).Float64()*0.8
 
 	// TJ4：短期低点抬高
-	TJ4 := LLV(dks, 5) > LLV(dks, 20)
+	TJ4 := dks.LLV(5) > dks.LLV(20)
 
 	if !TJ1 || !TJ2 || !TJ3 || !TJ4 {
 		return nil
@@ -93,32 +94,4 @@ func LLV(dks extend.Klines, i int) protocol.Price {
 	ls := dks[len(dks)-i:]
 	sort.Slice(ls, func(i, j int) bool { return ls[i].Low < ls[j].Low })
 	return ls[0].Low
-}
-
-func (v StrategyVolume) Sell(code string, dks extend.Klines, mk protocol.Klines, buy Buy) *Sell {
-	dk := dks[len(dks)-1]
-
-	t := &Sell{
-		Code:  code,
-		Time:  dk.Time,
-		Price: dk.Close,
-	}
-
-	//for _, k := range mk {
-	//	// 止损：亏损 > 10%
-	//	if buy.Price > 0 && (float64(k.Close)-float64(buy.Price))/float64(buy.Price) < -0.05 {
-	//		t.Time = k.Time
-	//		t.Price = k.Close
-	//		return t
-	//	}
-	//
-	//	////到达卖点,按最低价-1分卖出,提升成交成功率
-	//	//if k.Time.Format(time.TimeOnly) == v.SellTime {
-	//	//	t.Time = k.Time
-	//	//	t.Price = k.Low
-	//	//	return t
-	//	//}
-	//
-	//}
-	return t
 }

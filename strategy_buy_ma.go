@@ -82,7 +82,7 @@ func (s StrategyMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *Bu
 
 	// 3.3 底部抬高：近20天的最低点 > 近60天的最低点
 	// 近20天最低点
-	if LowestLow(dks[len(dks)-20:]) <= LowestLow(dks[len(dks)-60:]) {
+	if dks.LLV(20) <= dks.LLV(60) {
 		return nil
 	}
 
