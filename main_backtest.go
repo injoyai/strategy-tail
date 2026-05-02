@@ -7,12 +7,13 @@ import (
 
 	"github.com/injoyai/bar"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 
 type Backtest struct {
-	IStrategy
+	core.IStrategy
 }
 
 func (this Backtest) Run(codes []string, years []int) {
@@ -30,8 +31,8 @@ func (this Backtest) Run(codes []string, years []int) {
 	}
 }
 
-func (this Backtest) _backtest(codes []string, start, end time.Time) ([]Trade, error) {
-	result := []Trade(nil)
+func (this Backtest) _backtest(codes []string, start, end time.Time) ([]core.Trade, error) {
+	result := []core.Trade(nil)
 	mu := sync.Mutex{}
 	b := bar.NewCoroutine(
 		len(codes),
@@ -66,15 +67,15 @@ func (this Backtest) _backtest(codes []string, start, end time.Time) ([]Trade, e
 	return result, nil
 }
 
-func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []Trade {
+func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []core.Trade {
 	mmks := map[string]protocol.Klines{}
 	for _, mk := range mks {
 		key := mk.Time.Format(time.DateOnly)
 		mmks[key] = append(mmks[key], mk)
 	}
-	ts := []Trade(nil)
+	ts := []core.Trade(nil)
 
-	var currentBuy *Buy
+	var currentBuy *core.Buy
 
 	for i := 0; i < len(dks); i++ {
 		dk := dks[i]
@@ -91,7 +92,7 @@ func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []T
 		} else {
 			sell := this.Sell(code, dks[:i+1], mk, *currentBuy)
 			if sell != nil {
-				tr := Trade{
+				tr := core.Trade{
 					Code:      code,
 					BuyTime:   currentBuy.Time,
 					SellTime:  sell.Time,

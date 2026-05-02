@@ -2,9 +2,10 @@ package main
 
 import (
 	"path/filepath"
-	"strings"
 
 	"github.com/injoyai/logs"
+	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/strategies"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/lib/xorms"
@@ -19,6 +20,7 @@ var (
 )
 
 func init() {
+	logs.SetFormatter(logs.TimeFormatter)
 
 	db, err := xorms.NewSqlite(filepath.Join(DatabaseDir, "update.db"))
 	logs.PanicErr(err)
@@ -37,12 +39,12 @@ func init() {
 
 	key := "pull"
 	if updated, err := update.Updated(key); err != nil || !updated {
-		//if Manage.Workday.TodayIs() {
-		//	err = Pull.Update(Manage)
-		//	logs.PanicErr(err)
-		//	err = update.Update(key)
-		//	logs.PanicErr(err)
-		//}
+		if Manage.Workday.TodayIs() {
+			err = Pull.Update(Manage)
+			logs.PanicErr(err)
+			err = update.Update(key)
+			logs.PanicErr(err)
+		}
 	}
 
 }
@@ -51,19 +53,25 @@ func main() {
 
 	codes := []string(nil)
 	for _, v := range Manage.Codes.GetStockCodes() {
-		if strings.HasPrefix(v, "sh60") || strings.HasPrefix(v, "sz00") {
-			codes = append(codes, v)
-		}
-	}
-
-	s := Backtest{
-		IStrategy: Strategy{
-			Buyer:  BuyTailMorning{},
-			Seller: SellTomorrow("10:00:00"),
-		},
+		codes = append(codes, v)
 	}
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
-	years = []int{2023}
-	s.Run(codes, years)
+
+	Backtest{
+		IStrategy: core.Strategy{
+			Buyer:  strategies.BuyRSI{},
+			Seller: strategies.SellRSI{},
+		},
+	}.Run(codes, years)
+
+	//core.Future{
+	//	Buyer:        strategies.BuyRSI{},
+	//	Days:         []int{0, 1, 2, 3, 5, 10, 15, 20},
+	//	Years:        years,
+	//	Codes:        codes,
+	//	GetDayKlines: getDayKlines,
+	//	GetMinKlines: getMinKlines,
+	//}.Run()
+
 }
