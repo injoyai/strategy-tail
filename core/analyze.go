@@ -1,4 +1,4 @@
-package main
+package core
 
 import (
 	"fmt"
@@ -10,10 +10,10 @@ import (
 	"github.com/injoyai/goutil/g"
 	"github.com/injoyai/goutil/oss"
 	"github.com/injoyai/goutil/other/csv"
-	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/tdx/extend"
 )
 
-func Analyze(allTrades []core.Trade) {
+func Analyze(allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
 
 	// 2. 按时间排序，为了计算资金曲线和回撤
 	sort.Slice(allTrades, func(i, j int) bool {
@@ -108,13 +108,13 @@ func Analyze(allTrades []core.Trade) {
 		counts := make([]int, len(horizons))
 
 		// 按代码分组，避免重复拉取K线
-		codeTrades := map[string][]core.Trade{}
+		codeTrades := map[string][]Trade{}
 		for _, t := range allTrades {
 			codeTrades[t.Code] = append(codeTrades[t.Code], t)
 		}
 
 		for code, trades := range codeTrades {
-			dks, err := Pull.DayKlines(code)
+			dks, err := getDayKlines(code)
 			if err != nil || len(dks) == 0 {
 				continue
 			}
@@ -184,9 +184,9 @@ func Analyze(allTrades []core.Trade) {
 	}
 }
 
-func calculateRequiredCapital(allTrades []core.Trade) float64 {
+func calculateRequiredCapital(allTrades []Trade) float64 {
 
-	m := map[string][]core.Trade{}
+	m := map[string][]Trade{}
 
 	for _, v := range allTrades {
 		m[v.BuyTime.Format(time.DateOnly)] = append(m[v.BuyTime.Format(time.DateOnly)], v)

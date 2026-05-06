@@ -37,12 +37,11 @@ func init() {
 		Goroutines: 10,
 	})
 
-	key := "pull"
-	if updated, err := update.Updated(key); err != nil || !updated {
+	if updated, err := update.Updated("pull"); err != nil || !updated {
 		if Manage.Workday.TodayIs() {
 			err = Pull.Update(Manage)
 			logs.PanicErr(err)
-			err = update.Update(key)
+			err = update.Update("pull")
 			logs.PanicErr(err)
 		}
 	}
@@ -56,14 +55,19 @@ func main() {
 		codes = append(codes, v)
 	}
 
-	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025}
+	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
+	//years = []int{2024}
 
-	Backtest{
-		IStrategy: core.Strategy{
-			Buyer:  strategies.BuyRSI{},
-			Seller: strategies.SellRSI{},
+	core.Backtest{
+		Strategy: core.Strategy{
+			Buyer:  strategies.BuyRSI{Threshold: 15},
+			Seller: strategies.SellRSI{Threshold: 60},
 		},
-	}.Run(codes, years)
+		Codes:        codes,
+		Years:        years,
+		GetDayKlines: getDayKlines,
+		GetMinKlines: getMinKlines,
+	}.Run()
 
 	//core.Future{
 	//	Buyer:        strategies.BuyRSI{},
