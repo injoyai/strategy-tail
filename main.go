@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/core"
@@ -52,7 +53,9 @@ func main() {
 
 	codes := []string(nil)
 	for _, v := range Manage.Codes.GetStockCodes() {
-		codes = append(codes, v)
+		if strings.HasPrefix(v, "sh60") || strings.HasPrefix(v, "sz00") {
+			codes = append(codes, v)
+		}
 	}
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
@@ -60,8 +63,8 @@ func main() {
 
 	core.Backtest{
 		Strategy: core.Strategy{
-			Buyer:  strategies.BuyRSI{Threshold: 15},
-			Seller: strategies.SellRSI{Threshold: 60},
+			Buyer:  strategies.BuyMACD{Lookback: 20},
+			Seller: strategies.SellMACD{Lookback: 20},
 		},
 		Codes:        codes,
 		Years:        years,
