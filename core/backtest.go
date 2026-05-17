@@ -97,7 +97,7 @@ func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []T
 				currentBuy = buy
 			}
 		} else {
-			sell := this.Sell(code, dks[:i], dks[i+1:], minKlines.Get, *currentBuy)
+			sell := this.Sell(code, dks[:i+1], dks[i+1:], minKlines.Get, *currentBuy)
 			if sell != nil {
 				tr := Trade{
 					Code:      code,

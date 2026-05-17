@@ -96,7 +96,8 @@ func (s SellMACD) Sell(code string, history, future extend.Klines, getMinklines 
 		s.Lookback = 20
 	}
 
-	for i := 1; i < len(future); i++ {
+	for i := 0; i < len(future); i++ {
+
 		series := append(history, future[:i+1]...)
 		hist := macdHistogram(series, s.Fast, s.Slow, s.Signal)
 		if len(hist) != len(series) {

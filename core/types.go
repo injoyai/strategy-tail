@@ -9,8 +9,8 @@ import (
 )
 
 type Strategy struct {
-	Buyer
-	Seller
+	Buyer  // []Buyer
+	Seller //[]Seller
 }
 
 func (s Strategy) String() string {
