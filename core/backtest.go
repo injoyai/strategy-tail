@@ -17,6 +17,10 @@ type Backtest struct {
 	Years        []int                                                            //回测年
 	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)   //获取日线数据函数
 	GetMinKlines func(code string, start, end time.Time) (protocol.Klines, error) //获取分钟数据函数
+
+	Slippage       protocol.Price //滑点(单边,按每股绝对价格加减)
+	CommissionRate float64        //手续费率(买/卖都收,例如 0.0003)
+	StampDutyRate  float64        //印花税率(仅卖出,例如 0.001)
 }
 
 func (this Backtest) Run() {
@@ -99,12 +103,23 @@ func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []T
 		} else {
 			sell := this.Sell(code, dks[:i+1], dks[i+1:], minKlines.Get, *currentBuy)
 			if sell != nil {
+				slippage := this.Slippage
+				if slippage == 0 {
+					slippage = protocol.Yuan(0.01)
+				}
+
+				buyExecPrice := currentBuy.Price + slippage
+				sellExecPrice := sell.Price - slippage
+
+				buyFee := protocol.Yuan(buyExecPrice.Float64() * this.CommissionRate)
+				sellFee := protocol.Yuan(sellExecPrice.Float64() * (this.CommissionRate + this.StampDutyRate))
+
 				tr := Trade{
 					Code:      code,
 					BuyTime:   currentBuy.Time,
 					SellTime:  sell.Time,
-					BuyPrice:  currentBuy.Price + protocol.Yuan(0.01),
-					SellPrice: sell.Price - protocol.Yuan(0.01),
+					BuyPrice:  buyExecPrice + buyFee,
+					SellPrice: sellExecPrice - sellFee,
 				}
 				ts = append(ts, tr)
 				currentBuy = nil

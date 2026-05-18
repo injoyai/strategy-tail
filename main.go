@@ -64,8 +64,14 @@ func main() {
 				continue
 			}
 
+			last := ks[len(ks)-1]
+
+			if last.Close.Float64() > 120 {
+				continue
+			}
+
 			//计算市值
-			if ks[len(ks)-1].TotalValue().Float64()/1e8 < 600 {
+			if x := last.TotalValue().Float64() / 1e8; x > 600 || x < 200 {
 				continue
 			}
 
@@ -79,7 +85,7 @@ func main() {
 	core.Backtest{
 		Strategy: core.Strategy{
 			Buyer:  strategies.BuyMACD{Lookback: 20},
-			Seller: strategies.SellMACD{Lookback: 20},
+			Seller: strategies.SellMACD{Lookback: 10},
 		},
 		Codes:        codes,
 		Years:        years,
