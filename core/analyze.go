@@ -101,68 +101,6 @@ func Analyze(allTrades []Trade, getDayKlines func(code string) (extend.Klines, e
 		fmt.Printf("年化收益率: \t\t%.2f%%\n", totalProfit*100/requiredCapital*100)
 	}
 
-	// 统计买入后多个持有周期的平均收益情况（按日线收盘价计算）
-	if totalTrades > 0 {
-		horizons := []int{1, 2, 3, 5, 10, 15, 20, 30, 45, 60}
-		sums := make([]float64, len(horizons))
-		counts := make([]int, len(horizons))
-
-		// 按代码分组，避免重复拉取K线
-		codeTrades := map[string][]Trade{}
-		for _, t := range allTrades {
-			codeTrades[t.Code] = append(codeTrades[t.Code], t)
-		}
-
-		for code, trades := range codeTrades {
-			dks, err := getDayKlines(code)
-			if err != nil || len(dks) == 0 {
-				continue
-			}
-
-			// 建立日期到索引的映射
-			dateIndex := make(map[string]int, len(dks))
-			for i, k := range dks {
-				dateIndex[k.Time.Format(time.DateOnly)] = i
-			}
-
-			for _, t := range trades {
-				buyDate := t.BuyTime.Format(time.DateOnly)
-				idx, ok := dateIndex[buyDate]
-				if !ok || idx >= len(dks) {
-					continue
-				}
-				buyClose := dks[idx].Close.Float64()
-				if buyClose <= 0 {
-					continue
-				}
-
-				for hi, h := range horizons {
-					targetIdx := idx + h
-					if targetIdx >= len(dks) {
-						continue
-					}
-					sellClose := dks[targetIdx].Close.Float64()
-					r := (sellClose - buyClose) / buyClose
-					sums[hi] += r
-					counts[hi]++
-				}
-			}
-		}
-
-		fmt.Printf("------------------------------------------------------\n")
-		fmt.Printf("买入后持有1/2/3/5/10/15/20/30/45/60个交易日平均收益:\n")
-		for i, h := range horizons {
-			if counts[i] == 0 {
-				fmt.Printf("  持有%2d日: 数据不足\n", h)
-				continue
-			}
-			avg := sums[i] / float64(counts[i]) * 100
-			fmt.Printf("  持有%2d日: 平均收益 %.2f%% (样本数 %d)\n", h, avg, counts[i])
-		}
-	}
-
-	fmt.Printf("======================================================\n")
-
 	data := [][]any{
 		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格", "盈亏", "持有天数"},
 	}
