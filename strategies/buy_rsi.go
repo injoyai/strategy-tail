@@ -6,6 +6,11 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
+// BuyRSI 是 RSI 超卖买入策略。
+// Period 表示 RSI 计算周期，默认 14。
+// Threshold 表示买入阈值，默认 20。
+// 当最新一个交易日 RSI 小于 Threshold 时返回买入信号。
+// 买入价使用最新交易日收盘价。
 type BuyRSI struct {
 	Period    int
 	Threshold float64
@@ -41,6 +46,9 @@ func (s BuyRSI) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.B
 	}
 }
 
+// calcRSI 根据日线收盘价计算最近 period 个交易日的 RSI。
+// 这里使用简单平均涨跌幅计算，返回值范围通常为 0 到 100。
+// 返回 50 表示最近周期内没有明显涨跌变化。
 func calcRSI(dks extend.Klines, period int) float64 {
 	if period <= 0 || len(dks) < period+1 {
 		return 0

@@ -71,7 +71,7 @@ func main() {
 			}
 
 			//计算市值
-			if x := last.TotalValue().Float64() / 1e8; x > 600 || x < 200 {
+			if x := last.FloatValue().Float64() / 1e8; x < 1000 {
 				continue
 			}
 
@@ -80,13 +80,16 @@ func main() {
 	}
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
-	//years = []int{2026}
+	years = []int{2026}
 
 	core.Backtest{
-		Strategy: core.Strategy{
-			Buyer:  strategies.BuyMACD{Lookback: 20},
-			Seller: strategies.SellMACD{Lookback: 10},
-		},
+		BuyAll: core.BuyAll{Buyers: []core.Buyer{
+			strategies.BuyMACD{Lookback: 20},
+			strategies.BuyMACDNegative{Days: 5},
+		}},
+		SellAny: core.SellAny{Sellers: []core.Seller{
+			strategies.SellMACD{Lookback: 10},
+		}},
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: getDayKlines,

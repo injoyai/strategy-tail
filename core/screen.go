@@ -35,9 +35,16 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 				p.Flush()
 				return
 			}
-			buy := s.Buyer.Buy(code, dks, nil)
-			if buy != nil {
-				result = append(result, buy)
+			if len(dks) == 0 {
+				return
+			}
+			today := dks[len(dks)-1]
+			if s.Buyer.Buy(code, dks) {
+				result = append(result, &Buy{
+					Code:  code,
+					Time:  today.Time,
+					Price: today.Close,
+				})
 			}
 		})
 	}

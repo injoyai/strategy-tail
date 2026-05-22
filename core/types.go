@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/injoyai/tdx/extend"
@@ -9,12 +10,12 @@ import (
 )
 
 type Strategy struct {
-	Buyer  // []Buyer
-	Seller //[]Seller
+	BuyAll
+	SellAny
 }
 
 func (s Strategy) String() string {
-	return s.Buyer.Name() + "," + s.Seller.Name()
+	return s.BuyAll.Name() + "," + s.SellAny.Name()
 }
 
 type Trade struct {
@@ -32,7 +33,7 @@ type (
 
 type Buyer interface {
 	Name() string
-	Buy(code string, historyDayklines extend.Klines, todayMinklines protocol.Klines) *Buy
+	Buy(code string, dks extend.Klines) bool
 }
 
 type Buy struct {
@@ -47,7 +48,7 @@ func (b *Buy) String() string {
 
 type Seller interface {
 	Name() string
-	Sell(code string, history, future extend.Klines, getMinklines func(after int) Klines, buy Buy) *Sell
+	Sell(code string, dks extend.Klines, buy Buy) bool
 }
 
 type Sell struct {
@@ -58,6 +59,68 @@ type Sell struct {
 
 func (s *Sell) String() string {
 	return fmt.Sprintf("代码: %s  卖出价: %.2f", s.Code, s.Price.Float64())
+}
+
+type BuyAll struct {
+	Buyers []Buyer
+}
+
+func (b BuyAll) Name() string {
+	names := make([]string, 0, len(b.Buyers))
+	for _, v := range b.Buyers {
+		if v == nil {
+			continue
+		}
+		names = append(names, v.Name())
+	}
+	if len(names) == 0 {
+		return "BuyAll"
+	}
+	return strings.Join(names, "&")
+}
+
+func (b BuyAll) Buy(code string, dks extend.Klines) bool {
+	buy := false
+	for _, v := range b.Buyers {
+		if v == nil {
+			continue
+		}
+		buy = true
+		if !v.Buy(code, dks) {
+			return false
+		}
+	}
+	return buy
+}
+
+type SellAny struct {
+	Sellers []Seller
+}
+
+func (s SellAny) Name() string {
+	names := make([]string, 0, len(s.Sellers))
+	for _, v := range s.Sellers {
+		if v == nil {
+			continue
+		}
+		names = append(names, v.Name())
+	}
+	if len(names) == 0 {
+		return "SellAny"
+	}
+	return strings.Join(names, "|")
+}
+
+func (s SellAny) Sell(code string, dks extend.Klines, buy Buy) bool {
+	for _, v := range s.Sellers {
+		if v == nil {
+			continue
+		}
+		if v.Sell(code, dks, buy) {
+			return true
+		}
+	}
+	return false
 }
 
 /*

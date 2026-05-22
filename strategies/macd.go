@@ -3,9 +3,15 @@ package strategies
 import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/tdx/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
+// BuyMACD 是 MACD 低位拐头买入策略。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// Lookback 表示向前比较的窗口长度，默认 20。
+// MinDiff 表示今天 MACD 柱子必须比昨天至少大多少，默认 0。
+// 触发条件：昨天 MACD 柱子是近期 Lookback 窗口内最低值，并且今天 MACD 柱子比昨天变大。
 type BuyMACD struct {
 	Fast     int
 	Slow     int
@@ -15,10 +21,10 @@ type BuyMACD struct {
 }
 
 func (s BuyMACD) Name() string {
-	return "MACD买入"
+	return "MACD"
 }
 
-func (s BuyMACD) Buy(code string, dks extend.Klines, mk protocol.Klines) *core.Buy {
+func (s BuyMACD) Buy(code string, dks extend.Klines) bool {
 	if s.Fast == 0 {
 		s.Fast = 12
 	}
@@ -34,18 +40,18 @@ func (s BuyMACD) Buy(code string, dks extend.Klines, mk protocol.Klines) *core.B
 
 	n := len(dks)
 	if n < 2 || n < s.Slow+s.Signal {
-		return nil
+		return false
 	}
 
 	hist := macdHistogram(dks, s.Fast, s.Slow, s.Signal)
 	if len(hist) != n {
-		return nil
+		return false
 	}
 
 	yesterday := hist[n-2]
 	today := hist[n-1]
 	if !(today > yesterday+s.MinDiff) {
-		return nil
+		return false
 	}
 
 	windowStart := n - 1 - s.Lookback
@@ -59,17 +65,69 @@ func (s BuyMACD) Buy(code string, dks extend.Klines, mk protocol.Klines) *core.B
 		}
 	}
 	if yesterday != minV {
-		return nil
+		return false
 	}
 
-	k := dks[n-1]
-	return &core.Buy{
-		Code:  code,
-		Time:  k.Time,
-		Price: k.Close,
-	}
+	return true
 }
 
+// BuyMACDNegative 是 MACD 连续负数买入条件。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// Days 表示要求最近连续多少天 MACD 柱子为负数，默认 1。
+// 该策略适合作为 BuyAll 的过滤条件，用来限制买点处于 MACD 零轴下方区域。
+type BuyMACDNegative struct {
+	Fast   int
+	Slow   int
+	Signal int
+	Days   int
+}
+
+func (s BuyMACDNegative) Name() string {
+	return "MACD负数"
+}
+
+func (s BuyMACDNegative) Buy(code string, dks extend.Klines) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+	if s.Days == 0 {
+		s.Days = 1
+	}
+
+	n := len(dks)
+	if n < s.Slow+s.Signal || n < s.Days {
+		return false
+	}
+
+	hist := macdHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != n {
+		return false
+	}
+
+	for i := n - s.Days; i < n; i++ {
+		if hist[i] >= 0 {
+			return false
+		}
+	}
+
+	return true
+}
+
+// SellMACD 是 MACD 高位拐头卖出策略。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// Lookback 表示向前比较的窗口长度，默认 20。
+// MinDiff 表示今天 MACD 柱子必须比昨天至少小多少，默认 0。
+// 卖出时会逐日遍历 future，找到第一次满足“昨天为近期高点且今天回落”的日期。
 type SellMACD struct {
 	Fast     int
 	Slow     int
@@ -79,10 +137,10 @@ type SellMACD struct {
 }
 
 func (s SellMACD) Name() string {
-	return "MACD卖出"
+	return "MACD"
 }
 
-func (s SellMACD) Sell(code string, history, future extend.Klines, getMinklines func(after int) core.Klines, buy core.Buy) *core.Sell {
+func (s SellMACD) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if s.Fast == 0 {
 		s.Fast = 12
 	}
@@ -96,45 +154,38 @@ func (s SellMACD) Sell(code string, history, future extend.Klines, getMinklines 
 		s.Lookback = 20
 	}
 
-	for i := 0; i < len(future); i++ {
-
-		series := append(history, future[:i+1]...)
-		hist := macdHistogram(series, s.Fast, s.Slow, s.Signal)
-		if len(hist) != len(series) {
-			continue
-		}
-
-		n := len(hist)
-		yesterday := hist[n-2]
-		today := hist[n-1]
-		if !(today < yesterday-s.MinDiff) {
-			continue
-		}
-
-		windowStart := n - 1 - s.Lookback
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		maxV := hist[windowStart]
-		for j := windowStart + 1; j <= n-2; j++ {
-			if hist[j] > maxV {
-				maxV = hist[j]
-			}
-		}
-		if yesterday != maxV {
-			continue
-		}
-
-		return &core.Sell{
-			Code:  code,
-			Time:  future[i].Time,
-			Price: future[i].Open,
-		}
+	hist := macdHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != len(dks) {
+		return false
 	}
 
-	return nil
+	n := len(hist)
+	yesterday := hist[n-2]
+	today := hist[n-1]
+	if !(today < yesterday-s.MinDiff) {
+		return false
+	}
+
+	windowStart := n - 1 - s.Lookback
+	if windowStart < 0 {
+		windowStart = 0
+	}
+	maxV := hist[windowStart]
+	for j := windowStart + 1; j <= n-2; j++ {
+		if hist[j] > maxV {
+			maxV = hist[j]
+		}
+	}
+	if yesterday != maxV {
+		return false
+	}
+
+	return true
 }
 
+// macdHistogram 计算 MACD 柱子序列。
+// 返回值为 DIF - DEA，没有乘以 2。
+// 所有 MACD 策略都基于同一套计算，避免买卖条件之间口径不一致。
 func macdHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
 	n := len(dks)
 	if n == 0 {
@@ -161,6 +212,9 @@ func macdHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
 	return hist
 }
 
+// emaSeries 计算 EMA 序列。
+// 第一个值直接使用原始序列第一个值作为初始 EMA。
+// period 小于等于 1 时直接返回原始序列副本。
 func emaSeries(values []float64, period int) []float64 {
 	n := len(values)
 	out := make([]float64, n)

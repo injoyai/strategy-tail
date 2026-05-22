@@ -12,11 +12,13 @@ import (
 )
 
 type Backtest struct {
-	Strategy                                                                      //策略
+	BuyAll
+	SellAny
 	Codes        []string                                                         //股票代码
 	Years        []int                                                            //回测年
 	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)   //获取日线数据函数
 	GetMinKlines func(code string, start, end time.Time) (protocol.Klines, error) //获取分钟数据函数
+	UseMinute    bool                                                             //使用分钟数据
 
 	Slippage       protocol.Price //滑点(单边,按每股绝对价格加减)
 	CommissionRate float64        //手续费率(买/卖都收,例如 0.0003)
@@ -24,7 +26,7 @@ type Backtest struct {
 }
 
 func (this Backtest) Run() {
-	logs.Info(this.Strategy)
+	logs.Info(this.BuyAll.Name() + "买入, " + this.SellAny.Name() + "卖出")
 
 	for _, year := range this.Years {
 		start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
@@ -89,27 +91,25 @@ func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []T
 	var currentBuy *Buy
 	for i := 0; i < len(dks); i++ {
 
-		dk := dks[i]
-		minKlines := GetMinKlines{
-			today: dk.Time,
-			m:     map[string]protocol.Klines{},
-		}
+		today := dks[i]
 
 		if currentBuy == nil {
-			buy := this.Buy(code, dks[:i+1], minKlines.Get(0))
-			if buy != nil {
-				currentBuy = buy
+			if this.Buy(code, dks[:i+1]) {
+				currentBuy = &Buy{
+					Code:  code,
+					Time:  today.Time,
+					Price: today.Close,
+				}
 			}
 		} else {
-			sell := this.Sell(code, dks[:i+1], dks[i+1:], minKlines.Get, *currentBuy)
-			if sell != nil {
+			if this.Sell(code, dks[:i+1], *currentBuy) {
 				slippage := this.Slippage
 				if slippage == 0 {
 					slippage = protocol.Yuan(0.01)
 				}
 
 				buyExecPrice := currentBuy.Price + slippage
-				sellExecPrice := sell.Price - slippage
+				sellExecPrice := today.Close - slippage
 
 				buyFee := protocol.Yuan(buyExecPrice.Float64() * this.CommissionRate)
 				sellFee := protocol.Yuan(sellExecPrice.Float64() * (this.CommissionRate + this.StampDutyRate))
@@ -117,7 +117,7 @@ func (this Backtest) Do(code string, dks extend.Klines, mks protocol.Klines) []T
 				tr := Trade{
 					Code:      code,
 					BuyTime:   currentBuy.Time,
-					SellTime:  sell.Time,
+					SellTime:  today.Time,
 					BuyPrice:  buyExecPrice + buyFee,
 					SellPrice: sellExecPrice - sellFee,
 				}
