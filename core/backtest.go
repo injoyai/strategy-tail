@@ -26,7 +26,8 @@ type Backtest struct {
 }
 
 func (this Backtest) Run() {
-	logs.Info(this.BuyAll.Name() + "买入, " + this.SellAny.Name() + "卖出")
+	logs.Info(this.BuyAll.Name() + "买入")
+	logs.Info(this.SellAny.Name() + "卖出")
 
 	for _, year := range this.Years {
 		start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
@@ -36,7 +37,7 @@ func (this Backtest) Run() {
 		logs.PanicErr(err)
 
 		fmt.Printf("回测年份: %d\n", year)
-		Analyze(ls, func(code string) (extend.Klines, error) {
+		Analyze(year, ls, func(code string) (extend.Klines, error) {
 			return this.GetDayKlines(code, time.Time{}, time.Now())
 		})
 	}

@@ -52,9 +52,9 @@ type Seller interface {
 }
 
 type Sell struct {
-	Code  string
-	Time  time.Time
-	Price protocol.Price
+	Code  string         //代码
+	Time  time.Time      //卖出时间
+	Price protocol.Price //卖出价格
 }
 
 func (s *Sell) String() string {

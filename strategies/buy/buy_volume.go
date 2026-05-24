@@ -1,4 +1,4 @@
-package strategies
+package buy
 
 import (
 	"sort"
@@ -23,7 +23,7 @@ type BuyCloseAboveMA struct {
 }
 
 func (b BuyCloseAboveMA) Name() string {
-	return "收盘站上均线买入"
+	return "收盘站上均线"
 }
 
 func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -43,24 +43,24 @@ func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines, mks protocol.Klines
 	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
 }
 
-// BuyBreakMA 是突破均线买入条件。
+// BreakMA 是突破均线买入条件。
 // Period 表示均线周期，默认 20。
 // 要求昨天收盘价还在均线下方，今天收盘价突破到均线上方。
 // 适合表达“刚刚重新站回均线”的信号。
-type BuyBreakMA struct {
+type BreakMA struct {
 	Period int
 }
 
-func (b BuyBreakMA) Name() string {
-	return "突破均线买入"
+func (b BreakMA) Name() string {
+	return "突破均线"
 }
 
-func (b BuyBreakMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+func (b BreakMA) Buy(code string, dks extend.Klines) bool {
 	if b.Period == 0 {
 		b.Period = 20
 	}
 	if len(dks) < b.Period+1 {
-		return nil
+		return false
 	}
 
 	n := len(dks)
@@ -69,27 +69,27 @@ func (b BuyBreakMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *co
 	maNow := core.MA(dks, b.Period)
 	maPrev := core.MA(dks[:n-1], b.Period)
 	if yesterday.Close.Float64() >= maPrev || today.Close.Float64() <= maNow {
-		return nil
+		return false
 	}
 
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+	return true
 }
 
-// BuyMAUp 是均线向上买入条件。
+// MAUp 是均线向上买入条件。
 // Period 表示均线周期，默认 20。
 // Lookback 表示与多少个交易日前的均线值比较，默认 5。
 // 当当前均线值大于 Lookback 天前的均线值时返回买入信号。
 // 适合过滤均线趋势方向。
-type BuyMAUp struct {
+type MAUp struct {
 	Period   int
 	Lookback int
 }
 
-func (b BuyMAUp) Name() string {
-	return "均线向上买入"
+func (b MAUp) Name() string {
+	return "均线向上"
 }
 
-func (b BuyMAUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+func (b MAUp) Buy(code string, dks extend.Klines) bool {
 	if b.Period == 0 {
 		b.Period = 20
 	}
@@ -97,52 +97,51 @@ func (b BuyMAUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.
 		b.Lookback = 5
 	}
 	if len(dks) < b.Period+b.Lookback {
-		return nil
+		return false
 	}
 
 	n := len(dks)
-	today := dks[n-1]
 	maNow := core.MA(dks, b.Period)
 	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
 	if maNow <= maPrev {
-		return nil
+		return false
 	}
 
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+	return true
 }
 
-// BuyVolumeShrink 是缩量买入条件。
+// VolumeShrink 是缩量买入条件。
 // Period 表示对比的前 N 日成交量均值，默认 5。
 // Ratio 表示今日成交量必须低于前 N 日均量的比例，默认 0.8。
 // 例如 Ratio=0.8 表示今日成交量小于前 5 日均量的 80%。
 // 常用于“回调缩量”或“整理缩量”的组合过滤。
-type BuyVolumeShrink struct {
-	Period int
-	Ratio  float64
+type VolumeShrink struct {
+	Days  int
+	Ratio float64
 }
 
-func (b BuyVolumeShrink) Name() string {
-	return "缩量买入"
+func (b VolumeShrink) Name() string {
+	return "缩量"
 }
 
-func (b BuyVolumeShrink) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 5
+func (b VolumeShrink) Buy(code string, dks extend.Klines) bool {
+	if b.Days == 0 {
+		b.Days = 5
 	}
 	if b.Ratio == 0 {
 		b.Ratio = 0.8
 	}
-	if len(dks) < b.Period+1 {
-		return nil
+	if len(dks) < b.Days+1 {
+		return false
 	}
 
 	today := dks[len(dks)-1]
-	avg := core.AverageVolume(dks[len(dks)-1-b.Period : len(dks)-1])
+	avg := core.AverageVolume(dks[len(dks)-1-b.Days : len(dks)-1])
 	if avg <= 0 || float64(today.Volume) >= avg*b.Ratio {
-		return nil
+		return false
 	}
 
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+	return true
 }
 
 // BuyVolumeExpand 是放量买入条件。
@@ -156,7 +155,7 @@ type BuyVolumeExpand struct {
 }
 
 func (b BuyVolumeExpand) Name() string {
-	return "放量买入"
+	return "放量"
 }
 
 func (b BuyVolumeExpand) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -190,7 +189,7 @@ type BuyRiseRateRange struct {
 }
 
 func (b BuyRiseRateRange) Name() string {
-	return "涨幅区间买入"
+	return "涨幅区间"
 }
 
 func (b BuyRiseRateRange) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -219,7 +218,7 @@ type BuyBreakHigh struct {
 }
 
 func (b BuyBreakHigh) Name() string {
-	return "突破新高买入"
+	return "突破新高"
 }
 
 func (b BuyBreakHigh) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -248,7 +247,7 @@ type BuyNotBreakLow struct {
 }
 
 func (b BuyNotBreakLow) Name() string {
-	return "不破低点买入"
+	return "不破低点"
 }
 
 func (b BuyNotBreakLow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -277,7 +276,7 @@ type BuyLongLowerShadow struct {
 }
 
 func (b BuyLongLowerShadow) Name() string {
-	return "长下影买入"
+	return "长下影"
 }
 
 func (b BuyLongLowerShadow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -318,7 +317,7 @@ type BuySmallBody struct {
 }
 
 func (b BuySmallBody) Name() string {
-	return "小实体买入"
+	return "小实体"
 }
 
 func (b BuySmallBody) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -347,7 +346,7 @@ func (b BuySmallBody) Buy(code string, dks extend.Klines, mks protocol.Klines) *
 }
 
 func (v BuyVolume) Name() string {
-	return "倍量买入"
+	return "倍量"
 }
 
 func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -426,31 +425,22 @@ func LLV(dks extend.Klines, i int) protocol.Price {
 	return ls[0].Low
 }
 
-// BuyPositiveLine 是阳线买入条件。
+// A阳线 是阳线买入条件。
 // 要求最新交易日收盘价大于开盘价。
 // 买入价使用最新交易日收盘价。
 // 适合作为 BuyAll 中最基础的 K 线方向过滤条件。
-type BuyPositiveLine struct{}
+type A阳线 struct{}
 
-func (b BuyPositiveLine) Name() string {
-	return "阳线买入"
+func (b A阳线) Name() string {
+	return "阳线"
 }
 
-func (b BuyPositiveLine) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+func (b A阳线) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
-		return nil
+		return false
 	}
-
 	today := dks[len(dks)-1]
-	if today.Close <= today.Open {
-		return nil
-	}
-
-	return &core.Buy{
-		Code:  code,
-		Time:  today.Time,
-		Price: today.Close,
-	}
+	return today.Close > today.Open
 }
 
 // BuyYearUp 是年线向上买入条件。
@@ -465,7 +455,7 @@ type BuyYearUp struct {
 }
 
 func (b BuyYearUp) Name() string {
-	return "年线向上买入"
+	return "年线向上"
 }
 
 func (b BuyYearUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
@@ -513,7 +503,7 @@ type BuyMonthUp struct {
 }
 
 func (b BuyMonthUp) Name() string {
-	return "月线向上买入"
+	return "月线向上"
 }
 
 func (b BuyMonthUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {

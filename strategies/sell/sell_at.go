@@ -1,4 +1,4 @@
-package strategies
+package sell
 
 import (
 	"fmt"

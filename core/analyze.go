@@ -14,7 +14,7 @@ import (
 	"github.com/injoyai/tdx/extend"
 )
 
-func Analyze(allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
+func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
 
 	// 2. 按时间排序，为了计算资金曲线和回撤
 	sort.Slice(allTrades, func(i, j int) bool {

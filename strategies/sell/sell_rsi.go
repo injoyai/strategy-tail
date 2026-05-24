@@ -1,7 +1,8 @@
-package strategies
+package sell
 
 import (
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/tdx/extend"
 )
 
@@ -32,7 +33,7 @@ func (s SellRSI) Sell(code string, history, future extend.Klines, getMinklines f
 			continue
 		}
 
-		rsi := calcRSI(append(history, future[:i+1]...), s.Period)
+		rsi := util.CalcRSI(append(history, future[:i+1]...), s.Period)
 
 		if rsi <= s.Threshold {
 			continue

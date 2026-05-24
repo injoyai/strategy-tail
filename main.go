@@ -7,7 +7,8 @@ import (
 
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/strategies"
+	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/lib/xorms"
@@ -35,7 +36,7 @@ func init() {
 	logs.PanicErr(err)
 
 	Pull = extend.NewPullKline(extend.PullKlineConfig{
-		Tables:     []string{extend.Day},
+		Tables:     []string{extend.Day}, //, extend.Minute},
 		Dir:        DayKlineDir,
 		Goroutines: 10,
 	})
@@ -64,14 +65,8 @@ func main() {
 				continue
 			}
 
-			last := ks[len(ks)-1]
-
-			if last.Close.Float64() > 120 {
-				continue
-			}
-
 			//计算市值
-			if x := last.FloatValue().Float64() / 1e8; x < 1000 {
+			if x := ks[len(ks)-1].FloatValue().Float64() / 1e8; x < 1000 {
 				continue
 			}
 
@@ -80,15 +75,19 @@ func main() {
 	}
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
-	years = []int{2026}
+	//years = []int{2026}
 
 	core.Backtest{
 		BuyAll: core.BuyAll{Buyers: []core.Buyer{
-			strategies.BuyMACD{Lookback: 20},
-			strategies.BuyMACDNegative{Days: 5},
+			buy.Price{Max: 120},    //价格小于120,太贵了买不起
+			buy.MACD{Lookback: 20}, //MACD
+			//buy.MACDNegative{Days: 5},              //MACD阴线
+			buy.MAUp{Period: 15}, //均线向上
+
+			//buy.VolumeShrink{Days: 20, Ratio: 0.8}, //缩量
 		}},
 		SellAny: core.SellAny{Sellers: []core.Seller{
-			strategies.SellMACD{Lookback: 10},
+			sell.MACD{Lookback: 10},
 		}},
 		Codes:        codes,
 		Years:        years,
