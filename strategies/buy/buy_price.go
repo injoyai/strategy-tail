@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/protocol"
 )
 
 // Price 是价格区间过滤条件。
@@ -44,4 +45,34 @@ func (b Price) Buy(code string, dks extend.Klines) bool {
 	}
 
 	return true
+}
+
+// NotLimitUp 是过滤涨停买入条件。
+// 当最新交易日涨幅达到或超过 MaxRiseRate 时返回 false，避免回测买入实际无法成交的涨停股票。
+// 当前主程序只筛选 sh60 和 sz00，默认值按常见 10% 涨停制度设置；如需适配 ST 或 20cm 股票，可按需调整 MaxRiseRate。
+type NotLimitUp struct{}
+
+func (b NotLimitUp) Name() string {
+	return "过滤涨停"
+}
+
+func (b NotLimitUp) Buy(code string, dks extend.Klines) bool {
+	if len(dks) == 0 {
+		return false
+	}
+
+	code = protocol.AddPrefix(code)
+
+	if len(code) != 8 {
+		return false
+	}
+
+	switch code[:4] {
+	case "sh60", "sz00":
+		return dks[len(dks)-1].RiseRate() < 9.8
+	case "sh68", "sz30", "bj92":
+		return dks[len(dks)-1].RiseRate() < 19.8
+	default:
+		return false
+	}
 }
