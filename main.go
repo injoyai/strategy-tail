@@ -64,39 +64,31 @@ func getNoPriceLimitCodes() []string {
 
 func main() {
 
-	codes := []string(nil)
-	for _, code := range getNoPriceLimitCodes() {
-		//获取最新价格
-		ks, err := Pull.DayKlines(code)
-		logs.PanicErr(err)
-		if len(ks) == 0 {
-			continue
-		}
-
-		//计算市值
-		if x := ks[len(ks)-1].FloatValue().Float64() / 1e8; x < 1000 {
-			continue
-		}
-
-		codes = append(codes, code)
-	}
+	//获取无需验资的代码
+	codes := getNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	//years = []int{2026}
 
 	core.Backtest{
-		BuyAll: core.BuyAll{Buyers: []core.Buyer{
-			buy.NotLimitUp{},       //过滤涨停,涨停买不进去
-			buy.Price{Max: 120},    //价格小于120,太贵了买不起
-			buy.MACD{Lookback: 20}, //MACD
-			//buy.MACDNegative{Days: 5},              //MACD阴线
-			// buy.MAUp{Period: 15}, //均线向上
+		Buyer: buy.And{
+			buy.NotLimitUp{},               //过滤涨停,涨停买不进去
+			buy.Price{Max: 120},            //价格小于120,太贵了买不起
+			buy.FloatMarketValue{Min: 300}, //流通市值大于N亿
+			buy.MACD{Lookback: 20},         //MACD
+			//buy.MACDNegative{Days: 5},  //MACD阴线
+
+			buy.And{
+				buy.MAUp{Period: 60},  //均线向上
+				buy.MAUp{Period: 250}, //均线向上
+			},
 
 			//buy.VolumeShrink{Days: 20, Ratio: 0.8}, //缩量
-		}},
-		SellAny: core.SellAny{Sellers: []core.Seller{
-			sell.MACD{Lookback: 10},
-		}},
+		},
+		Seller: sell.Or{
+			sell.MACD{Lookback: 3},
+		},
+		Goroutines:   20,
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: getDayKlines,

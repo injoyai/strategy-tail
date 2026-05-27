@@ -1,6 +1,8 @@
 package sell
 
 import (
+	"fmt"
+
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/tdx/extend"
@@ -22,7 +24,7 @@ type MACD struct {
 }
 
 func (s MACD) Name() string {
-	return "MACD"
+	return fmt.Sprintf("%d日MACD最高点后", s.Lookback)
 }
 
 func (s MACD) Sell(code string, dks extend.Klines, buy core.Buy) bool {

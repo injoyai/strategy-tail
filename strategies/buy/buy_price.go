@@ -20,11 +20,11 @@ type Price struct {
 func (b Price) Name() string {
 	switch {
 	case b.Min > 0 && b.Max > 0:
-		return fmt.Sprintf("价格[%.1f-%.1f]", b.Min, b.Max)
+		return fmt.Sprintf("价格[%.1f,%.1f]元", b.Min, b.Max)
 	case b.Min > 0:
-		return fmt.Sprintf("价格[%.1f-]", b.Min)
+		return fmt.Sprintf("价格[%.1f,]元", b.Min)
 	case b.Max > 0:
-		return fmt.Sprintf("价格[-%.1f]", b.Max)
+		return fmt.Sprintf("价格[,%.1f]元", b.Max)
 	default:
 		return "价格范围买入"
 	}

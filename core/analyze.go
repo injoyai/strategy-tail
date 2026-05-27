@@ -14,7 +14,52 @@ import (
 	"github.com/injoyai/tdx/extend"
 )
 
-func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
+type AnalyzeResult struct {
+	Year            int
+	TotalTrades     int
+	WinRate         float64
+	TotalProfit     float64
+	AvgProfit       float64
+	MaxProfit       float64
+	MaxLoss         float64
+	ProfitFactor    float64
+	MaxDrawdown     float64
+	RequiredCapital float64
+	AnnualReturn    float64
+}
+
+func PrintAnalyzeResults(results []AnalyzeResult) {
+	if len(results) == 0 {
+		return
+	}
+	fmt.Printf("\n年度回测结果:\n")
+	fmt.Printf("%5s \t%4s \t%6s \t%9s \t%10s \t%10s \t%10s \t%7s \t%10s \t%10s \t%8s\n", "年份", "交易", "胜率", "总盈亏", "平均盈亏", "最大盈利", "最大亏损", "盈亏比", "最大回撤", "最低本金", "年化")
+	for _, r := range results {
+		profitFactor := fmt.Sprintf("%.2f", r.ProfitFactor)
+		if r.TotalTrades > 0 && r.ProfitFactor == 0 && r.MaxLoss >= 0 {
+			profitFactor = "∞"
+		}
+		fmt.Printf("%6d \t%8d \t%8s \t%12.2f \t%12.2f \t%12.2f \t%12.2f \t%8s \t%12.2f \t%12.2f \t%10s\n",
+			r.Year,
+			r.TotalTrades,
+			formatPercent(r.WinRate),
+			r.TotalProfit,
+			r.AvgProfit,
+			r.MaxProfit,
+			r.MaxLoss,
+			profitFactor,
+			r.MaxDrawdown,
+			r.RequiredCapital,
+			formatPercent(r.AnnualReturn),
+		)
+	}
+}
+
+func formatPercent(v float64) string {
+	return fmt.Sprintf("%.2f%%", v)
+}
+
+func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) AnalyzeResult {
 
 	// 2. 按时间排序，为了计算资金曲线和回撤
 	sort.Slice(allTrades, func(i, j int) bool {
@@ -27,8 +72,8 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 	var grossProfit float64
 	var grossLoss float64
 
-	var maxProfit float64 = -math.MaxFloat64
-	var maxLoss float64 = math.MaxFloat64
+	var maxProfit float64
+	var maxLoss float64
 
 	// 资金曲线
 	var equityCurve []float64
@@ -52,10 +97,10 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 			grossLoss += math.Abs(profit)
 		}
 
-		if profit > maxProfit {
+		if len(equityCurve) == 2 || profit > maxProfit {
 			maxProfit = profit
 		}
-		if profit < maxLoss {
+		if len(equityCurve) == 2 || profit < maxLoss {
 			maxLoss = profit
 		}
 	}
@@ -74,32 +119,34 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 		}
 	}
 
-	// 输出统计结果
-	fmt.Printf("\n==================== 回测统计报告 ====================\n")
-	fmt.Printf("总交易次数: \t%d*2\n", totalTrades)
-
+	profitFactor := 0.0
+	if grossLoss != 0 {
+		profitFactor = grossProfit / grossLoss
+	}
+	winRate := 0.0
+	avgProfit := 0.0
 	if totalTrades > 0 {
-		winRate := float64(winCount) / float64(totalTrades) * 100
-		fmt.Printf("胜率: \t\t%.2f%%\n", winRate)
-		fmt.Printf("总盈亏: \t\t%.2f元\n", totalProfit*100)
-		fmt.Printf("平均每笔盈亏: \t%.2f元\n", totalProfit/float64(totalTrades)*100)
-		fmt.Printf("最大单笔盈利: \t%.2f元\n", maxProfit*100)
-		fmt.Printf("最大单笔亏损: \t%.2f元\n", maxLoss*100)
-
-		profitFactor := 0.0
-		if grossLoss != 0 {
-			profitFactor = grossProfit / grossLoss
-			fmt.Printf("盈亏比: \t\t%.2f\n", profitFactor)
-		} else {
-			fmt.Printf("盈亏比: \t\t∞ (无亏损)\n")
-		}
-
-		fmt.Printf("最大回撤: \t\t%.2f元\n", maxDrawdown*100)
+		winRate = float64(winCount) / float64(totalTrades) * 100
+		avgProfit = totalProfit / float64(totalTrades) * 100
 	}
 	requiredCapital := calculateRequiredCapital(allTrades)
-	fmt.Printf("所需最低本金: \t\t%.2f元\n", requiredCapital)
+	annualReturn := 0.0
 	if requiredCapital > 0 {
-		fmt.Printf("年化收益率: \t\t%.2f%%\n", totalProfit*100/requiredCapital*100)
+		annualReturn = totalProfit * 100 / requiredCapital * 100
+	}
+
+	result := AnalyzeResult{
+		Year:            year,
+		TotalTrades:     totalTrades,
+		WinRate:         winRate,
+		TotalProfit:     totalProfit * 100,
+		AvgProfit:       avgProfit,
+		MaxProfit:       maxProfit * 100,
+		MaxLoss:         maxLoss * 100,
+		ProfitFactor:    profitFactor,
+		MaxDrawdown:     maxDrawdown * 100,
+		RequiredCapital: requiredCapital,
+		AnnualReturn:    annualReturn,
 	}
 
 	data := [][]any{
@@ -129,6 +176,7 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 	}
 
 	visualizeTrades(allTrades, getDayKlines)
+	return result
 }
 
 func visualizeTrades(allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {

@@ -1,6 +1,7 @@
 package buy
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/injoyai/strategy-tail/core"
@@ -77,7 +78,7 @@ func (b BreakMA) Buy(code string, dks extend.Klines) bool {
 
 // MAUp 是均线向上买入条件。
 // Period 表示均线周期，默认 20。
-// Lookback 表示与多少个交易日前的均线值比较，默认 5。
+// Lookback 表示与多少个交易日前的均线值比较，默认 1。
 // 当当前均线值大于 Lookback 天前的均线值时返回买入信号。
 // 适合过滤均线趋势方向。
 type MAUp struct {
@@ -86,7 +87,7 @@ type MAUp struct {
 }
 
 func (b MAUp) Name() string {
-	return "均线向上"
+	return fmt.Sprintf("%d日均线向上", b.Period)
 }
 
 func (b MAUp) Buy(code string, dks extend.Klines) bool {
@@ -101,10 +102,12 @@ func (b MAUp) Buy(code string, dks extend.Klines) bool {
 	}
 
 	n := len(dks)
-	maNow := core.MA(dks, b.Period)
-	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
-	if maNow <= maPrev {
-		return false
+	for x := 0; x < b.Lookback; x++ {
+		maNow := core.MA(dks[:n-x], b.Period)
+		maPrev := core.MA(dks[:n-x-1], b.Period)
+		if maNow <= maPrev {
+			return false
+		}
 	}
 
 	return true

@@ -3,14 +3,14 @@ module github.com/injoyai/strategy-tail
 go 1.25.4
 
 require (
+	github.com/injoyai/bar v0.0.11
+	github.com/injoyai/conv v1.2.5
 	github.com/injoyai/goutil v1.2.27
 	github.com/injoyai/logs v1.0.12
 	github.com/injoyai/tdx v0.0.78
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.8.1 // indirect
-	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/glebarez/go-sqlite v1.22.0 // indirect
@@ -19,9 +19,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/grafov/m3u8 v0.12.1 // indirect
-	github.com/injoyai/bar v0.0.9 // indirect
 	github.com/injoyai/base v1.2.20 // indirect
-	github.com/injoyai/conv v1.2.5 // indirect
 	github.com/injoyai/ios v1.2.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
