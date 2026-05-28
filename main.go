@@ -36,7 +36,7 @@ func init() {
 	logs.PanicErr(err)
 
 	Pull = extend.NewPullKline(extend.PullKlineConfig{
-		Tables:     []string{extend.Day}, //, extend.Minute},
+		Tables:     []string{extend.Day, extend.Minute},
 		Dir:        DayKlineDir,
 		Goroutines: 10,
 	})
@@ -68,31 +68,33 @@ func main() {
 	codes := getNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
-	//years = []int{2026}
+	//years = []int{2024, 2025, 2026}
 
 	core.Backtest{
 		Buyer: buy.And{
-			buy.NotLimitUp{},               //过滤涨停,涨停买不进去
-			buy.Price{Max: 120},            //价格小于120,太贵了买不起
-			buy.FloatMarketValue{Min: 300}, //流通市值大于N亿
-			buy.MACD{Lookback: 20},         //MACD
-			//buy.MACDNegative{Days: 5},  //MACD阴线
+			buy.FloatMarketValue{Min: 1000}, //流通市值大于N亿
+			buy.Price{Max: 120},             //价格小于120,太贵了买不起
+			buy.NotLimitUp{},                //过滤涨停,涨停买不进去
+
+			buy.MACD{Lookback: 20}, //MACD
+			//buy.MACD负数{Days: 10}, //MACD阴线
 
 			buy.And{
-				buy.MAUp{Period: 60},  //均线向上
-				buy.MAUp{Period: 250}, //均线向上
+				buy.MAUp{Period: 20},
+				buy.MAUp{Period: 30},
+				//buy.MAUp{Period: 250},
 			},
 
 			//buy.VolumeShrink{Days: 20, Ratio: 0.8}, //缩量
 		},
 		Seller: sell.Or{
-			sell.MACD{Lookback: 3},
+			sell.MACD{Lookback: 12},
 		},
 		Goroutines:   20,
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: getDayKlines,
-		GetMinKlines: getMinKlines,
+		GetMinKlines: nil, // getMinKlines,
 	}.Run()
 
 }

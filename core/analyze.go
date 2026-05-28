@@ -171,27 +171,36 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 
 	buf, err := csv.Export(data)
 	if err == nil {
-		output := filepath.Join("./output/", time.Now().Format("20060102150415")+".csv")
+		output := filepath.Join("./output/", fmt.Sprintf("%d.csv", year))
 		oss.New(output, buf)
 	}
 
-	visualizeTrades(allTrades, getDayKlines)
+	visualizeTrades(year, allTrades, getDayKlines)
 	return result
 }
 
-func visualizeTrades(allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
-	if len(allTrades) == 0 {
+func visualizeTrades(year int, allTrades []Trade, getDayKlines func(code string) (extend.Klines, error)) {
+	ExportTradeVisualHTML([]int{year}, map[int][]Trade{year: allTrades}, getDayKlines)
+}
+
+func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlines func(code string) (extend.Klines, error)) {
+	if len(years) == 0 {
 		return
 	}
 
-	codeTrades := map[string][]Trade{}
-	for _, v := range allTrades {
-		codeTrades[v.Code] = append(codeTrades[v.Code], v)
+	codeYears := make(map[string]map[int][]Trade)
+	for _, year := range years {
+		for _, tr := range yearlyTrades[year] {
+			if codeYears[tr.Code] == nil {
+				codeYears[tr.Code] = make(map[int][]Trade)
+			}
+			codeYears[tr.Code][year] = append(codeYears[tr.Code][year], tr)
+		}
 	}
 
-	charts := make([]map[string]any, 0, len(codeTrades))
-	codes := make([]string, 0, len(codeTrades))
-	for code := range codeTrades {
+	charts := make([]map[string]any, 0, len(codeYears))
+	codes := make([]string, 0, len(codeYears))
+	for code := range codeYears {
 		codes = append(codes, code)
 	}
 	sort.Strings(codes)
@@ -214,49 +223,80 @@ func visualizeTrades(allTrades []Trade, getDayKlines func(code string) (extend.K
 			})
 		}
 
-		marks := make([]map[string]any, 0, len(codeTrades[code])*2)
-		tradeRows := make([]map[string]any, 0, len(codeTrades[code]))
-		for _, t := range codeTrades[code] {
-			buyRate := 0.0
-			if t.BuyPrice.Float64() > 0 {
-				buyRate = (t.SellPrice.Float64() - t.BuyPrice.Float64()) / t.BuyPrice.Float64() * 100
-			}
-			profit := (t.SellPrice - t.BuyPrice).Float64() * 100
-			marks = append(marks, map[string]any{
-				"date":  t.BuyTime.Format(time.DateOnly),
-				"price": t.BuyPrice.Float64(),
-				"type":  "买",
-				"rate":  buyRate,
-			})
-			marks = append(marks, map[string]any{
-				"date":  t.SellTime.Format(time.DateOnly),
-				"price": t.SellPrice.Float64(),
-				"type":  "卖",
-				"rate":  buyRate,
-			})
-			tradeRows = append(tradeRows, map[string]any{
-				"buyDate":   t.BuyTime.Format(time.DateOnly),
-				"buyPrice":  t.BuyPrice.Float64(),
-				"sellDate":  t.SellTime.Format(time.DateOnly),
-				"sellPrice": t.SellPrice.Float64(),
-				"profit":    profit,
-				"rate":      buyRate,
-			})
+		tradeYears := codeYears[code]
+		yearsForCode := make([]int, 0, len(tradeYears))
+		for year := range tradeYears {
+			yearsForCode = append(yearsForCode, year)
 		}
+		sort.Ints(yearsForCode)
+
+		marks := make([]map[string]any, 0)
+		tradeRows := make([]map[string]any, 0)
+		for _, year := range yearsForCode {
+			for _, t := range tradeYears[year] {
+				buyRate := 0.0
+				if t.BuyPrice.Float64() > 0 {
+					buyRate = (t.SellPrice.Float64() - t.BuyPrice.Float64()) / t.BuyPrice.Float64() * 100
+				}
+				profit := (t.SellPrice - t.BuyPrice).Float64() * 100
+				marks = append(marks, map[string]any{
+					"date":  t.BuyTime.Format(time.DateOnly),
+					"time":  t.BuyTime.Format(time.TimeOnly),
+					"year":  year,
+					"price": t.BuyPrice.Float64(),
+					"type":  "买",
+					"rate":  buyRate,
+				})
+				marks = append(marks, map[string]any{
+					"date":  t.SellTime.Format(time.DateOnly),
+					"time":  t.SellTime.Format(time.TimeOnly),
+					"year":  year,
+					"price": t.SellPrice.Float64(),
+					"type":  "卖",
+					"rate":  buyRate,
+				})
+				tradeRows = append(tradeRows, map[string]any{
+					"year":      year,
+					"buyDate":   t.BuyTime.Format(time.DateOnly),
+					"buyTime":   t.BuyTime.Format(time.TimeOnly),
+					"buyPrice":  t.BuyPrice.Float64(),
+					"sellDate":  t.SellTime.Format(time.DateOnly),
+					"sellTime":  t.SellTime.Format(time.TimeOnly),
+					"sellPrice": t.SellPrice.Float64(),
+					"profit":    profit,
+					"rate":      buyRate,
+				})
+			}
+		}
+		sort.Slice(marks, func(i, j int) bool {
+			left := fmt.Sprintf("%04v-%s %s", marks[i]["year"], marks[i]["date"], marks[i]["time"])
+			right := fmt.Sprintf("%04v-%s %s", marks[j]["year"], marks[j]["date"], marks[j]["time"])
+			return left < right
+		})
+		sort.Slice(tradeRows, func(i, j int) bool {
+			left := fmt.Sprintf("%04v-%s %s", tradeRows[i]["year"], tradeRows[i]["buyDate"], tradeRows[i]["buyTime"])
+			right := fmt.Sprintf("%04v-%s %s", tradeRows[j]["year"], tradeRows[j]["buyDate"], tradeRows[j]["buyTime"])
+			return left < right
+		})
 
 		charts = append(charts, map[string]any{
 			"code":   code,
+			"years":  yearsForCode,
 			"kline":  kline,
 			"trades": marks,
 			"rows":   tradeRows,
 		})
 	}
 
+	if len(charts) == 0 {
+		return
+	}
+
 	content, err := buildTradeVisualHTML(charts)
 	if err != nil {
 		return
 	}
-	output := filepath.Join("./output/", time.Now().Format("20060102150415")+".html")
+	output := filepath.Join("./output/", "trades.html")
 	oss.New(output, []byte(content))
 }
 
@@ -286,7 +326,7 @@ body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif;background:#f5f7fb;
 <div id="chart" class="chart"></div>
 <div class="trades">
 <table>
-<thead><tr><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th><th>盈亏</th><th>收益率</th></tr></thead>
+<thead><tr><th>年份</th><th>买入日期</th><th>买入时间</th><th>买入价</th><th>卖出日期</th><th>卖出时间</th><th>卖出价</th><th>盈亏</th><th>收益率</th></tr></thead>
 <tbody id="tradeRows"></tbody>
 </table>
 </div>
@@ -341,6 +381,7 @@ function renderSummary(item){
   const maxProfit = total ? Math.max(...rows.map(x => Number(x.profit || 0))) : 0;
   const maxLoss = total ? Math.min(...rows.map(x => Number(x.profit || 0))) : 0;
   summary.innerHTML = [
+    ['回测年份', (item.years || []).join('、'), ''],
     ['交易次数', total + '笔', ''],
     ['胜率', fmt(winRate) + '%', winRate >= 50 ? 'profit' : 'loss'],
     ['总盈亏', fmt(totalProfit) + '元', cls(totalProfit)],
@@ -348,7 +389,7 @@ function renderSummary(item){
     ['最大盈利', fmt(maxProfit) + '元', cls(maxProfit)],
     ['最大亏损', fmt(maxLoss) + '元', cls(maxLoss)]
   ].map(x => '<div class="card">' + x[0] + '<b class="' + x[2] + '">' + x[1] + '</b></div>').join('');
-  tradeRows.innerHTML = rows.map((x, i) => '<tr data-index="' + i + '"><td>' + x.buyDate + '</td><td>' + fmt(x.buyPrice) + '</td><td>' + x.sellDate + '</td><td>' + fmt(x.sellPrice) + '</td><td class="' + cls(x.profit) + '">' + fmt(x.profit) + '</td><td class="' + cls(x.rate) + '">' + fmt(x.rate) + '%</td></tr>').join('');
+  tradeRows.innerHTML = rows.map((x, i) => '<tr data-index="' + i + '"><td>' + x.year + '</td><td>' + x.buyDate + '</td><td>' + x.buyTime + '</td><td>' + fmt(x.buyPrice) + '</td><td>' + x.sellDate + '</td><td>' + x.sellTime + '</td><td>' + fmt(x.sellPrice) + '</td><td class="' + cls(x.profit) + '">' + fmt(x.profit) + '</td><td class="' + cls(x.rate) + '">' + fmt(x.rate) + '%</td></tr>').join('');
 }
 function refreshOptions(){
   const keyword = search.value.trim();
@@ -356,7 +397,7 @@ function refreshOptions(){
   allData.filter(x => !keyword || x.code.includes(keyword)).forEach(x => {
     const option = document.createElement('option');
     option.value = x.code;
-    option.textContent = x.code + '（' + Math.floor(x.trades.length / 2) + '笔）';
+    option.textContent = x.code + '（' + Math.floor((x.trades || []).length / 2) + '笔）';
     select.appendChild(option);
   });
   render();
@@ -371,8 +412,8 @@ function render(){
   const ma5 = ma(closes, 5);
   const ma10 = ma(closes, 10);
   const ma20 = ma(closes, 20);
+  const ma30 = ma(closes, 30);
   const ma60 = ma(closes, 60);
-  const ma250 = ma(closes, 250);
   const volumes = item.kline.map((x, i) => [i, x[5], x[2] >= x[1] ? 1 : -1]);
   const macd = calcMACD(closes);
   const macdBar = macd.macd.map(v => Number(v.toFixed(4)));
@@ -391,37 +432,60 @@ function render(){
       symbolOffset: [0, x.type === '买' ? 12 : -12],
       itemStyle: {color: x.type === '买' ? '#ef232a' : '#14b143'},
       label: {show: true, formatter: x.type === '买' ? 'B' : 'S', color: '#fff', fontWeight: 'bold', fontSize: 10, offset: [0, x.type === '买' ? 4 : -4]},
-      tooltip: {formatter: x.type + '<br/>' + x.date + '<br/>成交价: ' + Number(x.price).toFixed(2) + '<br/>收益率: ' + Number(x.rate).toFixed(2) + '%'}
+      tooltip: {formatter: x.type + '<br/>' + x.date + ' ' + x.time + '<br/>成交价: ' + Number(x.price).toFixed(2) + '<br/>收益率: ' + Number(x.rate).toFixed(2) + '%'}
     };
   });
+  let startIndex = 0;
+  let endIndex = dates.length - 1;
+  if(markData.length){
+    const dateIndex = new Map(dates.map((d, i) => [d, i]));
+    const tradeIndexes = markData.map(x => dateIndex.get(x.coord[0])).filter(x => x !== undefined);
+    if(tradeIndexes.length){
+      startIndex = Math.max(0, Math.min(...tradeIndexes) - 20);
+      endIndex = Math.min(dates.length - 1, Math.max(...tradeIndexes) + 20);
+    }
+  }
+  const startPercent = dates.length > 1 ? startIndex / (dates.length - 1) * 100 : 0;
+  const endPercent = dates.length > 1 ? endIndex / (dates.length - 1) * 100 : 100;
   renderSummary(item);
   chart.setOption({
     animation:false,
     title:{text:item.code + ' 回测买卖点',left:16,top:10},
-    legend:{top:12,data:['日K','MA5','MA10','MA20','MA60','MA250','成交量','MACD','DIF','DEA']},
+    legend:{top:12,textStyle:{color:'#222'},data:[
+      {name:'日K'},
+      {name:'MA5',icon:'roundRect'},
+      {name:'MA10',icon:'roundRect'},
+      {name:'MA20',icon:'roundRect'},
+      {name:'MA30',icon:'roundRect'},
+      {name:'MA60',icon:'roundRect'},
+      {name:'成交量'},
+      {name:'MACD'},
+      {name:'DIF',icon:'roundRect'},
+      {name:'DEA',icon:'roundRect'}
+    ]},
     tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
     axisPointer:{link:[{xAxisIndex:'all'}]},
-    dataZoom:[{type:'inside',xAxisIndex:[0,1,2],start:70,end:100},{show:true,xAxisIndex:[0,1,2],type:'slider',bottom:8,start:70,end:100}],
+    dataZoom:[{type:'inside',xAxisIndex:[0,1,2],start:startPercent,end:endPercent},{show:true,xAxisIndex:[0,1,2],type:'slider',bottom:8,start:startPercent,end:endPercent}],
     grid:[{left:60,right:30,top:60,height:'50%'},{left:60,right:30,top:'64%',height:'12%'},{left:60,right:30,top:'80%',height:'12%'}],
     xAxis:[{type:'category',data:dates,boundaryGap:false,axisLine:{onZero:false}},{type:'category',gridIndex:1,data:dates,boundaryGap:false,axisLine:{onZero:false},axisLabel:{show:false}},{type:'category',gridIndex:2,data:dates,boundaryGap:false,axisLine:{onZero:false},axisLabel:{show:false}}],
     yAxis:[{scale:true,splitArea:{show:true}},{scale:true,gridIndex:1,splitNumber:2,axisLabel:{show:false},splitLine:{show:false}},{scale:true,gridIndex:2,splitNumber:3,splitLine:{show:true}}],
     series:[
       {name:'日K',type:'candlestick',data:values,itemStyle:{color:'#ef232a',color0:'#14b143',borderColor:'#ef232a',borderColor0:'#14b143'},markPoint:{silent:false,data:markData}},
-      {name:'MA5',type:'line',data:ma5,symbol:'none',smooth:true,lineStyle:{width:1,color:'#f5a623'}},
-      {name:'MA10',type:'line',data:ma10,symbol:'none',smooth:true,lineStyle:{width:1,color:'#9013fe'}},
-      {name:'MA20',type:'line',data:ma20,symbol:'none',smooth:true,lineStyle:{width:1,color:'#4a90e2'}},
-      {name:'MA60',type:'line',data:ma60,symbol:'none',smooth:true,lineStyle:{width:1,color:'#7ed321'}},
-      {name:'MA250',type:'line',data:ma250,symbol:'none',smooth:true,lineStyle:{width:1,color:'#8b572a'}},
+      {name:'MA5',type:'line',data:ma5,symbol:'none',smooth:true,lineStyle:{width:1,color:'#f5a623'},itemStyle:{color:'#f5a623'}},
+      {name:'MA10',type:'line',data:ma10,symbol:'none',smooth:true,lineStyle:{width:1,color:'#9013fe'},itemStyle:{color:'#9013fe'}},
+      {name:'MA20',type:'line',data:ma20,symbol:'none',smooth:true,lineStyle:{width:1,color:'#4a90e2'},itemStyle:{color:'#4a90e2'}},
+      {name:'MA30',type:'line',data:ma30,symbol:'none',smooth:true,lineStyle:{width:1,color:'#8b572a'},itemStyle:{color:'#8b572a'}},
+      {name:'MA60',type:'line',data:ma60,symbol:'none',smooth:true,lineStyle:{width:1,color:'#7ed321'},itemStyle:{color:'#7ed321'}},
       {name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,data:volumes.map(x=>x[1]),itemStyle:{color:p=>volumes[p.dataIndex][2]>0?'#ef232a':'#14b143'}},
       {name:'MACD',type:'bar',xAxisIndex:2,yAxisIndex:2,data:macdBar,itemStyle:{color:p=>p.data>=0?'#ef232a':'#14b143'}},
-      {name:'DIF',type:'line',xAxisIndex:2,yAxisIndex:2,data:difLine,symbol:'none',lineStyle:{width:1,color:'#f5a623'}},
-      {name:'DEA',type:'line',xAxisIndex:2,yAxisIndex:2,data:deaLine,symbol:'none',lineStyle:{width:1,color:'#4a90e2'}}
+      {name:'DIF',type:'line',xAxisIndex:2,yAxisIndex:2,data:difLine,symbol:'none',lineStyle:{width:1,color:'#f5a623'},itemStyle:{color:'#f5a623'}},
+      {name:'DEA',type:'line',xAxisIndex:2,yAxisIndex:2,data:deaLine,symbol:'none',lineStyle:{width:1,color:'#4a90e2'},itemStyle:{color:'#4a90e2'}}
     ]
   }, true);
 }
+window.addEventListener('resize', () => chart.resize());
 select.addEventListener('change', render);
 search.addEventListener('input', refreshOptions);
-window.addEventListener('resize', () => chart.resize());
 refreshOptions();
 </script>
 </body>

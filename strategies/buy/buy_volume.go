@@ -27,21 +27,42 @@ func (b BuyCloseAboveMA) Name() string {
 	return "收盘站上均线"
 }
 
-func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines) bool {
 	if b.Period == 0 {
 		b.Period = 20
 	}
 	if len(dks) < b.Period {
-		return nil
+		return false
 	}
 
 	today := dks[len(dks)-1]
 	ma := core.MA(dks, b.Period)
-	if today.Close.Float64() <= ma {
-		return nil
+	return today.Close.Float64() > ma
+}
+
+// BuyCloseBelowMA 是收盘价低于指定均线的买入条件。
+// Period 表示均线周期，默认 60。
+// 当最新收盘价低于指定周期均线时返回买入信号。
+// 适合表达“价格回到长期均线下方时尝试低吸”的过滤条件。
+type BuyCloseBelowMA struct {
+	Period int
+}
+
+func (b BuyCloseBelowMA) Name() string {
+	return fmt.Sprintf("收盘低于%d日均线", b.Period)
+}
+
+func (b BuyCloseBelowMA) Buy(code string, dks extend.Klines) bool {
+	if b.Period == 0 {
+		b.Period = 60
+	}
+	if len(dks) < b.Period {
+		return false
 	}
 
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+	today := dks[len(dks)-1]
+	ma := core.MA(dks, b.Period)
+	return today.Close.Float64() < ma
 }
 
 // BreakMA 是突破均线买入条件。
@@ -97,19 +118,22 @@ func (b MAUp) Buy(code string, dks extend.Klines) bool {
 	if b.Lookback == 0 {
 		b.Lookback = 5
 	}
-	if len(dks) < b.Period+b.Lookback {
+	return maUp(dks, b.Period, b.Lookback)
+}
+
+func maUp(dks extend.Klines, period, lookback int) bool {
+	if period <= 0 || lookback <= 0 || len(dks) < period+lookback {
 		return false
 	}
 
 	n := len(dks)
-	for x := 0; x < b.Lookback; x++ {
-		maNow := core.MA(dks[:n-x], b.Period)
-		maPrev := core.MA(dks[:n-x-1], b.Period)
+	for x := 0; x < lookback; x++ {
+		maNow := core.MA(dks[:n-x], period)
+		maPrev := core.MA(dks[:n-x-1], period)
 		if maNow <= maPrev {
 			return false
 		}
 	}
-
 	return true
 }
 

@@ -31,10 +31,12 @@ func (this Backtest) Run() {
 	logs.Info(this.Seller.Name() + " 卖出")
 
 	results := make([]AnalyzeResult, 0, len(this.Years))
+	tradeResults := make(map[int][]Trade, len(this.Years))
 	for _, year := range this.Years {
 
 		ls, err := this._backtest(this.Codes, year)
 		logs.PanicErr(err)
+		tradeResults[year] = ls
 
 		result := Analyze(year, ls, func(code string) (extend.Klines, error) {
 			return this.GetDayKlines(code, time.Time{}, time.Now())
@@ -42,6 +44,9 @@ func (this Backtest) Run() {
 		results = append(results, result)
 	}
 	PrintAnalyzeResults(results)
+	ExportTradeVisualHTML(this.Years, tradeResults, func(code string) (extend.Klines, error) {
+		return this.GetDayKlines(code, time.Time{}, time.Now())
+	})
 }
 
 func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
@@ -112,6 +117,13 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		m[key] = append(m[key], mk)
 	}
 
+	joinKlines := func(base extend.Klines, extra ...*extend.Kline) extend.Klines {
+		ls := make(extend.Klines, 0, len(base)+len(extra))
+		ls = append(ls, base...)
+		ls = append(ls, extra...)
+		return ls
+	}
+
 	ts := []Trade(nil)
 
 	var currentBuy *Buy
@@ -119,10 +131,10 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 		today := dks[i]
 
-		_his := append(his, dks[:i]...)
+		_his := joinKlines(his, dks[:i]...)
 
 		if currentBuy == nil {
-			ls := append(_his, today)
+			ls := joinKlines(_his, today)
 			if this.Buy(code, ls) {
 				currentBuy = &Buy{
 					Code:  code,
@@ -139,9 +151,11 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 			}
 
 			for ii := range todayMinuteKlines {
-				today.Kline = todayMinuteKlines[:ii].Kline(todayMinuteKlines[0].Time, todayMinuteKlines[0].Open)
+				minuteKlines := todayMinuteKlines[:ii+1]
+				lastMinuteKline := todayMinuteKlines[ii]
+				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
 
-				ls := append(_his, today)
+				ls := joinKlines(_his, today)
 
 				if this.Sell(code, ls, *currentBuy) {
 					slippage := this.Slippage
@@ -158,7 +172,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 					tr := Trade{
 						Code:      code,
 						BuyTime:   currentBuy.Time,
-						SellTime:  today.Time,
+						SellTime:  minuteKlines[len(minuteKlines)-1].Time,
 						BuyPrice:  buyExecPrice + buyFee,
 						SellPrice: sellExecPrice - sellFee,
 					}

@@ -14,13 +14,13 @@ type FloatMarketValue struct {
 func (b FloatMarketValue) Name() string {
 	switch {
 	case b.Min > 0 && b.Max > 0:
-		return fmt.Sprintf("市值[%.f,%.f]亿", b.Min, b.Max)
+		return fmt.Sprintf("流通市值[%.f,%.f]亿", b.Min, b.Max)
 	case b.Min > 0:
-		return fmt.Sprintf("市值[%.f,]亿", b.Min)
+		return fmt.Sprintf("流通市值[%.f,]亿", b.Min)
 	case b.Max > 0:
-		return fmt.Sprintf("市值[,%.f]亿", b.Max)
+		return fmt.Sprintf("流通市值[,%.f]亿", b.Max)
 	default:
-		return "市值范围买入"
+		return "Null"
 	}
 }
 
