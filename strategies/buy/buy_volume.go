@@ -24,7 +24,7 @@ type BuyCloseAboveMA struct {
 }
 
 func (b BuyCloseAboveMA) Name() string {
-	return "收盘站上均线"
+	return fmt.Sprintf("收盘高于%d日均线", b.Period)
 }
 
 func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines) bool {
@@ -37,6 +37,33 @@ func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines) bool {
 
 	today := dks[len(dks)-1]
 	ma := core.MA(dks, b.Period)
+	return today.Close.Float64() > ma
+}
+
+// A价格大于均线 是当天价格高于指定均线的买入条件。
+// Period 表示均线周期，默认 20。
+// 当最新交易日的价格高于指定周期均线时返回买入信号。
+// PriceField 表示使用哪一个价格字段，支持 open、close、high、low，默认 close。
+// 适合表达“当天价格运行在某条均线上方”的过滤条件。
+type A价格大于均线 struct {
+	Period int
+}
+
+func (b A价格大于均线) Name() string {
+	return fmt.Sprintf("价格高于%d日均线", b.Period)
+}
+
+func (b A价格大于均线) Buy(code string, dks extend.Klines) bool {
+	if b.Period == 0 {
+		b.Period = 20
+	}
+	if len(dks) < b.Period {
+		return false
+	}
+
+	today := dks[len(dks)-1]
+	ma := core.MA(dks, b.Period)
+
 	return today.Close.Float64() > ma
 }
 

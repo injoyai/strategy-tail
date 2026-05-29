@@ -80,15 +80,20 @@ func main() {
 			//buy.MACD负数{Days: 10}, //MACD阴线
 
 			buy.And{
+				buy.A价格大于均线{Period: 30}, //当天价格高于20日均线
+			},
+
+			buy.And{
+
 				buy.MAUp{Period: 20},
 				buy.MAUp{Period: 30},
-				//buy.MAUp{Period: 250},
+				//buy.MAUp{Period: 60},
 			},
 
 			//buy.VolumeShrink{Days: 20, Ratio: 0.8}, //缩量
 		},
 		Seller: sell.Or{
-			sell.MACD{Lookback: 12},
+			sell.MACD{Lookback: 10},
 		},
 		Goroutines:   20,
 		Codes:        codes,
