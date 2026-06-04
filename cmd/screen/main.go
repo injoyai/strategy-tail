@@ -472,7 +472,7 @@ func (st *ScreenState) startBackgroundScreen(interval time.Duration) {
 	// 执行选股并刷新终端
 	st.doScreenAndPrint()
 
-	logs.Infof("[选股] 后台选股任务启动，间隔 %v", interval)
+	logs.Infof("[选股] 后台选股任务启动，间隔 %v\n", interval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
