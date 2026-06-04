@@ -127,11 +127,13 @@ func (b BreakMA) Buy(code string, dks extend.Klines) bool {
 // MAUp 是均线向上买入条件。
 // Period 表示均线周期，默认 20。
 // Lookback 表示与多少个交易日前的均线值比较，默认 1。
-// 当当前均线值大于 Lookback 天前的均线值时返回买入信号。
-// 适合过滤均线趋势方向。
+// MinSlope 表示每一步均线相对前值的最小涨速，默认 0。
+// 当当前均线值大于 Lookback 天前的均线值，且每一步上涨幅度都不低于 MinSlope 时返回买入信号。
+// 适合过滤均线趋势方向，并排除涨速接近 0 的“走平式上涨”。
 type MAUp struct {
 	Period   int
 	Lookback int
+	MinSlope float64
 }
 
 func (b MAUp) Name() string {
@@ -145,10 +147,10 @@ func (b MAUp) Buy(code string, dks extend.Klines) bool {
 	if b.Lookback == 0 {
 		b.Lookback = 5
 	}
-	return maUp(dks, b.Period, b.Lookback)
+	return maUp(dks, b.Period, b.Lookback, b.MinSlope)
 }
 
-func maUp(dks extend.Klines, period, lookback int) bool {
+func maUp(dks extend.Klines, period, lookback int, minSlope float64) bool {
 	if period <= 0 || lookback <= 0 || len(dks) < period+lookback {
 		return false
 	}
@@ -158,6 +160,13 @@ func maUp(dks extend.Klines, period, lookback int) bool {
 		maNow := core.MA(dks[:n-x], period)
 		maPrev := core.MA(dks[:n-x-1], period)
 		if maNow <= maPrev {
+			return false
+		}
+		if maPrev <= 0 {
+			return false
+		}
+		slope := (maNow - maPrev) / maPrev
+		if slope < minSlope {
 			return false
 		}
 	}

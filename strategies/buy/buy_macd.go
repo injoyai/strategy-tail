@@ -149,7 +149,8 @@ func (s MACD正数缓降最低点) Buy(code string, dks extend.Klines) bool {
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。
 // Signal 表示 DEA EMA 周期，默认 9。
-// Days 表示要求最近连续多少天 MACD 柱子为负数，默认 1。
+// Days 表示最近连续 MACD 柱子为负数的最少天数，默认 1。
+// 当从最新交易日往前连续统计的负数天数大于等于 Days 时返回买入信号。
 // 该策略适合作为 BuyAll 的过滤条件，用来限制买点处于 MACD 零轴下方区域。
 type MACD负数 struct {
 	Fast   int
@@ -186,13 +187,15 @@ func (s MACD负数) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	for i := n - s.Days; i < n; i++ {
+	count := 0
+	for i := n - 1; i >= 0; i-- {
 		if hist[i] >= 0 {
-			return false
+			break
 		}
+		count++
 	}
 
-	return true
+	return count >= s.Days
 }
 
 // MACD正数 是 MACD 连续负数买入条件。

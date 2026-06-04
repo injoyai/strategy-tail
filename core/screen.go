@@ -10,6 +10,7 @@ import (
 
 type Screen struct {
 	Buyer
+	Codes        []string
 	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)
 }
 
@@ -49,5 +50,6 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 		})
 	}
 	p.Wait()
+
 	return result, nil
 }

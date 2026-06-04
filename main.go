@@ -36,7 +36,7 @@ func init() {
 	logs.PanicErr(err)
 
 	Pull = extend.NewPullKline(extend.PullKlineConfig{
-		Tables:     []string{extend.Day, extend.Minute},
+		Tables:     []string{extend.Day},
 		Dir:        DayKlineDir,
 		Goroutines: 10,
 	})
@@ -68,26 +68,26 @@ func main() {
 	codes := getNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
-	//years = []int{2024, 2025, 2026}
+	years = []int{2024, 2025, 2026}
+	//years = []int{2026}
 
 	core.Backtest{
 		Buyer: buy.And{
-			buy.FloatMarketValue{Min: 1000}, //流通市值大于N亿
-			buy.Price{Max: 120},             //价格小于120,太贵了买不起
-			buy.NotLimitUp{},                //过滤涨停,涨停买不进去
+			buy.FloatMarketValue{Min: 600, Max: 800}, //流通市值大于N亿
+			buy.Price{Max: 120},                      //价格小于120,太贵了买不起
+			buy.NotLimitUp{},                         //过滤涨停,涨停买不进去
 
 			buy.MACD{Lookback: 20}, //MACD
-			//buy.MACD负数{Days: 10}, //MACD阴线
+			buy.MACD负数{Days: 5},    //MACD阴线,5
 
 			buy.And{
-				buy.A价格大于均线{Period: 30}, //当天价格高于20日均线
+				buy.A价格大于均线{Period: 30}, //当天价格高于N日均线
 			},
 
 			buy.And{
-
-				buy.MAUp{Period: 20},
-				buy.MAUp{Period: 30},
-				//buy.MAUp{Period: 60},
+				buy.MAUp{Period: 20, MinSlope: 0.0002}, //N日均线向上,且增速大于0.05%
+				buy.MAUp{Period: 30, MinSlope: 0.0005}, //N日均线向上,且增速大于0.05%
+				//buy.MAUp{Period: 60, MinSlope: 0.0005},
 			},
 
 			//buy.VolumeShrink{Days: 20, Ratio: 0.8}, //缩量
@@ -99,7 +99,7 @@ func main() {
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: getDayKlines,
-		GetMinKlines: nil, // getMinKlines,
+		GetMinKlines: getMinKlines,
 	}.Run()
 
 }

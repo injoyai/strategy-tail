@@ -126,38 +126,44 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 	ts := []Trade(nil)
 
-	var currentBuy *Buy
+	currentBuys := make([]Buy, 0)
 	for i := 0; i < len(dks); i++ {
 
 		today := dks[i]
-
 		_his := joinKlines(his, dks[:i]...)
+		ls := joinKlines(_his, today)
 
-		if currentBuy == nil {
-			ls := joinKlines(_his, today)
-			if this.Buy(code, ls) {
-				currentBuy = &Buy{
-					Code:  code,
-					Time:  today.Time,
-					Price: today.Close,
-				}
+		if this.Buy(code, ls) {
+			currentBuys = append(currentBuys, Buy{
+				Code:  code,
+				Time:  today.Time,
+				Price: today.Close,
+			})
+		}
+
+		if len(currentBuys) == 0 {
+			continue
+		}
+
+		todayMinuteKlines, ok := m[today.Time.Format(time.DateOnly)]
+		if !ok || len(todayMinuteKlines) == 0 {
+			todayMinuteKlines = protocol.Klines{today.Kline}
+		}
+
+		remaining := make([]Buy, 0, len(currentBuys))
+		for _, currentBuy := range currentBuys {
+			if currentBuy.Time.Equal(today.Time) {
+				remaining = append(remaining, currentBuy)
+				continue
 			}
-
-		} else {
-
-			todayMinuteKlines, ok := m[today.Time.Format(time.DateOnly)]
-			if !ok || len(todayMinuteKlines) == 0 {
-				todayMinuteKlines = protocol.Klines{today.Kline}
-			}
-
+			sold := false
 			for ii := range todayMinuteKlines {
 				minuteKlines := todayMinuteKlines[:ii+1]
 				lastMinuteKline := todayMinuteKlines[ii]
 				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
 
 				ls := joinKlines(_his, today)
-
-				if this.Sell(code, ls, *currentBuy) {
+				if this.Sell(code, ls, currentBuy) {
 					slippage := this.Slippage
 					if slippage == 0 {
 						slippage = protocol.Yuan(0.01)
@@ -177,14 +183,15 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 						SellPrice: sellExecPrice - sellFee,
 					}
 					ts = append(ts, tr)
-					currentBuy = nil
+					sold = true
 					break
 				}
-
 			}
-
+			if !sold {
+				remaining = append(remaining, currentBuy)
+			}
 		}
-
+		currentBuys = remaining
 	}
 	return ts
 }

@@ -10,15 +10,18 @@ import (
 type Or []core.Buyer
 
 func (s Or) Name() string {
+	if len(s) == 0 {
+		return "Null"
+	}
+	if len(s) == 1 {
+		return s[0].Name()
+	}
 	names := make([]string, 0, len(s))
 	for _, v := range s {
 		if v == nil {
 			continue
 		}
 		names = append(names, v.Name())
-	}
-	if len(names) == 0 {
-		return "Null"
 	}
 	return "[" + strings.Join(names, " | ") + "]"
 }
