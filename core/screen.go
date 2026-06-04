@@ -11,6 +11,7 @@ import (
 type Screen struct {
 	Buyer
 	Codes        []string
+	Goroutines   int
 	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)
 }
 
@@ -21,7 +22,7 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 
 	p := bar.NewCoroutine(
 		len(codes),
-		10,
+		s.Goroutines,
 		bar.WithPrefix("[选股][xx000000]"),
 	)
 
