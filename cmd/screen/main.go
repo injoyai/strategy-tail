@@ -17,73 +17,18 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/injoyai/frame"
-	"github.com/injoyai/frame/fbr"                    // Web框架
-	"github.com/injoyai/logs"                         // 日志库
-	"github.com/injoyai/strategy-tail/core"           // 选股核心模块
-	"github.com/injoyai/strategy-tail/strategies/buy" // 买入策略集合
-	"github.com/injoyai/tdx"                          // 通达信SDK
-	"github.com/injoyai/tdx/extend"                   // 通达信扩展功能
-	"github.com/injoyai/tdx/lib/xorms"                // 数据库ORM
-	"github.com/injoyai/tdx/protocol"                 // 通达信协议定义
+	"github.com/injoyai/frame/fbr" // Web框架
+	"github.com/injoyai/logs"      // 日志库
+	"github.com/injoyai/strategy-tail"
+	"github.com/injoyai/strategy-tail/core" // 选股核心模块
+	"github.com/injoyai/tdx"                // 通达信SDK
+	"github.com/injoyai/tdx/extend"         // 通达信扩展功能
+	"github.com/injoyai/tdx/protocol"       // 通达信协议定义
 )
-
-// 全局变量定义
-var (
-	DatabaseDir = tdx.DefaultDatabaseDir                  // 数据库根目录
-	DayKlineDir = filepath.Join(DatabaseDir, "day-kline") // 日线数据存储目录
-	Pull        *extend.PullKline                         // K线数据拉取器
-	Manage      *tdx.Manage                               // 通达信管理器
-)
-
-func init() {
-	logs.SetFormatter(logs.TimeFormatter)
-
-	db, err := xorms.NewSqlite(filepath.Join(DatabaseDir, "update.db"))
-	logs.PanicErr(err)
-
-	update, err := tdx.NewUpdated(db, 15, 1)
-	logs.PanicErr(err)
-
-	Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
-	logs.PanicErr(err)
-
-	Pull = extend.NewPullKline(extend.PullKlineConfig{
-		Tables:     []string{extend.Day},
-		Dir:        DayKlineDir,
-		Goroutines: 10,
-	})
-
-	if updated, err := update.Updated("pull"); err != nil || !updated {
-		if Manage.Workday.TodayIs() {
-			err = Pull.Update(Manage)
-			logs.PanicErr(err)
-			err = update.Update("pull")
-			logs.PanicErr(err)
-		}
-	}
-
-}
-
-// getNoPriceLimitCodes - 获取无需验资的股票代码
-// 筛选沪深主板股票（sh60开头为沪市主板，sz00开头为深市主板）
-// 返回符合条件的股票代码列表
-func getNoPriceLimitCodes() []string {
-	var codes []string
-	// 遍历所有股票代码
-	for _, code := range Manage.Codes.GetStockCodes() {
-		// 筛选沪深主板股票
-		if strings.HasPrefix(code, "sh60") || strings.HasPrefix(code, "sz00") {
-			codes = append(codes, code)
-		}
-	}
-	return codes
-}
 
 // getRealtimeQuotes - 批量获取实时行情
 // 参数：
@@ -112,7 +57,7 @@ func getRealtimeQuotes(codes []string) (map[string]*protocol.Quote, error) {
 		}
 
 		// 使用通达信客户端获取行情
-		if err := Manage.Do(func(c *tdx.Client) error {
+		if err := common.Manage.Do(func(c *tdx.Client) error {
 			quotes, err := c.GetQuote(codes[i:end]...)
 			if err != nil {
 				return err
@@ -174,7 +119,7 @@ func quoteToKline(quote *protocol.Quote, prevKline *extend.Kline) *extend.Kline 
 func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code string, start, end time.Time) (extend.Klines, error) {
 	return func(code string, start, end time.Time) (extend.Klines, error) {
 		// 1. 从数据库读取历史日线
-		ks, err := Pull.DayKlines(code)
+		ks, err := common.Pull.DayKlines(code)
 		if err != nil {
 			return nil, err
 		}
@@ -211,27 +156,6 @@ func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code str
 	}
 }
 
-// Buyer - 买入策略组合
-// 使用MACD反转策略筛选股票，包含以下条件：
-// 1. 流通市值：600亿 - 800亿
-// 2. 价格：≤120元
-// 3. 非涨停状态
-// 4. MACD指标：回溯20天
-// 5. MACD负数：连续5天
-// 6. 价格高于30日均线
-// 7. 20日均线向上，斜率≥0.0002
-// 8. 30日均线向上，斜率≥0.0005
-var Buyer = buy.And{
-	buy.FloatMarketValue{Min: 600, Max: 800}, // 流通市值范围
-	buy.Price{Max: 120},                      // 价格上限
-	buy.NotLimitUp{},                         // 排除涨停
-	buy.MACD{Lookback: 20},                   // MACD指标
-	buy.MACD负数{Days: 5},                      // MACD连续5天负数
-	buy.A价格大于均线{Period: 30},                  // 高于30日均线
-	buy.MAUp{Period: 20, MinSlope: 0.0002},   // 20日均线向上
-	buy.MAUp{Period: 30, MinSlope: 0.0005},   // 30日均线向上
-}
-
 // ScreenResponse - 选股响应结构
 // 用于封装选股结果，便于JSON序列化和传输
 type ScreenResponse struct {
@@ -259,7 +183,7 @@ type BuyItem struct {
 // 4. 执行选股策略
 // 5. 计算涨幅并格式化结果
 func doScreen() (*ScreenResponse, error) {
-	codes := getNoPriceLimitCodes() // 获取股票代码
+	codes := common.GetNoPriceLimitCodes() // 获取股票代码
 	now := time.Now()
 
 	// 1. 拉取实时行情
@@ -272,7 +196,7 @@ func doScreen() (*ScreenResponse, error) {
 
 	// 2. 创建选股器
 	s := core.Screen{
-		Buyer:        Buyer,
+		Buyer:        common.DefaultBuyer,
 		Codes:        codes,
 		Goroutines:   10,
 		GetDayKlines: makeIntradayGetDayKlines(quoteMap),
@@ -479,7 +403,7 @@ func (st *ScreenState) startBackgroundScreen(interval time.Duration) {
 
 	for range ticker.C {
 		// 仅在交易时间内执行自动刷新
-		if !Manage.Workday.TodayIs() || !isTradingTime() {
+		if !common.Manage.Workday.TodayIs() || !isTradingTime() {
 			continue
 		}
 

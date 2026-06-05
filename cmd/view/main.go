@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/fasthttp/websocket"
+	"github.com/injoyai/conv"
+	"github.com/injoyai/goutil/g"
 )
 
 // 服务端推送的消息类型
@@ -41,10 +43,8 @@ type BuyItem struct {
 
 // getServerURL - 获取服务端 WebSocket 地址
 func getServerURL() string {
-	if len(os.Args) > 1 {
-		return os.Args[1]
-	}
-	return "ws://localhost:8080/screen"
+	host := conv.Default("localhost", os.Args[1:]...)
+	return fmt.Sprintf("ws://%s:8080/screen", host)
 }
 
 // printHeader - 打印界面头部
@@ -116,7 +116,8 @@ func printDisconnected() {
 }
 
 func main() {
-	url := getServerURL()
+	host := g.InputVar("请输入地址:(默认localhost)").String("localhost")
+	url := fmt.Sprintf("ws://%s:8080/screen", host)
 	printHeader(url)
 
 	interrupt := make(chan os.Signal, 1)
