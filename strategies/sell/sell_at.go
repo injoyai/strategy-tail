@@ -73,20 +73,20 @@ func (s SellTPSL) Name() string {
 	}
 }
 
-func (s SellTPSL) Sell(code string, history, future extend.Klines, getMinklines func(after int) core.Klines, buy core.Buy) *core.Sell {
-	if len(future) == 0 {
-		return nil
+func (s SellTPSL) Sell(code string, dks extend.Klines, buy core.Buy) bool {
+	if len(dks) == 0 {
+		return false
 	}
 	if s.TakeProfit <= 0 && s.StopLoss <= 0 {
-		return nil
+		return false
 	}
 	buyPrice := buy.Price.Float64()
 	if buyPrice <= 0 {
-		return nil
+		return false
 	}
 
-	for i := 0; i < len(future); i++ {
-		closePrice := future[i].Close.Float64()
+	for i := 0; i < len(dks); i++ {
+		closePrice := dks[i].Close.Float64()
 		rate := (closePrice - buyPrice) / buyPrice
 
 		trigger := false
@@ -100,20 +100,12 @@ func (s SellTPSL) Sell(code string, history, future extend.Klines, getMinklines 
 			continue
 		}
 
-		if i+1 < len(future) {
-			return &core.Sell{
-				Code:  code,
-				Time:  future[i+1].Time,
-				Price: future[i+1].Close,
-			}
+		if i+1 < len(dks) {
+			return true
 		}
 
-		return &core.Sell{
-			Code:  code,
-			Time:  future[i].Time,
-			Price: future[i].Close,
-		}
+		return true
 	}
 
-	return nil
+	return false
 }

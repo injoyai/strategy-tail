@@ -35,6 +35,7 @@ var (
 	}
 	DefaultSeller = sell.Or{
 		sell.MACD{Lookback: 10},
+		sell.SellTPSL{StopLoss: 0.1},
 	}
 )
 
