@@ -6,12 +6,12 @@ import (
 	"github.com/injoyai/tdx/extend"
 )
 
-type FloatMarketValue struct {
+type A流通市值 struct {
 	Min float64 //亿元
 	Max float64 //亿元
 }
 
-func (b FloatMarketValue) Name() string {
+func (b A流通市值) Name() string {
 	switch {
 	case b.Min > 0 && b.Max > 0:
 		return fmt.Sprintf("流通市值[%.f,%.f]亿", b.Min, b.Max)
@@ -24,7 +24,7 @@ func (b FloatMarketValue) Name() string {
 	}
 }
 
-func (b FloatMarketValue) Buy(code string, dks extend.Klines) bool {
+func (b A流通市值) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}

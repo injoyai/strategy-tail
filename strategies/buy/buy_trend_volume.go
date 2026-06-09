@@ -1,161 +1,355 @@
 package buy
 
 import (
+	"fmt"
+
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/tdx/extend"
 )
 
-// TrendVolumeV2 是均线趋势+量价突破V2买入策略。
-//
-// 基础条件（必须全部满足）：
-// 1. 收盘价站上20日均线，且20日均线方向向上
-// 2. 当日成交量 > 5日均量的1.5倍
-// 3. RSI(14) 从超卖区(<30)回升至30以上，或 RSI 在 30-50 之间
-// 4. MACD金叉或零轴上方运行
-// 5. 非涨停（接近涨停>9.5%排除）
-//
-// 加分条件（影响评分，决定是否买入）：
-// 6. 均线多头排列（MA5 > MA10 > MA20）: +10分
-// 7. 站上5日均线: +5分
-// 8. 近5日涨幅 < 15%（非追高）: +5分
-// 9. 乖离率(股价偏离MA20) < 10%: +5分
-// 10. 换手率 3%-8%（活跃但不异常）: +5分（需行情数据，K线中无法计算，跳过）
-// 11. PE在10-30之间（估值合理）: +5分（需基本面数据，K线中无法计算，跳过）
-//
-// 扣分/排除条件：
-// - 近5日涨幅 > 15%: -10分
-// - 乖离率 > 15%: -10分
-// - PE > 60 或 PE 为负: -15分（需基本面数据，跳过）
-// - 日成交额 < 5000万: -10分
-// - 接近涨停(>9.5%): -5分
-// - 连续2年亏损: 直接排除（需基本面数据，跳过）
-//
-// 买入门槛：基础条件全部满足 + 评分 >= 0
-type TrendVolumeV2 struct {
-	// MinScore 最低评分门槛，默认0（即基础条件满足即可）
-	MinScore int
+// A收盘高于均线 是收盘价高于指定均线的买入条件。
+// Period 表示均线周期，默认 20。
+// 与 BuyCloseAboveMA 等价，采用 A+中文 命名风格。
+type A收盘高于均线 struct {
+	Period int
 }
 
-func (s TrendVolumeV2) Name() string {
-	return "均线趋势+量价突破V2"
+func (b A收盘高于均线) Name() string {
+	if b.Period == 0 {
+		b.Period = 20
+	}
+	return fmt.Sprintf("收盘高于%d日均线", b.Period)
 }
 
-func (s TrendVolumeV2) Buy(code string, dks extend.Klines) bool {
+func (b A收盘高于均线) Buy(code string, dks extend.Klines) bool {
+	if b.Period == 0 {
+		b.Period = 20
+	}
+	if len(dks) < b.Period {
+		return false
+	}
+	today := dks[len(dks)-1]
+	return today.Close.Float64() > core.MA(dks, b.Period)
+}
+
+// A均线向上 是指定均线方向向上的买入条件。
+// Period 表示均线周期，默认 20。
+// Lookback 表示连续向上的天数，默认 1。
+// MinSlope 表示每一步的最小涨速，默认 0。
+type A均线向上 struct {
+	Period   int
+	Lookback int
+	MinSlope float64
+}
+
+func (b A均线向上) Name() string {
+	if b.Period == 0 {
+		b.Period = 20
+	}
+	return fmt.Sprintf("%d日均线向上", b.Period)
+}
+
+func (b A均线向上) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 20
+	}
+	lookback := b.Lookback
+	if lookback == 0 {
+		lookback = 1
+	}
+	return maUp(dks, period, lookback, b.MinSlope)
+}
+
+// A成交量放大 是当日成交量相对前N日均量放大的买入条件。
+// Period 表示对比的均量周期，默认 5。
+// Ratio  表示放大倍数，默认 1.5。
+// 例如 Period=5, Ratio=1.5 表示当日成交量需大于近5日均量的1.5倍。
+type A成交量放大 struct {
+	Period int
+	Ratio  float64
+}
+
+func (b A成交量放大) Name() string {
+	if b.Period == 0 {
+		b.Period = 5
+	}
+	if b.Ratio == 0 {
+		b.Ratio = 1.5
+	}
+	return fmt.Sprintf("成交量放大%.1f倍(%d日)", b.Ratio, b.Period)
+}
+
+func (b A成交量放大) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 5
+	}
+	ratio := b.Ratio
+	if ratio == 0 {
+		ratio = 1.5
+	}
 	n := len(dks)
-	if n < 30 {
+	if n < period+1 {
 		return false
 	}
-
 	today := dks[n-1]
-	closePrice := today.Close.Float64()
-
-	// ========== 基础条件（必须全部满足） ==========
-
-	// 条件1: 收盘价站上20日均线，且20日均线方向向上
-	ma20 := core.MA(dks, 20)
-	if closePrice <= ma20 {
+	avg := core.AverageVolume(dks[n-1-period : n-1])
+	if avg <= 0 {
 		return false
 	}
-	if !maUp(dks, 20, 1, 0) {
+	return float64(today.Volume) > avg*ratio
+}
+
+// RSI区间 是 RSI 在指定区间内的买入条件。
+// Period 表示 RSI 计算周期，默认 14。
+// Min 表示最低 RSI 值，默认 30。
+// Max 表示最高 RSI 值，默认 50。
+// 当 RSI 在 [Min, Max] 之间时返回买入信号。
+type RSI区间 struct {
+	Period int
+	Min    float64
+	Max    float64
+}
+
+func (b RSI区间) Name() string {
+	min := b.Min
+	if min == 0 {
+		min = 30
+	}
+	max := b.Max
+	if max == 0 {
+		max = 50
+	}
+	return fmt.Sprintf("RSI在[%.0f,%.0f]", min, max)
+}
+
+func (b RSI区间) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 14
+	}
+	min := b.Min
+	if min == 0 {
+		min = 30
+	}
+	max := b.Max
+	if max == 0 {
+		max = 50
+	}
+	if len(dks) < period+1 {
 		return false
 	}
+	rsi := util.CalcRSI(dks, period)
+	return rsi >= min && rsi <= max
+}
 
-	// 条件2: 当日成交量 > 5日均量的1.5倍
-	if n < 6 {
+// RSI超卖回升 是 RSI 从超卖区回升的买入条件。
+// Period 表示 RSI 计算周期，默认 14。
+// Threshold 表示超卖阈值，默认 30。
+// 当昨日 RSI < Threshold 且今日 RSI >= Threshold 时返回买入信号。
+type RSI超卖回升 struct {
+	Period    int
+	Threshold float64
+}
+
+func (b RSI超卖回升) Name() string {
+	return "RSI超卖回升"
+}
+
+func (b RSI超卖回升) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 14
+	}
+	threshold := b.Threshold
+	if threshold == 0 {
+		threshold = 30
+	}
+	n := len(dks)
+	if n < period+2 {
 		return false
 	}
-	avgVol := core.AverageVolume(dks[n-6 : n-1])
-	if avgVol <= 0 || float64(today.Volume) <= avgVol*1.5 {
+	prevRSI := util.CalcRSI(dks[:n-1], period)
+	rsi := util.CalcRSI(dks, period)
+	return prevRSI < threshold && rsi >= threshold
+}
+
+// MACD金叉 是 MACD 柱子由负转正的买入条件。
+// Fast/Slow/Signal 为 MACD 参数，默认 12/26/9。
+// 当昨日柱子 <=0 且今日柱子 >0 时返回买入信号。
+type MACD金叉 struct {
+	Fast   int
+	Slow   int
+	Signal int
+}
+
+func (b MACD金叉) Name() string {
+	return "MACD金叉"
+}
+
+func (b MACD金叉) Buy(code string, dks extend.Klines) bool {
+	fast, slow, signal := defaultMACDParams(b.Fast, b.Slow, b.Signal)
+	n := len(dks)
+	if n < slow+signal {
 		return false
 	}
-
-	// 条件3: RSI(14) 从超卖区(<30)回升至30以上，或 RSI 在 30-50 之间
-	rsi := util.CalcRSI(dks, 14)
-	if rsi < 30 || rsi > 50 {
-		// RSI不在30-50区间，检查是否从超卖区回升
-		// 需要前一天RSI<30且今天>=30
-		if n < 16 {
-			return false
-		}
-		prevRSI := util.CalcRSI(dks[:n-1], 14)
-		if !(prevRSI < 30 && rsi >= 30) {
-			return false
-		}
-	}
-
-	// 条件4: MACD金叉或零轴上方运行
-	hist := util.MACDHistogram(dks, 12, 26, 9)
-	if len(hist) != n || n < 2 {
+	hist := util.MACDHistogram(dks, fast, slow, signal)
+	if len(hist) != n {
 		return false
 	}
-	macdGoldenCross := hist[n-2] <= 0 && hist[n-1] > 0 // MACD金叉
-	macdAboveZero := hist[n-1] > 0                     // 零轴上方
-	if !macdGoldenCross && !macdAboveZero {
+	return hist[n-2] <= 0 && hist[n-1] > 0
+}
+
+// MACD零轴上方 是 MACD 柱子位于零轴上方的买入条件。
+// Fast/Slow/Signal 为 MACD 参数，默认 12/26/9。
+// 当今日柱子 >0 时返回买入信号。
+type MACD零轴上方 struct {
+	Fast   int
+	Slow   int
+	Signal int
+}
+
+func (b MACD零轴上方) Name() string {
+	return "MACD零轴上方"
+}
+
+func (b MACD零轴上方) Buy(code string, dks extend.Klines) bool {
+	fast, slow, signal := defaultMACDParams(b.Fast, b.Slow, b.Signal)
+	n := len(dks)
+	if n < slow+signal {
 		return false
 	}
-
-	// 条件5: 非涨停（接近涨停>9.5%排除）
-	riseRate := today.RiseRate()
-	if riseRate > 9.5 {
+	hist := util.MACDHistogram(dks, fast, slow, signal)
+	if len(hist) != n {
 		return false
 	}
+	return hist[n-1] > 0
+}
 
-	// ========== 加分/扣分条件 ==========
-	score := 0
+// A涨幅小于 是当日涨幅小于指定值的买入条件。
+// Max 表示最大允许涨幅（%），默认 9.5。
+// 用于过滤接近涨停的股票。
+type A涨幅小于 float64
 
-	// 加分6: 均线多头排列（MA5 > MA10 > MA20）: +10分
-	ma5 := core.MA(dks, 5)
-	ma10 := core.MA(dks, 10)
-	if ma5 > 0 && ma10 > 0 && ma5 > ma10 && ma10 > ma20 {
-		score += 10
+func (b A涨幅小于) Name() string {
+	max := b
+	if max == 0 {
+		max = 9.5
 	}
+	return fmt.Sprintf("涨幅小于%.1f%%", max)
+}
 
-	// 加分7: 站上5日均线: +5分
-	if closePrice > ma5 {
-		score += 5
+func (b A涨幅小于) Buy(code string, dks extend.Klines) bool {
+	max := float64(b)
+	if max == 0 {
+		max = 9.5
 	}
-
-	// 加分8 & 扣分: 近5日涨幅
-	rise5 := riseRateNDays(dks, 5)
-	if rise5 < 15 {
-		score += 5 // 非追高
-	}
-	if rise5 > 15 {
-		score -= 10 // 短期暴涨，追高风险大
-	}
-
-	// 加分9 & 扣分: 乖离率(股价偏离MA20)
-	if ma20 > 0 {
-		bias := (closePrice - ma20) / ma20 * 100
-		if bias < 10 {
-			score += 5
-		}
-		if bias > 15 {
-			score -= 10
-		}
-	}
-
-	// 扣分: 日成交额 < 5000万
-	if today.Amount.Float64() < 50000000 {
-		score -= 10
-	}
-
-	// 扣分: 接近涨停(>9.5%)
-	if riseRate > 9.5 {
-		score -= 5
-	}
-
-	// 评分门槛判断
-	minScore := s.MinScore
-	if minScore == 0 {
-		minScore = 0
-	}
-	if score < minScore {
+	if len(dks) == 0 {
 		return false
 	}
+	return dks[len(dks)-1].RiseRate() < max
+}
 
-	return true
+// A近N日涨幅小于 是近N日累计涨幅小于指定值的买入条件。
+// Days 表示统计天数，默认 5。
+// Max 表示最大允许累计涨幅（%），默认 15。
+// 用于过滤短期暴涨追高风险。
+type A近N日涨幅小于 struct {
+	Days int
+	Max  float64
+}
+
+func (b A近N日涨幅小于) Name() string {
+	days := b.Days
+	if days == 0 {
+		days = 5
+	}
+	max := b.Max
+	if max == 0 {
+		max = 15
+	}
+	return fmt.Sprintf("近%d日涨幅<%.0f%%", days, max)
+}
+
+func (b A近N日涨幅小于) Buy(code string, dks extend.Klines) bool {
+	days := b.Days
+	if days == 0 {
+		days = 5
+	}
+	max := b.Max
+	if max == 0 {
+		max = 15
+	}
+	rise := riseRateNDays(dks, days)
+	return rise < max
+}
+
+// A乖离率小于 是收盘价相对均线乖离率小于指定值的买入条件。
+// Period 表示均线周期，默认 20。
+// Max 表示最大允许乖离率（%），默认 15。
+// 乖离率 = (收盘价 - 均线) / 均线 * 100。
+type A乖离率小于 struct {
+	Period int
+	Max    float64
+}
+
+func (b A乖离率小于) Name() string {
+	period := b.Period
+	if period == 0 {
+		period = 20
+	}
+	max := b.Max
+	if max == 0 {
+		max = 15
+	}
+	return fmt.Sprintf("乖离率(%d日)<%.0f%%", period, max)
+}
+
+func (b A乖离率小于) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 20
+	}
+	max := b.Max
+	if max == 0 {
+		max = 15
+	}
+	if len(dks) < period {
+		return false
+	}
+	ma := core.MA(dks, period)
+	if ma <= 0 {
+		return false
+	}
+	closePrice := dks[len(dks)-1].Close.Float64()
+	bias := (closePrice - ma) / ma * 100
+	return bias < max
+}
+
+// A成交额大于 是日成交额大于指定值的买入条件。
+// Min 表示最小成交额（元），默认 50000000（5000万）。
+// 用于过滤流动性较差的股票。
+type A成交额大于 float64
+
+func (b A成交额大于) Name() string {
+	min := b
+	if min == 0 {
+		min = 50000000
+	}
+	return fmt.Sprintf("成交额>%.0f万", min/10000)
+}
+
+func (b A成交额大于) Buy(code string, dks extend.Klines) bool {
+	min := float64(b)
+	if min == 0 {
+		min = 50000000
+	}
+	if len(dks) == 0 {
+		return false
+	}
+	return dks[len(dks)-1].Amount.Float64() >= min
 }
 
 // riseRateNDays 计算最近N日累计涨幅百分比
@@ -172,119 +366,173 @@ func riseRateNDays(dks extend.Klines, days int) float64 {
 	return (endPrice - startPrice) / startPrice * 100
 }
 
-// TrendVolumeV2Score 返回均线趋势+量价突破V2策略的评分详情
-// 用于调试和展示
-type TrendVolumeV2Score struct {
-	Code           string  `json:"code"`
-	Score          int     `json:"score"`
-	MACDGolden     bool    `json:"macd_golden"`
-	MACDAboveZero  bool    `json:"macd_above_zero"`
-	RSI            float64 `json:"rsi"`
-	VolumeRatio    float64 `json:"volume_ratio"`
-	Bias           float64 `json:"bias"`
-	Rise5          float64 `json:"rise5"`
-	MABullishAlign bool    `json:"ma_bullish_align"`
-	AboveMA5       bool    `json:"above_ma5"`
+// defaultMACDParams 返回默认的 MACD 参数（12, 26, 9）
+func defaultMACDParams(fast, slow, signal int) (int, int, int) {
+	if fast == 0 {
+		fast = 12
+	}
+	if slow == 0 {
+		slow = 26
+	}
+	if signal == 0 {
+		signal = 9
+	}
+	return fast, slow, signal
 }
 
-// ScoreTrendVolumeV2 计算股票在均线趋势+量价突破V2策略下的评分详情
-// 返回nil表示不满足基础条件
-func ScoreTrendVolumeV2(code string, dks extend.Klines) *TrendVolumeV2Score {
+// ATR波动率范围 是过滤极端波动股票的买入条件。
+// Period 表示 ATR 计算周期，默认 14。
+// MinPct/MaxPct 表示 ATR/Close 的百分比区间，默认 [0.5, 5.0]。
+// 过滤掉波动太小（死水）和波动太大（妖股）的标的。
+type ATR波动率范围 struct {
+	Period int
+	MinPct float64
+	MaxPct float64
+}
+
+func (b ATR波动率范围) Name() string {
+	return fmt.Sprintf("ATR波动率[%.1f%%,%.1f%%]", b.MinPct, b.MaxPct)
+}
+
+func (b ATR波动率范围) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 14
+	}
+	minPct := b.MinPct
+	if minPct == 0 {
+		minPct = 0.5
+	}
+	maxPct := b.MaxPct
+	if maxPct == 0 {
+		maxPct = 5.0
+	}
 	n := len(dks)
-	if n < 30 {
-		return nil
+	if n < period+1 {
+		return false
 	}
+	// 计算ATR (True Range 平均)
+	trSum := 0.0
+	for i := n - period; i < n; i++ {
+		high := dks[i].High.Float64()
+		low := dks[i].Low.Float64()
+		prevClose := dks[i-1].Close.Float64()
+		tr := high - low
+		if d := high - prevClose; d > tr {
+			tr = d
+		}
+		if d := prevClose - low; d > tr {
+			tr = d
+		}
+		trSum += tr
+	}
+	atr := trSum / float64(period)
+	closePrice := dks[n-1].Close.Float64()
+	if closePrice <= 0 {
+		return false
+	}
+	pct := atr / closePrice * 100
+	return pct >= minPct && pct <= maxPct
+}
 
-	today := dks[n-1]
-	closePrice := today.Close.Float64()
-	result := &TrendVolumeV2Score{Code: code}
+// A突破N日高点 是收盘价突破前N日最高价的买入条件（不含当日）。
+// Period 表示统计窗口，默认 20。
+// 真实突破信号，比单纯"站上均线"更可靠。
+type A突破N日高点 struct {
+	Period int
+}
 
-	// 基础条件检查
-	ma20 := core.MA(dks, 20)
-	if closePrice <= ma20 || !maUp(dks, 20, 1, 0) {
-		return nil
+func (b A突破N日高点) Name() string {
+	period := b.Period
+	if period == 0 {
+		period = 20
 	}
+	return fmt.Sprintf("突破%d日新高", period)
+}
 
-	if n < 6 {
-		return nil
+func (b A突破N日高点) Buy(code string, dks extend.Klines) bool {
+	period := b.Period
+	if period == 0 {
+		period = 20
 	}
-	avgVol := core.AverageVolume(dks[n-6 : n-1])
-	if avgVol <= 0 {
-		return nil
+	n := len(dks)
+	if n < period+1 {
+		return false
 	}
-	result.VolumeRatio = float64(today.Volume) / avgVol
-	if result.VolumeRatio <= 1.5 {
-		return nil
-	}
+	prevHigh := dks[n-1-period : n-1].HHV(period).Float64()
+	return dks[n-1].Close.Float64() > prevHigh
+}
 
-	rsi := util.CalcRSI(dks, 14)
-	result.RSI = rsi
-	if rsi < 30 || rsi > 50 {
-		if n >= 16 {
-			prevRSI := util.CalcRSI(dks[:n-1], 14)
-			if !(prevRSI < 30 && rsi >= 30) {
-				return nil
-			}
-		} else {
-			return nil
+// A均线多头排列 是短中长均线呈多头排列的买入条件。
+// Periods 表示从短到长的均线周期，默认 [5, 10, 20]。
+// 要求 MA[0] > MA[1] > MA[2]，体现明确的上升趋势。
+type A均线多头排列 struct {
+	Periods []int
+}
+
+func (b A均线多头排列) Name() string {
+	periods := b.Periods
+	if len(periods) == 0 {
+		periods = []int{5, 10, 20}
+	}
+	return fmt.Sprintf("MA%v多头排列", periods)
+}
+
+func (b A均线多头排列) Buy(code string, dks extend.Klines) bool {
+	periods := b.Periods
+	if len(periods) == 0 {
+		periods = []int{5, 10, 20}
+	}
+	maxP := periods[0]
+	for _, p := range periods {
+		if p > maxP {
+			maxP = p
 		}
 	}
-
-	hist := util.MACDHistogram(dks, 12, 26, 9)
-	if len(hist) != n || n < 2 {
-		return nil
+	if len(dks) < maxP {
+		return false
 	}
-	result.MACDGolden = hist[n-2] <= 0 && hist[n-1] > 0
-	result.MACDAboveZero = hist[n-1] > 0
-	if !result.MACDGolden && !result.MACDAboveZero {
-		return nil
-	}
-
-	riseRate := today.RiseRate()
-	if riseRate > 9.5 {
-		return nil
-	}
-
-	// 评分
-	score := 0
-	ma5 := core.MA(dks, 5)
-	ma10 := core.MA(dks, 10)
-	result.MABullishAlign = ma5 > 0 && ma10 > 0 && ma5 > ma10 && ma10 > ma20
-	if result.MABullishAlign {
-		score += 10
-	}
-
-	result.AboveMA5 = closePrice > ma5
-	if result.AboveMA5 {
-		score += 5
-	}
-
-	result.Rise5 = riseRateNDays(dks, 5)
-	if result.Rise5 < 15 {
-		score += 5
-	}
-	if result.Rise5 > 15 {
-		score -= 10
-	}
-
-	if ma20 > 0 {
-		result.Bias = (closePrice - ma20) / ma20 * 100
-		if result.Bias < 10 {
-			score += 5
-		}
-		if result.Bias > 15 {
-			score -= 10
+	for i := 0; i < len(periods)-1; i++ {
+		short := core.MA(dks, periods[i])
+		long := core.MA(dks, periods[i+1])
+		if short <= long {
+			return false
 		}
 	}
+	return true
+}
 
-	if today.Amount.Float64() < 50000000 {
-		score -= 10
+// A实体阳线 是当日为实体明显的阳线买入条件。
+// MinBodyRatio 表示实体长度占总振幅的最小比例，默认 0.5。
+// 用于过滤"假突破"和"十字星犹豫线"。
+type A实体阳线 struct {
+	MinBodyRatio float64
+}
+
+func (b A实体阳线) Name() string {
+	return "实体阳线"
+}
+
+func (b A实体阳线) Buy(code string, dks extend.Klines) bool {
+	minRatio := b.MinBodyRatio
+	if minRatio == 0 {
+		minRatio = 0.5
 	}
-
-	if riseRate > 9.5 {
-		score -= 5
+	if len(dks) == 0 {
+		return false
 	}
-
-	result.Score = score
-	return result
+	today := dks[len(dks)-1]
+	open := today.Open.Float64()
+	close := today.Close.Float64()
+	high := today.High.Float64()
+	low := today.Low.Float64()
+	if close <= open {
+		return false
+	}
+	rangeVal := high - low
+	if rangeVal <= 0 {
+		return false
+	}
+	body := close - open
+	return body/rangeVal >= minRatio
 }

@@ -7,17 +7,17 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-// Price 是价格区间过滤条件。
+// A现价 是价格区间过滤条件。
 // Min 表示允许买入的最低价格，单位为元；Min 为 0 时不限制最低价格。
 // Max 表示允许买入的最高价格，单位为元；Max 为 0 时不限制最高价格。
 // 判断对象是最新交易日的收盘价，满足价格区间后返回买入信号。
 // 适合作为 BuyAll 中的价格过滤条件，与其它形态、均线、成交量条件组合使用。
-type Price struct {
+type A现价 struct {
 	Min float64
 	Max float64
 }
 
-func (b Price) Name() string {
+func (b A现价) Name() string {
 	switch {
 	case b.Min > 0 && b.Max > 0:
 		return fmt.Sprintf("价格%.1f-%.1f元", b.Min, b.Max)
@@ -30,7 +30,7 @@ func (b Price) Name() string {
 	}
 }
 
-func (b Price) Buy(code string, dks extend.Klines) bool {
+func (b A现价) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}
@@ -47,16 +47,16 @@ func (b Price) Buy(code string, dks extend.Klines) bool {
 	return true
 }
 
-// NotLimitUp 是过滤涨停买入条件。
+// A过滤涨停 是过滤涨停买入条件。
 // 当最新交易日涨幅达到或超过 MaxRiseRate 时返回 false，避免回测买入实际无法成交的涨停股票。
 // 当前主程序只筛选 sh60 和 sz00，默认值按常见 10% 涨停制度设置；如需适配 ST 或 20cm 股票，可按需调整 MaxRiseRate。
-type NotLimitUp struct{}
+type A过滤涨停 struct{}
 
-func (b NotLimitUp) Name() string {
+func (b A过滤涨停) Name() string {
 	return "过滤涨停"
 }
 
-func (b NotLimitUp) Buy(code string, dks extend.Klines) bool {
+func (b A过滤涨停) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}
