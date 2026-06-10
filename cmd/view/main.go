@@ -11,10 +11,10 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 	"os"
 
 	"github.com/injoyai/goutil/oss"
+	"github.com/injoyai/logs"
 	"github.com/injoyai/lorca"
 )
 
@@ -23,7 +23,7 @@ var html string
 
 var configFileName = oss.UserInjoyDir("screen-stock", "config.txt")
 
-const defaultHost = "localhost:8080"
+const defaultHost = "localhost:9090"
 
 func main() {
 
@@ -35,13 +35,14 @@ func main() {
 		Pages:   nil,
 	}, func(app lorca.APP) error {
 		// 暴露 Go 函数给 JS 调用
-		app.Bind("loadAddr", loadAddr)
-		app.Bind("saveAddr", func(addr string) {
-			os.WriteFile(configFileName, []byte(addr), 0644)
-		})
+		err := app.Bind("loadAddr", loadAddr)
+		logs.PrintErr(err)
+
+		err = app.Bind("saveAddr", saveAddr)
+		logs.PrintErr(err)
 
 		// 绑定完成后，主动推送地址并触发连接
-		app.Eval(fmt.Sprintf("startConnect('%s')", loadAddr()))
+		app.Eval("init()")
 
 		return nil
 	})
@@ -54,4 +55,8 @@ func loadAddr() string {
 		return defaultHost
 	}
 	return string(data)
+}
+
+func saveAddr(addr string) {
+	os.WriteFile(configFileName, []byte(addr), 0644)
 }
