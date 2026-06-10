@@ -1,22 +1,24 @@
-// main.go - 实时选股屏幕程序
+// main.go - 实时选股屏幕服务
 //
-// 该程序实现以下功能：
+// 该服务实现以下功能：
 // 1. 从通达信获取实时行情数据
-// 2. 基于预设的MACD反转策略筛选股票
-// 3. 在终端实时打印选股结果（交易期间每分钟刷新）
-// 4. 通过WebSocket推送选股结果到客户端
+// 2. 基于预设的MACD反转策略筛选买点
+// 3. 基于最近 N 个交易日的买点，使用卖出策略实时判定卖点
+// 4. 通过 WebSocket 单一连接（/ws）推送两类消息：
+//    - {"type":"buy", ...}  最新买点列表
+//    - {"type":"sell", ...} 最新卖点列表
 //
 // 交易时间：
 // - 上午：9:30 - 11:30
 // - 下午：13:00 - 15:00
 //
-// 非交易时间不执行选股刷新
+// 非交易时间不执行自动刷新
 
 package main
 
 import (
 	"encoding/json"
-	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -31,39 +33,31 @@ import (
 	"github.com/injoyai/tdx/protocol"       // 通达信协议定义
 )
 
+// =========================================================
+// 实时行情 / K线 工具
+// =========================================================
+
 // getRealtimeQuotes - 批量获取实时行情
-// 参数：
-//
-//	codes: 股票代码列表
-//
-// 返回：
-//
-//	map[string]*protocol.Quote: 股票代码到行情的映射
-//	error: 错误信息
-//
-// 注意：通达信API每次最多支持80个代码，需要分批获取
+// 通达信 API 每次最多支持 80 个代码，需分批拉取
 func getRealtimeQuotes(codes []string) (map[string]*protocol.Quote, error) {
 	if len(codes) == 0 {
 		return nil, nil
 	}
 
 	quoteMap := make(map[string]*protocol.Quote, len(codes))
-	batchSize := 80 // 每批最多80个代码
+	batchSize := 80
 
-	// 分批获取行情
 	for i := 0; i < len(codes); i += batchSize {
 		end := i + batchSize
 		if end > len(codes) {
 			end = len(codes)
 		}
 
-		// 使用通达信客户端获取行情
 		if err := common.Manage.Do(func(c *tdx.Client) error {
 			quotes, err := c.GetQuote(codes[i:end]...)
 			if err != nil {
 				return err
 			}
-			// 将行情存入map，key为带前缀的股票代码
 			for _, q := range quotes {
 				quoteMap[protocol.AddPrefix(q.Code)] = q
 			}
@@ -76,56 +70,37 @@ func getRealtimeQuotes(codes []string) (map[string]*protocol.Quote, error) {
 	return quoteMap, nil
 }
 
-// quoteToKline - 将实时行情转换为K线数据
-// 参数：
-//
-//	quote: 实时行情数据
-//	prevKline: 上一根K线（用于继承流通股和总股本）
-//
-// 返回：
-//
-//	*extend.Kline: 转换后的K线数据
+// quoteToKline - 将实时行情转换为 K 线（流通股/总股本继承上一日）
 func quoteToKline(quote *protocol.Quote, prevKline *extend.Kline) *extend.Kline {
 	now := time.Now()
 	return &extend.Kline{
 		Unix: now.Unix(),
 		Kline: &protocol.Kline{
-			Last:   quote.K.Last,                 // 昨收价
-			Open:   quote.K.Open,                 // 今开盘价
-			High:   quote.K.High,                 // 最高价
-			Low:    quote.K.Low,                  // 最低价
-			Close:  quote.K.Close,                // 当前价（作为收盘价）
-			Volume: int64(quote.TotalHand) * 100, // 成交量（手×100）
-			Amount: protocol.Yuan(quote.Amount),  // 成交额
-			Time:   now,                          // 当前时间
+			Last:   quote.K.Last,
+			Open:   quote.K.Open,
+			High:   quote.K.High,
+			Low:    quote.K.Low,
+			Close:  quote.K.Close,
+			Volume: int64(quote.TotalHand) * 100,
+			Amount: protocol.Yuan(quote.Amount),
+			Time:   now,
 		},
-		FloatStock: prevKline.FloatStock, // 流通股数（继承上一日数据）
-		TotalStock: prevKline.TotalStock, // 总股本数（继承上一日数据）
+		FloatStock: prevKline.FloatStock,
+		TotalStock: prevKline.TotalStock,
 	}
 }
 
-// makeIntradayGetDayKlines - 构造盘中版K线获取函数
-// 参数：
-//
-//	quoteMap: 实时行情映射
-//
-// 返回：
-//
-//	func(code string, start, end time.Time) (extend.Klines, error): K线获取闭包
-//
-// 核心逻辑：
-// 1. 从本地数据库读取历史日线
-// 2. 如果当天是交易日，用实时行情拼接今日K线
-// 3. 时间范围过滤
+// makeIntradayGetDayKlines - 构造盘中版 K 线获取函数
+// 1. 读取本地历史日线
+// 2. 按 [start, end] 过滤
+// 3. 如有实时行情，拼接/替换今日 K 线
 func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code string, start, end time.Time) (extend.Klines, error) {
 	return func(code string, start, end time.Time) (extend.Klines, error) {
-		// 1. 从数据库读取历史日线
 		ks, err := common.Pull.DayKlines(code)
 		if err != nil {
 			return nil, err
 		}
 
-		// 2. 按时间范围过滤
 		var ls extend.Klines
 		for _, k := range ks {
 			if !k.Time.Before(start) && !k.Time.After(end) {
@@ -133,22 +108,18 @@ func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code str
 			}
 		}
 
-		// 没有数据直接返回
 		if len(ls) == 0 {
 			return ls, nil
 		}
 
-		// 3. 如果有实时行情，拼接今日K线
 		if quote, ok := quoteMap[code]; ok {
 			last := ls[len(ls)-1]
 			todayKline := quoteToKline(quote, last)
 
 			nowDate := time.Now().Format(time.DateOnly)
 			if last.Time.Format(time.DateOnly) == nowDate {
-				// 今天数据已存在，替换为实时数据
 				ls[len(ls)-1] = todayKline
 			} else {
-				// 追加今日K线
 				ls = append(ls, todayKline)
 			}
 		}
@@ -157,65 +128,207 @@ func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code str
 	}
 }
 
-// ScreenResponse - 选股响应结构
-// 用于封装选股结果，便于JSON序列化和传输
-type ScreenResponse struct {
-	Count   int       `json:"count"`   // 选股数量
-	Time    string    `json:"time"`    // 选股时间
-	Results []BuyItem `json:"results"` // 选股结果列表
-}
+// =========================================================
+// 响应数据结构
+// =========================================================
 
 // BuyItem - 买入信号条目
-// 表示一只符合条件的股票信息
 type BuyItem struct {
 	Code  string  `json:"code"`  // 股票代码（带前缀）
 	Time  string  `json:"time"`  // 信号产生时间
-	Price float64 `json:"price"` // 当前价格
+	Price float64 `json:"price"` // 当时收盘/现价
 	Rise  float64 `json:"rise"`  // 涨幅百分比
 }
 
-// doScreen - 执行选股
-// 返回选股结果和错误信息
-//
-// 执行流程：
-// 1. 获取股票代码列表
-// 2. 批量获取实时行情
-// 3. 构造K线获取函数（历史+实时拼接）
-// 4. 执行选股策略
-// 5. 计算涨幅并格式化结果
-func doScreen() (*ScreenResponse, error) {
-	codes := common.GetNoPriceLimitCodes() // 获取股票代码
+// BuyResponse - 买点响应
+type BuyResponse struct {
+	Type    string    `json:"type"`    // 固定 "buy"
+	Count   int       `json:"count"`   // 数量
+	Time    string    `json:"time"`    // 刷新时间
+	Results []BuyItem `json:"results"` // 列表
+}
+
+// SellItem - 卖出信号条目
+type SellItem struct {
+	Code       string  `json:"code"`        // 股票代码
+	BuyTime    string  `json:"buy_time"`    // 买入时间
+	BuyPrice   float64 `json:"buy_price"`   // 买入价
+	SellTime   string  `json:"sell_time"`   // 卖出时间（当前时间）
+	SellPrice  float64 `json:"sell_price"`  // 卖出价（当前价）
+	ProfitRate float64 `json:"profit_rate"` // 收益率百分比
+}
+
+// SellResponse - 卖点响应
+type SellResponse struct {
+	Type    string     `json:"type"`    // 固定 "sell"
+	Count   int        `json:"count"`   // 数量
+	Time    string     `json:"time"`    // 刷新时间
+	Results []SellItem `json:"results"` // 列表
+}
+
+// =========================================================
+// 服务核心
+// =========================================================
+
+// ScreenService - 选股服务，管理买点历史、卖点判定和 WebSocket 推送
+type ScreenService struct {
+	mu               sync.RWMutex
+	sellLookbackDays int                     // 卖点回看天数
+	buyHistory       map[string][]core.Buy   // 按日期(YYYY-MM-DD) 聚合的买点
+	lastBuys         *BuyResponse            // 最新买点快照
+	lastSells        *SellResponse           // 最新卖点快照
+	subscribers      map[*fbr.Websocket]bool // WebSocket 订阅者
+}
+
+func newScreenService(sellLookbackDays int) *ScreenService {
+	return &ScreenService{
+		sellLookbackDays: sellLookbackDays,
+		buyHistory:       make(map[string][]core.Buy),
+		subscribers:      make(map[*fbr.Websocket]bool),
+	}
+}
+
+// addSubscriber - 添加订阅者
+func (s *ScreenService) addSubscriber(ws *fbr.Websocket) {
+	s.mu.Lock()
+	s.subscribers[ws] = true
+	s.mu.Unlock()
+}
+
+// removeSubscriber - 移除订阅者
+func (s *ScreenService) removeSubscriber(ws *fbr.Websocket) {
+	s.mu.Lock()
+	delete(s.subscribers, ws)
+	s.mu.Unlock()
+}
+
+// snapshot - 获取当前快照供新连接订阅时推送
+func (s *ScreenService) snapshot() (*BuyResponse, *SellResponse) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lastBuys, s.lastSells
+}
+
+// broadcast - 向所有订阅者广播消息
+func (s *ScreenService) broadcast(payload any) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		logs.Errf("[广播] 序列化失败: %v", err)
+		return
+	}
+	msg := string(data)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for ws := range s.subscribers {
+		ws.WriteText(msg)
+	}
+}
+
+// recentDates - 返回最近 N 个交易日（含今日，若今日为交易日）日期的字符串集合
+func (s *ScreenService) recentDates(now time.Time) []string {
+	n := s.sellLookbackDays
+	if n <= 0 {
+		n = 10
+	}
+	// 倒序遍历，往前推 N+5 天以确保能找到 N 个交易日
+	start := now.AddDate(0, 0, -(n + 30))
+	end := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, time.Local)
+
+	dates := make([]string, 0, n)
+	for t := range common.Manage.Workday.Iter(start, end, true) {
+		dates = append(dates, t.Format(time.DateOnly))
+		if len(dates) >= n {
+			break
+		}
+	}
+	return dates
+}
+
+// backfillHistory - 启动时回填最近 N 个交易日的买点
+// 注意：不使用实时行情，使用本地历史日线（每日的当天 K 线即为收盘数据）
+func (s *ScreenService) backfillHistory() {
+	now := time.Now()
+	dates := s.recentDates(now)
+	if len(dates) == 0 {
+		return
+	}
+	logs.Infof("[回填] 开始回填最近 %d 个交易日的买点\n", len(dates))
+
+	codes := common.GetNoPriceLimitCodes()
+	for _, date := range dates {
+		// 跳过今日：今日会在首次 doScreenBuys 时计算
+		if date == now.Format(time.DateOnly) {
+			continue
+		}
+		day, err := time.ParseInLocation(time.DateOnly, date, time.Local)
+		if err != nil {
+			logs.Errf("[回填] 解析日期 %s 失败: %v", date, err)
+			continue
+		}
+		at := time.Date(day.Year(), day.Month(), day.Day(), 15, 0, 0, 0, time.Local)
+
+		scr := core.Screen{
+			Buyer:        common.MACDBuyer,
+			Codes:        codes,
+			Goroutines:   10,
+			GetDayKlines: common.GetDayKlines,
+		}
+		buys, err := scr.Run(codes, at)
+		if err != nil {
+			logs.Errf("[回填] %s 选股失败: %v", date, err)
+			continue
+		}
+
+		s.mu.Lock()
+		s.buyHistory[date] = toCoreBuys(buys)
+		s.mu.Unlock()
+		logs.Infof("[回填] %s 选出 %d 只\n", date, len(buys))
+	}
+	logs.Infof("[回填] 完成")
+}
+
+// toCoreBuys - 转换 *core.Buy -> core.Buy
+func toCoreBuys(ls []*core.Buy) []core.Buy {
+	out := make([]core.Buy, 0, len(ls))
+	for _, b := range ls {
+		if b != nil {
+			out = append(out, *b)
+		}
+	}
+	return out
+}
+
+// doScreenBuys - 执行一次选股，更新今日买点、广播 {type:"buy"}
+func (s *ScreenService) doScreenBuys() {
+	codes := common.GetNoPriceLimitCodes()
 	now := time.Now()
 
-	// 1. 拉取实时行情
-	logs.Infof("[选股] 拉取实时行情，共 %d 只股票", len(codes))
+	logs.Infof("[选股] 拉取实时行情，共 %d 只股票\n", len(codes))
 	quoteMap, err := getRealtimeQuotes(codes)
 	if err != nil {
-		return nil, err
+		logs.Errf("[选股] 拉取行情失败: %v\n", err)
+		return
 	}
-	logs.Infof("[选股] 实时行情获取完成，有效 %d 只", len(quoteMap))
 
-	// 2. 创建选股器
-	s := core.Screen{
+	scr := core.Screen{
 		Buyer:        common.MACDBuyer,
 		Codes:        codes,
 		Goroutines:   10,
 		GetDayKlines: makeIntradayGetDayKlines(quoteMap),
 	}
 
-	// 3. 执行选股
-	buys, err := s.Run(codes, now)
+	buys, err := scr.Run(codes, now)
 	if err != nil {
-		return nil, err
+		logs.Errf("[选股] 执行失败: %v", err)
+		return
 	}
 
-	// 4. 格式化结果，计算涨幅
+	// 计算涨幅
 	items := make([]BuyItem, 0, len(buys))
 	for _, b := range buys {
 		riseRate := 0.0
 		if b.Price > 0 {
 			if quote := quoteMap[b.Code]; quote != nil && quote.K.Last > 0 {
-				// 涨幅 = (现价 - 昨收) / 昨收 × 100%
 				riseRate = (b.Price.Float64() - quote.K.Last.Float64()) / quote.K.Last.Float64() * 100
 			}
 		}
@@ -227,24 +340,164 @@ func doScreen() (*ScreenResponse, error) {
 		})
 	}
 
-	return &ScreenResponse{
-		Count:   len(buys),
+	resp := &BuyResponse{
+		Type:    "buy",
+		Count:   len(items),
 		Time:    now.Format(time.DateTime),
 		Results: items,
-	}, nil
+	}
+
+	// 更新今日买点到历史，并清理超出回看窗口的旧日期
+	today := now.Format(time.DateOnly)
+	coreBuys := toCoreBuys(buys)
+	validDates := make(map[string]struct{}, s.sellLookbackDays)
+	for _, d := range s.recentDates(now) {
+		validDates[d] = struct{}{}
+	}
+	s.mu.Lock()
+	s.buyHistory[today] = coreBuys
+	for d := range s.buyHistory {
+		if _, ok := validDates[d]; !ok {
+			delete(s.buyHistory, d)
+		}
+	}
+	s.lastBuys = resp
+	s.mu.Unlock()
+
+	logs.Infof("[选股] 选出 %d 只股票\n", len(items))
+
+	s.broadcast(resp)
+
+	// 买点更新后，紧接着重算卖点（共享同一份实时行情）
+	s.doScreenSells(quoteMap)
 }
 
+// doScreenSells - 基于最近 N 天买点重算卖点，更新并广播 {type:"sell"}
+// quoteMap 由调用方传入；如果为 nil 则内部重新拉取
+func (s *ScreenService) doScreenSells(quoteMap map[string]*protocol.Quote) {
+	now := time.Now()
+
+	// 收集最近 N 天的所有买点，不去重，每个买点独立判定卖点
+	s.mu.RLock()
+	dates := s.recentDates(now)
+	var candidates []core.Buy
+	for _, date := range dates {
+		candidates = append(candidates, s.buyHistory[date]...)
+	}
+	s.mu.RUnlock()
+
+	if len(candidates) == 0 {
+		// 即使为空也广播，让客户端知道当前无卖点
+		resp := &SellResponse{Type: "sell", Count: 0, Time: now.Format(time.DateTime), Results: []SellItem{}}
+		s.mu.Lock()
+		s.lastSells = resp
+		s.mu.Unlock()
+		s.broadcast(resp)
+		return
+	}
+
+	// 收集需要拉取行情的代码（去重）
+	codeSet := make(map[string]struct{}, len(candidates))
+	for _, b := range candidates {
+		codeSet[b.Code] = struct{}{}
+	}
+
+	// 若 quoteMap 为 nil（独立调用卖点判定），拉取一次行情
+	if quoteMap == nil {
+		codes := make([]string, 0, len(codeSet))
+		for code := range codeSet {
+			codes = append(codes, code)
+		}
+		var err error
+		quoteMap, err = getRealtimeQuotes(codes)
+		if err != nil {
+			logs.Errf("[卖点] 拉取行情失败: %v\n", err)
+			return
+		}
+	}
+
+	getKlines := makeIntradayGetDayKlines(quoteMap)
+	start := now.AddDate(0, -4, 0)
+	end := time.Date(now.Year(), now.Month(), now.Day(), 15, 1, 0, 0, time.Local)
+
+	sells := make([]SellItem, 0)
+	for _, b := range candidates {
+		dks, err := getKlines(b.Code, start, end)
+		if err != nil || len(dks) == 0 {
+			continue
+		}
+		if !common.MACDSeller.Sell(b.Code, dks, b) {
+			continue
+		}
+		today := dks[len(dks)-1]
+		sellPrice := today.Close.Float64()
+		profitRate := 0.0
+		if b.Price > 0 {
+			profitRate = (sellPrice - b.Price.Float64()) / b.Price.Float64() * 100
+		}
+		sells = append(sells, SellItem{
+			Code:       b.Code,
+			BuyTime:    b.Time.Format(time.DateTime),
+			BuyPrice:   b.Price.Float64(),
+			SellTime:   today.Time.Format(time.DateTime),
+			SellPrice:  sellPrice,
+			ProfitRate: profitRate,
+		})
+	}
+
+	// 按代码+买入时间排序，便于客户端展示稳定
+	sort.Slice(sells, func(i, j int) bool {
+		if sells[i].Code != sells[j].Code {
+			return sells[i].Code < sells[j].Code
+		}
+		return sells[i].BuyTime < sells[j].BuyTime
+	})
+
+	resp := &SellResponse{
+		Type:    "sell",
+		Count:   len(sells),
+		Time:    now.Format(time.DateTime),
+		Results: sells,
+	}
+
+	s.mu.Lock()
+	s.lastSells = resp
+	s.mu.Unlock()
+
+	logs.Infof("[卖点] 检出 %d 只\n", len(sells))
+	s.broadcast(resp)
+}
+
+// startBackground - 启动后台定时任务
+// 每个 interval 触发一次：仅在交易日且交易时间内执行
+func (s *ScreenService) startBackground(interval time.Duration) {
+	// 启动时立刻跑一次，确保有数据快照
+	s.doScreenBuys()
+
+	logs.Infof("[服务] 后台选股任务启动，间隔 %v", interval)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if !common.Manage.Workday.TodayIs() || !isTradingTime() {
+			continue
+		}
+		s.doScreenBuys()
+	}
+
+}
+
+// =========================================================
+// 交易时间判断
+// =========================================================
+
 // isTradingTime - 判断是否处于交易时间段
-// 返回：true表示在交易时间内，false表示不在
-//
-// 交易时间：
-// - 上午：09:30 - 11:30
-// - 下午：13:00 - 15:00
+// 交易时间：上午 09:30 - 11:30，下午 13:00 - 15:00
 func isTradingTime() bool {
 	now := time.Now()
 	hour, minute := now.Hour(), now.Minute()
 
-	// 上午交易时段
 	if hour >= 9 && hour <= 11 {
 		if hour == 9 && minute >= 30 {
 			return true
@@ -257,169 +510,55 @@ func isTradingTime() bool {
 		}
 	}
 
-	// 下午交易时段（13:00 - 15:00）
 	return hour >= 13 && hour < 15
 }
 
-// printResults - 在终端打印选股结果
-// 参数：
-//
-//	results: 选股结果列表
-//
-// 输出格式：
-// - 表格形式展示
-// - 涨幅颜色：上涨绿色，下跌红色
-func printResults(results []BuyItem) {
-	if len(results) == 0 {
-		fmt.Println("┌─────────────────────────────────────────────┐")
-		fmt.Println("│              暂无符合条件的股票              │")
-		fmt.Println("└─────────────────────────────────────────────┘")
-		return
-	}
+// =========================================================
+// 入口
+// =========================================================
 
-	// 打印表头
-	fmt.Println("┌────────────┬──────────┬────────┬──────────┐")
-	fmt.Println("│    代码    │    价格   │  涨幅   │    时间   │")
-	fmt.Println("├────────────┼──────────┼────────┼──────────┤")
-
-	// 打印每行数据
-	for _, item := range results {
-		// 根据涨幅设置颜色：上涨绿色，下跌红色
-		riseColor := "\033[32m" // 绿色
-		if item.Rise < 0 {
-			riseColor = "\033[31m" // 红色
-		}
-		fmt.Printf("│ %-10s │ %-8.2f │%s %+.2f%%\033[0m │ %-8s │\n",
-			item.Code, item.Price, riseColor, item.Rise, item.Time[11:19])
-	}
-
-	// 打印表尾
-	fmt.Println("└────────────┴──────────┴────────┴──────────┘")
-}
-
-// main - 主函数
-// 程序入口，执行以下操作：
-// 1. 立即执行一次选股并打印到终端
-// 2. 启动后台定时选股任务（仅交易时间自动刷新终端）
-// 3. 注册WebSocket接口供客户端订阅选股结果
-// 4. 启动Web服务器
 func main() {
 	port := cfg.GetInt("port", frame.DefaultPort)
+	interval := cfg.GetDuration("interval", time.Minute)
+	sellLookbackDays := cfg.GetInt("sell_lookback_days", 10)
 
-	state := &ScreenState{subscribers: make(map[*fbr.Websocket]bool)}
+	svc := newScreenService(sellLookbackDays)
 
-	// 启动后台定时选股任务
-	go state.startBackgroundScreen(time.Minute)
+	//实时计算今天的买点
+	go func() {
+		logs.Infof("开始读取近N天的买点\n")
+		svc.backfillHistory()
+
+		logs.Infof("开始监控今天的买点\n")
+		svc.startBackground(interval)
+	}()
 
 	s := fbr.Default(
 		fbr.WithPort(port),
-		fbr.WithALL("/screen", func(c fbr.Ctx) {
+		fbr.WithALL("/ws", func(c fbr.Ctx) {
 			c.Websocket(func(ws *fbr.Websocket) {
-				state.addSubscriber(ws)          // 订阅
-				defer state.removeSubscriber(ws) // 连接关闭时取消订阅
-				// 如果有上次选股结果，立即推送给新客户端
-				if state.lastResult != nil {
-					data, _ := json.Marshal(map[string]any{"type": "screen_result", "result": state.lastResult})
-					ws.WriteText(string(data))
+				svc.addSubscriber(ws)
+				defer svc.removeSubscriber(ws)
+
+				// 新连接立即推送当前快照
+				if buys, sells := svc.snapshot(); buys != nil || sells != nil {
+					if buys != nil {
+						if data, err := json.Marshal(buys); err == nil {
+							ws.WriteText(string(data))
+						}
+					}
+					if sells != nil {
+						if data, err := json.Marshal(sells); err == nil {
+							ws.WriteText(string(data))
+						}
+					}
 				}
+
 				// 保持连接（阻塞等待）
 				ws.DiscardRead()
 			})
 		}),
 	)
 
-	// 启动Web服务器
 	s.Run()
-
-}
-
-// ScreenState - 选股状态管理器
-// 管理WebSocket订阅者和最新选股结果
-type ScreenState struct {
-	mu          sync.RWMutex            // 读写锁，保证并发安全
-	lastResult  *ScreenResponse         // 最新选股结果
-	subscribers map[*fbr.Websocket]bool // WebSocket订阅者集合
-}
-
-// addSubscriber - 添加订阅者
-func (st *ScreenState) addSubscriber(ws *fbr.Websocket) {
-	st.mu.Lock()
-	st.subscribers[ws] = true
-	st.mu.Unlock()
-}
-
-// removeSubscriber - 移除订阅者
-func (st *ScreenState) removeSubscriber(ws *fbr.Websocket) {
-	st.mu.Lock()
-	delete(st.subscribers, ws)
-	st.mu.Unlock()
-}
-
-// updateResult - 更新选股结果并广播
-// 参数：
-//
-//	resp: 新的选股结果
-//
-// 执行操作：
-// 1. 更新lastResult
-// 2. 清屏并打印新结果到终端
-// 3. 广播结果到所有WebSocket订阅者
-func (st *ScreenState) updateResult(resp *ScreenResponse) {
-	st.mu.Lock()
-	st.lastResult = resp
-	st.mu.Unlock()
-
-	// 清屏并打印新结果
-	fmt.Printf("\n\033[2J\033[H") // ANSI清屏指令
-	fmt.Printf("[%s] 选出 %d 只股票\n\n", resp.Time, resp.Count)
-	printResults(resp.Results)
-
-	// 广播到所有订阅者
-	data, _ := json.Marshal(map[string]any{"type": "screen_result", "result": resp})
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	for ws := range st.subscribers {
-		ws.WriteText(string(data))
-	}
-}
-
-// startBackgroundScreen - 启动后台定时选股任务
-// 参数：
-//
-//	interval: 选股间隔时间
-//
-// 执行逻辑：
-// - 每分钟检查一次
-// - 仅在交易日且交易时间内执行选股和刷新
-// - 非交易时间：不执行自动刷新（数据不会变化）
-// - 更新结果后广播到所有WebSocket订阅者
-func (st *ScreenState) startBackgroundScreen(interval time.Duration) {
-
-	// 执行选股并刷新终端
-	st.doScreenAndPrint()
-
-	logs.Infof("[选股] 后台选股任务启动，间隔 %v\n", interval)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		// 仅在交易时间内执行自动刷新
-		if !common.Manage.Workday.TodayIs() || !isTradingTime() {
-			continue
-		}
-
-		// 执行选股并刷新终端
-		st.doScreenAndPrint()
-	}
-}
-
-func (st *ScreenState) doScreenAndPrint() {
-	// 执行选股并刷新终端
-	if resp, err := doScreen(); err != nil {
-		logs.Errf("[选股] 执行失败: %v", err)
-	} else {
-		logs.Infof("[选股] 选出 %d 只股票", resp.Count)
-		st.updateResult(resp)
-	}
 }

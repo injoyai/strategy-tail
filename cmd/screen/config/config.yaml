@@ -1,1 +1,3 @@
 port: 8080
+interval: 1m              # 选股刷新间隔
+sell_lookback_days: 10    # 卖点回看 N 个交易日的买点

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"io"
 	"time"
 
 	"github.com/injoyai/bar"
@@ -13,6 +14,7 @@ type Screen struct {
 	Codes        []string
 	Goroutines   int
 	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)
+	ShowBar      bool
 }
 
 func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
@@ -24,6 +26,11 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 		len(codes),
 		s.Goroutines,
 		bar.WithPrefix("[选股][xx000000]"),
+		func(b *bar.Bar) {
+			if !s.ShowBar {
+				b.SetWriter(io.Discard)
+			}
+		},
 	)
 
 	result := make([]*Buy, 0)
