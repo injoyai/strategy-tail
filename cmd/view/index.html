@@ -212,10 +212,10 @@ let currentAddr = '';
 let ws = null;
 let reconnectTimer = null;
 
-// 从 Go 加载保存的地址
-async function init() {
-  try { currentAddr = await loadAddr(); } catch(e) {}
-  document.getElementById('addrInput').value = currentAddr;
+// 由 Go 端绑定完成后调用，传入保存的地址并触发连接
+function startConnect(addr) {
+  currentAddr = addr;
+  document.getElementById('addrInput').value = addr;
   connect();
 }
 
@@ -332,7 +332,7 @@ function updateSell(data) {
   body.innerHTML = html;
 }
 
-init();
+// 页面加载后不自动连接，等待 Go 端调用 startConnect
 </script>
 </body>
 </html>

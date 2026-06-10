@@ -11,6 +11,7 @@ package main
 
 import (
 	_ "embed"
+	"fmt"
 	"os"
 
 	"github.com/injoyai/goutil/oss"
@@ -21,6 +22,8 @@ import (
 var html string
 
 var configFileName = oss.UserInjoyDir("screen-stock", "config.txt")
+
+const defaultHost = "localhost:8080"
 
 func main() {
 
@@ -35,13 +38,21 @@ func main() {
 		app.Bind("loadAddr", func() string {
 			data, err := os.ReadFile(configFileName)
 			if err != nil {
-				return "localhost:9090"
+				return defaultHost
 			}
 			return string(data)
 		})
 		app.Bind("saveAddr", func(addr string) {
 			os.WriteFile(configFileName, []byte(addr), 0644)
 		})
+
+		// 绑定完成后，主动推送地址并触发连接
+		data, _ := os.ReadFile(configFileName)
+		addr := defaultHost
+		if len(data) > 0 {
+			addr = string(data)
+		}
+		app.Eval(fmt.Sprintf("startConnect('%s')", addr))
 
 		return nil
 	})
