@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>选股实时监控</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #0f1117;
+  color: #e1e4e8;
+  min-height: 100vh;
+}
+.header {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #f0f6fc;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.status-dot.connected { background: #3fb950; box-shadow: 0 0 6px #3fb950; }
+.status-dot.disconnected { background: #f85149; box-shadow: 0 0 6px #f85149; }
+.status-dot.connecting { background: #d29922; box-shadow: 0 0 6px #d29922; }
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #8b949e;
+}
+.addr-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.addr-input {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  color: #e1e4e8;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: "SF Mono", Consolas, monospace;
+  width: 180px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.addr-input:focus { border-color: #58a6ff; }
+.addr-btn {
+  background: #238636;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.addr-btn:hover { background: #2ea043; }
+.update-time { color: #58a6ff; font-family: "SF Mono", Consolas, monospace; }
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  padding: 16px 24px;
+  max-height: calc(100vh - 56px);
+}
+.panel {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.panel-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #30363d;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.panel-title .icon { font-size: 16px; }
+.panel-title.buy .icon { color: #3fb950; }
+.panel-title.sell .icon { color: #f85149; }
+.badge {
+  background: #30363d;
+  color: #8b949e;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+.panel-body {
+  overflow-y: auto;
+  flex: 1;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: #1c2128;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 500;
+  color: #8b949e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #30363d;
+}
+td {
+  padding: 8px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid #21262d;
+  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+}
+tr:hover td { background: #1c2128; }
+.positive { color: #3fb950; }
+.negative { color: #f85149; }
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: #484f58;
+  font-size: 14px;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+tr { animation: fadeIn 0.3s ease; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <h1>
+      <span class="status-dot disconnected" id="statusDot"></span>
+      选股实时监控
+    </h1>
+  </div>
+  <div class="header-right">
+    <div class="addr-group">
+      <input class="addr-input" id="addrInput" placeholder="localhost:8080" />
+      <button class="addr-btn" id="addrBtn" onclick="applyAddr()">连接</button>
+    </div>
+    <span>更新: <span class="update-time" id="updateTime">--</span></span>
+  </div>
+</div>
+<div class="container">
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title buy"><span class="icon">&#9650;</span> 买点信号</div>
+      <span class="badge" id="buyCount">0</span>
+    </div>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>代码</th><th>价格</th><th>涨幅</th><th>时间</th></tr></thead>
+        <tbody id="buyBody"></tbody>
+      </table>
+      <div class="empty-state" id="buyEmpty">等待买点数据...</div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title sell"><span class="icon">&#9660;</span> 卖点信号</div>
+      <span class="badge" id="sellCount">0</span>
+    </div>
+    <div class="panel-body">
+      <table>
+        <thead><tr><th>代码</th><th>买入价</th><th>卖出价</th><th>收益率</th><th>买入时间</th><th>卖出时间</th></tr></thead>
+        <tbody id="sellBody"></tbody>
+      </table>
+      <div class="empty-state" id="sellEmpty">等待卖点数据...</div>
+    </div>
+  </div>
+</div>
+<script>
+let currentAddr = '';
+let ws = null;
+let reconnectTimer = null;
+
+// 从 Go 加载保存的地址
+async function init() {
+  try { currentAddr = await loadAddr(); } catch(e) {}
+  document.getElementById('addrInput').value = currentAddr;
+  connect();
+}
+
+function setStatus(status) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + status;
+}
+
+function applyAddr() {
+  const input = document.getElementById('addrInput');
+  const addr = input.value.trim();
+  if (!addr) return;
+  currentAddr = addr;
+  saveAddr(addr);
+  if (ws) { ws.close(); }
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  connect();
+}
+
+function connect() {
+  if (!currentAddr) { setStatus('disconnected'); return; }
+  setStatus('connecting');
+  const wsUrl = 'ws://' + currentAddr + '/ws';
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = function() {
+    setStatus('connected');
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+  };
+
+  ws.onclose = function() {
+    setStatus('disconnected');
+    reconnectTimer = setTimeout(connect, 3000);
+  };
+
+  ws.onerror = function() {
+    ws.close();
+  };
+
+  ws.onmessage = function(event) {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'buy') updateBuy(data);
+      else if (data.type === 'sell') updateSell(data);
+    } catch(e) {}
+  };
+}
+
+function fmtRate(v) {
+  const cls = v >= 0 ? 'positive' : 'negative';
+  const sign = v >= 0 ? '+' : '';
+  return '<span class="' + cls + '">' + sign + v.toFixed(2) + '%</span>';
+}
+
+function fmtPrice(v) {
+  return v.toFixed(2);
+}
+
+function fmtTime(s) {
+  if (!s || s.length < 19) return s || '';
+  return s.substring(11, 19);
+}
+
+function fmtDateTime(s) {
+  if (!s || s.length < 19) return s || '';
+  return s.substring(5, 19);
+}
+
+function updateBuy(data) {
+  document.getElementById('updateTime').textContent = fmtTime(data.time);
+  document.getElementById('buyCount').textContent = data.count;
+  const empty = document.getElementById('buyEmpty');
+  const body = document.getElementById('buyBody');
+  if (!data.results || data.results.length === 0) {
+    empty.style.display = 'flex';
+    body.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  let html = '';
+  for (const r of data.results) {
+    html += '<tr>';
+    html += '<td>' + r.code + '</td>';
+    html += '<td>' + fmtPrice(r.price) + '</td>';
+    html += '<td>' + fmtRate(r.rise) + '</td>';
+    html += '<td>' + fmtTime(r.time) + '</td>';
+    html += '</tr>';
+  }
+  body.innerHTML = html;
+}
+
+function updateSell(data) {
+  document.getElementById('updateTime').textContent = fmtTime(data.time);
+  document.getElementById('sellCount').textContent = data.count;
+  const empty = document.getElementById('sellEmpty');
+  const body = document.getElementById('sellBody');
+  if (!data.results || data.results.length === 0) {
+    empty.style.display = 'flex';
+    body.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  let html = '';
+  for (const r of data.results) {
+    html += '<tr>';
+    html += '<td>' + r.code + '</td>';
+    html += '<td>' + fmtPrice(r.buy_price) + '</td>';
+    html += '<td>' + fmtPrice(r.sell_price) + '</td>';
+    html += '<td>' + fmtRate(r.profit_rate) + '</td>';
+    html += '<td>' + fmtDateTime(r.buy_time) + '</td>';
+    html += '<td>' + fmtDateTime(r.sell_time) + '</td>';
+    html += '</tr>';
+  }
+  body.innerHTML = html;
+}
+
+init();
+</script>
+</body>
+</html>
