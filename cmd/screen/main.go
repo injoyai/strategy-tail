@@ -284,7 +284,7 @@ func (s *ScreenService) backfillHistory() {
 		s.mu.Unlock()
 		logs.Infof("[回填] %s 选出 %d 只\n", date, len(buys))
 	}
-	logs.Infof("[回填] 完成")
+	logs.Infof("[回填] 完成\n")
 }
 
 // toCoreBuys - 转换 *core.Buy -> core.Buy
@@ -469,12 +469,17 @@ func (s *ScreenService) doScreenSells(quoteMap map[string]*protocol.Quote) {
 }
 
 // startBackground - 启动后台定时任务
-// 每个 interval 触发一次：仅在交易日且交易时间内执行
+// - 每天 08:00 刷新历史买点（清理旧数据，重新回填）
+// - 交易时间内按 interval 周期执行选股
 func (s *ScreenService) startBackground(interval time.Duration) {
+
+	// 每日 00:00 或者启动的时候 刷新历史买点
+	go s.scheduleDailyBackfill()
+
 	// 启动时立刻跑一次，确保有数据快照
 	s.doScreenBuys()
 
-	logs.Infof("[服务] 后台选股任务启动，间隔 %v", interval)
+	logs.Infof("[服务] 后台选股任务启动，间隔 %v\n", interval)
 
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
@@ -485,7 +490,30 @@ func (s *ScreenService) startBackground(interval time.Duration) {
 		}
 		s.doScreenBuys()
 	}
+}
 
+// scheduleDailyBackfill - 每个交易日 00:00 刷新历史买点
+func (s *ScreenService) scheduleDailyBackfill() {
+	logs.Infof("开始读取近N天的买点\n")
+	s.backfillHistory()
+	for {
+		now := time.Now()
+		// 计算下一个 00:00
+		next := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		if !next.After(now) {
+			next = next.AddDate(0, 0, 1)
+		}
+		timer := time.NewTimer(next.Sub(now))
+		<-timer.C
+
+		// 只在交易日执行
+		if !common.Manage.Workday.TodayIs() {
+			continue
+		}
+
+		logs.Infof("[定时回填] 交易日 08:00，刷新历史买点\n")
+		s.backfillHistory()
+	}
 }
 
 // =========================================================
@@ -525,13 +553,7 @@ func main() {
 	svc := newScreenService(sellLookbackDays)
 
 	//实时计算今天的买点
-	go func() {
-		logs.Infof("开始读取近N天的买点\n")
-		svc.backfillHistory()
-
-		logs.Infof("开始监控今天的买点\n")
-		svc.startBackground(interval)
-	}()
+	go svc.startBackground(interval)
 
 	s := fbr.Default(
 		fbr.WithPort(port),

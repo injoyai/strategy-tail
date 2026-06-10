@@ -35,26 +35,23 @@ func main() {
 		Pages:   nil,
 	}, func(app lorca.APP) error {
 		// 暴露 Go 函数给 JS 调用
-		app.Bind("loadAddr", func() string {
-			data, err := os.ReadFile(configFileName)
-			if err != nil {
-				return defaultHost
-			}
-			return string(data)
-		})
+		app.Bind("loadAddr", loadAddr)
 		app.Bind("saveAddr", func(addr string) {
 			os.WriteFile(configFileName, []byte(addr), 0644)
 		})
 
 		// 绑定完成后，主动推送地址并触发连接
-		data, _ := os.ReadFile(configFileName)
-		addr := defaultHost
-		if len(data) > 0 {
-			addr = string(data)
-		}
-		app.Eval(fmt.Sprintf("startConnect('%s')", addr))
+		app.Eval(fmt.Sprintf("startConnect('%s')", loadAddr()))
 
 		return nil
 	})
 
+}
+
+func loadAddr() string {
+	data, err := os.ReadFile(configFileName)
+	if err != nil {
+		return defaultHost
+	}
+	return string(data)
 }
