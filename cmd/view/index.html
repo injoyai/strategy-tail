@@ -266,10 +266,12 @@ function showToast(message, type) {
   }, 4000);
 }
 
-// ===== 地址管理 (localStorage) =====
-function loadAddr() {}
+// ===== 地址管理 (Go 绑定) =====
+// loadAddr() / saveAddr(addr) 由 Go 端通过 lorca Bind 注入
+// loadAddr() 返回 Promise，需要 await
 
-function saveAddr(addr) {}
+function loadAddr(){}
+function saveAddr(addr){}
 
 // ===== 连接管理 =====
 function setStatus(status) {
@@ -404,11 +406,18 @@ function updateSell(data) {
   body.innerHTML = html;
 }
 
+
+
+
 // ===== 启动 =====
-function init(){
-    currentAddr = loadAddr();
-    document.getElementById('addrInput').value = currentAddr;
-    connect();
+async function init() {
+  try {
+    currentAddr = await loadAddr();
+  } catch(e) {
+    currentAddr = 'localhost:9090';
+  }
+  document.getElementById('addrInput').value = currentAddr;
+  connect();
 }
 
 </script>

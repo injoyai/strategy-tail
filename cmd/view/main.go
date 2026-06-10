@@ -42,7 +42,7 @@ func main() {
 		logs.PrintErr(err)
 
 		// 绑定完成后，主动推送地址并触发连接
-		app.Eval("init()")
+		app.Eval("init();")
 
 		return nil
 	})
