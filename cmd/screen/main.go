@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/frame"
 	"github.com/injoyai/frame/fbr" // Web框架
 	"github.com/injoyai/logs"      // 日志库
@@ -196,7 +197,7 @@ func doScreen() (*ScreenResponse, error) {
 
 	// 2. 创建选股器
 	s := core.Screen{
-		Buyer:        common.DefaultBuyer,
+		Buyer:        common.MACDBuyer,
 		Codes:        codes,
 		Goroutines:   10,
 		GetDayKlines: makeIntradayGetDayKlines(quoteMap),
@@ -303,6 +304,7 @@ func printResults(results []BuyItem) {
 // 3. 注册WebSocket接口供客户端订阅选股结果
 // 4. 启动Web服务器
 func main() {
+	port := cfg.GetInt("port", frame.DefaultPort)
 
 	state := &ScreenState{subscribers: make(map[*fbr.Websocket]bool)}
 
@@ -310,7 +312,7 @@ func main() {
 	go state.startBackgroundScreen(time.Minute)
 
 	s := fbr.Default(
-		fbr.WithPort(frame.DefaultPort),
+		fbr.WithPort(port),
 		fbr.WithALL("/screen", func(c fbr.Ctx) {
 			c.Websocket(func(ws *fbr.Websocket) {
 				state.addSubscriber(ws)          // 订阅

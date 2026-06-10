@@ -116,8 +116,8 @@ func printDisconnected() {
 }
 
 func main() {
-	host := g.InputVar("请输入地址:(默认localhost)").String("localhost")
-	url := fmt.Sprintf("ws://%s:8080/screen", host)
+	host := g.InputVar("请输入地址:(默认localhost:8080)").String("localhost:8080")
+	url := fmt.Sprintf("ws://%s/screen", host)
 	printHeader(url)
 
 	interrupt := make(chan os.Signal, 1)

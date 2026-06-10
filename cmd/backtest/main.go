@@ -22,7 +22,7 @@ func main() {
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: common.GetDayKlines,
-		GetMinKlines: nil, //common.GetMinKlines,
+		GetMinKlines: common.GetMinKlines,
 	}.Run()
 
 }
