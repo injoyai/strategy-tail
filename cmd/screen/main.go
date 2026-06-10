@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/injoyai/conv/cfg"
-	"github.com/injoyai/frame"
 	"github.com/injoyai/frame/fbr" // Web框架
 	"github.com/injoyai/logs"      // 日志库
 	"github.com/injoyai/strategy-tail"
@@ -546,7 +545,7 @@ func isTradingTime() bool {
 // =========================================================
 
 func main() {
-	port := cfg.GetInt("port", frame.DefaultPort)
+	port := cfg.GetInt("port", 9090)
 	interval := cfg.GetDuration("interval", time.Minute)
 	sellLookbackDays := cfg.GetInt("sell_lookback_days", 10)
 
