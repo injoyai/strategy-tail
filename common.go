@@ -88,6 +88,16 @@ func init() {
 		Goroutines: 10,
 	})
 
+	_update(update)
+	go func() {
+		for range time.NewTimer(time.Hour).C {
+			_update(update)
+		}
+	}()
+
+}
+
+func _update(update *tdx.Updated) {
 	if updated, err := update.Updated("pull"); err != nil || !updated {
 		if Manage.Workday.TodayIs() {
 			err = Pull.Update(Manage)
@@ -96,7 +106,6 @@ func init() {
 			logs.PanicErr(err)
 		}
 	}
-
 }
 
 func GetNoPriceLimitCodes() []string {

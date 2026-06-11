@@ -18,6 +18,8 @@ package main
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -133,10 +135,17 @@ func makeIntradayGetDayKlines(quoteMap map[string]*protocol.Quote) func(code str
 
 // BuyItem - 买入信号条目
 type BuyItem struct {
-	Code  string  `json:"code"`  // 股票代码（带前缀）
-	Time  string  `json:"time"`  // 信号产生时间
-	Price float64 `json:"price"` // 当时收盘/现价
-	Rise  float64 `json:"rise"`  // 涨幅百分比
+	Code       string  `json:"code"`        // 股票代码（带前缀）
+	Name       string  `json:"name"`        // 股票名称
+	Date       string  `json:"date"`        // 日期 YYYY-MM-DD
+	Time       string  `json:"time"`        // 信号产生时间
+	Price      float64 `json:"price"`       // 买入价
+	Rise       float64 `json:"rise"`        // 盘中涨幅百分比（仅当日买点有效）
+	CurrPrice  float64 `json:"curr_price"`  // 现价（未卖出时有效）
+	IncomeRate float64 `json:"income_rate"` // 收益率百分比
+	Sold       bool    `json:"sold"`        // 是否已卖出
+	SellPrice  float64 `json:"sell_price"`  // 卖出价（已卖出时有效）
+	SellTime   string  `json:"sell_time"`   // 卖出时间（已卖出时有效）
 }
 
 // BuyResponse - 买点响应
@@ -150,6 +159,7 @@ type BuyResponse struct {
 // SellItem - 卖出信号条目
 type SellItem struct {
 	Code       string  `json:"code"`        // 股票代码
+	Name       string  `json:"name"`        // 股票名称
 	BuyTime    string  `json:"buy_time"`    // 买入时间
 	BuyPrice   float64 `json:"buy_price"`   // 买入价
 	SellTime   string  `json:"sell_time"`   // 卖出时间（当前时间）
@@ -165,6 +175,14 @@ type SellResponse struct {
 	Results []SellItem `json:"results"` // 列表
 }
 
+// HistoryResponse - 历史买点响应（扁平结构，按时间倒序）
+type HistoryResponse struct {
+	Type    string    `json:"type"`    // 固定 "history"
+	Time    string    `json:"time"`    // 刷新时间
+	Total   int       `json:"total"`   // 总买点数量
+	Results []BuyItem `json:"results"` // 所有历史买点，按时间倒序
+}
+
 // =========================================================
 // 服务核心
 // =========================================================
@@ -174,8 +192,10 @@ type ScreenService struct {
 	mu               sync.RWMutex
 	sellLookbackDays int                     // 卖点回看天数
 	buyHistory       map[string][]core.Buy   // 按日期(YYYY-MM-DD) 聚合的买点
+	soldBuys         map[string]*SellItem    // 已卖出的买点 key=code|buyTime
 	lastBuys         *BuyResponse            // 最新买点快照
 	lastSells        *SellResponse           // 最新卖点快照
+	lastHistory      *HistoryResponse        // 最新历史买点快照
 	subscribers      map[*fbr.Websocket]bool // WebSocket 订阅者
 }
 
@@ -183,6 +203,7 @@ func newScreenService(sellLookbackDays int) *ScreenService {
 	return &ScreenService{
 		sellLookbackDays: sellLookbackDays,
 		buyHistory:       make(map[string][]core.Buy),
+		soldBuys:         make(map[string]*SellItem),
 		subscribers:      make(map[*fbr.Websocket]bool),
 	}
 }
@@ -202,10 +223,10 @@ func (s *ScreenService) removeSubscriber(ws *fbr.Websocket) {
 }
 
 // snapshot - 获取当前快照供新连接订阅时推送
-func (s *ScreenService) snapshot() (*BuyResponse, *SellResponse) {
+func (s *ScreenService) snapshot() (*BuyResponse, *SellResponse, *HistoryResponse) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.lastBuys, s.lastSells
+	return s.lastBuys, s.lastSells, s.lastHistory
 }
 
 // broadcast - 向所有订阅者广播消息
@@ -247,19 +268,49 @@ func (s *ScreenService) recentDates(now time.Time) []string {
 // 使用本地历史日线（收盘数据），今日买点由 doScreenBuys 用实时行情计算
 func (s *ScreenService) backfillHistory() {
 	now := time.Now()
-	dates := s.recentDates(now)
-	if len(dates) == 0 {
-		return
+	today := now.Format(time.DateOnly)
+
+	// 1. 先从文件加载已有历史
+	fileHistory, err := loadHistoryFile()
+	if err != nil {
+		logs.Warnf("[回填] 加载历史文件失败，将全量计算: %v\n", err)
+		fileHistory = map[string][]core.Buy{}
 	}
 
-	today := now.Format(time.DateOnly)
-	logs.Infof("[回填] 开始回填历史买点（不含今日 %s）\n", today)
+	// 2. 合并到内存
+	s.mu.Lock()
+	for date, buys := range fileHistory {
+		if date != today { // 不覆盖今日盘中数据
+			s.buyHistory[date] = buys
+		}
+	}
+	// 加载已卖出记录
+	s.soldBuys = loadSoldHistory()
+	s.mu.Unlock()
 
-	codes := common.GetNoPriceLimitCodes()
+	// 3. 找出缺失的日期（文件中没有的）
+	dates := s.recentDates(now)
+	var missing []string
+	s.mu.RLock()
 	for _, date := range dates {
 		if date == today {
 			continue
 		}
+		if _, ok := s.buyHistory[date]; !ok {
+			missing = append(missing, date)
+		}
+	}
+	s.mu.RUnlock()
+
+	if len(missing) == 0 {
+		logs.Infof("[回填] 历史文件完整，无需重新计算\n")
+		return
+	}
+
+	logs.Infof("[回填] 需补齐 %d 个交易日: %v\n", len(missing), missing)
+
+	codes := common.GetNoPriceLimitCodes()
+	for _, date := range missing {
 		day, err := time.ParseInLocation(time.DateOnly, date, time.Local)
 		if err != nil {
 			logs.Errf("[回填] 解析日期 %s 失败: %v", date, err)
@@ -279,10 +330,14 @@ func (s *ScreenService) backfillHistory() {
 			continue
 		}
 
+		coreBuys := toCoreBuys(buys)
 		s.mu.Lock()
-		s.buyHistory[date] = toCoreBuys(buys)
+		s.buyHistory[date] = coreBuys
 		s.mu.Unlock()
 		logs.Infof("[回填] %s 选出 %d 只\n", date, len(buys))
+
+		// 每算完一天就持久化一次，避免中断丢失
+		s.persistHistory()
 	}
 	logs.Infof("[回填] 完成\n")
 }
@@ -333,6 +388,140 @@ func (s *ScreenService) refreshYesterdayBuys() {
 	s.buyHistory[yesterday] = toCoreBuys(buys)
 	s.mu.Unlock()
 	logs.Infof("[跨天刷新] %s 用收盘数据刷新，选出 %d 只\n", yesterday, len(buys))
+	s.persistHistory()
+}
+
+// =========================================================
+// 买点历史持久化
+// =========================================================
+
+// historyFilePath - 买点历史 JSON 文件路径
+const historyFilePath = "./data/buy_history.json"
+
+// soldFilePath - 已卖出记录 JSON 文件路径
+const soldFilePath = "./data/sold_history.json"
+
+// persistedBuy - 持久化用的买点结构（避免依赖 protocol.Price 序列化细节）
+type persistedBuy struct {
+	Code  string    `json:"code"`
+	Time  time.Time `json:"time"`
+	Price float64   `json:"price"`
+}
+
+// loadHistoryFile - 从文件加载历史买点，返回 {date: [buys]}
+func loadHistoryFile() (map[string][]core.Buy, error) {
+	data, err := os.ReadFile(historyFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string][]core.Buy{}, nil
+		}
+		return nil, err
+	}
+	raw := map[string][]persistedBuy{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	out := make(map[string][]core.Buy, len(raw))
+	for date, ls := range raw {
+		buys := make([]core.Buy, 0, len(ls))
+		for _, p := range ls {
+			buys = append(buys, core.Buy{
+				Code:  p.Code,
+				Time:  p.Time,
+				Price: protocol.Yuan(p.Price),
+			})
+		}
+		out[date] = buys
+	}
+	return out, nil
+}
+
+// saveHistoryFile - 将 {date: [buys]} 持久化到文件
+func saveHistoryFile(buyHistory map[string][]core.Buy) error {
+	raw := make(map[string][]persistedBuy, len(buyHistory))
+	for date, buys := range buyHistory {
+		ls := make([]persistedBuy, 0, len(buys))
+		for _, b := range buys {
+			ls = append(ls, persistedBuy{
+				Code:  b.Code,
+				Time:  b.Time,
+				Price: b.Price.Float64(),
+			})
+		}
+		raw[date] = ls
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(historyFilePath), 0755); err != nil {
+		return err
+	}
+	// 原子写：先写临时文件再重命名
+	tmp := historyFilePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, historyFilePath)
+}
+
+// persistHistory - 持久化当前 buyHistory（含今日），失败仅打印日志
+func (s *ScreenService) persistHistory() {
+	s.mu.RLock()
+	snapshot := make(map[string][]core.Buy, len(s.buyHistory))
+	for k, v := range s.buyHistory {
+		snapshot[k] = v
+	}
+	s.mu.RUnlock()
+	if err := saveHistoryFile(snapshot); err != nil {
+		logs.Errf("[持久化] 写入失败: %v\n", err)
+	}
+}
+
+// loadSoldHistory - 从文件加载已卖出记录
+func loadSoldHistory() map[string]*SellItem {
+	data, err := os.ReadFile(soldFilePath)
+	if err != nil {
+		return make(map[string]*SellItem)
+	}
+	var list []SellItem
+	if err := json.Unmarshal(data, &list); err != nil {
+		logs.Errf("[持久化] 解析卖出记录失败: %v\n", err)
+		return make(map[string]*SellItem)
+	}
+	m := make(map[string]*SellItem, len(list))
+	for i := range list {
+		m[list[i].Code+"|"+list[i].BuyTime] = &list[i]
+	}
+	return m
+}
+
+// persistSoldHistory - 持久化已卖出记录
+func (s *ScreenService) persistSoldHistory() {
+	s.mu.RLock()
+	list := make([]SellItem, 0, len(s.soldBuys))
+	for _, v := range s.soldBuys {
+		list = append(list, *v)
+	}
+	s.mu.RUnlock()
+
+	data, err := json.MarshalIndent(list, "", "  ")
+	if err != nil {
+		logs.Errf("[持久化] 序列化卖出记录失败: %v\n", err)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(soldFilePath), 0755); err != nil {
+		logs.Errf("[持久化] 创建目录失败: %v\n", err)
+		return
+	}
+	tmp := soldFilePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		logs.Errf("[持久化] 写入卖出记录失败: %v\n", err)
+		return
+	}
+	if err := os.Rename(tmp, soldFilePath); err != nil {
+		logs.Errf("[持久化] 重命名卖出记录失败: %v\n", err)
+	}
 }
 
 // toCoreBuys - 转换 *core.Buy -> core.Buy
@@ -344,6 +533,105 @@ func toCoreBuys(ls []*core.Buy) []core.Buy {
 		}
 	}
 	return out
+}
+
+// buyToItem - 将 core.Buy 转为 BuyItem，可选传入实时行情计算现价和收益率
+func buyToItem(b core.Buy, quoteMap map[string]*protocol.Quote) BuyItem {
+	item := BuyItem{
+		Code:  b.Code,
+		Name:  common.Manage.Codes.GetName(b.Code),
+		Date:  b.Time.Format(time.DateOnly),
+		Time:  b.Time.Format(time.DateTime),
+		Price: b.Price.Float64(),
+		Rise:  0,
+	}
+	if quoteMap != nil {
+		if q, ok := quoteMap[b.Code]; ok && q.K.Close > 0 {
+			item.CurrPrice = q.K.Close.Float64()
+			if item.Price > 0 {
+				item.IncomeRate = (item.CurrPrice - item.Price) / item.Price * 100
+			}
+		}
+	}
+	return item
+}
+
+// doScreenHistory - 汇总历史买点（不含今日）并广播 {type:"history"}
+func (s *ScreenService) doScreenHistory() {
+	now := time.Now()
+	today := now.Format(time.DateOnly)
+
+	s.mu.RLock()
+	dates := s.recentDates(now)
+	all := make([]BuyItem, 0)
+	codeSet := make(map[string]struct{})
+	for _, date := range dates {
+		if date == today {
+			continue
+		}
+		for _, b := range s.buyHistory[date] {
+			codeSet[b.Code] = struct{}{}
+			all = append(all, buyToItem(b, nil))
+		}
+	}
+
+	// 用持久化的已卖出记录匹配
+	soldMap := make(map[string]*SellItem, len(s.soldBuys))
+	for k, v := range s.soldBuys {
+		soldMap[k] = v
+	}
+	s.mu.RUnlock()
+
+	// 拉取实时行情，补全现价和收益率（仅未卖出的需要）
+	if len(codeSet) > 0 {
+		codes := make([]string, 0, len(codeSet))
+		for code := range codeSet {
+			codes = append(codes, code)
+		}
+		quoteMap, err := getRealtimeQuotes(codes)
+		if err != nil {
+			logs.Errf("[历史] 拉取实时行情失败: %v\n", err)
+		} else {
+			for i := range all {
+				b := all[i]
+				// 已卖出的用卖出价计算收益率
+				if si, ok := soldMap[b.Code+"|"+b.Time]; ok {
+					all[i].Sold = true
+					all[i].SellPrice = si.SellPrice
+					all[i].SellTime = si.SellTime
+					if all[i].Price > 0 {
+						all[i].IncomeRate = (si.SellPrice - all[i].Price) / all[i].Price * 100
+					}
+					continue
+				}
+				// 未卖出的用现价计算浮动收益率
+				if q, ok := quoteMap[b.Code]; ok && q.K.Close > 0 {
+					all[i].CurrPrice = q.K.Close.Float64()
+					if all[i].Price > 0 {
+						all[i].IncomeRate = (all[i].CurrPrice - all[i].Price) / all[i].Price * 100
+					}
+				}
+			}
+		}
+	}
+
+	// 按时间倒序（最新在前）
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].Time > all[j].Time
+	})
+
+	resp := &HistoryResponse{
+		Type:    "history",
+		Time:    now.Format(time.DateTime),
+		Total:   len(all),
+		Results: all,
+	}
+
+	s.mu.Lock()
+	s.lastHistory = resp
+	s.mu.Unlock()
+
+	s.broadcast(resp)
 }
 
 // doScreenBuys - 执行一次选股，更新今日买点、广播 {type:"buy"}
@@ -382,6 +670,8 @@ func (s *ScreenService) doScreenBuys() {
 		}
 		items = append(items, BuyItem{
 			Code:  b.Code,
+			Name:  common.Manage.Codes.GetName(b.Code),
+			Date:  b.Time.Format(time.DateOnly),
 			Time:  b.Time.Format(time.DateTime),
 			Price: b.Price.Float64(),
 			Rise:  riseRate,
@@ -485,6 +775,7 @@ func (s *ScreenService) doScreenSells(quoteMap map[string]*protocol.Quote) {
 		}
 		sells = append(sells, SellItem{
 			Code:       b.Code,
+			Name:       common.Manage.Codes.GetName(b.Code),
 			BuyTime:    b.Time.Format(time.DateTime),
 			BuyPrice:   b.Price.Float64(),
 			SellTime:   today.Time.Format(time.DateTime),
@@ -510,7 +801,21 @@ func (s *ScreenService) doScreenSells(quoteMap map[string]*protocol.Quote) {
 
 	s.mu.Lock()
 	s.lastSells = resp
+	// 追加到已卖出记录（不会覆盖已有的，保留首次卖出信息）
+	newSold := false
+	for i := range sells {
+		key := sells[i].Code + "|" + sells[i].BuyTime
+		if _, exists := s.soldBuys[key]; !exists {
+			s.soldBuys[key] = &sells[i]
+			newSold = true
+		}
+	}
 	s.mu.Unlock()
+
+	// 有新卖出记录时持久化
+	if newSold {
+		s.persistSoldHistory()
+	}
 
 	logs.Infof("[卖点] 检出 %d 只\n", len(sells))
 	s.broadcast(resp)
@@ -528,7 +833,8 @@ func (s *ScreenService) startBackground(interval time.Duration) {
 	// 异步回填历史买点，回填完成后重算卖点
 	go func() {
 		s.backfillHistory()
-		// 回填完成后立即重算卖点（此时买点历史已完整）
+		// 回填完成后推送历史买点和卖点（此时买点历史已完整）
+		s.doScreenHistory()
 		s.doScreenSells(nil)
 	}()
 
@@ -568,6 +874,8 @@ func (s *ScreenService) scheduleDailyRefresh() {
 
 		logs.Infof("[定时刷新] 交易日 00:00，用收盘数据刷新上一交易日买点\n")
 		s.refreshYesterdayBuys()
+		// 跨天后同步推送最新历史买点
+		s.doScreenHistory()
 	}
 }
 
@@ -622,16 +930,20 @@ func main() {
 				defer svc.removeSubscriber(ws)
 
 				// 新连接立即推送当前快照
-				if buys, sells := svc.snapshot(); buys != nil || sells != nil {
-					if buys != nil {
-						if data, err := json.Marshal(buys); err == nil {
-							ws.WriteText(string(data))
-						}
+				buys, sells, history := svc.snapshot()
+				if buys != nil {
+					if data, err := json.Marshal(buys); err == nil {
+						ws.WriteText(string(data))
 					}
-					if sells != nil {
-						if data, err := json.Marshal(sells); err == nil {
-							ws.WriteText(string(data))
-						}
+				}
+				if sells != nil {
+					if data, err := json.Marshal(sells); err == nil {
+						ws.WriteText(string(data))
+					}
+				}
+				if history != nil {
+					if data, err := json.Marshal(history); err == nil {
+						ws.WriteText(string(data))
 					}
 				}
 
