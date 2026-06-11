@@ -243,20 +243,21 @@ func (s *ScreenService) recentDates(now time.Time) []string {
 	return dates
 }
 
-// backfillHistory - 启动时回填最近 N 个交易日的买点
-// 注意：不使用实时行情，使用本地历史日线（每日的当天 K 线即为收盘数据）
+// backfillHistory - 启动时回填最近 N 个交易日的买点（不含今日）
+// 使用本地历史日线（收盘数据），今日买点由 doScreenBuys 用实时行情计算
 func (s *ScreenService) backfillHistory() {
 	now := time.Now()
 	dates := s.recentDates(now)
 	if len(dates) == 0 {
 		return
 	}
-	logs.Infof("[回填] 开始回填最近 %d 个交易日的买点\n", len(dates))
+
+	today := now.Format(time.DateOnly)
+	logs.Infof("[回填] 开始回填历史买点（不含今日 %s）\n", today)
 
 	codes := common.GetNoPriceLimitCodes()
 	for _, date := range dates {
-		// 跳过今日：今日会在首次 doScreenBuys 时计算
-		if date == now.Format(time.DateOnly) {
+		if date == today {
 			continue
 		}
 		day, err := time.ParseInLocation(time.DateOnly, date, time.Local)
@@ -284,6 +285,54 @@ func (s *ScreenService) backfillHistory() {
 		logs.Infof("[回填] %s 选出 %d 只\n", date, len(buys))
 	}
 	logs.Infof("[回填] 完成\n")
+}
+
+// refreshYesterdayBuys - 用收盘数据刷新昨天的买点
+// 跨天时调用：昨天盘中用实时行情计算的买点可能与收盘数据有差异，需用收盘数据重算
+func (s *ScreenService) refreshYesterdayBuys() {
+	now := time.Now()
+	dates := s.recentDates(now)
+	if len(dates) < 2 {
+		return
+	}
+
+	today := now.Format(time.DateOnly)
+	// 找到最近的非今日交易日（即昨天或上一个交易日）
+	var yesterday string
+	for _, d := range dates {
+		if d != today {
+			yesterday = d
+			break
+		}
+	}
+	if yesterday == "" {
+		return
+	}
+
+	day, err := time.ParseInLocation(time.DateOnly, yesterday, time.Local)
+	if err != nil {
+		logs.Errf("[跨天刷新] 解析日期 %s 失败: %v", yesterday, err)
+		return
+	}
+	at := time.Date(day.Year(), day.Month(), day.Day(), 15, 0, 0, 0, time.Local)
+
+	codes := common.GetNoPriceLimitCodes()
+	scr := core.Screen{
+		Buyer:        common.MACDBuyer,
+		Codes:        codes,
+		Goroutines:   10,
+		GetDayKlines: common.GetDayKlines,
+	}
+	buys, err := scr.Run(codes, at)
+	if err != nil {
+		logs.Errf("[跨天刷新] %s 选股失败: %v", yesterday, err)
+		return
+	}
+
+	s.mu.Lock()
+	s.buyHistory[yesterday] = toCoreBuys(buys)
+	s.mu.Unlock()
+	logs.Infof("[跨天刷新] %s 用收盘数据刷新，选出 %d 只\n", yesterday, len(buys))
 }
 
 // toCoreBuys - 转换 *core.Buy -> core.Buy
@@ -468,15 +517,23 @@ func (s *ScreenService) doScreenSells(quoteMap map[string]*protocol.Quote) {
 }
 
 // startBackground - 启动后台定时任务
-// - 每天 08:00 刷新历史买点（清理旧数据，重新回填）
-// - 交易时间内按 interval 周期执行选股
+// 1. 立即执行一次选股（确保快速出数据）
+// 2. 异步回填历史买点（不阻塞选股，回填完成后自动重算卖点）
+// 3. 每个交易日 00:00 用收盘数据刷新昨天的买点（跨天处理）
+// 4. 交易时间内按 interval 周期执行选股
 func (s *ScreenService) startBackground(interval time.Duration) {
-
-	// 每日 00:00 或者启动的时候 刷新历史买点
-	go s.scheduleDailyBackfill()
-
-	// 启动时立刻跑一次，确保有数据快照
+	// 立即选股，确保客户端尽快拿到数据
 	s.doScreenBuys()
+
+	// 异步回填历史买点，回填完成后重算卖点
+	go func() {
+		s.backfillHistory()
+		// 回填完成后立即重算卖点（此时买点历史已完整）
+		s.doScreenSells(nil)
+	}()
+
+	// 启动跨天刷新协程
+	go s.scheduleDailyRefresh()
 
 	logs.Infof("[服务] 后台选股任务启动，间隔 %v\n", interval)
 
@@ -491,10 +548,9 @@ func (s *ScreenService) startBackground(interval time.Duration) {
 	}
 }
 
-// scheduleDailyBackfill - 每个交易日 00:00 刷新历史买点
-func (s *ScreenService) scheduleDailyBackfill() {
-	logs.Infof("开始读取近N天的买点\n")
-	s.backfillHistory()
+// scheduleDailyRefresh - 每个交易日 00:00 用收盘数据刷新上一交易日的买点
+// 解决跨天问题：盘中用实时行情计算的买点可能与收盘数据有差异
+func (s *ScreenService) scheduleDailyRefresh() {
 	for {
 		now := time.Now()
 		// 计算下一个 00:00
@@ -505,13 +561,13 @@ func (s *ScreenService) scheduleDailyBackfill() {
 		timer := time.NewTimer(next.Sub(now))
 		<-timer.C
 
-		// 只在交易日执行
+		// 只在交易日执行刷新
 		if !common.Manage.Workday.TodayIs() {
 			continue
 		}
 
-		logs.Infof("[定时回填] 交易日 08:00，刷新历史买点\n")
-		s.backfillHistory()
+		logs.Infof("[定时刷新] 交易日 00:00，用收盘数据刷新上一交易日买点\n")
+		s.refreshYesterdayBuys()
 	}
 }
 
@@ -523,21 +579,25 @@ func (s *ScreenService) scheduleDailyBackfill() {
 // 交易时间：上午 09:30 - 11:30，下午 13:00 - 15:00
 func isTradingTime() bool {
 	now := time.Now()
-	hour, minute := now.Hour(), now.Minute()
+	h, m := now.Hour(), now.Minute()
 
-	if hour >= 9 && hour <= 11 {
-		if hour == 9 && minute >= 30 {
-			return true
-		}
-		if hour == 10 {
-			return true
-		}
-		if hour == 11 && minute <= 30 {
-			return true
-		}
+	// 上午 09:30 - 11:30
+	if h == 9 && m >= 30 {
+		return true
+	}
+	if h == 10 {
+		return true
+	}
+	if h == 11 && m <= 30 {
+		return true
 	}
 
-	return hour >= 13 && hour < 15
+	// 下午 13:00 - 15:00
+	if h == 13 || h == 14 {
+		return true
+	}
+
+	return false
 }
 
 // =========================================================

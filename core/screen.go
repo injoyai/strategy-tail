@@ -2,6 +2,7 @@ package core
 
 import (
 	"io"
+	"sync"
 	"time"
 
 	"github.com/injoyai/bar"
@@ -33,6 +34,7 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 		},
 	)
 
+	var mu sync.Mutex
 	result := make([]*Buy, 0)
 	for _, code := range codes {
 		code := code
@@ -49,11 +51,13 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 			}
 			today := dks[len(dks)-1]
 			if s.Buyer.Buy(code, dks) {
+				mu.Lock()
 				result = append(result, &Buy{
 					Code:  code,
 					Time:  today.Time,
 					Price: today.Close,
 				})
+				mu.Unlock()
 			}
 		})
 	}
