@@ -36,9 +36,9 @@ type ScreenService struct {
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
 	realtimeDayKlines map[string]extend.Klines //实时数据缓存
 
-	lastBuys    *BuyResponse     // 最新买点快照
-	lastSells   *SellResponse    // 最新卖点快照
-	lastHistory *HistoryResponse // 最新历史买点快照
+	lastBuys    []*core.Buy  // 最新买点快照
+	lastSells   []*core.Sell // 最新卖点快照
+	lastTrades  []*Trade     // 最新历史买点快照
 	subscribers map[*fbr.Websocket]bool
 }
 
@@ -98,14 +98,16 @@ func (s *ScreenService) removeSubscriber(ws *fbr.Websocket) {
 }
 
 // snapshot - 获取当前快照供新连接订阅时推送
-func (s *ScreenService) snapshot() (*BuyResponse, *SellResponse, *HistoryResponse) {
+func (s *ScreenService) snapshot() ([]*core.Buy, []*core.Sell, []*Trade) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.lastBuys, s.lastSells, s.lastHistory
+	return s.lastBuys, s.lastSells, s.lastTrades
 }
 
 // broadcast - 向所有订阅者广播消息
 func (s *ScreenService) broadcast(payload any) {
+
+	logs.Debug("推送:", payload)
 
 	switch payload.(type) {
 	case []*Trade:
@@ -131,8 +133,10 @@ func (this *ScreenService) Run() {
 	first := true
 
 	for range time.NewTicker(time.Second * 5).C {
+
 		//判断是否是交易日和交易时间
-		if first || common.Manage.Workday.TodayIs() && common.IsTradingTime() {
+		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
+
 			//更新实时数据
 			err := this.updateRealtime()
 			logs.PrintErr(err)
@@ -144,6 +148,7 @@ func (this *ScreenService) Run() {
 			}
 
 			//推送历史成交数据
+			this.lastTrades = trades
 			this.broadcast(trades)
 
 			//计算实时卖点
@@ -167,15 +172,15 @@ func (this *ScreenService) Run() {
 			}
 
 			//推送历史成交数据
-			_ = sells
-			_ = trades
+			this.lastSells = sells
+			this.lastTrades = trades
 			this.broadcast(sells)
 			this.broadcast(trades)
 
 			//开始计算实时买点/卖点
 			buys := this.realtimeBuys()
 			//处理买点,推送到前端
-			_ = buys
+			this.lastBuys = buys
 			this.broadcast(buys)
 
 			first = false
@@ -232,6 +237,8 @@ func (this *ScreenService) Init() error {
 
 	//===================================================//
 
+	this.DB.Sync2(new(Trade))
+
 	//更新历史数据
 	if err := common.Pull.Update(common.Manage); err != nil {
 		return err
@@ -261,42 +268,37 @@ func (this *ScreenService) Init() error {
 		})
 	}
 	b.Wait()
-	logs.Info("加载历史日线成功...")
 
-	go func() {
-		//更新历史买卖点,判断数据库是否有历史买卖点数据
-		update, err := tdx.NewUpdated(this.DB, 0, 0)
-		if err != nil {
-			logs.Err(err)
-			return
+	//更新历史买卖点,判断数据库是否有历史买卖点数据
+	update, err := tdx.NewUpdated(this.DB, 0, 1)
+	if err != nil {
+		return err
+	}
+	updated, err := update.Updated("history-trade")
+	if err != nil {
+		return err
+	}
+	if !updated {
+		//更新历史交易数据
+		if err := this.updateHistoryTrade(); err != nil {
+			return err
 		}
-		updated, err := update.Updated("history-tade")
-		if err != nil {
-			logs.Err(err)
-			return
+		if err = update.Update("history-trade"); err != nil {
+			return err
 		}
-		if !updated {
-			//更新历史交易数据
-			if err := this.updateHistoryTrade(); err != nil {
-				logs.Err(err)
-				return
-			}
-			update.Update("history-tade")
-		}
-	}()
+	}
 
 	return nil
 }
 
 func (this *ScreenService) updateHistoryTrade() error {
-	logs.Info("开始计算历史交割单...")
 	ts := this.getHistoryTrade()
 	return this.DB.SessionFunc(func(session *xorm.Session) error {
-		if _, err := this.DB.Where("ID>0").Delete(new(Trade)); err != nil {
+		if _, err := session.Where("ID>0").Delete(new(Trade)); err != nil {
 			return err
 		}
 		for _, t := range ts {
-			if _, err := this.DB.Insert(t); err != nil {
+			if _, err := session.Insert(t); err != nil {
 				return err
 			}
 		}
@@ -304,11 +306,11 @@ func (this *ScreenService) updateHistoryTrade() error {
 	})
 }
 
-// getHistoryBuys 获取历史买点
+// getHistoryBuys 计算历史买点
 func (this *ScreenService) getHistoryTrade() []*Trade {
 	b := bar.NewCoroutine(
 		len(this.Codes),
-		10,
+		this.Goroutines,
 		bar.WithPrefix("[历史成交][xx000000]"),
 	)
 	defer b.Close()

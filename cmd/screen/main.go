@@ -35,6 +35,7 @@ func main() {
 		logs.Panicf("初始化服务失败: %v\n", err)
 	}
 
+	logs.Info("开始运行主程序...")
 	go svc.Run()
 
 	port := cfg.GetInt("port", 9090)
