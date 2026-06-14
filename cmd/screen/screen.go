@@ -55,20 +55,23 @@ func (this *ScreenService) updateRealtime() error {
 			ks = append(ks, v)
 		}
 
-		last := &extend.Kline{}
+		var last *extend.Kline
 		if len(ks) > 0 {
 			last = ks[len(ks)-1]
 		}
 
 		realKline, ok := realKlines[code]
 		if ok && realKline != nil {
-			realKline.Last = last.Close
-			ks = append(ks, &extend.Kline{
-				Unix:       realKline.Time.Unix(),
-				Kline:      realKline,
-				FloatStock: last.FloatStock,
-				TotalStock: last.TotalStock,
-			})
+			k := &extend.Kline{
+				Unix:  realKline.Time.Unix(),
+				Kline: realKline,
+			}
+			if last != nil {
+				k.FloatStock = last.FloatStock
+				k.TotalStock = last.TotalStock
+				k.Last = last.Close
+			}
+			ks = append(ks, k)
 		}
 		realtimeKlinesMap[code] = ks
 	}
