@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/injoyai/tdx"                // 通达信SDK
 	"github.com/injoyai/tdx/extend"         // 通达信扩展功能
 	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/protocol"
 	"xorm.io/xorm"
 )
 
@@ -38,7 +40,7 @@ type ScreenService struct {
 
 	lastBuys    []*core.Buy  // 最新买点快照
 	lastSells   []*core.Sell // 最新卖点快照
-	lastTrades  []*Trade     // 最新历史买点快照
+	lastTrades  []*Trade     // 最新交易快照
 	subscribers map[*fbr.Websocket]bool
 }
 
@@ -104,28 +106,113 @@ func (s *ScreenService) snapshot() ([]*core.Buy, []*core.Sell, []*Trade) {
 	return s.lastBuys, s.lastSells, s.lastTrades
 }
 
-// broadcast - 向所有订阅者广播消息
+// broadcast - 向所有订阅者广播消息，自动转换为前端期望的格式
 func (s *ScreenService) broadcast(payload any) {
-
-	logs.Debug("推送:", payload)
-
-	switch payload.(type) {
-	case []*Trade:
-	case []*core.Sell:
-	case []*core.Buy:
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		logs.Errf("[广播] 序列化失败: %v", err)
+	msg := s.marshal(payload)
+	if msg == "" {
 		return
 	}
-	msg := string(data)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for ws := range s.subscribers {
 		ws.WriteText(msg)
 	}
+}
+
+// sendTo - 向单个连接推送消息，自动转换为前端期望的格式
+func (s *ScreenService) sendTo(ws *fbr.Websocket, payload any) {
+	msg := s.marshal(payload)
+	if msg == "" {
+		return
+	}
+	ws.WriteText(msg)
+}
+
+// marshal - 将内部数据转换为前端期望的JSON格式
+func (s *ScreenService) marshal(payload any) string {
+	now := time.Now().Format(time.DateTime)
+
+	var resp any
+	switch v := payload.(type) {
+	case []*core.Buy:
+		items := make([]BuyItem, len(v))
+		for i, b := range v {
+			s.mu.RLock()
+			ks := s.realtimeDayKlines[b.Code]
+			s.mu.RUnlock()
+			var rise float64
+			if len(ks) >= 2 && ks[len(ks)-2] != nil && ks[len(ks)-2].Close > 0 {
+				rise = (b.Price.Float64() - ks[len(ks)-2].Close.Float64()) / ks[len(ks)-2].Close.Float64() * 100
+			}
+			items[i] = BuyItem{
+				Code:  b.Code,
+				Name:  common.Manage.Codes.GetName(b.Code),
+				Time:  b.Time.Format(time.DateTime),
+				Price: b.Price.Float64(),
+				Rise:  rise,
+			}
+		}
+		resp = BuyResponse{Type: "buy", Count: len(items), Time: now, Results: items}
+
+	case []*core.Sell:
+		items := make([]Trade, len(v))
+		for i, se := range v {
+			//从lastTrades中匹配对应的交易
+			s.mu.RLock()
+			for _, t := range s.lastTrades {
+				if t.Code == se.Code {
+					items[i] = *t
+					break
+				}
+			}
+			s.mu.RUnlock()
+		}
+		resp = SellResponse{Type: "sell", Count: len(items), Time: now, Results: items}
+
+	case []*Trade:
+		items := make([]BuyItem, len(v))
+		for i, t := range v {
+			item := BuyItem{
+				Code:       t.Code,
+				Name:       t.Name,
+				Date:       t.BuyTime[:10],
+				Time:       t.BuyTime,
+				Price:      t.BuyPrice,
+				Sold:       t.Sold,
+				SellPrice:  t.SellPrice,
+				SellTime:   t.SellTime,
+				IncomeRate: t.ProfitRate,
+			}
+			if t.Sold {
+				item.CurrPrice = t.SellPrice
+			} else {
+				s.mu.RLock()
+				ks := s.realtimeDayKlines[t.Code]
+				s.mu.RUnlock()
+				if len(ks) > 0 && ks[len(ks)-1] != nil {
+					item.CurrPrice = ks[len(ks)-1].Close.Float64()
+					if t.BuyPrice > 0 {
+						item.IncomeRate = (item.CurrPrice - t.BuyPrice) / t.BuyPrice * 100
+					}
+				}
+			}
+			items[i] = item
+		}
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].Time > items[j].Time
+		})
+		resp = HistoryResponse{Type: "history", Time: now, Total: len(items), Results: items}
+
+	default:
+		resp = payload
+	}
+
+	data, err := json.Marshal(resp)
+	if err != nil {
+		logs.Errf("[广播] 序列化失败: %v", err)
+		return ""
+	}
+	return string(data)
 }
 
 func (this *ScreenService) Run() {
@@ -148,7 +235,9 @@ func (this *ScreenService) Run() {
 			}
 
 			//推送历史成交数据
+			this.mu.Lock()
 			this.lastTrades = trades
+			this.mu.Unlock()
 			this.broadcast(trades)
 
 			//计算实时卖点
@@ -163,7 +252,7 @@ func (this *ScreenService) Run() {
 				ks := this.realtimeDayKlines[t.Code]
 				this.mu.RUnlock()
 				//实时计算卖点
-				if s := core.GetSell(this.Seller, ks, b); s != nil {
+				if s := core.GetSell(this.Seller, ks, b, nil); s != nil {
 					sells = append(sells, s)
 					//更新到数据库
 					_, err := this.DB.Where("ID=?", t.ID).Update(t.Sell(s))
@@ -172,15 +261,18 @@ func (this *ScreenService) Run() {
 			}
 
 			//推送历史成交数据
+			this.mu.Lock()
 			this.lastSells = sells
-			this.lastTrades = trades
+			this.mu.Unlock()
 			this.broadcast(sells)
 			this.broadcast(trades)
 
 			//开始计算实时买点/卖点
 			buys := this.realtimeBuys()
 			//处理买点,推送到前端
+			this.mu.Lock()
 			this.lastBuys = buys
+			this.mu.Unlock()
 			this.broadcast(buys)
 
 			first = false
@@ -328,6 +420,18 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
 			b.Flush()
 
+			//获取历史分钟数据
+			mks, err := common.GetMinKlines(code, time.Now().AddDate(0, 0, -30), time.Now())
+			if err != nil {
+				b.Logf("[错误][%s] %v", code, err)
+				b.Flush()
+				return
+			}
+			mmks := map[string]protocol.Klines{}
+			for _, v := range mks {
+				mmks[v.Time.Format(time.DateOnly)] = append(mmks[v.Time.Format(time.DateOnly)], v)
+			}
+
 			bs := core.GetBuys(this.Buyer, code, ks, this.LookbackDays)
 			for _, b := range bs {
 				t := &Trade{
@@ -339,7 +443,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 					SellPrice:  0,
 					ProfitRate: 0,
 				}
-				s := core.GetSell(this.Seller, ks, *b)
+				s := core.GetSell(this.Seller, ks, *b, mmks)
 				if s != nil {
 					t.SellTime = s.Time.Format(time.DateTime)
 					t.SellPrice = s.Price.Float64()

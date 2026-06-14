@@ -8,6 +8,7 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/protocol"
 )
 
 type Screen struct {
@@ -84,16 +85,32 @@ func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
 	return ls
 }
 
-func GetSell(s Seller, ks extend.Klines, buy Buy) *Sell {
+func GetSell(s Seller, ks extend.Klines, buy Buy, minKs map[string]protocol.Klines) *Sell {
 	for i := range ks {
-		if ks[i].Time.After(buy.Time) {
-			if s.Sell(buy.Code, ks[:i+1], buy) {
-				return &Sell{
-					Code:  buy.Code,
-					Time:  ks[i].Time,
-					Price: ks[i].Close,
+		k := ks[i]
+		if k.Time.After(buy.Time) {
+
+			mks := minKs[k.Time.Format(time.DateOnly)]
+			if len(mks) == 0 {
+				mks = protocol.Klines{k.Kline}
+			}
+
+			his := ks[:i]
+
+			for ii := range mks {
+				minuteKlines := mks[:ii+1]
+				lastMinuteKline := mks[ii]
+				k.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
+
+				if s.Sell(buy.Code, append(his, k), buy) {
+					return &Sell{
+						Code:  buy.Code,
+						Time:  k.Time,
+						Price: k.Close,
+					}
 				}
 			}
+
 		}
 	}
 	return nil

@@ -2,7 +2,6 @@ package main
 
 import (
 	_ "embed"
-	"encoding/json"
 
 	"github.com/injoyai/frame/fbr"
 )
@@ -23,22 +22,10 @@ func Api(port int, svc *ScreenService) error {
 				defer svc.removeSubscriber(ws)
 
 				// 新连接立即推送当前快照
-				buys, sells, history := svc.snapshot()
-				if buys != nil {
-					if data, err := json.Marshal(buys); err == nil {
-						ws.WriteText(string(data))
-					}
-				}
-				if sells != nil {
-					if data, err := json.Marshal(sells); err == nil {
-						ws.WriteText(string(data))
-					}
-				}
-				if history != nil {
-					if data, err := json.Marshal(history); err == nil {
-						ws.WriteText(string(data))
-					}
-				}
+				buys, sells, trades := svc.snapshot()
+				svc.sendTo(ws, buys)
+				svc.sendTo(ws, sells)
+				svc.sendTo(ws, trades)
 
 				ws.DiscardRead()
 			})

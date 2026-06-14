@@ -52,7 +52,7 @@ func (this *Trade) Sell(s *core.Sell) *Trade {
 	this.SellTime = s.Time.Format(time.DateTime)
 	this.SellPrice = s.Price.Float64()
 	if s.Price > 0 {
-		this.ProfitRate = (this.SellPrice - this.BuyPrice) / this.SellPrice
+		this.ProfitRate = (this.SellPrice - this.BuyPrice) / this.SellPrice * 100
 	}
 	return this
 }
