@@ -3,13 +3,14 @@ module github.com/injoyai/strategy-tail
 go 1.25.4
 
 require (
+	github.com/glebarez/go-sqlite v1.22.0
 	github.com/injoyai/bar v0.0.11
-	github.com/injoyai/conv v1.2.5
-	github.com/injoyai/frame v0.0.19
-	github.com/injoyai/goutil v1.2.27
+	github.com/injoyai/conv v1.2.6
+	github.com/injoyai/frame v0.0.20
+	github.com/injoyai/goutil v1.2.31
 	github.com/injoyai/logs v1.0.12
 	github.com/injoyai/lorca v0.0.0-20241219020631-030018723d82
-	github.com/injoyai/tdx v0.0.78
+	github.com/injoyai/tdx v0.0.80
 )
 
 require (
@@ -19,7 +20,6 @@ require (
 	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/fatih/color v1.18.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/glebarez/go-sqlite v1.22.0 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofiber/fiber/v3 v3.0.0-beta.4 // indirect

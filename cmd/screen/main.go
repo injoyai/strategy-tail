@@ -82,17 +82,8 @@ func getRealtimeQuotes(codes []string) (map[string]*protocol.Quote, error) {
 func quoteToKline(quote *protocol.Quote, prevKline *extend.Kline) *extend.Kline {
 	now := time.Now()
 	return &extend.Kline{
-		Unix: now.Unix(),
-		Kline: &protocol.Kline{
-			Last:   quote.K.Last,
-			Open:   quote.K.Open,
-			High:   quote.K.High,
-			Low:    quote.K.Low,
-			Close:  quote.K.Close,
-			Volume: int64(quote.TotalHand) * 100,
-			Amount: protocol.Yuan(quote.Amount),
-			Time:   now,
-		},
+		Unix:       now.Unix(),
+		Kline:      quote.Kline,
 		FloatStock: prevKline.FloatStock,
 		TotalStock: prevKline.TotalStock,
 	}
@@ -628,8 +619,8 @@ func (s *ScreenService) doScreenBuys() {
 	for _, b := range buys {
 		riseRate := 0.0
 		if b.Price > 0 {
-			if quote := quoteMap[b.Code]; quote != nil && quote.K.Last > 0 {
-				riseRate = (b.Price.Float64() - quote.K.Last.Float64()) / quote.K.Last.Float64() * 100
+			if quote := quoteMap[b.Code]; quote != nil && quote.Kline.Last > 0 {
+				riseRate = (b.Price.Float64() - quote.Kline.Last.Float64()) / quote.Kline.Last.Float64() * 100
 			}
 		}
 		items = append(items, BuyItem{
@@ -873,8 +864,8 @@ func (s *ScreenService) doScreenHistory(quoteMap map[string]*protocol.Quote) {
 			}
 		}
 		// 无论是否卖出，都更新现价
-		if q, ok := quoteMap[bp.Code]; ok && q.K.Close > 0 {
-			item.CurrPrice = q.K.Close.Float64()
+		if q, ok := quoteMap[bp.Code]; ok && q.Kline.Close > 0 {
+			item.CurrPrice = q.Kline.Close.Float64()
 			if !bp.Sold && bp.BuyPrice > 0 {
 				item.IncomeRate = (item.CurrPrice - bp.BuyPrice) / bp.BuyPrice * 100
 			}

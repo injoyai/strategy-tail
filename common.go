@@ -64,8 +64,6 @@ const (
 
 var (
 	DatabaseDir = tdx.DefaultDatabaseDir
-	DayKlineDir = filepath.Join(DatabaseDir, "day-kline")
-	MinKlineDir = filepath.Join(DatabaseDir, "min-kline")
 	Pull        *extend.PullKline
 	Manage      *tdx.Manage
 )
@@ -73,39 +71,26 @@ var (
 func init() {
 	logs.SetFormatter(logs.TimeFormatter)
 
-	db, err := xorms.NewSqlite(filepath.Join(DatabaseDir, "update.db"))
-	logs.PanicErr(err)
-
-	update, err := tdx.NewUpdated(db, 15, 1)
-	logs.PanicErr(err)
+	var err error
 
 	Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
 	logs.PanicErr(err)
 
-	Pull = extend.NewPullKline(extend.PullKlineConfig{
-		Tables:     []string{extend.Day},
-		Dir:        DayKlineDir,
+	Pull, err = extend.NewPullKline(extend.PullKlineConfig{
+		Types:      []string{extend.Day, extend.Minute},
+		Dir:        DatabaseDir,
 		Goroutines: 10,
 	})
+	logs.PanicErr(err)
 
-	_update(update)
+	Pull.Update(Manage)
+	logs.Info("更新完成...")
 	go func() {
 		for range time.NewTimer(time.Hour).C {
-			_update(update)
+			Pull.Update(Manage)
 		}
 	}()
 
-}
-
-func _update(update *tdx.Updated) {
-	if updated, err := update.Updated("pull"); err != nil || !updated {
-		if Manage.Workday.TodayIs() {
-			err = Pull.Update(Manage)
-			logs.PanicErr(err)
-			err = update.Update("pull")
-			logs.PanicErr(err)
-		}
-	}
 }
 
 func GetNoPriceLimitCodes() []string {
@@ -145,7 +130,7 @@ func GetMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
 		wg.Add(1)
 		go func(code string, year int) {
 			defer wg.Done()
-			filename := filepath.Join(MinKlineDir, code, code+"-"+strconv.Itoa(year)+".db")
+			filename := filepath.Join(DatabaseDir, "min-kline", code, code+"-"+strconv.Itoa(year)+".db")
 			if !oss.Exists(filename) {
 				return
 			}

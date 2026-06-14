@@ -10,7 +10,7 @@ import (
 
 	"github.com/injoyai/goutil/g"
 	"github.com/injoyai/goutil/oss"
-	"github.com/injoyai/goutil/other/csv"
+	"github.com/injoyai/goutil/oss/csv"
 	"github.com/injoyai/tdx/extend"
 )
 
