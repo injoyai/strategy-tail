@@ -127,9 +127,12 @@ func (s *ScreenService) broadcast(payload any) {
 }
 
 func (this *ScreenService) Run() {
+
+	first := true
+
 	for range time.NewTicker(time.Second * 5).C {
 		//判断是否是交易日和交易时间
-		if true || common.Manage.Workday.TodayIs() && common.IsTradingTime() {
+		if first || common.Manage.Workday.TodayIs() && common.IsTradingTime() {
 			//更新实时数据
 			err := this.updateRealtime()
 			logs.PrintErr(err)
@@ -175,6 +178,7 @@ func (this *ScreenService) Run() {
 			_ = buys
 			this.broadcast(buys)
 
+			first = false
 		}
 	}
 }
