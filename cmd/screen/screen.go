@@ -27,6 +27,7 @@ type ScreenService struct {
 	DB           *xorms.Engine //数据库引擎
 	LookbackDays int           //历史交割单天数
 	Interval     time.Duration //间隔时间
+	Goroutines   int           //协程数量
 	Codes        []string      //计算的代码
 	core.Buyer                 //买入策略
 	core.Seller                //卖出策略
@@ -60,7 +61,7 @@ func (this *ScreenService) updateRealtime() error {
 		}
 
 		realKline, ok := realKlines[code]
-		if ok || realKline != nil {
+		if ok && realKline != nil {
 			realKline.Last = last.Close
 			ks = append(ks, &extend.Kline{
 				Unix:       realKline.Time.Unix(),
@@ -202,6 +203,9 @@ func (this *ScreenService) Init() error {
 	if this.LookbackDays <= 0 {
 		this.LookbackDays = 10
 	}
+	if this.Goroutines < 1 {
+		this.Goroutines = common.DefaultGoroutines
+	}
 	if len(this.Codes) == 0 {
 		this.Codes = common.GetNoPriceLimitCodes()
 	}
@@ -225,6 +229,32 @@ func (this *ScreenService) Init() error {
 	if err := common.Pull.Update(common.Manage); err != nil {
 		return err
 	}
+
+	//加载历史数据到缓存
+	b := bar.NewCoroutine(
+		len(this.Codes),
+		this.Goroutines,
+		bar.WithPrefix("[加载日线][xx000000]"),
+	)
+	defer b.Close()
+	for i := range this.Codes {
+		code := this.Codes[i]
+		b.Go(func() {
+			b.SetPrefix(fmt.Sprintf("[加载日线][%s]", code))
+			b.Flush()
+			ks, err := common.Pull.DayKlines(code)
+			if err != nil {
+				b.Logf("[错误][%s] %v", code, err)
+				b.Flush()
+				return
+			}
+			this.mu.Lock()
+			defer this.mu.Unlock()
+			this.historyDayKlines[code] = ks
+		})
+	}
+	b.Wait()
+	logs.Info("加载历史日线成功...")
 
 	go func() {
 		//更新历史买卖点,判断数据库是否有历史买卖点数据
@@ -278,7 +308,9 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 
 	mu := sync.Mutex{}
 	ts := []*Trade(nil)
-	for _, code := range this.Codes {
+	for i := range this.Codes {
+		code := this.Codes[i]
+
 		this.mu.RLock()
 		ks := this.historyDayKlines[code]
 		this.mu.RUnlock()

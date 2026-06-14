@@ -13,7 +13,7 @@ func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, erro
 	codes := this.Codes
 
 	if len(codes) == 0 {
-		return nil, nil
+		return map[string]*protocol.Kline{}, nil
 	}
 
 	quoteKline := make(map[string]*protocol.Kline, len(this.Codes))
