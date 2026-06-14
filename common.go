@@ -58,8 +58,9 @@ var (
 )
 
 const (
-	万 = 1e4
-	亿 = 1e8
+	万                 = 1e4
+	亿                 = 1e8
+	DefaultGoroutines = 10
 )
 
 var (
@@ -161,4 +162,32 @@ func GetMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
 	wg.Wait()
 	ks.Sort()
 	return ks, nil
+}
+
+// IsTradingTime - 判断是否处于交易时间段
+// 交易时间：上午 09:30 - 11:30，下午 13:00 - 15:01
+func IsTradingTime() bool {
+	now := time.Now()
+	h, m := now.Hour(), now.Minute()
+
+	// 上午 09:30 - 11:30
+	if h == 9 && m >= 29 {
+		return true
+	}
+	if h == 10 {
+		return true
+	}
+	if h == 11 && m <= 30 {
+		return true
+	}
+
+	// 下午 13:00 - 15:01
+	if h == 13 || h == 14 {
+		return true
+	}
+	if h == 15 && m <= 1 {
+		return true
+	}
+
+	return false
 }

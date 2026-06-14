@@ -65,3 +65,36 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 
 	return result, nil
 }
+
+// GetBuys 获取历史买点
+func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
+	ls := []*Buy(nil)
+	for i := 0; i < days; i++ {
+		if len(ks) > i {
+			if b.Buy(code, ks[:len(ks)-i]) {
+				k := ks[len(ks)-i-1]
+				ls = append(ls, &Buy{
+					Code:  code,
+					Time:  k.Time,
+					Price: k.Close,
+				})
+			}
+		}
+	}
+	return ls
+}
+
+func GetSell(s Seller, ks extend.Klines, buy Buy) *Sell {
+	for i := range ks {
+		if ks[i].Time.After(buy.Time) {
+			if s.Sell(buy.Code, ks[:i+1], buy) {
+				return &Sell{
+					Code:  buy.Code,
+					Time:  ks[i].Time,
+					Price: ks[i].Close,
+				}
+			}
+		}
+	}
+	return nil
+}

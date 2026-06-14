@@ -206,214 +206,214 @@ func (b VolumeShrink) Buy(code string, dks extend.Klines) bool {
 	return true
 }
 
-// BuyVolumeExpand 是放量买入条件。
-// Period 表示对比的前 N 日成交量均值，默认 5。
-// Ratio 表示今日成交量必须高于前 N 日均量的倍数，默认 1.5。
-// 例如 Ratio=1.5 表示今日成交量大于前 5 日均量的 1.5 倍。
-// 常用于突破、启动、放量上涨等组合条件。
-type BuyVolumeExpand struct {
-	Period int
-	Ratio  float64
-}
-
-func (b BuyVolumeExpand) Name() string {
-	return "放量"
-}
-
-func (b BuyVolumeExpand) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 5
-	}
-	if b.Ratio == 0 {
-		b.Ratio = 1.5
-	}
-	if len(dks) < b.Period+1 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	avg := core.AverageVolume(dks[len(dks)-1-b.Period : len(dks)-1])
-	if avg <= 0 || float64(today.Volume) <= avg*b.Ratio {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
-
-// BuyRiseRateRange 是日涨幅区间买入条件。
-// Min 表示最小涨幅，单位为百分比。
-// Max 表示最大涨幅，单位为百分比；Max 为 0 时不限制最大涨幅。
-// 例如 Min=0、Max=3 表示当天涨幅需要在 0% 到 3% 之间。
-// 适合过滤过弱或过强的当日 K 线。
-type BuyRiseRateRange struct {
-	Min float64
-	Max float64
-}
-
-func (b BuyRiseRateRange) Name() string {
-	return "涨幅区间"
-}
-
-func (b BuyRiseRateRange) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if len(dks) == 0 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	rate := today.RiseRate()
-	if rate < b.Min {
-		return nil
-	}
-	if b.Max != 0 && rate > b.Max {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
-
-// BuyBreakHigh 是突破前高买入条件。
-// Period 表示向前统计高点的窗口，默认 20。
-// 要求今天收盘价大于此前 Period 日最高价。
-// 适合表达“收盘突破阶段新高”的强势信号。
-type BuyBreakHigh struct {
-	Period int
-}
-
-func (b BuyBreakHigh) Name() string {
-	return "突破新高"
-}
-
-func (b BuyBreakHigh) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 20
-	}
-	if len(dks) < b.Period+1 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	prevHigh := dks[:len(dks)-1].HHV(b.Period)
-	if today.Close <= prevHigh {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
-
-// BuyNotBreakLow 是不破前低买入条件。
-// Period 表示向前统计低点的窗口，默认 20。
-// 要求今天最低价没有跌破此前 Period 日最低价。
-// 适合作为回调不破位、箱体下沿不破等组合过滤条件。
-type BuyNotBreakLow struct {
-	Period int
-}
-
-func (b BuyNotBreakLow) Name() string {
-	return "不破低点"
-}
-
-func (b BuyNotBreakLow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 20
-	}
-	if len(dks) < b.Period+1 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	prevLow := dks[:len(dks)-1].LLV(b.Period)
-	if today.Low < prevLow {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
-
-// BuyLongLowerShadow 是长下影线买入条件。
-// Ratio 表示下影线长度占全天振幅的最低比例，默认 0.5。
-// 当下影线占比大于等于 Ratio 时返回买入信号。
-// 适合表达“盘中下探后被资金拉回”的形态。
-type BuyLongLowerShadow struct {
-	Ratio float64
-}
-
-func (b BuyLongLowerShadow) Name() string {
-	return "长下影"
-}
-
-func (b BuyLongLowerShadow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Ratio == 0 {
-		b.Ratio = 0.5
-	}
-	if len(dks) == 0 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	high := today.High.Float64()
-	low := today.Low.Float64()
-	open := today.Open.Float64()
-	close := today.Close.Float64()
-	rangeValue := high - low
-	if rangeValue <= 0 {
-		return nil
-	}
-
-	lower := open
-	if close < lower {
-		lower = close
-	}
-	if (lower-low)/rangeValue < b.Ratio {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
-
-// BuySmallBody 是小实体 K 线买入条件。
-// Ratio 表示实体长度占全天振幅的最大比例，默认 0.35。
-// 当 K 线实体较小、上下影线相对明显时返回买入信号。
-// 适合识别震荡、整理、犹豫型 K 线，并与趋势或成交量条件组合使用。
-type BuySmallBody struct {
-	Ratio float64
-}
-
-func (b BuySmallBody) Name() string {
-	return "小实体"
-}
-
-func (b BuySmallBody) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Ratio == 0 {
-		b.Ratio = 0.35
-	}
-	if len(dks) == 0 {
-		return nil
-	}
-
-	today := dks[len(dks)-1]
-	rangeValue := today.High.Float64() - today.Low.Float64()
-	if rangeValue <= 0 {
-		return nil
-	}
-
-	body := today.Close.Float64() - today.Open.Float64()
-	if body < 0 {
-		body = -body
-	}
-	if body/rangeValue > b.Ratio {
-		return nil
-	}
-
-	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
-}
+//// BuyVolumeExpand 是放量买入条件。
+//// Period 表示对比的前 N 日成交量均值，默认 5。
+//// Ratio 表示今日成交量必须高于前 N 日均量的倍数，默认 1.5。
+//// 例如 Ratio=1.5 表示今日成交量大于前 5 日均量的 1.5 倍。
+//// 常用于突破、启动、放量上涨等组合条件。
+//type BuyVolumeExpand struct {
+//	Period int
+//	Ratio  float64
+//}
+//
+//func (b BuyVolumeExpand) Name() string {
+//	return "放量"
+//}
+//
+//func (b BuyVolumeExpand) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Period == 0 {
+//		b.Period = 5
+//	}
+//	if b.Ratio == 0 {
+//		b.Ratio = 1.5
+//	}
+//	if len(dks) < b.Period+1 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	avg := core.AverageVolume(dks[len(dks)-1-b.Period : len(dks)-1])
+//	if avg <= 0 || float64(today.Volume) <= avg*b.Ratio {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
+//
+//// BuyRiseRateRange 是日涨幅区间买入条件。
+//// Min 表示最小涨幅，单位为百分比。
+//// Max 表示最大涨幅，单位为百分比；Max 为 0 时不限制最大涨幅。
+//// 例如 Min=0、Max=3 表示当天涨幅需要在 0% 到 3% 之间。
+//// 适合过滤过弱或过强的当日 K 线。
+//type BuyRiseRateRange struct {
+//	Min float64
+//	Max float64
+//}
+//
+//func (b BuyRiseRateRange) Name() string {
+//	return "涨幅区间"
+//}
+//
+//func (b BuyRiseRateRange) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if len(dks) == 0 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	rate := today.RiseRate()
+//	if rate < b.Min {
+//		return nil
+//	}
+//	if b.Max != 0 && rate > b.Max {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
+//
+//// BuyBreakHigh 是突破前高买入条件。
+//// Period 表示向前统计高点的窗口，默认 20。
+//// 要求今天收盘价大于此前 Period 日最高价。
+//// 适合表达“收盘突破阶段新高”的强势信号。
+//type BuyBreakHigh struct {
+//	Period int
+//}
+//
+//func (b BuyBreakHigh) Name() string {
+//	return "突破新高"
+//}
+//
+//func (b BuyBreakHigh) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Period == 0 {
+//		b.Period = 20
+//	}
+//	if len(dks) < b.Period+1 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	prevHigh := dks[:len(dks)-1].HHV(b.Period)
+//	if today.Close <= prevHigh {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
+//
+//// BuyNotBreakLow 是不破前低买入条件。
+//// Period 表示向前统计低点的窗口，默认 20。
+//// 要求今天最低价没有跌破此前 Period 日最低价。
+//// 适合作为回调不破位、箱体下沿不破等组合过滤条件。
+//type BuyNotBreakLow struct {
+//	Period int
+//}
+//
+//func (b BuyNotBreakLow) Name() string {
+//	return "不破低点"
+//}
+//
+//func (b BuyNotBreakLow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Period == 0 {
+//		b.Period = 20
+//	}
+//	if len(dks) < b.Period+1 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	prevLow := dks[:len(dks)-1].LLV(b.Period)
+//	if today.Low < prevLow {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
+//
+//// BuyLongLowerShadow 是长下影线买入条件。
+//// Ratio 表示下影线长度占全天振幅的最低比例，默认 0.5。
+//// 当下影线占比大于等于 Ratio 时返回买入信号。
+//// 适合表达“盘中下探后被资金拉回”的形态。
+//type BuyLongLowerShadow struct {
+//	Ratio float64
+//}
+//
+//func (b BuyLongLowerShadow) Name() string {
+//	return "长下影"
+//}
+//
+//func (b BuyLongLowerShadow) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Ratio == 0 {
+//		b.Ratio = 0.5
+//	}
+//	if len(dks) == 0 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	high := today.High.Float64()
+//	low := today.Low.Float64()
+//	open := today.Open.Float64()
+//	close := today.Close.Float64()
+//	rangeValue := high - low
+//	if rangeValue <= 0 {
+//		return nil
+//	}
+//
+//	lower := open
+//	if close < lower {
+//		lower = close
+//	}
+//	if (lower-low)/rangeValue < b.Ratio {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
+//
+//// BuySmallBody 是小实体 K 线买入条件。
+//// Ratio 表示实体长度占全天振幅的最大比例，默认 0.35。
+//// 当 K 线实体较小、上下影线相对明显时返回买入信号。
+//// 适合识别震荡、整理、犹豫型 K 线，并与趋势或成交量条件组合使用。
+//type BuySmallBody struct {
+//	Ratio float64
+//}
+//
+//func (b BuySmallBody) Name() string {
+//	return "小实体"
+//}
+//
+//func (b BuySmallBody) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Ratio == 0 {
+//		b.Ratio = 0.35
+//	}
+//	if len(dks) == 0 {
+//		return nil
+//	}
+//
+//	today := dks[len(dks)-1]
+//	rangeValue := today.High.Float64() - today.Low.Float64()
+//	if rangeValue <= 0 {
+//		return nil
+//	}
+//
+//	body := today.Close.Float64() - today.Open.Float64()
+//	if body < 0 {
+//		body = -body
+//	}
+//	if body/rangeValue > b.Ratio {
+//		return nil
+//	}
+//
+//	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
+//}
 
 func (v BuyVolume) Name() string {
 	return "倍量"
 }
 
-func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) bool {
 	if len(dks) < 20 {
-		return nil
+		return false
 	}
 
 	n := len(dks)
@@ -421,13 +421,13 @@ func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *cor
 	yesterday := dks[n-2]
 
 	if today.Close.Float64() >= 100 {
-		return nil
+		return false
 	}
 	if today.RiseRate() < 0 {
-		return nil
+		return false
 	}
 	if today.RiseRate() > 7 {
-		return nil
+		return false
 	}
 
 	muli := 2.9
@@ -459,14 +459,10 @@ func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) *cor
 	TJ4 := dks.LLV(5) > dks.LLV(20)
 
 	if !TJ1 || !TJ2 || !TJ3 || !TJ4 {
-		return nil
+		return false
 	}
 
-	return &core.Buy{
-		Code:  code,
-		Time:  today.Time,
-		Price: today.Close,
-	}
+	return true
 }
 
 // HHV 返回最近 i 根 K 线中的最高价。
@@ -505,161 +501,161 @@ func (b A阳线) Buy(code string, dks extend.Klines) bool {
 	return today.Close > today.Open
 }
 
-// BuyYearUp 是年线向上买入条件。
-// Period 表示年线周期，默认 250。
-// Lookback 表示和多少个交易日前的年线值比较，默认 5。
-// RequireCloseAbove 表示是否要求收盘价在年线上方；当前零值会按 true 处理。
-// 当年线向上，并且收盘价满足位置要求时返回买入信号。
-type BuyYearUp struct {
-	Period            int
-	Lookback          int
-	RequireCloseAbove bool
-}
+//// BuyYearUp 是年线向上买入条件。
+//// Period 表示年线周期，默认 250。
+//// Lookback 表示和多少个交易日前的年线值比较，默认 5。
+//// RequireCloseAbove 表示是否要求收盘价在年线上方；当前零值会按 true 处理。
+//// 当年线向上，并且收盘价满足位置要求时返回买入信号。
+//type BuyYearUp struct {
+//	Period            int
+//	Lookback          int
+//	RequireCloseAbove bool
+//}
+//
+//func (b BuyYearUp) Name() string {
+//	return "年线向上"
+//}
+//
+//func (b BuyYearUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Period == 0 {
+//		b.Period = 250
+//	}
+//	if b.Lookback == 0 {
+//		b.Lookback = 5
+//	}
+//	if !b.RequireCloseAbove {
+//		b.RequireCloseAbove = true
+//	}
+//	if len(dks) < b.Period+b.Lookback {
+//		return nil
+//	}
+//
+//	n := len(dks)
+//	maNow := core.MA(dks, b.Period)
+//	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
+//	if maNow <= maPrev {
+//		return nil
+//	}
+//
+//	today := dks[n-1]
+//	if b.RequireCloseAbove && today.Close.Float64() <= maNow {
+//		return nil
+//	}
+//
+//	return &core.Buy{
+//		Code:  code,
+//		Time:  today.Time,
+//		Price: today.Close,
+//	}
+//}
 
-func (b BuyYearUp) Name() string {
-	return "年线向上"
-}
+//// BuyMonthUp 是月线向上买入条件。
+//// Period 表示月线周期，默认 20。
+//// Lookback 表示和多少个交易日前的月线值比较，默认 5。
+//// RequireCloseAbove 表示是否要求收盘价在月线上方；当前零值会按 true 处理。
+//// 当月线向上，并且收盘价满足位置要求时返回买入信号。
+//type BuyMonthUp struct {
+//	Period            int
+//	Lookback          int
+//	RequireCloseAbove bool
+//}
+//
+//func (b BuyMonthUp) Name() string {
+//	return "月线向上"
+//}
+//
+//func (b BuyMonthUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.Period == 0 {
+//		b.Period = 20
+//	}
+//	if b.Lookback == 0 {
+//		b.Lookback = 5
+//	}
+//	if !b.RequireCloseAbove {
+//		b.RequireCloseAbove = true
+//	}
+//	if len(dks) < b.Period+b.Lookback {
+//		return nil
+//	}
+//
+//	n := len(dks)
+//	maNow := core.MA(dks, b.Period)
+//	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
+//	if maNow <= maPrev {
+//		return nil
+//	}
+//
+//	today := dks[n-1]
+//	if b.RequireCloseAbove && today.Close.Float64() <= maNow {
+//		return nil
+//	}
+//
+//	return &core.Buy{
+//		Code:  code,
+//		Time:  today.Time,
+//		Price: today.Close,
+//	}
+//}
 
-func (b BuyYearUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 250
-	}
-	if b.Lookback == 0 {
-		b.Lookback = 5
-	}
-	if !b.RequireCloseAbove {
-		b.RequireCloseAbove = true
-	}
-	if len(dks) < b.Period+b.Lookback {
-		return nil
-	}
-
-	n := len(dks)
-	maNow := core.MA(dks, b.Period)
-	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
-	if maNow <= maPrev {
-		return nil
-	}
-
-	today := dks[n-1]
-	if b.RequireCloseAbove && today.Close.Float64() <= maNow {
-		return nil
-	}
-
-	return &core.Buy{
-		Code:  code,
-		Time:  today.Time,
-		Price: today.Close,
-	}
-}
-
-// BuyMonthUp 是月线向上买入条件。
-// Period 表示月线周期，默认 20。
-// Lookback 表示和多少个交易日前的月线值比较，默认 5。
-// RequireCloseAbove 表示是否要求收盘价在月线上方；当前零值会按 true 处理。
-// 当月线向上，并且收盘价满足位置要求时返回买入信号。
-type BuyMonthUp struct {
-	Period            int
-	Lookback          int
-	RequireCloseAbove bool
-}
-
-func (b BuyMonthUp) Name() string {
-	return "月线向上"
-}
-
-func (b BuyMonthUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.Period == 0 {
-		b.Period = 20
-	}
-	if b.Lookback == 0 {
-		b.Lookback = 5
-	}
-	if !b.RequireCloseAbove {
-		b.RequireCloseAbove = true
-	}
-	if len(dks) < b.Period+b.Lookback {
-		return nil
-	}
-
-	n := len(dks)
-	maNow := core.MA(dks, b.Period)
-	maPrev := core.MA(dks[:n-b.Lookback], b.Period)
-	if maNow <= maPrev {
-		return nil
-	}
-
-	today := dks[n-1]
-	if b.RequireCloseAbove && today.Close.Float64() <= maNow {
-		return nil
-	}
-
-	return &core.Buy{
-		Code:  code,
-		Time:  today.Time,
-		Price: today.Close,
-	}
-}
-
-// BuyYearMonthUp 是年线和月线同时向上的买入条件。
-// YearPeriod 表示年线周期，默认 250。
-// MonthPeriod 表示月线周期，默认 20。
-// Lookback 表示和多少个交易日前的均线值比较，默认 5。
-// RequireCloseAbove 表示是否要求收盘价同时站上年线和月线；当前零值会按 true 处理。
-// 适合作为偏中长期趋势方向过滤条件。
-type BuyYearMonthUp struct {
-	YearPeriod        int
-	MonthPeriod       int
-	Lookback          int
-	RequireCloseAbove bool
-}
-
-func (b BuyYearMonthUp) Name() string {
-	return "年线月线向上买入"
-}
-
-func (b BuyYearMonthUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
-	if b.YearPeriod == 0 {
-		b.YearPeriod = 250
-	}
-	if b.MonthPeriod == 0 {
-		b.MonthPeriod = 20
-	}
-	if b.Lookback == 0 {
-		b.Lookback = 5
-	}
-	if !b.RequireCloseAbove {
-		b.RequireCloseAbove = true
-	}
-	minPeriod := b.YearPeriod
-	if b.MonthPeriod > minPeriod {
-		minPeriod = b.MonthPeriod
-	}
-	if len(dks) < minPeriod+b.Lookback {
-		return nil
-	}
-
-	n := len(dks)
-	yearNow := core.MA(dks, b.YearPeriod)
-	yearPrev := core.MA(dks[:n-b.Lookback], b.YearPeriod)
-	if yearNow <= yearPrev {
-		return nil
-	}
-
-	monthNow := core.MA(dks, b.MonthPeriod)
-	monthPrev := core.MA(dks[:n-b.Lookback], b.MonthPeriod)
-	if monthNow <= monthPrev {
-		return nil
-	}
-
-	today := dks[n-1]
-	if b.RequireCloseAbove && (today.Close.Float64() <= yearNow || today.Close.Float64() <= monthNow) {
-		return nil
-	}
-
-	return &core.Buy{
-		Code:  code,
-		Time:  today.Time,
-		Price: today.Close,
-	}
-}
+//// BuyYearMonthUp 是年线和月线同时向上的买入条件。
+//// YearPeriod 表示年线周期，默认 250。
+//// MonthPeriod 表示月线周期，默认 20。
+//// Lookback 表示和多少个交易日前的均线值比较，默认 5。
+//// RequireCloseAbove 表示是否要求收盘价同时站上年线和月线；当前零值会按 true 处理。
+//// 适合作为偏中长期趋势方向过滤条件。
+//type BuyYearMonthUp struct {
+//	YearPeriod        int
+//	MonthPeriod       int
+//	Lookback          int
+//	RequireCloseAbove bool
+//}
+//
+//func (b BuyYearMonthUp) Name() string {
+//	return "年线月线向上买入"
+//}
+//
+//func (b BuyYearMonthUp) Buy(code string, dks extend.Klines, mks protocol.Klines) *core.Buy {
+//	if b.YearPeriod == 0 {
+//		b.YearPeriod = 250
+//	}
+//	if b.MonthPeriod == 0 {
+//		b.MonthPeriod = 20
+//	}
+//	if b.Lookback == 0 {
+//		b.Lookback = 5
+//	}
+//	if !b.RequireCloseAbove {
+//		b.RequireCloseAbove = true
+//	}
+//	minPeriod := b.YearPeriod
+//	if b.MonthPeriod > minPeriod {
+//		minPeriod = b.MonthPeriod
+//	}
+//	if len(dks) < minPeriod+b.Lookback {
+//		return nil
+//	}
+//
+//	n := len(dks)
+//	yearNow := core.MA(dks, b.YearPeriod)
+//	yearPrev := core.MA(dks[:n-b.Lookback], b.YearPeriod)
+//	if yearNow <= yearPrev {
+//		return nil
+//	}
+//
+//	monthNow := core.MA(dks, b.MonthPeriod)
+//	monthPrev := core.MA(dks[:n-b.Lookback], b.MonthPeriod)
+//	if monthNow <= monthPrev {
+//		return nil
+//	}
+//
+//	today := dks[n-1]
+//	if b.RequireCloseAbove && (today.Close.Float64() <= yearNow || today.Close.Float64() <= monthNow) {
+//		return nil
+//	}
+//
+//	return &core.Buy{
+//		Code:  code,
+//		Time:  today.Time,
+//		Price: today.Close,
+//	}
+//}

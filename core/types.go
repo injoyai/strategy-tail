@@ -8,6 +8,11 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
+const (
+	TypeBuy  = "buy"
+	TypeSell = "sell"
+)
+
 type Trade struct {
 	Code      string
 	BuyTime   time.Time

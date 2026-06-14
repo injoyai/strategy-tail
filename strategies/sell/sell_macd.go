@@ -47,6 +47,9 @@ func (s MACD) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	}
 
 	n := len(hist)
+	if n < 2 {
+		return false
+	}
 	yesterday := hist[n-2]
 	today := hist[n-1]
 	if !(today < yesterday-s.MinDiff) {
