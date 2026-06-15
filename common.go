@@ -51,6 +51,12 @@ var (
 	DatabaseDir = tdx.DefaultDatabaseDir
 	Pull        *extend.PullKline
 	Manage      *tdx.Manage
+
+	PullConfig = extend.PullKlineConfig{
+		Types:      []string{extend.Day, extend.Minute},
+		Dir:        DatabaseDir,
+		Goroutines: DefaultGoroutines,
+	}
 )
 
 func init() {
@@ -60,12 +66,12 @@ func init() {
 
 	Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
 	logs.PanicErr(err)
+}
 
-	Pull, err = extend.NewPullKline(extend.PullKlineConfig{
-		Types:      []string{extend.Day, extend.Minute},
-		Dir:        DatabaseDir,
-		Goroutines: 10,
-	})
+func Init() {
+
+	var err error
+	Pull, err = extend.NewPullKline(PullConfig)
 	logs.PanicErr(err)
 
 	Pull.Update(Manage)

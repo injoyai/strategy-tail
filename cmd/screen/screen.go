@@ -216,7 +216,7 @@ func (this *ScreenService) Run() {
 
 	first := true
 
-	for range time.NewTicker(time.Second * 5).C {
+	for range time.NewTicker(this.Interval).C {
 
 		//判断是否是交易日和交易时间
 		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
@@ -420,20 +420,35 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
 			b.Flush()
 
+			bs := core.GetBuys(this.Buyer, code, ks, this.LookbackDays)
+			if len(bs) == 0 {
+				return
+			}
+
 			//获取历史分钟数据
-			mks, err := common.GetMinKlines(code, time.Now().AddDate(0, 0, -30), time.Now())
+			var mks protocol.Klines
+			err := common.Manage.Do(func(c *tdx.Client) error {
+				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
+					return k.Time.Before(time.Now().AddDate(0, 0, -30))
+				})
+				if err != nil {
+					return err
+				}
+				mks = resp.List
+				return nil
+			})
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()
 				return
 			}
+
 			mmks := map[string]protocol.Klines{}
 			for _, v := range mks {
 				key := v.Time.Format(time.DateOnly)
 				mmks[key] = append(mmks[key], v)
 			}
 
-			bs := core.GetBuys(this.Buyer, code, ks, this.LookbackDays)
 			for _, b := range bs {
 				t := &Trade{
 					Code:     code,
