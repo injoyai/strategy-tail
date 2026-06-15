@@ -230,7 +230,7 @@ func (this *ScreenService) Run() {
 
 			//读取历史未卖出交易数据
 			trades := []*Trade(nil)
-			if err := this.DB.Where("Sold=?", false).Find(&trades); err != nil {
+			if err := this.DB.Find(&trades); err != nil {
 				logs.Err(err)
 			}
 
@@ -243,6 +243,9 @@ func (this *ScreenService) Run() {
 			//计算实时卖点
 			sells := []*core.Sell(nil)
 			for _, t := range trades {
+				if t.Sold {
+					continue
+				}
 				b, err := t.Buy()
 				if err != nil {
 					logs.Err(err)
@@ -261,13 +264,13 @@ func (this *ScreenService) Run() {
 			}
 
 			//推送历史成交数据
-			this.mu.Lock()
-			this.lastSells = sells
-			this.mu.Unlock()
+			//this.mu.Lock()
+			//this.lastSells = sells
+			//this.mu.Unlock()
 			this.broadcast(sells)
 			this.broadcast(trades)
 
-			//开始计算实时买点/卖点
+			//开始计算实时买点
 			buys := this.realtimeBuys()
 			//处理买点,推送到前端
 			this.mu.Lock()
@@ -429,30 +432,21 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			}
 			mmks := map[string]protocol.Klines{}
 			for _, v := range mks {
-				mmks[v.Time.Format(time.DateOnly)] = append(mmks[v.Time.Format(time.DateOnly)], v)
+				key := v.Time.Format(time.DateOnly)
+				mmks[key] = append(mmks[key], v)
 			}
 
 			bs := core.GetBuys(this.Buyer, code, ks, this.LookbackDays)
 			for _, b := range bs {
 				t := &Trade{
-					Code:       code,
-					Name:       common.Manage.Codes.GetName(code),
-					BuyTime:    b.Time.Format(time.DateTime),
-					BuyPrice:   b.Price.Float64(),
-					SellTime:   "",
-					SellPrice:  0,
-					ProfitRate: 0,
+					Code:     code,
+					Name:     common.Manage.Codes.GetName(code),
+					BuyTime:  b.Time.Format(time.DateTime),
+					BuyPrice: b.Price.Float64(),
 				}
 				s := core.GetSell(this.Seller, ks, *b, mmks)
-				if s != nil {
-					t.SellTime = s.Time.Format(time.DateTime)
-					t.SellPrice = s.Price.Float64()
-					if b.Price > 0 {
-						t.ProfitRate = (s.Price.Float64() - b.Price.Float64()) / b.Price.Float64()
-					}
-				}
 				mu.Lock()
-				ts = append(ts, t)
+				ts = append(ts, t.Sell(s))
 				mu.Unlock()
 			}
 

@@ -17,11 +17,10 @@ func main() {
 	if err != nil {
 		logs.Panicf("初始化服务失败: %v\n", err)
 	}
-	logs.Info("数据库连接成功...")
 
 	svc := &ScreenService{
 		DB:           db,
-		LookbackDays: cfg.GetInt("lookback_days", 10),
+		LookbackDays: cfg.GetInt("lookback", 20),
 		Interval:     cfg.GetDuration("interval", time.Second*10),
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        common.GetNoPriceLimitCodes(),
@@ -30,7 +29,6 @@ func main() {
 	}
 
 	//初始化
-	logs.Info("开始初始化")
 	if err := svc.Init(); err != nil {
 		logs.Panicf("初始化服务失败: %v\n", err)
 	}

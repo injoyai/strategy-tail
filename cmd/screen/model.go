@@ -48,6 +48,9 @@ type Trade struct {
 }
 
 func (this *Trade) Sell(s *core.Sell) *Trade {
+	if s == nil {
+		return this
+	}
 	this.Sold = true
 	this.SellTime = s.Time.Format(time.DateTime)
 	this.SellPrice = s.Price.Float64()

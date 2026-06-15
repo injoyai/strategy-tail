@@ -86,6 +86,7 @@ func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
 }
 
 func GetSell(s Seller, ks extend.Klines, buy Buy, minKs map[string]protocol.Klines) *Sell {
+
 	for i := range ks {
 		k := ks[i]
 		if k.Time.After(buy.Time) {
