@@ -1,0 +1,6 @@
+pull:
+  types:
+    - day
+    - minute
+
+  goroutines: 10

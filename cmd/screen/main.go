@@ -6,16 +6,12 @@ import (
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
 const dbPath = "./data/database/trade.db"
 
 func main() {
-
-	common.PullConfig.Types = []string{extend.Day}
-	common.Init()
 
 	db, err := xorms.NewSqlite(dbPath)
 	if err != nil {
