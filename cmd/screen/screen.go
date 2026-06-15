@@ -354,6 +354,9 @@ func (this *ScreenService) Init() error {
 				b.Flush()
 				return
 			}
+			if len(ks) > 300 {
+				ks = ks[len(ks)-300:]
+			}
 			this.mu.Lock()
 			defer this.mu.Unlock()
 			this.historyDayKlines[code] = ks
