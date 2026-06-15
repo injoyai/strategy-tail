@@ -12,11 +12,7 @@ import (
 func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, error) {
 	codes := this.Codes
 
-	if len(codes) == 0 {
-		return map[string]*protocol.Kline{}, nil
-	}
-
-	quoteKline := make(map[string]*protocol.Kline, len(this.Codes))
+	quoteKline := make(map[string]*protocol.Kline, len(codes))
 	batchSize := 80
 
 	for i := 0; i < len(codes); i += batchSize {
