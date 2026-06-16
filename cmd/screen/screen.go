@@ -355,7 +355,7 @@ func (this *ScreenService) Init() error {
 				return
 			}
 			if len(ks) > 300 {
-				ks = ks[len(ks)-300:]
+				ks = append(extend.Klines{}, ks[len(ks)-300:]...)
 			}
 			this.mu.Lock()
 			defer this.mu.Unlock()
