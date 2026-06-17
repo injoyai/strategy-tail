@@ -69,10 +69,11 @@ func init() {
 	})
 	logs.PanicErr(err)
 
+	logs.Info("更新数据...")
 	Pull.Update(Manage)
-	logs.Info("更新完成...")
 	go func() {
-		for range time.NewTimer(time.Hour).C {
+		for range time.NewTimer(time.Minute).C {
+			logs.Info("更新数据...")
 			Pull.Update(Manage)
 		}
 	}()
@@ -156,13 +157,13 @@ func IsTradingTime() bool {
 	h, m := now.Hour(), now.Minute()
 
 	// 上午 09:30 - 11:30
-	if h == 9 && m >= 29 {
+	if h == 9 && m >= 25 {
 		return true
 	}
 	if h == 10 {
 		return true
 	}
-	if h == 11 && m <= 30 {
+	if h == 11 && m <= 31 {
 		return true
 	}
 

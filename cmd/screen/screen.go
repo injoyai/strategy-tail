@@ -64,13 +64,18 @@ func (this *ScreenService) updateRealtime() error {
 		last := ks[len(ks)-1]
 
 		realKline := realKlines[code]
-		if realKline != nil && realKline.Time.Format(time.DateOnly) > last.Time.Format(time.DateOnly) {
-			ks = append(ks, &extend.Kline{
-				Unix:       realKline.Time.Unix(),
-				Kline:      realKline,
-				FloatStock: last.FloatStock,
-				TotalStock: last.TotalStock,
-			})
+		if realKline != nil {
+			switch {
+			case realKline.Time.Format(time.DateOnly) > last.Time.Format(time.DateOnly):
+				ks = append(ks, &extend.Kline{
+					Unix:       realKline.Time.Unix(),
+					Kline:      realKline,
+					FloatStock: last.FloatStock,
+					TotalStock: last.TotalStock,
+				})
+			case realKline.Time.Format(time.DateOnly) == last.Time.Format(time.DateOnly):
+				ks[len(ks)-1].Kline = realKline
+			}
 		}
 		realtimeKlinesMap[code] = ks
 	}
@@ -260,11 +265,13 @@ func (this *ScreenService) Run() {
 				}
 			}
 
-			//推送历史成交数据
-			//this.mu.Lock()
-			//this.lastSells = sells
-			//this.mu.Unlock()
+			//缓存实时卖点数据
+			this.mu.Lock()
+			this.lastSells = sells
+			this.mu.Unlock()
+			//推送实时卖点数据
 			this.broadcast(sells)
+			//推送历史成交数据
 			this.broadcast(trades)
 
 			//开始计算实时买点
@@ -330,11 +337,6 @@ func (this *ScreenService) Init() error {
 	//===================================================//
 
 	this.DB.Sync2(new(Trade))
-
-	//更新历史数据
-	if err := common.Pull.Update(common.Manage); err != nil {
-		return err
-	}
 
 	//加载历史数据到缓存
 	b := bar.NewCoroutine(
@@ -470,4 +472,35 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 
 	b.Wait()
 	return ts
+}
+
+// getRealtimeQuotes - 批量获取实时行情
+// 通达信 API 每次最多支持 80 个代码，需分批拉取
+func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, error) {
+	codes := this.Codes
+
+	quoteKline := make(map[string]*protocol.Kline, len(codes))
+	batchSize := 80
+
+	for i := 0; i < len(codes); i += batchSize {
+		end := i + batchSize
+		if end > len(codes) {
+			end = len(codes)
+		}
+
+		if err := common.Manage.Do(func(c *tdx.Client) error {
+			quotes, err := c.GetQuote(codes[i:end]...)
+			if err != nil {
+				return err
+			}
+			for _, q := range quotes {
+				quoteKline[protocol.AddPrefix(q.Code)] = q.Kline
+			}
+			return nil
+		}); err != nil {
+			logs.Errf("[行情] 批量获取失败(%d-%d): %v", i, end, err)
+		}
+	}
+
+	return quoteKline, nil
 }
