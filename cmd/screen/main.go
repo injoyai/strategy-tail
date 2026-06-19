@@ -22,7 +22,7 @@ func main() {
 		DB:           db,
 		LookbackDays: cfg.GetInt("lookback", 20),
 		Interval:     cfg.GetDuration("interval", time.Second*5),
-		Goroutines:   common.DefaultGoroutines * 2,
+		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetNoPriceLimitCodes(),
 		Buyer:        common.MACDBuyer,
 		Seller:       common.MACDSeller,

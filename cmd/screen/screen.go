@@ -350,7 +350,7 @@ func (this *ScreenService) Init() error {
 		b.Go(func() {
 			b.SetPrefix(fmt.Sprintf("[加载日线][%s]", code))
 			b.Flush()
-			ks, err := common.Pull.DayKlines(code)
+			ks, err := common.Pull.DayKlines(code, time.Now().AddDate(-1, -6, 0), time.Now())
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()

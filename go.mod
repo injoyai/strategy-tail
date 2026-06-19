@@ -4,13 +4,14 @@ go 1.25.4
 
 require (
 	github.com/glebarez/go-sqlite v1.22.0
-	github.com/injoyai/bar v0.0.11
+	github.com/injoyai/bar v0.0.12
 	github.com/injoyai/conv v1.2.6
 	github.com/injoyai/frame v0.0.20
 	github.com/injoyai/goutil v1.2.31
 	github.com/injoyai/logs v1.0.12
 	github.com/injoyai/lorca v0.0.0-20241219020631-030018723d82
-	github.com/injoyai/tdx v0.0.81
+	github.com/injoyai/tdx v0.0.82
+	xorm.io/xorm v1.3.11
 )
 
 require (
@@ -60,5 +61,4 @@ require (
 	modernc.org/sqlite v1.28.0 // indirect
 	xorm.io/builder v0.3.13 // indirect
 	xorm.io/core v0.7.3 // indirect
-	xorm.io/xorm v1.3.11 // indirect
 )
