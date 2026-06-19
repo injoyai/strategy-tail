@@ -39,12 +39,10 @@ func (s A跌破短期均线) Sell(code string, dks extend.Klines, b core.Buy) bo
 // A固定止盈 是盈利达到目标即卖出的保守止盈条件。
 // Pct 表示止盈百分比（小数），默认 0.05（5%）。
 // 高胜率策略的核心：不贪婪，达到目标就锁定利润。
-type A固定止盈 struct {
-	Pct float64
-}
+type A固定止盈 float64
 
 func (s A固定止盈) Name() string {
-	pct := s.Pct
+	pct := s
 	if pct == 0 {
 		pct = 0.05
 	}
@@ -52,7 +50,7 @@ func (s A固定止盈) Name() string {
 }
 
 func (s A固定止盈) Sell(code string, dks extend.Klines, b core.Buy) bool {
-	pct := s.Pct
+	pct := float64(s)
 	if pct == 0 {
 		pct = 0.05
 	}

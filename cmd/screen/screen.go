@@ -260,7 +260,7 @@ func (this *ScreenService) Run() {
 				if s := core.GetSell(this.Seller, ks, b, nil); s != nil {
 					sells = append(sells, s)
 					//更新到数据库
-					_, err := this.DB.Where("ID=?", t.ID).Update(t.Sell(s))
+					_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t.Sell(s))
 					logs.PrintErr(err)
 				}
 			}

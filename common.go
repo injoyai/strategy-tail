@@ -69,12 +69,12 @@ func init() {
 	})
 	logs.PanicErr(err)
 
-	logs.Info("更新数据...")
 	Pull.Update(Manage)
 	go func() {
 		for range time.NewTimer(time.Minute).C {
-			logs.Info("更新数据...")
-			Pull.Update(Manage)
+			if Manage.Workday.TodayIs() {
+				Pull.Update(Manage)
+			}
 		}
 	}()
 
