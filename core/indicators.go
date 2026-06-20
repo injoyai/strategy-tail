@@ -1,8 +1,22 @@
 package core
 
-import "github.com/injoyai/tdx/extend"
+import (
+	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/tdx/protocol"
+)
 
 func MA(dks extend.Klines, n int) float64 {
+	if len(dks) < n {
+		return 0
+	}
+	sum := 0.0
+	for _, k := range dks[len(dks)-n:] {
+		sum += k.Close.Float64()
+	}
+	return sum / float64(n)
+}
+
+func MA2(dks protocol.Klines, n int) float64 {
 	if len(dks) < n {
 		return 0
 	}

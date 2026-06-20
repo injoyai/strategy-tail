@@ -20,8 +20,8 @@ func main() {
 
 	svc := &ScreenService{
 		DB:           db,
-		LookbackDays: cfg.GetInt("lookback", 20),
-		Interval:     cfg.GetDuration("interval", time.Second*5),
+		LookbackDays: cfg.GetInt("screen.lookback", 20),
+		Interval:     cfg.GetDuration("screen.interval", time.Second*5),
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetNoPriceLimitCodes(),
 		Buyer:        common.MACDBuyer,
@@ -36,6 +36,6 @@ func main() {
 	logs.Info("开始运行主程序...")
 	go svc.Run()
 
-	port := cfg.GetInt("port", 9090)
+	port := cfg.GetInt("screen.port", 9090)
 	logs.PrintErr(Api(port, svc))
 }

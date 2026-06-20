@@ -172,6 +172,29 @@ func maUp(dks extend.Klines, period, lookback int, minSlope float64) bool {
 	return true
 }
 
+func maUp2(dks protocol.Klines, period, lookback int, minSlope float64) bool {
+	if period <= 0 || lookback <= 0 || len(dks) < period+lookback {
+		return false
+	}
+
+	n := len(dks)
+	for x := 0; x < lookback; x++ {
+		maNow := core.MA2(dks[:n-x], period)
+		maPrev := core.MA2(dks[:n-x-1], period)
+		if maNow <= maPrev {
+			return false
+		}
+		if maPrev <= 0 {
+			return false
+		}
+		slope := (maNow - maPrev) / maPrev
+		if slope < minSlope {
+			return false
+		}
+	}
+	return true
+}
+
 // VolumeShrink 是缩量买入条件。
 // Period 表示对比的前 N 日成交量均值，默认 5。
 // Ratio 表示今日成交量必须低于前 N 日均量的比例，默认 0.8。

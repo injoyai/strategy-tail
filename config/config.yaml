@@ -4,3 +4,9 @@ pull:
     - minute
 
   goroutines: 10
+
+screen:
+  port: 7070
+  lookback: 30
+  interval: 5s
+  goroutines: 10
