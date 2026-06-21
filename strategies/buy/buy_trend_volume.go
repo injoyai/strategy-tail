@@ -228,64 +228,6 @@ func (b MACD零轴上方) Buy(code string, dks extend.Klines) bool {
 	return hist[n-1] > 0
 }
 
-// A涨幅小于 是当日涨幅小于指定值的买入条件。
-// Max 表示最大允许涨幅（%），默认 9.5。
-// 用于过滤接近涨停的股票。
-type A涨幅小于 float64
-
-func (b A涨幅小于) Name() string {
-	max := b
-	if max == 0 {
-		max = 9.5
-	}
-	return fmt.Sprintf("涨幅小于%.1f%%", max)
-}
-
-func (b A涨幅小于) Buy(code string, dks extend.Klines) bool {
-	max := float64(b)
-	if max == 0 {
-		max = 9.5
-	}
-	if len(dks) == 0 {
-		return false
-	}
-	return dks[len(dks)-1].RiseRate() < max
-}
-
-// A近N日涨幅小于 是近N日累计涨幅小于指定值的买入条件。
-// Days 表示统计天数，默认 5。
-// Max 表示最大允许累计涨幅（%），默认 15。
-// 用于过滤短期暴涨追高风险。
-type A近N日涨幅小于 struct {
-	Days int
-	Max  float64
-}
-
-func (b A近N日涨幅小于) Name() string {
-	days := b.Days
-	if days == 0 {
-		days = 5
-	}
-	max := b.Max
-	if max == 0 {
-		max = 15
-	}
-	return fmt.Sprintf("近%d日涨幅<%.0f%%", days, max)
-}
-
-func (b A近N日涨幅小于) Buy(code string, dks extend.Klines) bool {
-	days := b.Days
-	if days == 0 {
-		days = 5
-	}
-	max := b.Max
-	if max == 0 {
-		max = 15
-	}
-	rise := riseRateNDays(dks, days)
-	return rise < max
-}
-
 // A乖离率小于 是收盘价相对均线乖离率小于指定值的买入条件。
 // Period 表示均线周期，默认 20。
 // Max 表示最大允许乖离率（%），默认 15。

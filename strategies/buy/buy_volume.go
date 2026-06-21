@@ -179,8 +179,8 @@ func maUp2(dks protocol.Klines, period, lookback int, minSlope float64) bool {
 
 	n := len(dks)
 	for x := 0; x < lookback; x++ {
-		maNow := core.MA2(dks[:n-x], period)
-		maPrev := core.MA2(dks[:n-x-1], period)
+		maNow := dks[:n-x].MA(period).Float64()
+		maPrev := dks[:n-x-1].MA(period).Float64()
 		if maNow <= maPrev {
 			return false
 		}

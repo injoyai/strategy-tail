@@ -19,6 +19,7 @@ type Trade struct {
 	SellTime  time.Time
 	BuyPrice  protocol.Price
 	SellPrice protocol.Price
+	Virtual   bool //是否为虚拟成交(尚未卖出,按最新价估算)
 }
 
 type (

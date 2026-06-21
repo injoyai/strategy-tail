@@ -193,5 +193,31 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		}
 		currentBuys = remaining
 	}
+
+	//回测结束仍未卖出的持仓,按最新价(最后一个交易日收盘价)生成虚拟成交单
+	if len(currentBuys) > 0 && len(dks) > 0 {
+		last := dks[len(dks)-1]
+		slippage := this.Slippage
+		if slippage == 0 {
+			slippage = protocol.Yuan(0.01)
+		}
+		for _, currentBuy := range currentBuys {
+			buyExecPrice := currentBuy.Price + slippage
+			sellExecPrice := last.Close - slippage
+
+			buyFee := protocol.Yuan(buyExecPrice.Float64() * this.CommissionRate)
+			sellFee := protocol.Yuan(sellExecPrice.Float64() * (this.CommissionRate + this.StampDutyRate))
+
+			ts = append(ts, Trade{
+				Code:      code,
+				BuyTime:   currentBuy.Time,
+				SellTime:  last.Time,
+				BuyPrice:  buyExecPrice + buyFee,
+				SellPrice: sellExecPrice - sellFee,
+				Virtual:   true,
+			})
+		}
+	}
+
 	return ts
 }

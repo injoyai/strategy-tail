@@ -28,6 +28,8 @@ func main() {
 
 			buy.A现价大于N日均线(30), //当天价格高于N日均线
 
+			buy.A单日涨幅范围{Min: 0, Max: 8}, //限制单日涨幅
+
 			buy.And{
 				buy.MAUp{Period: 20, MinSlope: 0.0002}, //N日均线向上,且增速大于0.05%
 				buy.MAUp{Period: 30, MinSlope: 0.0005}, //N日均线向上,且增速大于0.05%
