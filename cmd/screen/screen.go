@@ -26,13 +26,14 @@ import (
 
 // ScreenService - 选股服务，管理买点历史、卖点判定和 WebSocket 推送
 type ScreenService struct {
-	DB           *xorms.Engine //数据库引擎
-	LookbackDays int           //历史交割单天数
-	Interval     time.Duration //间隔时间
-	Goroutines   int           //协程数量
-	Codes        []string      //计算的代码
-	core.Buyer                 //买入策略
-	core.Seller                //卖出策略
+	DB           *xorms.Engine         //数据库引擎
+	LookbackDays int                   //历史交割单天数
+	Interval     time.Duration         //间隔时间
+	Goroutines   int                   //协程数量
+	Codes        []string              //计算的代码
+	core.Buyer                         //买入策略
+	core.Seller                        //卖出策略
+	Tags         map[string]core.Buyer //增加tags
 
 	mu                sync.RWMutex
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
@@ -318,7 +319,7 @@ func (this *ScreenService) Init() error {
 		this.Goroutines = common.DefaultGoroutines
 	}
 	if len(this.Codes) == 0 {
-		this.Codes = common.GetNoPriceLimitCodes()
+		this.Codes = common.GetAllCodes()
 	}
 	if this.Buyer == nil {
 		this.Buyer = common.MACDBuyer

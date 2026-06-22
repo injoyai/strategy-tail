@@ -10,7 +10,7 @@ import (
 func main() {
 
 	//获取无需验资的代码
-	codes := common.GetNoPriceLimitCodes()
+	codes := common.GetAllCodes() // common.GetNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}
@@ -19,16 +19,20 @@ func main() {
 
 	core.Backtest{
 		Buyer: buy.And{
+			buy.A过滤涨停{}, //过滤涨停,涨停买不进去
+
+			buy.A现价{Max: 120}, //价格小于120,太贵了买不起
+
 			buy.A流通市值{Min: 400}, //流通市值大于N亿
-			buy.A现价{Max: 120},   //价格小于120,太贵了买不起
-			buy.A过滤涨停{},         //过滤涨停,涨停买不进去
+			//buy.A流通市值{Min: 600, Max: 800}, //流通市值大于N亿
 
 			buy.MACD{Lookback: 4}, //MACD
-			buy.MACD负数{Days: 5},   //MACD阴线,5
+			//buy.MACD{Lookback: 20}, //MACD
+			buy.MACD负数{Days: 5}, //MACD阴线,5
 
 			buy.A现价大于N日均线(30), //当天价格高于N日均线
 
-			buy.A单日涨幅范围{Min: 0, Max: 8}, //限制单日涨幅
+			//buy.A单日涨幅范围{Min: 0, Max: 9}, //限制单日涨幅
 
 			buy.And{
 				buy.MAUp{Period: 20, MinSlope: 0.0002}, //N日均线向上,且增速大于0.05%

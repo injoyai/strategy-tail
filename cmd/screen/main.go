@@ -6,6 +6,8 @@ import (
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
+	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
@@ -23,9 +25,15 @@ func main() {
 		LookbackDays: cfg.GetInt("screen.lookback", 20),
 		Interval:     cfg.GetDuration("screen.interval", time.Second*5),
 		Goroutines:   common.DefaultGoroutines,
-		Codes:        common.GetNoPriceLimitCodes(),
-		Buyer:        common.MACDBuyer,
+		Codes:        common.GetAllCodes(),
 		Seller:       common.MACDSeller,
+		Buyer:        common.MACDBuyer,
+		Tags: map[string]core.Buyer{
+			"科": buy.A科创板{},
+			"创": buy.A创业板{},
+			"北": buy.A北证板{},
+			"流": buy.A流通市值{Min: 600, Max: 800},
+		},
 	}
 
 	//初始化
