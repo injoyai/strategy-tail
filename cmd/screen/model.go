@@ -13,17 +13,18 @@ import (
 
 // BuyItem - 买入信号条目
 type BuyItem struct {
-	Code       string  `json:"code"`        // 股票代码（带前缀）
-	Name       string  `json:"name"`        // 股票名称
-	Date       string  `json:"date"`        // 日期 YYYY-MM-DD
-	Time       string  `json:"time"`        // 信号产生时间
-	Price      float64 `json:"price"`       // 买入价
-	Rise       float64 `json:"rise"`        // 盘中涨幅百分比（仅当日买点有效）
-	CurrPrice  float64 `json:"curr_price"`  // 现价
-	IncomeRate float64 `json:"income_rate"` // 收益率百分比
-	Sold       bool    `json:"sold"`        // 是否已卖出
-	SellPrice  float64 `json:"sell_price"`  // 卖出价（已卖出时有效）
-	SellTime   string  `json:"sell_time"`   // 卖出时间（已卖出时有效）
+	Code       string   `json:"code"`        // 股票代码（带前缀）
+	Name       string   `json:"name"`        // 股票名称
+	Date       string   `json:"date"`        // 日期 YYYY-MM-DD
+	Time       string   `json:"time"`        // 信号产生时间
+	Price      float64  `json:"price"`       // 买入价
+	Rise       float64  `json:"rise"`        // 盘中涨幅百分比（仅当日买点有效）
+	CurrPrice  float64  `json:"curr_price"`  // 现价
+	IncomeRate float64  `json:"income_rate"` // 收益率百分比
+	Sold       bool     `json:"sold"`        // 是否已卖出
+	SellPrice  float64  `json:"sell_price"`  // 卖出价（已卖出时有效）
+	SellTime   string   `json:"sell_time"`   // 卖出时间（已卖出时有效）
+	Tags       []string `json:"tags"`        // 满足的标签
 }
 
 // BuyResponse - 买点响应
@@ -36,15 +37,16 @@ type BuyResponse struct {
 
 // Trade - 卖出信号条目
 type Trade struct {
-	ID         int64   `json:"id"`                //唯一标识
-	Code       string  `json:"code"`              // 股票代码
-	Name       string  `json:"name"`              // 股票名称
-	BuyTime    string  `json:"buy_time"`          // 买入时间
-	BuyPrice   float64 `json:"buy_price"`         // 买入价
-	Sold       bool    `json:"sold" xorm:"index"` //是否卖出
-	SellTime   string  `json:"sell_time"`         // 卖出时间
-	SellPrice  float64 `json:"sell_price"`        // 卖出价
-	ProfitRate float64 `json:"profit_rate"`       // 收益率百分比
+	ID         int64    `json:"id"`                    //唯一标识
+	Code       string   `json:"code"`                  // 股票代码
+	Name       string   `json:"name"`                  // 股票名称
+	BuyTime    string   `json:"buy_time"`              // 买入时间
+	BuyPrice   float64  `json:"buy_price"`             // 买入价
+	Sold       bool     `json:"sold" xorm:"index"`     //是否卖出
+	SellTime   string   `json:"sell_time"`             // 卖出时间
+	SellPrice  float64  `json:"sell_price"`            // 卖出价
+	ProfitRate float64  `json:"profit_rate"`           // 收益率百分比
+	Tags       []string `json:"tags" xorm:"text json"` //满足的标签
 }
 
 func (this *Trade) Sell(s *core.Sell) *Trade {
@@ -60,12 +62,21 @@ func (this *Trade) Sell(s *core.Sell) *Trade {
 	return this
 }
 
-func (this *Trade) Buy() (core.Buy, error) {
+func (this *Trade) ToBuy() (core.Buy, error) {
 	t, err := time.Parse(time.DateTime, this.BuyTime)
 	return core.Buy{
 		Code:  this.Code,
 		Time:  t,
 		Price: protocol.Yuan(this.BuyPrice),
+	}, err
+}
+
+func (this *Trade) ToSell() (*core.Sell, error) {
+	t, err := time.Parse(time.DateTime, this.BuyTime)
+	return &core.Sell{
+		Code:  this.Code,
+		Time:  t,
+		Price: protocol.Yuan(this.SellPrice),
 	}, err
 }
 

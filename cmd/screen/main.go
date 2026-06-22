@@ -29,10 +29,10 @@ func main() {
 		Seller:       common.MACDSeller,
 		Buyer:        common.MACDBuyer,
 		Tags: map[string]core.Buyer{
-			"科": buy.A科创板{},
-			"创": buy.A创业板{},
-			"北": buy.A北证板{},
-			"流": buy.A流通市值{Min: 600, Max: 800},
+			"科创":  buy.A科创板{},
+			"创业":  buy.A创业板{},
+			"北证":  buy.A北证板{},
+			"中市值": buy.A流通市值{Min: 600, Max: 800},
 		},
 	}
 
@@ -45,5 +45,6 @@ func main() {
 	go svc.Run()
 
 	port := cfg.GetInt("screen.port", 9090)
-	logs.PrintErr(Api(port, svc))
+	useLocal := cfg.GetBool("screen.html.local")
+	logs.PrintErr(Api(port, useLocal, svc))
 }

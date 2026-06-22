@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -153,6 +154,7 @@ func (s *ScreenService) marshal(payload any) string {
 				Time:  b.Time.Format(time.DateTime),
 				Price: b.Price.Float64(),
 				Rise:  rise,
+				Tags:  s.evalTags(b.Code, ks),
 			}
 		}
 		resp = BuyResponse{Type: "buy", Count: len(items), Time: now, Results: items}
@@ -185,6 +187,7 @@ func (s *ScreenService) marshal(payload any) string {
 				SellPrice:  t.SellPrice,
 				SellTime:   t.SellTime,
 				IncomeRate: t.ProfitRate,
+				Tags:       t.Tags,
 			}
 			if t.Sold {
 				item.CurrPrice = t.SellPrice
@@ -224,6 +227,8 @@ func (this *ScreenService) Run() {
 
 	for range time.NewTicker(this.Interval).C {
 
+		now := time.Now()
+
 		//判断是否是交易日和交易时间
 		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
 
@@ -247,9 +252,17 @@ func (this *ScreenService) Run() {
 			sells := []*core.Sell(nil)
 			for _, t := range trades {
 				if t.Sold {
+					if strings.HasPrefix(t.SellTime, now.Format(time.DateTime)) {
+						sell, err := t.ToSell()
+						if err != nil {
+							logs.Err(err)
+							continue
+						}
+						sells = append(sells, sell)
+					}
 					continue
 				}
-				b, err := t.Buy()
+				b, err := t.ToBuy()
 				if err != nil {
 					logs.Err(err)
 					continue
@@ -305,6 +318,23 @@ func (this *ScreenService) realtimeBuys() []*core.Buy {
 		}
 	}
 	return bs
+}
+
+// evalTags 用 Tags 中的买点策略对 ks 进行判断,返回命中的 key
+func (this *ScreenService) evalTags(code string, ks extend.Klines) []string {
+	if len(this.Tags) == 0 {
+		return nil
+	}
+	tags := []string(nil)
+	for name, b := range this.Tags {
+		if b == nil {
+			continue
+		}
+		if b.Buy(code, ks) {
+			tags = append(tags, name)
+		}
+	}
+	return tags
 }
 
 func (this *ScreenService) Init() error {
@@ -435,7 +465,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			var mks protocol.Klines
 			err := common.Manage.Do(func(c *tdx.Client) error {
 				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
-					return k.Time.Before(time.Now().AddDate(0, 0, -30))
+					return k.Time.Before(time.Now().AddDate(0, 0, -this.LookbackDays*2))
 				})
 				if err != nil {
 					return err
@@ -456,11 +486,20 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			}
 
 			for _, b := range bs {
+				//用截止买入当日的 K 线切片评估 Tags,避免未来函数
+				hisKs := extend.Klines{}
+				for _, k := range ks {
+					hisKs = append(hisKs, k)
+					if k.Time.Equal(b.Time) {
+						break
+					}
+				}
 				t := &Trade{
 					Code:     code,
 					Name:     common.Manage.Codes.GetName(code),
 					BuyTime:  b.Time.Format(time.DateTime),
 					BuyPrice: b.Price.Float64(),
+					Tags:     this.evalTags(code, hisKs),
 				}
 				s := core.GetSell(this.Seller, ks, *b, mmks)
 				mu.Lock()

@@ -1,6 +1,8 @@
 package buy
 
 import (
+	"fmt"
+
 	"github.com/injoyai/tdx/extend"
 	"github.com/injoyai/tdx/protocol"
 )
@@ -42,4 +44,36 @@ func (b A北证板) Name() string {
 func (b A北证板) Buy(code string, dks extend.Klines) bool {
 	code = protocol.AddPrefix(code)
 	return len(code) == 8 && code[:2] == "bj"
+}
+
+type A流通市值范围 struct {
+	Min float64
+	Max float64
+}
+
+func (b A流通市值范围) Name() string {
+	switch {
+	case b.Min > 0 && b.Max > 0:
+		return fmt.Sprintf("流通市值[%.f,%.f]亿", b.Min, b.Max)
+	case b.Min > 0:
+		return fmt.Sprintf("流通市值[%.f,]亿", b.Min)
+	case b.Max > 0:
+		return fmt.Sprintf("流通市值[,%.f]亿", b.Max)
+	default:
+		return "Null"
+	}
+}
+
+func (b A流通市值范围) Buy(code string, dks extend.Klines) bool {
+	if len(dks) == 0 {
+		return false
+	}
+	last := dks[len(dks)-1]
+	if b.Min > 0 && last.FloatValue().Float64()/1e8 < b.Min {
+		return false
+	}
+	if b.Max > 0 && last.FloatValue().Float64()/1e8 > b.Max {
+		return false
+	}
+	return true
 }

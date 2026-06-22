@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"os"
 
 	"github.com/injoyai/frame/fbr"
 )
@@ -9,11 +10,16 @@ import (
 //go:embed index.html
 var indexHTML string
 
-func Api(port int, svc *ScreenService) error {
+func Api(port int, useLocal bool, svc *ScreenService) error {
 	s := fbr.Default(
 		fbr.WithPort(port),
 		fbr.WithALL("/", func(c fbr.Ctx) {
 			c.Set("Content-Type", "text/html; charset=utf-8")
+			if useLocal {
+				bs, _ := os.ReadFile("./cmd/screen/index.html")
+				c.Send(bs)
+				return
+			}
 			c.SendString(indexHTML)
 		}),
 		fbr.WithALL("/ws", func(c fbr.Ctx) {

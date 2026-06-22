@@ -40,12 +40,12 @@ const (
 	万                 = 1e4
 	亿                 = 1e8
 	DefaultGoroutines = 10
+	DatabaseDir       = tdx.DefaultDatabaseDir
 )
 
 var (
-	DatabaseDir = tdx.DefaultDatabaseDir
-	Pull        *extend.PullKline
-	Manage      *tdx.Manage
+	Pull   *extend.PullKline
+	Manage *tdx.Manage
 )
 
 func init() {
@@ -67,7 +67,7 @@ func init() {
 	go func() {
 		for range time.NewTimer(time.Minute).C {
 			if Manage.Workday.TodayIs() {
-				Pull.Update(Manage)
+				logs.PrintErr(Pull.Update(Manage))
 			}
 		}
 	}()
