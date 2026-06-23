@@ -95,7 +95,7 @@ func IsTradingTime() bool {
 	h, m := now.Hour(), now.Minute()
 
 	// 上午 09:30 - 11:30
-	if h == 9 && m >= 25 {
+	if h == 9 && m >= 30 {
 		return true
 	}
 	if h == 10 {

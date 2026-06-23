@@ -252,7 +252,7 @@ func (this *ScreenService) Run() {
 			sells := []*core.Sell(nil)
 			for _, t := range trades {
 				if t.Sold {
-					if strings.HasPrefix(t.SellTime, now.Format(time.DateTime)) {
+					if strings.HasPrefix(t.SellTime, now.Format(time.DateOnly)) {
 						sell, err := t.ToSell()
 						if err != nil {
 							logs.Err(err)

@@ -32,6 +32,7 @@ func main() {
 			"科创":  buy.A科创板{},
 			"创业":  buy.A创业板{},
 			"北证":  buy.A北证板{},
+			"ETF": buy.ETF{},
 			"中市值": buy.A流通市值{Min: 600, Max: 800},
 		},
 	}
