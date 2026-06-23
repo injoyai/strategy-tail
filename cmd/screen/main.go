@@ -22,7 +22,7 @@ func main() {
 
 	svc := &ScreenService{
 		DB:           db,
-		LookbackDays: cfg.GetInt("screen.lookback", 20),
+		LookbackDays: cfg.GetInt("screen.lookback", 60),
 		Interval:     cfg.GetDuration("screen.interval", time.Second*5),
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetAllCodes(),
