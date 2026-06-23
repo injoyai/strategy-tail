@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>选股实时监控</title>
+<style>
+/* ============ 基础 ============ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: #080c12;
+  color: #c8cdd4;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============ 顶部 Header ============ */
+.header {
+  background: linear-gradient(180deg, #101520 0%, #0d1119 100%);
+  border-bottom: 1px solid #1a2230;
+  padding: 14px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.header h1 {
+  font-size: 17px;
+  font-weight: 600;
+  color: #e4e8ee;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  letter-spacing: 0.4px;
+}
+.status-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: background .25s, box-shadow .25s;
+}
+.status-dot.connected    { background: #4ade80; box-shadow: 0 0 8px rgba(74, 222, 128, .4); }
+.status-dot.disconnected { background: #ef4444; box-shadow: 0 0 8px rgba(239, 68, 68, .35); }
+.status-dot.connecting   { background: #f59e0b; box-shadow: 0 0 8px rgba(245, 158, 11, .35); animation: pulse 1.2s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: #5e6670;
+}
+.update-time { color: #5b9de0; font-family: "SF Mono", Consolas, monospace; font-size: 13px; }
+
+/* ============ 三面板网格布局：上小下大 ============ */
+.container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(180px, 38fr) minmax(0, 62fr);
+  gap: 14px;
+  padding: 14px 28px 20px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.panel.full {
+  grid-column: 1 / -1;
+  grid-row: 2 / 3;
+}
+.panel {
+  background: #0d1119;
+  border: 1px solid #1a2230;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #1a2230;
+  background: linear-gradient(180deg, #101620 0%, #0d1119 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.panel-title {
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #d0d5dd;
+  letter-spacing: 0.3px;
+}
+.panel-title .icon { font-size: 15px; }
+.panel-title.buy     .icon { color: #f03d43; }
+.panel-title.sell    .icon { color: #2db954; }
+.panel-title.history .icon { color: #5b9de0; }
+.badge {
+  background: #151d2a;
+  color: #5e6670;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 500;
+  border: 1px solid #1a2230;
+}
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  position: relative;
+}
+.panel-body::-webkit-scrollbar { width: 5px; }
+.panel-body::-webkit-scrollbar-track { background: transparent; }
+.panel-body::-webkit-scrollbar-thumb { background: #1e2735; border-radius: 3px; }
+.panel-body::-webkit-scrollbar-thumb:hover { background: #283548; }
+
+/* ============ 表格（桌面端） ============ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+thead { position: sticky; top: 0; z-index: 1; }
+th {
+  background: #101620;
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  color: #4a5360;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  border-bottom: 1px solid #1a2230;
+}
+td {
+  padding: 10px 14px;
+  font-size: 13px;
+  border-bottom: 1px solid #131a26;
+  font-family: "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  color: #b8c0cc;
+  transition: background .12s;
+}
+tr:hover td { background: #111824; }
+
+.positive { color: #f03d43; }
+.negative { color: #2db954; }
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #2a3340;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+
+/* ============ 卡片列表（移动端） ============ */
+.card-list {
+  display: none;
+  padding: 8px 10px;
+}
+.card {
+  background: #111824;
+  border: 1px solid #1a2230;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+.card:last-child { margin-bottom: 0; }
+.card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.card-row + .card-row { margin-top: 6px; }
+.card-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.card-code {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  color: #8a93a3;
+}
+.card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #d0d5dd;
+}
+.card-price {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 16px;
+  font-weight: 600;
+  color: #e4e8ee;
+}
+.card-rate {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+.card-meta {
+  font-size: 11px;
+  color: #4a5360;
+  display: flex;
+  gap: 12px;
+}
+.tag-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  margin: 0 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6ba8e0;
+  background: rgba(91,157,224,0.10);
+  border: 1px solid rgba(91,157,224,0.22);
+  border-radius: 3px;
+  white-space: nowrap;
+  letter-spacing: 0.3px;
+}
+
+/* ============ 历史统计区 ============ */
+.history-stats {
+  gap: 0;
+  align-items: stretch;
+}
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: stretch;
+  padding: 12px 14px;
+  margin: 0 0 8px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #1a2230;
+  border-radius: 14px;
+  background: rgba(10,15,24,0.55);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+.filter-group#historyTagFilters {
+  flex: 1 1 100%;
+  align-items: flex-start;
+}
+.filter-label {
+  font-size: 11px;
+  color: #8ea3bf;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  margin-right: 4px;
+  font-weight: 700;
+}
+.filter-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid #273244;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.02);
+  color: #8d98a8;
+  font-size: 12px;
+  line-height: 1.45;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.16s ease;
+  font-family: inherit;
+}
+.filter-btn:hover {
+  color: #dbe7f5;
+  border-color: #4d6b92;
+  background: rgba(91,157,224,0.08);
+}
+.filter-btn.active {
+  color: #f8fbff;
+  background: linear-gradient(180deg, #5b9de0, #3f7fc1);
+  border-color: #6faef0;
+  box-shadow: 0 0 0 1px rgba(111,174,240,0.18), 0 6px 18px rgba(50,105,170,0.28);
+}
+.filter-btn-tag.active {
+  background: linear-gradient(180deg, rgba(91,157,224,0.26), rgba(63,127,193,0.22));
+  color: #d9ecff;
+  border-color: #6faef0;
+  box-shadow: inset 0 0 0 1px rgba(111,174,240,0.16), 0 4px 14px rgba(35,74,120,0.18);
+}
+.stat-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 2px 18px;
+  position: relative;
+}
+.stat-group + .stat-group::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 1px;
+  background: #1a2230;
+}
+.stat-group-label {
+  font-size: 10px;
+  color: #5b9de0;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.stat-group-items {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.stat-item {
+  font-size: 12px;
+  color: #5e6670;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.stat-item-val {
+  font-weight: 600;
+  font-family: "SF Mono", Consolas, monospace;
+}
+.stat-item-tag {
+  font-size: 11px;
+  color: #6a7382;
+  padding: 1px 5px;
+  background: #12182260;
+  border-radius: 3px;
+}
+.card-meta span { display: flex; align-items: center; gap: 3px; }
+.card-label {
+  color: #3a4350;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.card-status {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.card-status.sold {
+  background: rgba(45, 185, 84, .12);
+  color: #2db954;
+}
+.card-status.holding {
+  background: rgba(240, 61, 67, .12);
+  color: #f03d43;
+}
+.card-pair {
+  display: flex;
+  gap: 16px;
+}
+.card-pair-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.card-pair-value {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 13px;
+  color: #b8c0cc;
+}
+
+/* ============ Toast ============ */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast {
+  background: #101520;
+  border: 1px solid #1a2230;
+  border-radius: 8px;
+  padding: 12px 18px;
+  font-size: 13px;
+  color: #c8cdd4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  animation: toastIn .3s ease;
+}
+.toast.success { border-left: 3px solid #4ade80; }
+.toast.error   { border-left: 3px solid #ef4444; }
+.toast.info    { border-left: 3px solid #5b9de0; }
+@keyframes toastIn  { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toastOut { from { transform: translateX(0);    opacity: 1; } to { transform: translateX(100%); opacity: 0; } }
+
+/* ============================================================
+   移动端适配 — 卡片布局
+   ============================================================ */
+@media (max-width: 768px) {
+  body {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    height: auto;
+    min-height: 100dvh;
+  }
+
+  .header {
+    padding: 10px 14px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 { font-size: 15px; gap: 8px; }
+  .header-right { font-size: 11px; gap: 6px; }
+  .update-time { font-size: 11px; }
+
+  /* 单列纵向，整页滚动 */
+  .container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px 12px 24px;
+    overflow: visible;
+    flex: none;
+  }
+
+  .panel {
+    flex: none;
+    border-radius: 8px;
+  }
+  .panel.full { max-height: none; }
+
+  .panel-header { padding: 10px 14px; }
+  .panel-title { font-size: 13px; gap: 6px; }
+  .badge { font-size: 11px; padding: 2px 8px; }
+
+  /* 隐藏表格，显示卡片 */
+  .panel-body table { display: none !important; }
+  .card-list { display: block; }
+  .panel-body { overflow: visible; }
+
+  /* 历史面板统计行 */
+  .history-stats {
+    flex-wrap: wrap;
+    font-size: 11px !important;
+    width: 100%;
+  }
+  .history-filters {
+    padding: 10px 12px;
+    gap: 10px;
+  }
+  .filter-group {
+    width: 100%;
+    padding: 9px 10px;
+    border-radius: 12px;
+  }
+  .filter-label {
+    min-width: 34px;
+  }
+  .filter-btn {
+    padding: 4px 9px;
+  }
+  .stat-group {
+    padding: 2px 12px;
+  }
+  .stat-group + .stat-group::before {
+    display: none;
+  }
+
+  .empty-state { font-size: 12px; padding: 20px 0; }
+
+  .toast-container { bottom: 10px; right: 10px; left: 10px; }
+  .toast { min-width: auto; font-size: 12px; padding: 10px 14px; }
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>
+    <span class="status-dot disconnected" id="statusDot"></span>
+    <span>选股实时监控</span>
+  </h1>
+  <div class="header-right">
+    <span>更新: <span class="update-time" id="updateTime">--</span></span>
+  </div>
+</div>
+
+<div class="container">
+  <!-- 当日买点 -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title buy"><span class="icon">&#9650;</span> 买点信号 <span style="font-size:11px;color:#4a5360;font-weight:400;">以收盘为准</span></div>
+      <span class="badge" id="buyCount">0</span>
+    </div>
+    <div class="panel-body">
+      <div class="empty-state" id="buyEmpty">等待买点数据...</div>
+      <table id="buyTable" style="display:none;">
+        <thead><tr>
+          <th>代码</th><th>名称</th><th>价格</th><th>涨幅</th><th>标签</th><th>时间</th>
+        </tr></thead>
+        <tbody id="buyTbody"></tbody>
+      </table>
+      <div class="card-list" id="buyCards"></div>
+    </div>
+  </div>
+
+  <!-- 当日卖点 -->
+  <div class="panel">
+    <div class="panel-header">
+      <div class="panel-title sell"><span class="icon">&#9660;</span> 卖点信号</div>
+      <span class="badge" id="sellCount">0</span>
+    </div>
+    <div class="panel-body">
+      <div class="empty-state" id="sellEmpty">等待卖点数据...</div>
+      <table id="sellTable" style="display:none;">
+        <thead><tr>
+          <th>买入时间</th><th>代码</th><th>名称</th><th>买入价</th><th>卖出价</th><th>收益率</th><th>卖出时间</th>
+        </tr></thead>
+        <tbody id="sellTbody"></tbody>
+      </table>
+      <div class="card-list" id="sellCards"></div>
+    </div>
+  </div>
+
+  <!-- 历史买卖点（跨两列） -->
+  <div class="panel full">
+    <div class="panel-header" style="flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <div class="panel-title history"><span class="icon">&#9632;</span> 历史买卖点</div>
+        <span class="badge" id="historyCount">0</span>
+      </div>
+      <div class="history-stats" style="display:flex; align-items:flex-start; flex-wrap:wrap;">
+        <div class="stat-group">
+          <div class="stat-group-label">胜率</div>
+          <div class="stat-group-items">
+            <span class="stat-item">总体 <span class="stat-item-val" id="historyWinRate">-</span></span>
+            <span id="historyTagStatsRT" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"></span>
+          </div>
+        </div>
+        <div class="stat-group">
+          <div class="stat-group-label">盈亏比</div>
+          <div class="stat-group-items">
+            <span class="stat-item">总体 <span class="stat-item-val" id="historyProfitFactor">-</span></span>
+            <span id="historyTagPF" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;"></span>
+          </div>
+        </div>
+        <div class="stat-group">
+          <div class="stat-group-label">持仓天数</div>
+          <div class="stat-group-items">
+            <span class="stat-item">平均持仓 <span class="stat-item-val" id="historyHoldDays">-</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="history-filters">
+      <div class="filter-group" id="historyDateFilters">
+        <span class="filter-label">日期</span>
+        <button type="button" class="filter-btn" data-days="15">15天</button>
+        <button type="button" class="filter-btn active" data-days="30">30天</button>
+        <button type="button" class="filter-btn" data-days="60">60天</button>
+        <button type="button" class="filter-btn" data-days="120">120天</button>
+      </div>
+      <div class="filter-group" id="historyStatusFilters">
+        <span class="filter-label">状态</span>
+        <button type="button" class="filter-btn active" data-status="all">全部</button>
+        <button type="button" class="filter-btn" data-status="sold">卖出</button>
+        <button type="button" class="filter-btn" data-status="holding">持有</button>
+      </div>
+      <div class="filter-group" id="historyTagFilters">
+        <span class="filter-label">标签</span>
+        <button type="button" class="filter-btn" data-tag-action="all">全选</button>
+        <button type="button" class="filter-btn" data-tag-action="none">清空</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div class="empty-state" id="historyEmpty">等待历史数据...</div>
+      <table id="historyTable" style="display:none;">
+        <thead><tr>
+          <th>买入时间</th><th>代码</th><th>名称</th><th>买入价</th><th>卖出/现价</th><th>收益率</th><th>标签</th><th>卖出时间</th><th>状态</th>
+        </tr></thead>
+        <tbody id="historyTbody"></tbody>
+      </table>
+      <div class="card-list" id="historyCards"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+'use strict';
+
+window.onerror = function(msg, url, line, col, err) {
+  console.error('[全局错误]', msg, line, col, err);
+  return true;
+};
+window.onunhandledrejection = function(e) {
+  console.error('[未处理Promise]', e.reason);
+};
+
+// =========================================================
+// 全局状态
+// =========================================================
+let ws = null;
+let reconnectTimer = null;
+let reconnectAttempts = 0;
+const isMobile = () => window.innerWidth <= 768;
+const historyFilter = { days: 30, status: 'all', tags: null };
+const NO_TAG_KEY = '__NO_TAG__';
+let historyRawResults = [];
+
+// =========================================================
+// 工具：格式化
+// =========================================================
+function fmtNumber(v, digits) {
+  if (v == null || isNaN(v)) return '-';
+  return Number(v).toFixed(digits);
+}
+function fmtPrice(v) { return fmtNumber(v, 2); }
+function fmtRate(v) {
+  if (v == null || isNaN(v)) return '-';
+  const n = Number(v);
+  const cls = n >= 0 ? 'positive' : 'negative';
+  const sign = n >= 0 ? '+' : '';
+  return '<span class="' + cls + '">' + sign + n.toFixed(2) + '%</span>';
+}
+function fmtRateText(v) {
+  if (v == null || isNaN(v)) return '-';
+  const n = Number(v);
+  const sign = n >= 0 ? '+' : '';
+  return sign + n.toFixed(2) + '%';
+}
+function fmtTime(s) {
+  if (!s || s.length < 19) return s || '-';
+  return s.substring(11, 19);
+}
+function fmtMonthTime(s) {
+  if (!s || s.length < 16) return s || '-';
+  return s.substring(5, 16);
+}
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, function(c) {
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+  });
+}
+function fmtTags(tags) {
+  if (!tags || !tags.length) return '-';
+  return tags.map(function(t) {
+    return '<span class="tag-badge">' + esc(t) + '</span>';
+  }).join('');
+}
+function toTs(v) {
+  const t = new Date(v || '').getTime();
+  return isNaN(t) ? 0 : t;
+}
+function clearHistoryStats() {
+  document.getElementById('historyWinRate').innerHTML = '-';
+  document.getElementById('historyProfitFactor').innerHTML = '-';
+  document.getElementById('historyTagStatsRT').innerHTML = '';
+  document.getElementById('historyTagPF').innerHTML = '';
+}
+function ensureHistoryTagFilters(results) {
+  const wrap = document.getElementById('historyTagFilters');
+  if (!wrap) return;
+  const tags = Array.from(new Set((results || []).flatMap(function(r) {
+    const rowTags = r.tags || [];
+    return rowTags.length ? rowTags : [NO_TAG_KEY];
+  }))).sort(function(a, b) {
+    if (a === NO_TAG_KEY) return 1;
+    if (b === NO_TAG_KEY) return -1;
+    return a.localeCompare(b, 'zh-CN');
+  });
+  let selected = historyFilter.tags;
+  if (!selected) selected = new Set(tags);
+  else selected = new Set(Array.from(selected).filter(function(t) { return tags.includes(t); }));
+  historyFilter.tags = selected;
+  wrap.innerHTML = '<span class="filter-label">标签</span>'
+    + (tags.length > 0
+      ? tags.map(function(t) {
+          const active = historyFilter.tags.has(t) ? ' active' : '';
+          const label = t === NO_TAG_KEY ? '无标签' : t;
+          return '<button type="button" class="filter-btn filter-btn-tag' + active + '" data-tag="' + esc(t) + '">' + esc(label) + '</button>';
+        }).join('')
+      : '<span style="color:var(--muted);font-size:12px;">无可选标签</span>');
+}
+function getFilteredHistoryResults() {
+  const nowTs = Date.now();
+  const minTs = nowTs - historyFilter.days * 24 * 60 * 60 * 1000;
+  const allTags = Array.from(new Set(historyRawResults.flatMap(function(r) {
+    const rowTags = r.tags || [];
+    return rowTags.length ? rowTags : [NO_TAG_KEY];
+  })));
+  const selectedTags = historyFilter.tags || new Set(allTags);
+  const allSelected = allTags.length === 0 || selectedTags.size === allTags.length;
+  return historyRawResults.filter(function(r) {
+    const timeOk = toTs(r.time) >= minTs;
+    const statusOk = historyFilter.status === 'all'
+      || (historyFilter.status === 'sold' && r.sold)
+      || (historyFilter.status === 'holding' && !r.sold);
+    const tags = (r.tags && r.tags.length) ? r.tags : [NO_TAG_KEY];
+    const tagOk = allSelected || tags.some(function(t) { return selectedTags.has(t); });
+    return timeOk && statusOk && tagOk;
+  });
+}
+
+// =========================================================
+// Toast 通知
+// =========================================================
+function showToast(message, type) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + (type || 'info');
+  const icons = { success: '\u2713', error: '\u2717', info: '\u2139' };
+  toast.innerHTML = '<span>' + (icons[type] || '') + '</span><span>' + esc(message) + '</span>';
+  container.appendChild(toast);
+  setTimeout(function() {
+    toast.style.animation = 'toastOut 0.3s ease forwards';
+    setTimeout(function() { toast.remove(); }, 300);
+  }, 4000);
+}
+
+// =========================================================
+// 连接管理
+// =========================================================
+function setStatus(status) {
+  const dot = document.getElementById('statusDot');
+  dot.className = 'status-dot ' + status;
+}
+
+function connect() {
+  setStatus('connecting');
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = proto + '//' + location.host + '/ws';
+  try {
+    ws = new WebSocket(url);
+  } catch (e) {
+    showToast('WebSocket 创建失败: ' + e.message, 'error');
+    scheduleReconnect();
+    return;
+  }
+
+  ws.onopen = function() {
+    setStatus('connected');
+    reconnectAttempts = 0;
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    showToast('已连接', 'success');
+  };
+
+  ws.onclose = function() {
+    setStatus('disconnected');
+    if (reconnectAttempts === 0) {
+      showToast('连接已断开，尝试重连...', 'error');
+    }
+    scheduleReconnect();
+  };
+
+  ws.onerror = function() {};
+
+  ws.onmessage = function(event) {
+    let data;
+    try { data = JSON.parse(event.data); } catch (e) { return; }
+    switch (data.type) {
+      case 'buy':     updateBuy(data); break;
+      case 'sell':    updateSell(data); break;
+      case 'history': updateHistory(data); break;
+    }
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer) return;
+  reconnectAttempts++;
+  const delay = Math.min(1000 * Math.pow(2, Math.min(reconnectAttempts, 5)), 30000);
+  reconnectTimer = setTimeout(function() {
+    reconnectTimer = null;
+    connect();
+  }, delay);
+}
+
+// =========================================================
+// 渲染：当日买点
+// =========================================================
+function updateBuy(data) {
+  document.getElementById('updateTime').textContent = fmtTime(data.time);
+  const results = data.results || [];
+  document.getElementById('buyCount').textContent = data.count != null ? data.count : results.length;
+
+  const table = document.getElementById('buyTable');
+  const empty = document.getElementById('buyEmpty');
+  const tbody = document.getElementById('buyTbody');
+  const cards = document.getElementById('buyCards');
+
+  if (results.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'flex';
+    tbody.innerHTML = '';
+    cards.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = 'table';
+
+  // 桌面表格
+  let html = '';
+  for (const r of results) {
+    html += '<tr>'
+      + '<td>' + esc(r.code) + '</td>'
+      + '<td>' + esc(r.name) + '</td>'
+      + '<td>' + fmtPrice(r.price) + '</td>'
+      + '<td>' + fmtRate(r.rise) + '</td>'
+      + '<td>' + fmtTags(r.tags) + '</td>'
+      + '<td>' + fmtTime(r.time) + '</td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // 移动卡片
+  let cardHtml = '';
+  for (const r of results) {
+    const rateCls = (r.rise || 0) >= 0 ? 'positive' : 'negative';
+    cardHtml += '<div class="card">'
+      + '<div class="card-row">'
+        + '<div class="card-main"><span class="card-name">' + esc(r.name) + '</span><span class="card-code">' + esc(r.code) + '</span></div>'
+        + '<span class="card-rate ' + rateCls + '">' + fmtRateText(r.rise) + '</span>'
+      + '</div>'
+      + (r.tags && r.tags.length ? '<div class="card-row">' + fmtTags(r.tags) + '</div>' : '')
+      + '<div class="card-row">'
+        + '<span class="card-price">' + fmtPrice(r.price) + '</span>'
+        + '<span class="card-meta"><span>' + fmtTime(r.time) + '</span></span>'
+      + '</div>'
+    + '</div>';
+  }
+  cards.innerHTML = cardHtml;
+}
+
+// =========================================================
+// 渲染：当日卖点
+// =========================================================
+function updateSell(data) {
+  document.getElementById('updateTime').textContent = fmtTime(data.time);
+  const results = data.results || [];
+  document.getElementById('sellCount').textContent = data.count != null ? data.count : results.length;
+
+  const table = document.getElementById('sellTable');
+  const empty = document.getElementById('sellEmpty');
+  const tbody = document.getElementById('sellTbody');
+  const cards = document.getElementById('sellCards');
+
+  if (results.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'flex';
+    tbody.innerHTML = '';
+    cards.innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = 'table';
+
+  // 桌面表格
+  let html = '';
+  for (const r of results) {
+    html += '<tr>'
+      + '<td>' + fmtMonthTime(r.buy_time) + '</td>'
+      + '<td>' + esc(r.code) + '</td>'
+      + '<td>' + esc(r.name) + '</td>'
+      + '<td>' + fmtPrice(r.buy_price) + '</td>'
+      + '<td>' + fmtPrice(r.sell_price) + '</td>'
+      + '<td>' + fmtRate(r.profit_rate) + '</td>'
+      + '<td>' + fmtMonthTime(r.sell_time) + '</td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // 移动卡片
+  let cardHtml = '';
+  for (const r of results) {
+    const rateCls = (r.profit_rate || 0) >= 0 ? 'positive' : 'negative';
+    cardHtml += '<div class="card">'
+      + '<div class="card-row">'
+        + '<div class="card-main"><span class="card-name">' + esc(r.name) + '</span><span class="card-code">' + esc(r.code) + '</span></div>'
+        + '<span class="card-rate ' + rateCls + '">' + fmtRateText(r.profit_rate) + '</span>'
+      + '</div>'
+      + '<div class="card-row">'
+        + '<div class="card-pair">'
+          + '<div class="card-pair-item"><span class="card-label">买入</span><span class="card-pair-value">' + fmtPrice(r.buy_price) + '</span></div>'
+          + '<div class="card-pair-item"><span class="card-label">卖出</span><span class="card-pair-value">' + fmtPrice(r.sell_price) + '</span></div>'
+        + '</div>'
+      + '</div>'
+      + '<div class="card-row">'
+        + '<span class="card-meta"><span>买入 ' + fmtMonthTime(r.buy_time) + '</span><span>卖出 ' + fmtMonthTime(r.sell_time) + '</span></span>'
+      + '</div>'
+    + '</div>';
+  }
+  cards.innerHTML = cardHtml;
+}
+
+// =========================================================
+// 渲染：历史买卖点
+// =========================================================
+function renderTagStats(elId, stats) {
+  const el = document.getElementById(elId);
+  const names = Object.keys(stats).sort();
+  if (names.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = names.map(function(t) {
+    const s = stats[t];
+    const w = s.total > 0 ? s.win / s.total * 100 : 0;
+    return '<span class="stat-item"><span class="stat-item-tag">' + esc(t) + '</span>'
+      + '<span class="stat-item-val ' + (w >= 50 ? 'positive' : 'negative') + '">'
+      + w.toFixed(1) + '%</span> <span style="color:#3a4350;font-weight:400;">' + s.win + '/' + s.total + '</span></span>';
+  }).join('');
+}
+function renderTagPF(elId, stats) {
+  const el = document.getElementById(elId);
+  const names = Object.keys(stats).sort();
+  if (names.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = names.map(function(t) {
+    const s = stats[t];
+    let val;
+    if (s.winN === 0 && s.lossN === 0) val = '-';
+    else if (s.lossN === 0) val = '∞';
+    else if (s.winN === 0) val = '0.00';
+    else val = (s.winSum / s.lossSum).toFixed(2);
+    const cls = (s.winN === 0 && s.lossN === 0) ? '' : (val === '∞' || parseFloat(val) >= 1 ? 'positive' : 'negative');
+    return '<span class="stat-item"><span class="stat-item-tag">' + esc(t) + '</span>'
+      + '<span class="stat-item-val ' + cls + '">' + val + '</span></span>';
+  }).join('');
+}
+function renderHistoryResults(results) {
+  document.getElementById('historyCount').textContent = results.length;
+
+  let totalCnt = 0, winCnt = 0;
+  let winSum = 0, lossSum = 0, winN = 0, lossN = 0;
+  let holdDaysSum = 0, holdDaysN = 0;
+  const tagRT = {}, tagPF = {};
+
+  for (const r of results) {
+    const rate = r.income_rate || 0;
+    const isWin = rate > 0;
+    totalCnt++;
+    const buyTs = toTs(r.time);
+    const endTs = r.sold ? toTs(r.sell_time) : Date.now();
+    if (buyTs > 0 && endTs >= buyTs) {
+      holdDaysSum += (endTs - buyTs) / (24 * 60 * 60 * 1000);
+      holdDaysN++;
+    }
+    if (rate > 0) {
+      winCnt++;
+      winSum += rate;
+      winN++;
+    } else if (rate < 0) {
+      lossSum += -rate;
+      lossN++;
+    }
+    for (const t of (r.tags || [])) {
+      if (!tagRT[t]) tagRT[t] = { total: 0, win: 0 };
+      tagRT[t].total++;
+      if (isWin) tagRT[t].win++;
+      if (!tagPF[t]) tagPF[t] = { winSum: 0, lossSum: 0, winN: 0, lossN: 0 };
+      if (rate > 0) {
+        tagPF[t].winSum += rate;
+        tagPF[t].winN++;
+      } else if (rate < 0) {
+        tagPF[t].lossSum += -rate;
+        tagPF[t].lossN++;
+      }
+    }
+  }
+
+  document.getElementById('historyWinRate').innerHTML = totalCnt > 0
+    ? '<span class="' + ((winCnt / totalCnt * 100) >= 50 ? 'positive' : 'negative') + '">' + (winCnt / totalCnt * 100).toFixed(1) + '%</span> <span style="color:#3a4350;font-weight:400;">' + winCnt + '/' + totalCnt + '</span>'
+    : '-';
+
+  const profitFactorEl = document.getElementById('historyProfitFactor');
+  if (winN === 0 && lossN === 0) profitFactorEl.innerHTML = '-';
+  else if (lossN === 0) profitFactorEl.innerHTML = '<span class="positive">∞</span>';
+  else if (winN === 0) profitFactorEl.innerHTML = '<span class="negative">0.00</span>';
+  else {
+    const pf = winSum / lossSum;
+    profitFactorEl.innerHTML = '<span class="' + (pf >= 1 ? 'positive' : 'negative') + '">' + pf.toFixed(2) + '</span>';
+  }
+
+  const holdDaysEl = document.getElementById('historyHoldDays');
+  holdDaysEl.innerHTML = holdDaysN > 0 ? holdDaysSum / holdDaysN >= 10
+    ? (holdDaysSum / holdDaysN).toFixed(1) + '天'
+    : (holdDaysSum / holdDaysN).toFixed(2) + '天'
+    : '-';
+
+  renderTagStats('historyTagStatsRT', tagRT);
+  renderTagPF('historyTagPF', tagPF);
+
+  const table = document.getElementById('historyTable');
+  const empty = document.getElementById('historyEmpty');
+  const tbody = document.getElementById('historyTbody');
+  const cards = document.getElementById('historyCards');
+  if (results.length === 0) {
+    table.style.display = 'none';
+    empty.style.display = 'flex';
+    empty.textContent = historyRawResults.length === 0 ? '等待历史数据...' : '当前筛选条件下暂无数据';
+    tbody.innerHTML = '';
+    cards.innerHTML = '';
+    clearHistoryStats();
+    return;
+  }
+  empty.style.display = 'none';
+  table.style.display = 'table';
+
+  let html = '';
+  for (const r of results) {
+    const name = r.name || r.code || '-';
+    const priceCol = r.sold ? fmtPrice(r.sell_price) : fmtPrice(r.curr_price);
+    const statusCol = r.sold ? '<span class="negative" style="font-size:12px;">已卖出</span>' : '<span class="positive" style="font-size:12px;">持有中</span>';
+    html += '<tr>'
+      + '<td>' + fmtMonthTime(r.time) + '</td>'
+      + '<td>' + esc(r.code) + '</td>'
+      + '<td>' + esc(name) + '</td>'
+      + '<td>' + fmtPrice(r.price) + '</td>'
+      + '<td>' + priceCol + '</td>'
+      + '<td>' + fmtRate(r.income_rate) + '</td>'
+      + '<td>' + fmtTags(r.tags) + '</td>'
+      + '<td>' + (r.sold ? fmtMonthTime(r.sell_time) : '-') + '</td>'
+      + '<td>' + statusCol + '</td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  let cardHtml = '';
+  for (const r of results) {
+    const name = r.name || r.code || '-';
+    const rateCls = (r.income_rate || 0) >= 0 ? 'positive' : 'negative';
+    const statusCls = r.sold ? 'sold' : 'holding';
+    const statusText = r.sold ? '已卖出' : '持有中';
+    const currLabel = r.sold ? '卖出' : '现价';
+    const currPrice = r.sold ? fmtPrice(r.sell_price) : fmtPrice(r.curr_price);
+    cardHtml += '<div class="card">'
+      + '<div class="card-row">'
+        + '<div class="card-main"><span class="card-name">' + esc(name) + '</span><span class="card-code">' + esc(r.code) + '</span></div>'
+        + '<div style="display:flex;align-items:center;gap:8px;">'
+          + '<span class="card-status ' + statusCls + '">' + statusText + '</span>'
+          + '<span class="card-rate ' + rateCls + '">' + fmtRateText(r.income_rate) + '</span>'
+        + '</div>'
+      + '</div>'
+      + (r.tags && r.tags.length ? '<div class="card-row">' + fmtTags(r.tags) + '</div>' : '')
+      + '<div class="card-row">'
+        + '<div class="card-pair">'
+          + '<div class="card-pair-item"><span class="card-label">买入</span><span class="card-pair-value">' + fmtPrice(r.price) + '</span></div>'
+          + '<div class="card-pair-item"><span class="card-label">' + currLabel + '</span><span class="card-pair-value">' + currPrice + '</span></div>'
+        + '</div>'
+      + '</div>'
+      + '<div class="card-row">'
+        + '<span class="card-meta">'
+          + '<span>买入 ' + fmtMonthTime(r.time) + '</span>'
+          + (r.sold ? '<span>卖出 ' + fmtMonthTime(r.sell_time) + '</span>' : '')
+        + '</span>'
+      + '</div>'
+    + '</div>';
+  }
+  cards.innerHTML = cardHtml;
+}
+function bindHistoryFilters() {
+  const dateWrap = document.getElementById('historyDateFilters');
+  const statusWrap = document.getElementById('historyStatusFilters');
+  const tagWrap = document.getElementById('historyTagFilters');
+  if (!dateWrap || !statusWrap || !tagWrap) return;
+
+  dateWrap.onclick = function(e) {
+    const btn = e.target.closest('button[data-days]');
+    if (!btn) return;
+    historyFilter.days = Number(btn.dataset.days) || 30;
+    this.querySelectorAll('button').forEach(function(node) { node.classList.toggle('active', node === btn); });
+    renderHistoryResults(getFilteredHistoryResults());
+  };
+
+  statusWrap.onclick = function(e) {
+    const btn = e.target.closest('button[data-status]');
+    if (!btn) return;
+    historyFilter.status = btn.dataset.status || 'all';
+    this.querySelectorAll('button').forEach(function(node) { node.classList.toggle('active', node === btn); });
+    renderHistoryResults(getFilteredHistoryResults());
+  };
+
+  tagWrap.onclick = function(e) {
+    const actionBtn = e.target.closest('button[data-tag-action]');
+    if (actionBtn) {
+      const tags = Array.from(new Set((historyRawResults || []).flatMap(function(r) {
+        const rowTags = r.tags || [];
+        return rowTags.length ? rowTags : [NO_TAG_KEY];
+      }))).sort(function(a, b) {
+        if (a === NO_TAG_KEY) return 1;
+        if (b === NO_TAG_KEY) return -1;
+        return a.localeCompare(b, 'zh-CN');
+      });
+      historyFilter.tags = actionBtn.dataset.tagAction === 'all' ? new Set(tags) : new Set();
+      ensureHistoryTagFilters(historyRawResults);
+      renderHistoryResults(getFilteredHistoryResults());
+      return;
+    }
+    const btn = e.target.closest('button[data-tag]');
+    if (!btn) return;
+    const tag = btn.dataset.tag;
+    if (!historyFilter.tags) historyFilter.tags = new Set();
+    if (historyFilter.tags.has(tag)) historyFilter.tags.delete(tag); else historyFilter.tags.add(tag);
+    ensureHistoryTagFilters(historyRawResults);
+    renderHistoryResults(getFilteredHistoryResults());
+  };
+}
+function updateHistory(data) {
+  historyRawResults = data.results || [];
+  ensureHistoryTagFilters(historyRawResults);
+  renderHistoryResults(getFilteredHistoryResults());
+}
+
+// =========================================================
+// 启动
+// =========================================================
+bindHistoryFilters();
+connect();
+</script>
+</body>
+</html>
