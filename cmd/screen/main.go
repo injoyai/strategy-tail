@@ -27,13 +27,14 @@ func main() {
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetAllCodes(),
 		Seller:       common.MACDSeller,
-		Buyer:        common.MACDBuyer,
+		Buyer:        common.MACDBuyer2,
 		Tags: map[string]core.Buyer{
 			"科创":  buy.A科创板{},
 			"创业":  buy.A创业板{},
 			"北证":  buy.A北证板{},
 			"ETF": buy.ETF{},
 			"中市值": buy.A流通市值{Min: 600, Max: 800},
+			"涨停":  buy.A涨停{},
 		},
 	}
 

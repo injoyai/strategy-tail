@@ -10,7 +10,7 @@ import (
 func main() {
 
 	//获取无需验资的代码
-	codes := common.Get创业Codes() //.GetAllCodes() // common.GetNoPriceLimitCodes()
+	codes := common.GetAllCodes() // common.GetNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}
@@ -21,7 +21,7 @@ func main() {
 		Buyer: buy.And{
 			buy.A过滤涨停{}, //过滤涨停,涨停买不进去
 
-			buy.A现价{Max: 120}, //价格小于120,太贵了买不起
+			//buy.A现价{Max: 120}, //价格小于120,太贵了买不起
 
 			buy.A流通市值{Min: 400}, //流通市值大于N亿
 			//buy.A流通市值{Min: 600, Max: 800}, //流通市值大于N亿

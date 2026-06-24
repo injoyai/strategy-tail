@@ -85,7 +85,7 @@ func (this *PullKline) Update(m *tdx.Manage) error {
 	}
 	codes := this.Config.Codes
 	if len(codes) == 0 {
-		//codes = m.Codes.GetStockCodes()
+		codes = m.Codes.GetStockCodes()
 		codes = append(codes, m.Codes.GetETFCodes()...)
 	}
 	for _, v := range this.Types {
