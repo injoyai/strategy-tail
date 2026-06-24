@@ -85,7 +85,8 @@ func (this *PullKline) Update(m *tdx.Manage) error {
 	}
 	codes := this.Config.Codes
 	if len(codes) == 0 {
-		codes = m.Codes.GetStockCodes()
+		//codes = m.Codes.GetStockCodes()
+		codes = append(codes, m.Codes.GetETFCodes()...)
 	}
 	for _, v := range this.Types {
 		switch v {
@@ -135,6 +136,10 @@ func (this *PullKline) DayKline(code string, n ...int) (*Kline, error) {
 func (this *PullKline) DayKlinesAll(code string) (Klines, error) {
 	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
 
+	if !exists(filename) {
+		return Klines{}, nil
+	}
+
 	db, err := xorms.NewSqlite(filename)
 	if err != nil {
 		return nil, err
@@ -148,6 +153,10 @@ func (this *PullKline) DayKlinesAll(code string) (Klines, error) {
 
 func (this *PullKline) DayKlines(code string, start, end time.Time) (Klines, error) {
 	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
+
+	if !exists(filename) {
+		return Klines{}, nil
+	}
 
 	db, err := xorms.NewSqlite(filename)
 	if err != nil {

@@ -3,7 +3,7 @@ package sell
 import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // SellRSI 是 RSI 强弱恢复卖出策略。

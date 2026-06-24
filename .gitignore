@@ -1,0 +1,6 @@
+.idea/*
+.uploads/*
+data/*
+docs/*
+output/*
+*.exe

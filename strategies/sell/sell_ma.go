@@ -2,7 +2,7 @@ package sell
 
 import (
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // LongMADown 是 250 日或 60 日均线不再同时向上时卖出的策略。

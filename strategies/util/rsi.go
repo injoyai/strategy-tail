@@ -1,6 +1,6 @@
 package util
 
-import "github.com/injoyai/tdx/extend"
+import "github.com/injoyai/strategy-tail/lib/extend"
 
 // CalcRSI 根据日线收盘价计算最近 period 个交易日的 RSI。
 // 这里使用简单平均涨跌幅计算，返回值范围通常为 0 到 100。

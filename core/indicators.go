@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 func MA(dks extend.Klines, n int) float64 {

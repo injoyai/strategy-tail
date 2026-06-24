@@ -7,7 +7,7 @@ import (
 
 	"github.com/injoyai/bar"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 

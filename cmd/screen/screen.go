@@ -13,9 +13,9 @@ import (
 	"github.com/injoyai/frame/fbr" // Web框架
 	"github.com/injoyai/logs"      // 日志库
 	"github.com/injoyai/strategy-tail"
-	"github.com/injoyai/strategy-tail/core" // 选股核心模块
-	"github.com/injoyai/tdx"                // 通达信SDK
-	"github.com/injoyai/tdx/extend"         // 通达信扩展功能
+	"github.com/injoyai/strategy-tail/core"       // 选股核心模块
+	"github.com/injoyai/tdx"                      // 通达信SDK
+	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"xorm.io/xorm"

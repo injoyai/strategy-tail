@@ -3,7 +3,7 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 type A流通市值 struct {

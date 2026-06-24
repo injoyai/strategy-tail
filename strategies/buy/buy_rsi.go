@@ -2,7 +2,7 @@ package buy
 
 import (
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // RSI 是 RSI 超卖买入策略。

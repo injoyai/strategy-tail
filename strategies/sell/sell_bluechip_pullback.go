@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // A跌破短期均线 是收盘价跌破短期均线即触发的卖出条件。

@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // MACD 是 MACD 高位拐头卖出策略。

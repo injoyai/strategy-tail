@@ -10,7 +10,7 @@ import (
 func main() {
 
 	//获取无需验资的代码
-	codes := common.GetAllCodes() // common.GetNoPriceLimitCodes()
+	codes := common.Get创业Codes() //.GetAllCodes() // common.GetNoPriceLimitCodes()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}

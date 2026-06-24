@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // A收盘跌破均线 是收盘价连续N日跌破指定均线的卖出条件。

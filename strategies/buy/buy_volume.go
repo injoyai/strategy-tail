@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 

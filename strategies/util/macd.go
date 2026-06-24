@@ -1,6 +1,6 @@
 package util
 
-import "github.com/injoyai/tdx/extend"
+import "github.com/injoyai/strategy-tail/lib/extend"
 
 // MACDHistogram 计算 MACD 柱子序列。
 // 返回值为 DIF - DEA，没有乘以 2。

@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // A收盘高于均线 是收盘价高于指定均线的买入条件。

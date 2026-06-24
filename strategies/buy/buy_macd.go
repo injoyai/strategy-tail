@@ -3,8 +3,8 @@ package buy
 import (
 	"fmt"
 
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/extend"
 )
 
 // MACD 是 MACD 低位拐头买入策略。

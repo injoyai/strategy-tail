@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // A长期均线多头 是长期均线呈多头排列的买入条件（牛股筛选器）。

@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/conv"
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/extend"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // SellAt 是固定时间卖出策略。
