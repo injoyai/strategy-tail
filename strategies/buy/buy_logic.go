@@ -86,3 +86,13 @@ func (n not) Name() string {
 func (n not) Buy(code string, dks extend.Klines) bool {
 	return !n.Buyer.Buy(code, dks)
 }
+
+type A全部 struct{}
+
+func (n A全部) Name() string {
+	return "全部"
+}
+
+func (n A全部) Buy(code string, dks extend.Klines) bool {
+	return true
+}

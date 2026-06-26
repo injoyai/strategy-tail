@@ -19,17 +19,17 @@ type Screen struct {
 	ShowBar      bool
 }
 
-func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
+func (this Screen) Run(at ...time.Time) ([]*Buy, error) {
 	now := conv.Default(time.Now(), at...)
 	start := now.AddDate(0, -4, 0)
 	end := time.Date(now.Year(), now.Month(), now.Day(), 15, 1, 0, 0, time.Local)
 
 	p := bar.NewCoroutine(
-		len(codes),
-		s.Goroutines,
+		len(this.Codes),
+		this.Goroutines,
 		bar.WithPrefix("[选股][xx000000]"),
 		func(b *bar.Bar) {
-			if !s.ShowBar {
+			if !this.ShowBar {
 				b.SetWriter(io.Discard)
 			}
 		},
@@ -37,11 +37,11 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 
 	var mu sync.Mutex
 	result := make([]*Buy, 0)
-	for _, code := range codes {
+	for _, code := range this.Codes {
 		code := code
 		p.Go(func() {
 			p.SetPrefix("[选股][" + code + "]")
-			dks, err := s.GetDayKlines(code, start, end)
+			dks, err := this.GetDayKlines(code, start, end)
 			if err != nil {
 				p.Logf("[错误] %s", err)
 				p.Flush()
@@ -51,7 +51,7 @@ func (s Screen) Run(codes []string, at ...time.Time) ([]*Buy, error) {
 				return
 			}
 			today := dks[len(dks)-1]
-			if s.Buyer.Buy(code, dks) {
+			if this.Buyer.Buy(code, dks) {
 				mu.Lock()
 				result = append(result, &Buy{
 					Code:  code,

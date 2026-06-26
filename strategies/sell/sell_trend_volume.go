@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 // A收盘跌破均线 是收盘价连续N日跌破指定均线的卖出条件。
@@ -150,8 +150,7 @@ func (s A单日跌幅大于) Sell(code string, dks extend.Klines, buy core.Buy) 
 // MinProfitRate 表示最低盈利比例（小数），默认 0.05（5%）。
 // 当持有天数 >= MaxHoldDays 且收益率 <= MinProfitRate 时返回卖出信号。
 type A时间止损 struct {
-	MaxHoldDays   int
-	MinProfitRate float64
+	MaxHoldDays int
 }
 
 func (s A时间止损) Name() string {
@@ -159,21 +158,13 @@ func (s A时间止损) Name() string {
 	if days == 0 {
 		days = 20
 	}
-	rate := s.MinProfitRate
-	if rate == 0 {
-		rate = 0.05
-	}
-	return fmt.Sprintf("持有%d日未盈利>%.0f%%", days, rate*100)
+	return fmt.Sprintf("持有%d日", days)
 }
 
 func (s A时间止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	maxDays := s.MaxHoldDays
 	if maxDays == 0 {
 		maxDays = 20
-	}
-	minRate := s.MinProfitRate
-	if minRate == 0 {
-		minRate = 0.05
 	}
 	n := len(dks)
 	if n == 0 {
@@ -186,17 +177,12 @@ func (s A时间止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	// 计算持有天数（按K线数）
 	holdDays := 0
 	for i := n - 1; i >= 0; i-- {
-		if dks[i].Time.Before(buy.Time) {
+		if !dks[i].Time.After(buy.Time) {
 			break
 		}
 		holdDays++
 	}
-	if holdDays < maxDays {
-		return false
-	}
-	today := dks[n-1]
-	profitRate := (today.Close.Float64() - buyPrice) / buyPrice
-	return profitRate <= minRate
+	return holdDays >= maxDays
 }
 
 // defaultMACDParams 返回默认的 MACD 参数（12, 26, 9）

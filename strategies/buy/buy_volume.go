@@ -9,11 +9,92 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-// BuyVolume 是一个综合放量突破买入策略。
-// 主要用于寻找“当天明显放量、价格上涨、近期没有连续大幅放量、并且短期形态较强”的股票。
-// 触发条件包括：当天成交量约为昨日 2.9 倍以上、当天为阳线、当天涨幅在合理范围内、当天高点创近 6 日新高、近 10 日波动不过大、近 5 日低点高于近 20 日低点。
-// 买入价使用当天收盘价。
-type BuyVolume struct{}
+// A倍量 是按通达信“倍量”公式翻写的买入策略。
+// 默认严格执行 XG:SPK，即 TJ1、TJ2、TJ3、TJ4。
+// Ratio 表示倍量阈值，默认 2.9。
+// UseTJ5、UseTJ6、UseTJ7 可选择是否把公式中定义但未参与 XG 的条件加入过滤。
+type A倍量 struct {
+	Ratio   float64
+	UseMore bool
+}
+
+func (b A倍量) Name() string {
+	return "倍量"
+}
+
+func (b A倍量) Buy(code string, dks extend.Klines) bool {
+	ratio := b.Ratio
+	if ratio == 0 {
+		ratio = 2.9
+	}
+
+	n := len(dks)
+	if n < 21 {
+		return false
+	}
+	today := dks[n-1]
+	yesterday := dks[n-2]
+	if yesterday.Volume <= 0 {
+		return false
+	}
+
+	TJ1 := float64(today.Volume)/float64(yesterday.Volume) >= ratio
+	TJ2 := today.Close > yesterday.Close && today.High > today.Close && today.High == dks.HHV(6)
+	TJ3 := dks[n-11:n-1].LLV(10).Float64() >= dks[n-11:n-1].HHV(10).Float64()*0.8
+	TJ4 := dks.LLV(5) > dks.LLV(20)
+
+	if !(TJ1 && TJ2 && TJ3 && TJ4) {
+		return false
+	}
+
+	if !b.UseMore {
+		return true
+	}
+
+	if countDoubleVolume(dks, 60, ratio) <= 1 {
+		return false
+	}
+
+	idx := previousDoubleVolumeIndex(dks, ratio)
+	if idx < 0 {
+		return false
+	}
+	prev := dks[idx]
+	if today.Volume <= prev.Volume {
+		return false
+	}
+	if !(today.Close > prev.Close && today.Close > prev.Open) {
+		return false
+	}
+
+	return true
+}
+
+func countDoubleVolume(dks extend.Klines, days int, ratio float64) int {
+	if days > len(dks) {
+		days = len(dks)
+	}
+	count := 0
+	start := len(dks) - days
+	if start < 1 {
+		start = 1
+	}
+	for i := start; i < len(dks); i++ {
+		if dks[i-1].Volume > 0 && float64(dks[i].Volume)/float64(dks[i-1].Volume) >= ratio {
+			count++
+		}
+	}
+	return count
+}
+
+func previousDoubleVolumeIndex(dks extend.Klines, ratio float64) int {
+	for i := len(dks) - 2; i >= 1; i-- {
+		if dks[i-1].Volume > 0 && float64(dks[i].Volume)/float64(dks[i-1].Volume) >= ratio {
+			return i
+		}
+	}
+	return -1
+}
 
 // BuyCloseAboveMA 是收盘价站上指定均线的买入条件。
 // Period 表示均线周期，默认 20。
@@ -429,64 +510,6 @@ func (b VolumeShrink) Buy(code string, dks extend.Klines) bool {
 //
 //	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
 //}
-
-func (v BuyVolume) Name() string {
-	return "倍量"
-}
-
-func (v BuyVolume) Buy(code string, dks extend.Klines, mks protocol.Klines) bool {
-	if len(dks) < 20 {
-		return false
-	}
-
-	n := len(dks)
-	today := dks[n-1]
-	yesterday := dks[n-2]
-
-	if today.Close.Float64() >= 100 {
-		return false
-	}
-	if today.RiseRate() < 0 {
-		return false
-	}
-	if today.RiseRate() > 7 {
-		return false
-	}
-
-	muli := 2.9
-
-	TJ1 := float64(today.Volume)/float64(yesterday.Volume) >= muli
-	TJ1 = TJ1 && today.Close > today.Open
-
-	start := n - 2
-	end := n - 10
-	if end < 1 {
-		end = 1
-	}
-	for i := start; i >= end; i-- {
-		cur := dks[i]
-		prev := dks[i-1]
-		if float64(cur.Volume)/float64(prev.Volume) >= muli {
-			TJ1 = false
-			break
-		}
-	}
-
-	TJ1 = TJ1 && today.High == dks.HHV(6)
-
-	TJ2 := today.Close > yesterday.Close &&
-		today.High > today.Close &&
-		today.High == dks.HHV(6)
-
-	TJ3 := dks.LLV(10).Float64() >= dks.HHV(10).Float64()*0.8
-	TJ4 := dks.LLV(5) > dks.LLV(20)
-
-	if !TJ1 || !TJ2 || !TJ3 || !TJ4 {
-		return false
-	}
-
-	return true
-}
 
 // HHV 返回最近 i 根 K 线中的最高价。
 // 注意：该函数会对切片进行排序，调用时会改变传入切片尾部窗口的顺序。

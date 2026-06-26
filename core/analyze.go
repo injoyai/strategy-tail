@@ -36,7 +36,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	fmt.Printf("%5s \t%4s \t%6s \t%9s \t%10s \t%10s \t%10s \t%7s \t%10s \t%10s \t%8s\n", "年份", "交易", "胜率", "总盈亏", "平均盈亏", "最大盈利", "最大亏损", "盈亏比", "最大回撤", "最低本金", "年化")
 	for _, r := range results {
 		profitFactor := fmt.Sprintf("%.2f", r.ProfitFactor)
-		if r.TotalTrades > 0 && r.ProfitFactor == 0 && r.MaxLoss >= 0 {
+		if math.IsInf(r.ProfitFactor, 1) {
 			profitFactor = "∞"
 		}
 		fmt.Printf("%6d \t%8d \t%8s \t%12.2f \t%12.2f \t%12.2f \t%12.2f \t%8s \t%12.2f \t%12.2f \t%10s\n",
@@ -66,11 +66,9 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 		return allTrades[i].BuyTime.Before(allTrades[j].BuyTime)
 	})
 
-	var totalTrades int = len(allTrades)
-	var winCount int
+	stats := Stats(allTrades)
+	totalTrades := stats.Total
 	var totalProfit float64
-	var grossProfit float64
-	var grossLoss float64
 
 	var maxProfit float64
 	var maxLoss float64
@@ -89,13 +87,6 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 		totalProfit += profit
 		currentEquity += profit
 		equityCurve = append(equityCurve, currentEquity)
-
-		if profit > 0 {
-			winCount++
-			grossProfit += profit
-		} else {
-			grossLoss += math.Abs(profit)
-		}
 
 		if len(equityCurve) == 2 || profit > maxProfit {
 			maxProfit = profit
@@ -119,14 +110,8 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 		}
 	}
 
-	profitFactor := 0.0
-	if grossLoss != 0 {
-		profitFactor = grossProfit / grossLoss
-	}
-	winRate := 0.0
 	avgProfit := 0.0
 	if totalTrades > 0 {
-		winRate = float64(winCount) / float64(totalTrades) * 100
 		avgProfit = totalProfit / float64(totalTrades) * 100
 	}
 	requiredCapital := calculateRequiredCapital(allTrades)
@@ -138,12 +123,12 @@ func Analyze(year int, allTrades []Trade, getDayKlines func(code string) (extend
 	result := AnalyzeResult{
 		Year:            year,
 		TotalTrades:     totalTrades,
-		WinRate:         winRate,
+		WinRate:         stats.WinRate,
 		TotalProfit:     totalProfit * 100,
 		AvgProfit:       avgProfit,
 		MaxProfit:       maxProfit * 100,
 		MaxLoss:         maxLoss * 100,
-		ProfitFactor:    profitFactor,
+		ProfitFactor:    stats.ProfitFactor,
 		MaxDrawdown:     maxDrawdown * 100,
 		RequiredCapital: requiredCapital,
 		AnnualReturn:    annualReturn,

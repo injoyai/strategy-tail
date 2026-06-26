@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 // MACD 是 MACD 高位拐头卖出策略。
@@ -68,6 +68,80 @@ func (s MACD) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	}
 	if yesterday != maxV {
 		return false
+	}
+
+	return true
+}
+
+// MACD买入后连跌 是买入若干交易日后，MACD 柱子连续下跌的卖出策略。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// AfterDays 表示买入后至少第几个交易日才开始判断，默认 1。
+// Days 表示 MACD 柱子连续下跌天数，默认 1。
+type MACD买入后连跌 struct {
+	Fast      int
+	Slow      int
+	Signal    int
+	AfterDays int
+	Days      int
+}
+
+func (s MACD买入后连跌) Name() string {
+	afterDays := s.AfterDays
+	if afterDays == 0 {
+		afterDays = 1
+	}
+	days := s.Days
+	if days == 0 {
+		days = 1
+	}
+	return fmt.Sprintf("买入%d天后MACD连跌%d天", afterDays, days)
+}
+
+func (s MACD买入后连跌) Sell(code string, dks extend.Klines, buy core.Buy) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+	if s.AfterDays == 0 {
+		s.AfterDays = 1
+	}
+	if s.Days == 0 {
+		s.Days = 1
+	}
+
+	n := len(dks)
+	if n < s.Days+1 {
+		return false
+	}
+
+	buyIdx := -1
+	buyDate := buy.Time.Format("2006-01-02")
+	for i := n - 1; i >= 0; i-- {
+		if dks[i].Time.Format("2006-01-02") == buyDate {
+			buyIdx = i
+			break
+		}
+	}
+	if buyIdx < 0 || n-1-buyIdx < s.AfterDays {
+		return false
+	}
+
+	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != n {
+		return false
+	}
+
+	for i := n - s.Days; i < n; i++ {
+		if hist[i] >= hist[i-1] {
+			return false
+		}
 	}
 
 	return true
