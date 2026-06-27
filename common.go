@@ -97,6 +97,16 @@ func GetNoPriceLimitCodes() []string {
 	return codes
 }
 
+func Get沪深Codes() []string {
+	codes := []string(nil)
+	for _, code := range Manage.Codes.GetStockCodes() {
+		if strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "sh") {
+			codes = append(codes, code)
+		}
+	}
+	return codes
+}
+
 func Get科创Codes() []string {
 	codes := []string(nil)
 	for _, code := range Manage.Codes.GetStockCodes() {
