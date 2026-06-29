@@ -21,8 +21,8 @@ var (
 		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
-		buy.MACD{Lookback: 4}, //MACD
-		buy.MACD负数{Days: 5},   //MACD阴线,5
+		buy.MACD反转{Lookback: 4}, //MACD
+		buy.MACD负数{Days: 5},     //MACD阴线,5
 
 		buy.A现价大于N日均线(30), //当天价格高于N日均线
 
@@ -32,10 +32,10 @@ var (
 		},
 	}
 	MACDBuyer2 = buy.And{
-		buy.A流通市值{Min: 400},   //流通市值大于N亿
-		buy.A价格小于(120),        //价格小于120,太贵了买不起
-		buy.MACD{Lookback: 4}, //MACD
-		buy.MACD负数{Days: 5},   //MACD阴线,5
+		buy.A流通市值{Min: 400},     //流通市值大于N亿
+		buy.A价格小于(120),          //价格小于120,太贵了买不起
+		buy.MACD反转{Lookback: 4}, //MACD
+		buy.MACD负数{Days: 5},     //MACD阴线,5
 
 		buy.A现价大于N日均线(30), //当天价格高于N日均线
 
@@ -45,7 +45,7 @@ var (
 		},
 	}
 	MACDSeller = sell.Or{
-		sell.MACD{Lookback: 10},
+		sell.MACD反转{Lookback: 10},
 	}
 )
 
@@ -76,14 +76,12 @@ func init() {
 	})
 	logs.PanicErr(err)
 
-	Pull.Update(Manage)
-	go func() {
-		for range time.NewTimer(time.Minute).C {
-			if Manage.Workday.TodayIs() {
-				logs.PrintErr(Pull.Update(Manage))
-			}
-		}
-	}()
+	//logs.PrintErr(Pull.Update(Manage))
+	//go func() {
+	//	for range time.NewTimer(time.Minute).C {
+	//		logs.PrintErr(Pull.Update(Manage))
+	//	}
+	//}()
 
 }
 

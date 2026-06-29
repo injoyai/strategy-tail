@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 // A收盘高于均线 是收盘价高于指定均线的买入条件。
@@ -408,12 +408,10 @@ func (b A突破N日高点) Buy(code string, dks extend.Klines) bool {
 // A均线多头排列 是短中长均线呈多头排列的买入条件。
 // Periods 表示从短到长的均线周期，默认 [5, 10, 20]。
 // 要求 MA[0] > MA[1] > MA[2]，体现明确的上升趋势。
-type A均线多头排列 struct {
-	Periods []int
-}
+type A均线多头排列 []int
 
 func (b A均线多头排列) Name() string {
-	periods := b.Periods
+	periods := b
 	if len(periods) == 0 {
 		periods = []int{5, 10, 20}
 	}
@@ -421,7 +419,7 @@ func (b A均线多头排列) Name() string {
 }
 
 func (b A均线多头排列) Buy(code string, dks extend.Klines) bool {
-	periods := b.Periods
+	periods := b
 	if len(periods) == 0 {
 		periods = []int{5, 10, 20}
 	}

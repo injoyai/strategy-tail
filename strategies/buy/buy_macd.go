@@ -7,14 +7,14 @@ import (
 	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
-// MACD 是 MACD 低位拐头买入策略。
+// MACD反转 是 MACD 低位拐头买入策略。
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。
 // Signal 表示 DEA EMA 周期，默认 9。
 // Lookback 表示向前比较的窗口长度，默认 20。
 // MinDiff 表示今天 MACD 柱子必须比昨天至少大多少，默认 0。
 // 触发条件：昨天 MACD 柱子是近期 Lookback 窗口内最低值，并且今天 MACD 柱子比昨天变大。
-type MACD struct {
+type MACD反转 struct {
 	Fast     int
 	Slow     int
 	Signal   int
@@ -22,11 +22,11 @@ type MACD struct {
 	MinDiff  float64
 }
 
-func (s MACD) Name() string {
+func (s MACD反转) Name() string {
 	return fmt.Sprintf("%d日MACD最低点后", s.Lookback)
 }
 
-func (s MACD) Buy(code string, dks extend.Klines) bool {
+func (s MACD反转) Buy(code string, dks extend.Klines) bool {
 	if s.Fast == 0 {
 		s.Fast = 12
 	}

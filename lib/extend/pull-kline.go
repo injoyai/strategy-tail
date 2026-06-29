@@ -66,16 +66,17 @@ type PullKline struct {
 }
 
 func (this *PullKline) Run(m *tdx.Manage) error {
-	this.Update(m)
+	this.Update(m, true)
 	for range time.Tick(time.Hour) {
-		if m.Workday.TodayIs() {
-			this.Update(m)
-		}
+		this.Update(m)
 	}
 	return nil
 }
 
-func (this *PullKline) Update(m *tdx.Manage) error {
+func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
+	if (len(must) == 0 || !must[0]) && m.Workday.TodayIs() {
+		return nil
+	}
 	updated, err := this.Updated.Updated("pull")
 	if err != nil {
 		return err

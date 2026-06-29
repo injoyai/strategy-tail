@@ -208,3 +208,29 @@ func (b A单日涨幅范围) Buy(code string, dks extend.Klines) bool {
 
 	return true
 }
+
+// A突破N天新高 是当日最高价创近 N 个交易日新高的买入条件。
+// N 表示回看窗口长度（含今天），默认 20。
+// 触发条件：dks[n-1].High == HHV(High, N)，即今日最高价等于近 N 天最高价。
+// 适合捕捉突破形态，作为趋势确认/突破入场过滤条件使用。
+type A突破N天新高 int
+
+func (b A突破N天新高) Name() string {
+	days := int(b)
+	if days == 0 {
+		days = 20
+	}
+	return fmt.Sprintf("创近%d天新高", days)
+}
+
+func (b A突破N天新高) Buy(code string, dks extend.Klines) bool {
+	days := int(b)
+	if days == 0 {
+		days = 20
+	}
+	if len(dks) < days {
+		return false
+	}
+	today := dks[len(dks)-1]
+	return today.High >= dks.HHV(days)
+}

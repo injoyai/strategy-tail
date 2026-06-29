@@ -27,7 +27,7 @@ func main() {
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetAllCodes(),
 		Seller:       common.MACDSeller,
-		Buyer:        common.MACDBuyer2,
+		Buyer:        common.MACDBuyer,
 		Tags: map[string]core.Buyer{
 			"科创":   buy.A科创板{},
 			"创业":   buy.A创业板{},
