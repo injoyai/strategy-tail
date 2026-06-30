@@ -40,6 +40,16 @@ func (a And) Buy(code string, dks extend.Klines) bool {
 	return buy
 }
 
+func (a And) Children() []core.Buyer {
+	children := make([]core.Buyer, 0, len(a))
+	for _, v := range a {
+		if v != nil {
+			children = append(children, v)
+		}
+	}
+	return children
+}
+
 type Or []core.Buyer
 
 func (s Or) Name() string {
@@ -69,6 +79,16 @@ func (s Or) Buy(code string, dks extend.Klines) bool {
 		}
 	}
 	return false
+}
+
+func (s Or) Children() []core.Buyer {
+	children := make([]core.Buyer, 0, len(s))
+	for _, v := range s {
+		if v != nil {
+			children = append(children, v)
+		}
+	}
+	return children
 }
 
 func Not(b core.Buyer) core.Buyer {

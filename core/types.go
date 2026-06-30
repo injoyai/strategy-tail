@@ -32,6 +32,14 @@ type Buyer interface {
 	Buy(code string, dks extend.Klines) bool
 }
 
+// CompositeBuyer 可展开的组合买入策略接口，供诊断器递归展开。
+// buy.And / buy.Or 等组合策略实现此接口，叶子策略不需要。
+type CompositeBuyer interface {
+	Buyer
+	// Children 返回子策略列表。
+	Children() []Buyer
+}
+
 type Buy struct {
 	Code  string
 	Time  time.Time

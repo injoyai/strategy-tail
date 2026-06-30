@@ -15,6 +15,7 @@ import (
 	"github.com/injoyai/tdx"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
+	"github.com/robfig/cron/v3"
 	"xorm.io/xorm"
 )
 
@@ -67,16 +68,18 @@ type PullKline struct {
 
 func (this *PullKline) Run(m *tdx.Manage) error {
 	this.Update(m, true)
-	for range time.Tick(time.Hour) {
-		this.Update(m)
-	}
-	return nil
+	cr := cron.New(cron.WithSeconds())
+	_, err := cr.AddFunc("0 10 15 * * *", func() { this.Update(m) })
+	return err
 }
 
 func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
-	if (len(must) == 0 || !must[0]) && m.Workday.TodayIs() {
-		return nil
+	if len(must) == 0 || !must[0] {
+		if !m.Workday.TodayIs() {
+			return nil
+		}
 	}
+
 	updated, err := this.Updated.Updated("pull")
 	if err != nil {
 		return err
@@ -84,6 +87,7 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 	if updated {
 		return nil
 	}
+
 	codes := this.Config.Codes
 	if len(codes) == 0 {
 		codes = m.Codes.GetStockCodes()
@@ -103,8 +107,7 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 			}
 		}
 	}
-	err = this.Updated.Update("pull")
-	return err
+	return this.Updated.Update("pull")
 }
 
 func (this *PullKline) Name() string {

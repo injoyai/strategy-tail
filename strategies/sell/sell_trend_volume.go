@@ -149,12 +149,10 @@ func (s A单日跌幅大于) Sell(code string, dks extend.Klines, buy core.Buy) 
 // MaxHoldDays 表示最大持有天数，默认 20。
 // MinProfitRate 表示最低盈利比例（小数），默认 0.05（5%）。
 // 当持有天数 >= MaxHoldDays 且收益率 <= MinProfitRate 时返回卖出信号。
-type A时间止损 struct {
-	MaxHoldDays int
-}
+type A时间止损 int
 
 func (s A时间止损) Name() string {
-	days := s.MaxHoldDays
+	days := s
 	if days == 0 {
 		days = 20
 	}
@@ -162,7 +160,7 @@ func (s A时间止损) Name() string {
 }
 
 func (s A时间止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
-	maxDays := s.MaxHoldDays
+	maxDays := s
 	if maxDays == 0 {
 		maxDays = 20
 	}
@@ -182,7 +180,7 @@ func (s A时间止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		}
 		holdDays++
 	}
-	return holdDays >= maxDays
+	return holdDays >= int(maxDays)
 }
 
 // defaultMACDParams 返回默认的 MACD 参数（12, 26, 9）

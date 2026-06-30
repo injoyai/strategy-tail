@@ -252,11 +252,16 @@ func (s MACD正数) Buy(code string, dks extend.Klines) bool {
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。
 // Signal 表示 DEA EMA 周期，默认 9。
-// Days 表示 MACD 柱子连续上升的最少天数（含今天），默认 1。
+// MinDays 表示 MACD 柱子连续上升的最少天数（含今天），默认 1。
+// MaxDays 表示 MACD 柱子连续上升的最多天数（含今天），默认 0 表示不限。
+//   - 配置连涨范围：MinDays=3, MaxDays=5 表示连涨 3~5 天才触发。
+//   - 若 MaxDays < MinDays 或 MaxDays == 0，则上限不生效，只校验下限 MinDays。
+//
 // Lookback 表示连涨起点之前的回看窗口长度，默认 0（不校验）。
 // 触发条件：
-//  1. 从最新交易日向前连续 Days 天，每天的 MACD 柱子都大于前一天；
-//  2. 当 Lookback > 0 时，连涨的起点（即 Days+1 天前那根柱子）必须是
+//  1. 从最新交易日向前连续若干天，每天的 MACD 柱子都大于前一天；
+//  2. 连涨天数落在 [MinDays, MaxDays] 区间内（连涨段在 MaxDays+1 天前必须断开）；
+//  3. 当 Lookback > 0 时，连涨的起点（即连涨段第一根柱子的前一根）必须是
 //     向前回看 Lookback 个交易日窗口内的最低值。
 //
 // 该策略适合作为 BuyAll 的过滤条件，用来限制买点处于 MACD 低位拐头放大区域。
@@ -264,19 +269,26 @@ type MACD连涨 struct {
 	Fast     int
 	Slow     int
 	Signal   int
-	Days     int
+	MinDays  int
+	MaxDays  int
 	Lookback int
 }
 
 func (s MACD连涨) Name() string {
-	days := s.Days
-	if days == 0 {
-		days = 1
+	minDays := s.MinDays
+	if minDays == 0 {
+		minDays = 1
+	}
+	if s.MaxDays > 0 && s.MaxDays >= minDays {
+		if s.Lookback > 0 {
+			return fmt.Sprintf("MACD%d日最低点后连涨%d-%d天", s.Lookback, minDays, s.MaxDays)
+		}
+		return fmt.Sprintf("MACD连涨%d-%d天", minDays, s.MaxDays)
 	}
 	if s.Lookback > 0 {
-		return fmt.Sprintf("MACD%d日最低点后连涨%d天", s.Lookback, days)
+		return fmt.Sprintf("MACD%d日最低点后连涨%d天", s.Lookback, minDays)
 	}
-	return fmt.Sprintf("MACD连涨%d天", days)
+	return fmt.Sprintf("MACD连涨%d天", minDays)
 }
 
 func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
@@ -289,13 +301,17 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 	if s.Signal == 0 {
 		s.Signal = 9
 	}
-	if s.Days == 0 {
-		s.Days = 1
+	if s.MinDays == 0 {
+		s.MinDays = 1
+	}
+	// MaxDays 仅在大于等于 MinDays 时才生效
+	maxDays := s.MaxDays
+	if maxDays > 0 && maxDays < s.MinDays {
+		maxDays = 0
 	}
 
 	n := len(dks)
-	// 至少需要 Days+1 根 K 线才能比较 Days 天的上升
-	if n < s.Slow+s.Signal || n < s.Days+1 {
+	if n < s.Slow+s.Signal || n < s.MinDays+1 {
 		return false
 	}
 
@@ -304,17 +320,33 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 从最新交易日向前连续 Days 天，每天的 MACD 柱子都大于前一天
-	for i := n - s.Days; i < n; i++ {
-		if hist[i] <= hist[i-1] {
-			return false
-		}
+	// 从最新交易日向前数连续上涨天数
+	// streakEnd: 连涨段最后一根的索引（含今天，即 n-1）
+	// streakStart: 连涨段第一根的索引
+	streakEnd := n - 1
+	if hist[streakEnd] <= hist[streakEnd-1] {
+		// 今天没有比昨天大，连涨 0 天
+		return false
+	}
+	streakStart := streakEnd
+	for streakStart > 0 && hist[streakStart] > hist[streakStart-1] {
+		streakStart--
+	}
+	streakDays := streakEnd - streakStart + 1
+
+	// 校验连涨天数下限
+	if streakDays < s.MinDays {
+		return false
+	}
+	// 校验连涨天数上限（连涨段在 MaxDays+1 天前必须断开）
+	if maxDays > 0 && streakDays > maxDays {
+		return false
 	}
 
 	// 校验连涨起点是否为近 Lookback 天的最低点
 	if s.Lookback > 0 {
-		// 连涨起点：连涨段第一根柱子的前一根（索引 startIdx），它本身不参与连涨。
-		startIdx := n - 1 - s.Days
+		// 连涨段第一根柱子的前一根，它本身不参与连涨
+		startIdx := streakStart - 1
 		if startIdx < 0 {
 			return false
 		}
