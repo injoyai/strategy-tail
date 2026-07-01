@@ -54,6 +54,24 @@ type Seller interface {
 
 不要把"业务条件"用纯英文写（如曾经的 `BuyVolume`/`BuyCloseAboveMA` 现已分别替换为 `A倍量`/`A现价大于N日均线`）。新增策略时先想：**"这是 A 股语义还是国际通用术语？"** 选定即可。
 
+### 参数范围约定（重要）
+
+**涉及"天数/周期/窗口"的策略参数，默认使用 `MinXxx` + `MaxXxx` 范围对，而不是单一固定值。**
+
+- 命名：下限 `Min` 前缀，上限 `Max` 前缀，例如 `MinDays/MaxDays`、`MinLookback/MaxLookback`、`MinPeriod/MaxPeriod`。
+- `MaxXxx == 0` 或 `MaxXxx < MinXxx` 时上限不生效，只校验下限，退化为"至少 N 天"语义，向后兼容。
+- 文档注释中明确写出默认值、范围语义、退化为固定值的条件。
+- `Name()` 应体现范围，如 `MACD连涨3~5天`、`4-20日MACD最低点后`；当上限不生效时只显示下限。
+
+已适配的示例：
+  - [buy.MACD连涨](strategies/buy/buy_macd.go) `MinDays/MaxDays`
+  - [buy.MACD负数](strategies/buy/buy_macd.go) `MinDays/MaxDays`
+  - [buy.MACD反转](strategies/buy/buy_macd.go) `MinLookback/MaxLookback`
+
+**反例**（禁止新增）：单一 `Days int` / `Lookback int` / `Period int` 字段，仅校验 `>=` 固定值，无法表达"3~5 天"这类区间。
+
+历史字段重命名时同步更新所有调用点（[common.go](common.go)、`cmd/` 下各入口），保证编译通过。
+
 ---
 
 ## 3. 统一统计入口（必读）
