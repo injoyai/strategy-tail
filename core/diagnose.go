@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/injoyai/conv"
 	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
@@ -29,8 +30,8 @@ type Diagnoser struct {
 }
 
 // Check 传入股票代码，自动拉取近 1 年日线，返回是否匹配 + 诊断树。
-func (d *Diagnoser) Check(code string) (matched bool, result DiagnoseResult) {
-	now := time.Now()
+func (d *Diagnoser) Check(code string, at ...time.Time) (matched bool, result DiagnoseResult) {
+	now := conv.Default(time.Now(), at...)
 	dks, err := d.GetDayKlines(code, now.AddDate(-1, 0, 0), now)
 	if err != nil {
 		return false, DiagnoseResult{Name: fmt.Sprintf("数据错误: %v", err)}
