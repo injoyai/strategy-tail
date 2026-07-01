@@ -9,20 +9,21 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-// A倍量 是按通达信“倍量”公式翻写的买入策略。
+// A通达信倍量 是按通达信"倍量"公式翻写的买入策略。
 // 默认严格执行 XG:SPK，即 TJ1、TJ2、TJ3、TJ4。
 // Ratio 表示倍量阈值，默认 2.9。
-// UseTJ5、UseTJ6、UseTJ7 可选择是否把公式中定义但未参与 XG 的条件加入过滤。
-type A倍量 struct {
+// UseMore 可选择是否把公式中定义但未参与 XG 的额外条件加入过滤。
+// 适合需要完整通达信"倍量"形态的场景，配合 buy.Strategy 包装可命名识别。
+type A通达信倍量 struct {
 	Ratio   float64
 	UseMore bool
 }
 
-func (b A倍量) Name() string {
-	return "倍量"
+func (b A通达信倍量) Name() string {
+	return "通达信倍量"
 }
 
-func (b A倍量) Buy(code string, dks extend.Klines) bool {
+func (b A通达信倍量) Buy(code string, dks extend.Klines) bool {
 	ratio := b.Ratio
 	if ratio == 0 {
 		ratio = 2.9
@@ -94,6 +95,80 @@ func previousDoubleVolumeIndex(dks extend.Klines, ratio float64) int {
 		}
 	}
 	return -1
+}
+
+// A倍量 是判断"基准成交量 × MinRatio <= 今日成交量 <= 基准成交量 × MaxRatio"的买入条件。
+// MinRatio 表示最小倍量阈值，默认 2.0。
+// MaxRatio 表示最大倍量阈值，0 表示不限。
+// BaseDays 表示基准成交量的统计天数，默认 1（即昨日单日成交量）。
+//   - BaseDays=1: 基准 = 昨日量
+//   - BaseDays=5: 基准 = 近5日平均量
+//
+// 不附带价格、涨幅、形态等附加条件，适合作为最基础的量能放大筛选。
+type A倍量 struct {
+	MinRatio float64
+	MaxRatio float64
+	BaseDays int
+}
+
+func (b A倍量) Name() string {
+	min := b.MinRatio
+	if min == 0 {
+		min = 2
+	}
+	max := b.MaxRatio
+	base := b.BaseDays
+	if base == 0 {
+		base = 1
+	}
+	var ratioDesc string
+	if max > 0 && max > min {
+		ratioDesc = fmt.Sprintf("倍量%.1f~%.1f", min, max)
+	} else {
+		ratioDesc = fmt.Sprintf("倍量%.1f", min)
+	}
+	if base == 1 {
+		return ratioDesc
+	}
+	return fmt.Sprintf("%s·%d日均", ratioDesc, base)
+}
+
+func (b A倍量) Buy(code string, dks extend.Klines) bool {
+	min := b.MinRatio
+	if min == 0 {
+		min = 2
+	}
+	max := b.MaxRatio
+	base := b.BaseDays
+	if base == 0 {
+		base = 1
+	}
+	n := len(dks)
+	if n < base+1 {
+		return false
+	}
+	today := dks[n-1]
+	var baseline float64
+	if base == 1 {
+		baseline = float64(dks[n-2].Volume)
+	} else {
+		sum := 0.0
+		for i := n - 1 - base; i < n-1; i++ {
+			sum += float64(dks[i].Volume)
+		}
+		baseline = sum / float64(base)
+	}
+	if baseline <= 0 {
+		return false
+	}
+	actualRatio := float64(today.Volume) / baseline
+	if actualRatio < min {
+		return false
+	}
+	if max > 0 && max > min && actualRatio > max {
+		return false
+	}
+	return true
 }
 
 // BuyCloseAboveMA 是收盘价站上指定均线的买入条件。

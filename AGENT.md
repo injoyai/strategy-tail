@@ -170,7 +170,6 @@ Hist = DIF - DEA      ← 注意：不乘 2
 
 ## 8. 验证清单（提交前）
 
-- [ ] `go build ./...` 通过；
 - [ ] `go test ./...` 通过；
 - [ ] 新统计 / 算法已经走 `core.Stats` 或 `strategies/util/*`；
 - [ ] 策略实现了 `Name()` 且名字能体现关键参数（如 `MACD连涨3天`）。

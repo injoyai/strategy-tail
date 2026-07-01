@@ -69,7 +69,7 @@ type PullKline struct {
 func (this *PullKline) Run(m *tdx.Manage) error {
 	this.Update(m, true)
 	cr := cron.New(cron.WithSeconds())
-	_, err := cr.AddFunc("0 10 15 * * *", func() { this.Update(m) })
+	_, err := cr.AddFunc("0 15 15 * * *", func() { this.Update(m) })
 	return err
 }
 
@@ -85,6 +85,7 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 		return err
 	}
 	if updated {
+		logs.Info("已更新，跳过")
 		return nil
 	}
 
