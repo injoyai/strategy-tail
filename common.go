@@ -16,6 +16,8 @@ var (
 	DefaultBuyer  = MACDBuyer
 	DefaultSeller = MACDSeller
 
+	_ = buy.Strategy("MACD", MACDBuyer)
+
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
 		buy.A现价{Max: 120},   //价格小于120,太贵了买不起

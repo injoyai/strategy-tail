@@ -15,10 +15,10 @@ func main() {
 	years := []int{2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}
-	//years = []int{2026}
+	years = []int{2026}
 
 	core.Backtest{
-		Buyer: PullbackBuyer,
+		Buyer: BaseBuyer,
 		Seller: sell.Or{
 			sell.MACD反转{Lookback: 12},
 			//sell.MACD买入后连跌{AfterDays: 3, Days: 5},
@@ -68,11 +68,9 @@ var (
 		buy.A现价{Max: 120},
 		buy.A过滤涨停{},
 
-		// 多头上涨
-		//buy.A均线多头排列{10, 20, 30},
-		buy.MAUp{Period: 60},
 		buy.MAUp{Period: 20},
 		buy.MAUp{Period: 30},
+		buy.MAUp{Period: 60},
 
 		// MACD量柱反转向上
 		buy.MACD反转{MinLookback: 4},
