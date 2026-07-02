@@ -8,7 +8,11 @@ import (
 	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
-type MACD = MACD反转
+type MACD struct {
+	Fast   int
+	Slow   int
+	Signal int
+}
 
 // MACD反转 是 MACD 高位拐头卖出策略。
 // Fast 表示快线 EMA 周期，默认 12。
