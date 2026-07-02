@@ -11,7 +11,7 @@ import (
 
 func main() {
 	d := &core.Diagnoser{
-		Buyer:        buy.A底部抬升{},
+		Buyer:        buy.A底顶部抬升{},
 		GetDayKlines: common.Pull.DayKlines,
 	}
 

@@ -157,6 +157,7 @@ func (this *PullKline) DayKlinesAll(code string) (Klines, error) {
 }
 
 func (this *PullKline) DayKlines(code string, start, end time.Time) (Klines, error) {
+	code = protocol.AddPrefix(code)
 	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
 
 	if !exists(filename) {

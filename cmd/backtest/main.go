@@ -15,10 +15,10 @@ func main() {
 	years := []int{2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}
-	years = []int{2026}
+	//years = []int{2026}
 
 	core.Backtest{
-		Buyer: BaseBuyer,
+		Buyer: TestBuyer,
 		Seller: sell.Or{
 			sell.MACD反转{Lookback: 12},
 			//sell.MACD买入后连跌{AfterDays: 3, Days: 5},
@@ -34,19 +34,13 @@ func main() {
 
 var (
 	TestBuyer = buy.And{
-		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
-		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
+		//buy.A流通市值{Min: 400},
+		//buy.A现价{Max: 120},
+		//buy.A过滤涨停{},
 
-		buy.MACD反转{MinLookback: 4}, //MACD
-		buy.MACD负数{MinDays: 5},     //MACD阴线,5
-
-		buy.A现价大于N日均线(90), //当天价格高于N日均线
-
-		buy.And{
-			buy.MAUp{Period: 20, MinSlope: 0.0002}, //N日均线向上,且增速大于0.05%
-			buy.MAUp{Period: 30, MinSlope: 0.0005}, //N日均线向上,且增速大于0.05%
-		},
+		buy.A近N天符合(30, buy.A倍量{MinRatio: 2.9}),
+		buy.A底顶部抬升{Window: 12},
+		buy.MACD连涨{MinDays: 1, MaxDays: 2},
 	}
 
 	// PullbackBuyer 多头上涨后缩量回调,MACD量柱反转向上时买入
@@ -58,11 +52,12 @@ var (
 		buy.A现价{Max: 120},
 		buy.A过滤涨停{},
 
-		buy.A底部抬升{Window: 8},
+		buy.A底顶部抬升{Window: 8},
 
 		buy.MACD连涨{MinDays: 1},
 	}
 
+	// BaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化
 	BaseBuyer = buy.And{
 		buy.A流通市值{Min: 400},
 		buy.A现价{Max: 120},
