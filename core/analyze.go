@@ -162,7 +162,8 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 	requiredCapital := calculateRequiredCapital(allTrades, pos)
 	annualReturn := 0.0
 	if requiredCapital > 0 {
-		annualReturn = totalProfit * 100 / requiredCapital * 100
+		// 年度总收益率(%) = 总利润 / 峰值并发本金 × 100
+		annualReturn = totalProfit / requiredCapital * 100
 	}
 
 	// 最大回撤率
@@ -425,7 +426,7 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 		for _, year := range yearsForCode {
 			for _, t := range tradeYears[year] {
 				buyRate := tradeReturnRate(t)
-				profit := (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity) * 100
+				profit := (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
 				marks = append(marks, map[string]any{
 					"date":  t.BuyTime.Format(time.DateOnly),
 					"time":  t.BuyTime.Format(time.TimeOnly),

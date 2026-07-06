@@ -2,9 +2,6 @@ package core
 
 import (
 	"fmt"
-	"time"
-
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // ============================================================================
@@ -64,11 +61,6 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 		trainWindowSize = 1
 	}
 
-	// getDayKlines 闭包，供 Analyze 内部可视化使用
-	getDayKlines := func(code string) (extend.Klines, error) {
-		return bt.GetDayKlines(code, time.Time{}, time.Now())
-	}
-
 	results := make([]WalkForwardResult, 0, len(testYears))
 
 	for i := 0; i < len(testYears); i++ {
@@ -88,7 +80,7 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 			if err != nil {
 				continue
 			}
-			ar := Analyze(y, trades, getDayKlines, nil, bt.Cost, bt.Position)
+			ar := Analyze(y, trades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
 			trainReturnSum += ar.AnnualReturn
 			trainSharpeSum += ar.Sharpe
 			trainWinRateSum += ar.WinRate
@@ -114,7 +106,7 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 
 		testTrades, err := bt._backtest(bt.Codes, testYear)
 		if err == nil {
-			ar := Analyze(testYear, testTrades, getDayKlines, nil, bt.Cost, bt.Position)
+			ar := Analyze(testYear, testTrades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
 			testReturn = ar.AnnualReturn
 			testSharpe = ar.Sharpe
 			testWinRate = ar.WinRate

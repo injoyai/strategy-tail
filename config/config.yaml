@@ -7,7 +7,7 @@ pull:
 
 screen:
   port: 9090
-  lookback: 120
+  lookback: 240
   interval: 5s
   goroutines: 10
 

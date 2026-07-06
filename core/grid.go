@@ -3,9 +3,6 @@ package core
 import (
 	"fmt"
 	"sort"
-	"time"
-
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // ============================================================================
@@ -62,9 +59,7 @@ func GridSearch(bt Backtest, paramName string, paramValues []float64, paramSette
 
 			// 调用 Analyze 计算年化收益、回撤、夏普等指标
 			// 基准日线传 nil（网格搜索阶段暂不对比基准）
-			ar := Analyze(year, trades, func(code string) (extend.Klines, error) {
-				return b.GetDayKlines(code, time.Time{}, time.Now())
-			}, nil, b.Cost, b.Position)
+			ar := Analyze(year, trades, b.GetDayKlines, nil, b.Cost, b.Position)
 
 			results = append(results, GridSearchResult{
 				ParamName:      paramName,

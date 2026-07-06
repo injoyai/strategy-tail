@@ -9,12 +9,13 @@ func main() {
 
 	//获取所有代码（与原版一致）
 	codes := common.GetAllCodes()
+	//codes = []string{"sh600887"}
 
 	// 从 config.yaml 加载成本和仓位配置
 	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
 
 	years := []int{2022, 2023, 2024, 2025, 2026}
-	years = []int{2025}
+	years = []int{2026}
 
 	core.Backtest{
 		Buyer:        common.MACDBuyer,

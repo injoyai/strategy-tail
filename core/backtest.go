@@ -219,7 +219,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 				lsSell := joinKlines(_his, today)
 				if this.Sell(code, lsSell, currentBuy) {
-					this.executeSell(code, currentBuy, today.Close, pos, cost, &ts, todayMinuteKlines[ii].Time)
+					ts = append(ts, this.executeSell(code, currentBuy, today.Close, pos, cost, todayMinuteKlines[ii].Time))
 					sold = true
 					break
 				}
@@ -235,24 +235,24 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	if len(currentBuys) > 0 && len(dks) > 0 {
 		last := dks[len(dks)-1]
 		for _, currentBuy := range currentBuys {
-			this.executeSell(code, currentBuy, last.Close, pos, cost, &ts, last.Time)
-			ts[len(ts)-1].Virtual = true
+			tr := this.executeSell(code, currentBuy, last.Close, pos, cost, last.Time)
+			tr.Virtual = true
+			ts = append(ts, tr)
 		}
 	}
 
 	return ts
 }
 
-// executeSell 执行卖出并记录交易（含成本计算）。
+// executeSell 计算并返回一笔卖出交易（含成本）。
 func (this Backtest) executeSell(
 	code string,
 	buy Buy,
 	sellRawPrice protocol.Price,
 	pos PositionConfig,
 	cost Cost,
-	ts *[]Trade,
 	sellTime time.Time,
-) {
+) Trade {
 	quantity := pos.SharesPerLot
 	if quantity <= 0 {
 		quantity = SharesPerLot
@@ -266,7 +266,7 @@ func (this Backtest) executeSell(
 	buyFee := protocol.Yuan(buyExec.Float64() * cost.CommissionRate)
 	sellFee := protocol.Yuan(sellExec.Float64() * (cost.CommissionRate + cost.StampDutyRate))
 
-	*ts = append(*ts, Trade{
+	return Trade{
 		Code:          code,
 		BuyTime:       buy.Time,
 		SellTime:      sellTime,
@@ -277,5 +277,5 @@ func (this Backtest) executeSell(
 		BuyCost:       buyCost,
 		SellIncome:    sellIncome,
 		Quantity:      quantity,
-	})
+	}
 }
