@@ -171,6 +171,95 @@ func (s MACD正数缓降最低点) Buy(code string, dks extend.Klines) bool {
 	return true
 }
 
+// MACD平滑 是 MACD 量柱走势光滑的买入条件。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// Days 表示回看最近多少个交易日的量柱走势，默认 5。
+// MaxRatio 表示相邻两天量柱变化的最大允许比值，默认 3.0。
+//
+// 触发条件：最近 Days 天内，相邻交易日的 MACD 量柱变化比值都不超过 MaxRatio。
+// 变化比值 = |今天量柱 - 昨天量柱| / |昨天量柱|（昨天量柱为0时按1处理）。
+// 该策略适合作为 BuyAnd 的过滤条件，排除量柱忽高忽低的股票。
+type MACD平滑 struct {
+	Fast     int
+	Slow     int
+	Signal   int
+	Days     int
+	MaxRatio float64
+}
+
+func (s MACD平滑) Name() string {
+	days := s.Days
+	if days == 0 {
+		days = 5
+	}
+	ratio := s.MaxRatio
+	if ratio == 0 {
+		ratio = 3.0
+	}
+	return fmt.Sprintf("MACD量柱%d日平滑(≤%.1f)", days, ratio)
+}
+
+func (s MACD平滑) Buy(code string, dks extend.Klines) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+	if s.Days == 0 {
+		s.Days = 5
+	}
+	if s.MaxRatio == 0 {
+		s.MaxRatio = 3.0
+	}
+
+	n := len(dks)
+	if n < s.Slow+s.Signal || n < s.Days+1 {
+		return false
+	}
+
+	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != n {
+		return false
+	}
+
+	// 检查最近 Days 天内相邻量柱的变化比值
+	for i := n - s.Days; i < n; i++ {
+		if i <= 0 {
+			continue
+		}
+		prev := hist[i-1]
+		curr := hist[i]
+		diff := curr - prev
+
+		// 量柱同号（同正或同负）才校验平滑度
+		// 异号（穿越零轴）属于正常反转，不视为突变
+		if prev == 0 || curr == 0 {
+			continue
+		}
+		if (prev > 0) != (curr > 0) {
+			continue // 穿越零轴，跳过
+		}
+
+		// 变化比值 = |变化量| / |昨天量柱|
+		ratio := diff / prev
+		if ratio < 0 {
+			ratio = -ratio
+		}
+
+		if ratio > s.MaxRatio {
+			return false
+		}
+	}
+
+	return true
+}
+
 // MACD负数 是 MACD 连续负数买入条件。
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。

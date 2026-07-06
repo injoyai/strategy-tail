@@ -66,3 +66,39 @@ func TestStats空交易返回零值(t *testing.T) {
 		t.Fatalf("expected zero stats, got %+v", stats)
 	}
 }
+
+func TestStats包含百分比口径的盈亏指标(t *testing.T) {
+	// A: 10 -> 12   收益率 +20%
+	// B: 10 -> 9    收益率 -10%
+	// C: 10 -> 11   收益率 +10%
+	trades := []Trade{
+		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(12)},
+		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(9)},
+		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11)},
+	}
+
+	stats := Stats(trades)
+
+	// AvgProfit = (20 + (-10) + 10) / 3 = 6.666...%
+	expected := (20.0 - 10.0 + 10.0) / 3.0
+	if math.Abs(stats.AvgProfit-expected) > 1e-6 {
+		t.Fatalf("expected AvgProfit=%.4f%%, got %v", expected, stats.AvgProfit)
+	}
+	// MaxProfit = 20%
+	if math.Abs(stats.MaxProfit-20) > 1e-6 {
+		t.Fatalf("expected MaxProfit=20%%, got %v", stats.MaxProfit)
+	}
+	// MaxLoss = -10%（最差单笔收益率，负数）
+	if math.Abs(stats.MaxLoss-(-10)) > 1e-6 {
+		t.Fatalf("expected MaxLoss=-10%%, got %v", stats.MaxLoss)
+	}
+}
+
+func TestStats空交易的百分比盈亏指标为零(t *testing.T) {
+	stats := Stats(nil)
+
+	if stats.AvgProfit != 0 || stats.MaxProfit != 0 || stats.MaxLoss != 0 {
+		t.Fatalf("expected zero profit metrics, got AvgProfit=%v MaxProfit=%v MaxLoss=%v",
+			stats.AvgProfit, stats.MaxProfit, stats.MaxLoss)
+	}
+}

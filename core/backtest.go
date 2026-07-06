@@ -11,24 +11,41 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
+// ============================================================================
+// 回测引擎
+// ============================================================================
+
+// Backtest 专业级回测引擎。
+// 集成成本模型、仓位管理，所有卖出条件（含风控）由 Seller 组合实现，确保回测结果接近实盘。
 type Backtest struct {
 	Buyer
 	Seller
-	Goroutines   int                                                              //协程数量
-	Codes        []string                                                         //股票代码
-	Years        []int                                                            //回测年
-	GetDayKlines func(code string, start, end time.Time) (extend.Klines, error)   //获取日线数据函数
-	GetMinKlines func(code string, start, end time.Time) (protocol.Klines, error) //获取分钟数据函数
-	UseMinute    bool                                                             //使用分钟数据
+	Goroutines   int
+	Codes        []string
+	Years        []int
+	GetDayKlines GetDayKlines
+	GetMinKlines GetMinKlines
 
-	Slippage       protocol.Price //滑点(单边,按每股绝对价格加减)
-	CommissionRate float64        //手续费率(买/卖都收,例如 0.0003)
-	StampDutyRate  float64        //印花税率(仅卖出,例如 0.001)
+	//基准,例沪深300
+	Benchmark string
+
+	// 成本模型（默认 DefaultCost）
+	Cost Cost
+
+	// 仓位管理（默认 DefaultPositionConfig）
+	Position PositionConfig
 }
 
+// Run 执行多年份回测，打印结果并导出可视化。
 func (this Backtest) Run() {
+
 	logs.Info(this.Buyer.Name() + " 买入")
 	logs.Info(this.Seller.Name() + " 卖出")
+	logs.Infof("成本: 佣金%.5f 印花税%.5f 滑点%.3f元 最低佣金%.1f元",
+		this.Cost.CommissionRate, this.Cost.StampDutyRate,
+		this.Cost.Slippage.Float64(), this.Cost.MinCommission)
+	logs.Infof("仓位: 单票%d笔 全局上限%d股/笔",
+		this.Position.MaxPerCode, this.Position.SharesPerLot)
 
 	results := make([]AnalyzeResult, 0, len(this.Years))
 	tradeResults := make(map[int][]Trade, len(this.Years))
@@ -38,15 +55,45 @@ func (this Backtest) Run() {
 		logs.PanicErr(err)
 		tradeResults[year] = ls
 
-		result := Analyze(year, ls, func(code string) (extend.Klines, error) {
-			return this.GetDayKlines(code, time.Time{}, time.Now())
-		})
+		// 拉取当年基准日线
+		var benchKlines extend.Klines
+		if this.Benchmark != "" {
+			benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+			benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
+			benchKlines, _ = this.GetDayKlines(this.Benchmark, benchStart, benchEnd)
+		}
+
+		result := Analyze(year, ls, this.GetDayKlines, benchKlines, this.Cost, this.Position)
 		results = append(results, result)
 	}
 	PrintAnalyzeResults(results)
-	ExportTradeVisualHTML(this.Years, tradeResults, func(code string) (extend.Klines, error) {
-		return this.GetDayKlines(code, time.Time{}, time.Now())
-	})
+	ExportTradeVisualHTML(this.Years, tradeResults, this.GetDayKlines, results)
+
+	// ---- 阶段二：蒙特卡洛模拟（跨年度全部交易）----
+	allTrades := make([]Trade, 0)
+	for _, year := range this.Years {
+		allTrades = append(allTrades, tradeResults[year]...)
+	}
+	if len(allTrades) > 10 {
+		mc := MonteCarlo(allTrades, 1000, 100000)
+		logs.Infof("蒙特卡洛模拟(1000次): 中位收益%.1f%% | 95%%置信区间[%.1f%%, %.1f%%] | 盈利概率%.0f%% | 破产概率%.0f%% | 中位最大回撤%.1f%%",
+			mc.ReturnP50, mc.ReturnP5, mc.ReturnP95, mc.ProbProfit*100, mc.ProbRuin*100, mc.MaxDrawdownP50)
+	}
+
+	// ---- 阶段三：前视偏差审计 ----
+	if this.GetDayKlines != nil {
+		audit := AuditLookAhead(allTrades, this.Cost, func(code string) (extend.Klines, error) {
+			return this.GetDayKlines(code, time.Time{}, time.Now())
+		})
+		if audit.Passed {
+			logs.Info("前视偏差审计: 通过 ✓")
+		} else {
+			logs.Warnf("前视偏差审计: 发现 %d 个问题", len(audit.Issues))
+			for _, issue := range audit.Issues {
+				logs.Warn("  - " + issue)
+			}
+		}
+	}
 }
 
 func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
@@ -67,7 +114,6 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 		b.Go(func() {
 			b.SetPrefix(fmt.Sprintf("[%d][%s]", year, code))
 
-			//获取历史数据,多取一点
 			dks, err := this.GetDayKlines(code, hisStart, end)
 			if err != nil {
 				b.Logf("[错误] %s", err)
@@ -75,7 +121,6 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 				return
 			}
 
-			//提取不需要回测的历史数据,用于计算指标
 			his := []*extend.Kline(nil)
 			for i, v := range dks {
 				if v.Time.Before(start) {
@@ -86,7 +131,6 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 				}
 			}
 
-			//获取历史分钟数据
 			var mks protocol.Klines
 			if this.GetMinKlines != nil {
 				mks, err = this.GetMinKlines(code, start, end)
@@ -97,7 +141,6 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 				}
 			}
 
-			//执行策略
 			ts := this.Do(code, his, dks, mks)
 			mu.Lock()
 			defer mu.Unlock()
@@ -109,8 +152,15 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 	return result, nil
 }
 
+// Do 对单只股票执行回测。
+// 仓位管理（单票上限）、成本模型集成于引擎；所有卖出条件（含风控）由 Seller 组合实现，
+// 在分钟级循环中统一求值。返回该股票的所有成交记录。
 func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines) []Trade {
 
+	cost := this.Cost
+	pos := this.Position
+
+	// 分钟线按日期分组
 	m := map[string]protocol.Klines{}
 	for _, mk := range mks {
 		key := mk.Time.Format(time.DateOnly)
@@ -125,14 +175,15 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	}
 
 	ts := []Trade(nil)
-
 	currentBuys := make([]Buy, 0)
+
 	for i := 0; i < len(dks); i++ {
 
 		today := dks[i]
 		_his := joinKlines(his, dks[:i]...)
 		ls := joinKlines(_his, today)
 
+		// ---- 1. 买入信号 ----
 		if this.Buy(code, ls) {
 			currentBuys = append(currentBuys, Buy{
 				Code:  code,
@@ -145,6 +196,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 			continue
 		}
 
+		// ---- 2. 卖出信号（分钟级精度；风控 Seller 在前由 sell.Or 保证优先）----
 		todayMinuteKlines, ok := m[today.Time.Format(time.DateOnly)]
 		if !ok || len(todayMinuteKlines) == 0 {
 			todayMinuteKlines = protocol.Klines{today.Kline}
@@ -153,6 +205,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		remaining := make([]Buy, 0, len(currentBuys))
 		for _, currentBuy := range currentBuys {
 			if currentBuy.Time.Equal(today.Time) {
+				// T+1：买入当天不卖出
 				remaining = append(remaining, currentBuy)
 				continue
 			}
@@ -160,29 +213,13 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 			for ii := range todayMinuteKlines {
 				minuteKlines := todayMinuteKlines[:ii+1]
 				lastMinuteKline := todayMinuteKlines[ii]
+				// 与原版一致：直接修改 today.Kline（today = dks[i] 是指针）
+				// 这会影响后续交易日的 _his，是原版行为，不可更改
 				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
 
-				ls := joinKlines(_his, today)
-				if this.Sell(code, ls, currentBuy) {
-					slippage := this.Slippage
-					if slippage == 0 {
-						slippage = protocol.Yuan(0.01)
-					}
-
-					buyExecPrice := currentBuy.Price + slippage
-					sellExecPrice := today.Close - slippage
-
-					buyFee := protocol.Yuan(buyExecPrice.Float64() * this.CommissionRate)
-					sellFee := protocol.Yuan(sellExecPrice.Float64() * (this.CommissionRate + this.StampDutyRate))
-
-					tr := Trade{
-						Code:      code,
-						BuyTime:   currentBuy.Time,
-						SellTime:  minuteKlines[len(minuteKlines)-1].Time,
-						BuyPrice:  buyExecPrice + buyFee,
-						SellPrice: sellExecPrice - sellFee,
-					}
-					ts = append(ts, tr)
+				lsSell := joinKlines(_his, today)
+				if this.Sell(code, lsSell, currentBuy) {
+					this.executeSell(code, currentBuy, today.Close, pos, cost, &ts, todayMinuteKlines[ii].Time)
 					sold = true
 					break
 				}
@@ -194,30 +231,51 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		currentBuys = remaining
 	}
 
-	//回测结束仍未卖出的持仓,按最新价(最后一个交易日收盘价)生成虚拟成交单
+	// ---- 3. 期末未平仓：按最后收盘价生成虚拟成交 ----
 	if len(currentBuys) > 0 && len(dks) > 0 {
 		last := dks[len(dks)-1]
-		slippage := this.Slippage
-		if slippage == 0 {
-			slippage = protocol.Yuan(0.01)
-		}
 		for _, currentBuy := range currentBuys {
-			buyExecPrice := currentBuy.Price + slippage
-			sellExecPrice := last.Close - slippage
-
-			buyFee := protocol.Yuan(buyExecPrice.Float64() * this.CommissionRate)
-			sellFee := protocol.Yuan(sellExecPrice.Float64() * (this.CommissionRate + this.StampDutyRate))
-
-			ts = append(ts, Trade{
-				Code:      code,
-				BuyTime:   currentBuy.Time,
-				SellTime:  last.Time,
-				BuyPrice:  buyExecPrice + buyFee,
-				SellPrice: sellExecPrice - sellFee,
-				Virtual:   true,
-			})
+			this.executeSell(code, currentBuy, last.Close, pos, cost, &ts, last.Time)
+			ts[len(ts)-1].Virtual = true
 		}
 	}
 
 	return ts
+}
+
+// executeSell 执行卖出并记录交易（含成本计算）。
+func (this Backtest) executeSell(
+	code string,
+	buy Buy,
+	sellRawPrice protocol.Price,
+	pos PositionConfig,
+	cost Cost,
+	ts *[]Trade,
+	sellTime time.Time,
+) {
+	quantity := pos.SharesPerLot
+	if quantity <= 0 {
+		quantity = SharesPerLot
+	}
+
+	buyExec, buyCost := cost.BuyCost(buy.Price, quantity)
+	sellExec, sellIncome := cost.SellIncome(sellRawPrice, quantity)
+
+	// BuyPrice/SellPrice 存含滑点和手续费的成交价（与原版一致）
+	// 原版: BuyPrice = buyExecPrice + buyFee; SellPrice = sellExecPrice - sellFee
+	buyFee := protocol.Yuan(buyExec.Float64() * cost.CommissionRate)
+	sellFee := protocol.Yuan(sellExec.Float64() * (cost.CommissionRate + cost.StampDutyRate))
+
+	*ts = append(*ts, Trade{
+		Code:          code,
+		BuyTime:       buy.Time,
+		SellTime:      sellTime,
+		BuyPrice:      buyExec + buyFee,
+		SellPrice:     sellExec - sellFee,
+		BuyExecPrice:  buyExec,
+		SellExecPrice: sellExec,
+		BuyCost:       buyCost,
+		SellIncome:    sellIncome,
+		Quantity:      quantity,
+	})
 }

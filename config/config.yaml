@@ -13,3 +13,38 @@ screen:
 
   html:
     local: true
+
+# 回测引擎配置
+backtest:
+  # 成本模型（与原版一致：仅滑点，无佣金/印花税）
+  cost:
+    commission_rate: 0.0       # 佣金费率（原版为0）
+    stamp_duty_rate: 0.0       # 印花税率（原版为0）
+    transfer_fee_rate: 0.0     # 过户费率
+    slippage: 0.01             # 滑点（每股绝对值，元）
+    min_commission: 0.0        # 最低佣金（元）
+
+  # 仓位管理（按笔数模型）
+  position:
+    max_positions: 0          # 全局最大同时持仓股票数（0=不限）
+    max_per_code: 0           # 单票最大同时持仓笔数（0=不限，与原版一致）
+    shares_per_lot: 100       # 每笔买入股数（A股一手=100股）
+
+  # 风控层
+  risk:
+    stop_loss: 0.08           # 单笔止损比例（8%）
+    take_profit: 0.15         # 单笔止盈比例（15%）
+    max_holding_days: 20      # 最大持仓交易日数
+    trailing_stop: 0.0        # 追踪止损比例（0=关闭）
+
+  # 回测年份
+  years:
+    - 2024
+    - 2025
+    - 2026
+
+  # 基准代码（沪深300指数）
+  benchmark: "sh000300"
+
+  # 蒙特卡洛模拟次数
+  monte_carlo_iterations: 1000

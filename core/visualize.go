@@ -9,12 +9,12 @@ import (
 // Annotation 是K线图上的一个标注点。
 // 策略通过实现 Visualizer 接口返回关键点，供可视化工具在图上标注。
 type Annotation struct {
-	Index int       // 在 dks 中的索引
-	Time  time.Time // 时间，用于图表X轴对齐
-	Price float64   // 标注价格（Y轴位置）
-	Label string    // 显示文字，如 "H1"、"买入"
-	Color string    // 点颜色，如 "#ef4444"（红）、"#22c55e"（绿）
-	Note  string    // 补充说明，悬浮显示，如 "高点 12.50 @ 2026-06-10"
+	Index int       `json:"index"` // 在 dks 中的索引
+	Time  time.Time `json:"time"`  // 时间，用于图表X轴对齐
+	Price float64   `json:"price"` // 标注价格（Y轴位置）
+	Label string    `json:"label"` // 显示文字，如 "H1"、"买入"
+	Color string    `json:"color"` // 点颜色，如 "#ef4444"（红）、"#22c55e"（绿）
+	Note  string    `json:"note"`  // 补充说明，悬浮显示，如 "高点 12.50 @ 2026-06-10"
 }
 
 // Visualizer 策略可选实现，返回要在K线图上标注的关键点。

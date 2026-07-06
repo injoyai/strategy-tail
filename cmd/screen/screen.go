@@ -32,9 +32,10 @@ type ScreenService struct {
 	Interval     time.Duration         //间隔时间
 	Goroutines   int                   //协程数量
 	Codes        []string              //计算的代码
-	core.Buyer                         //买入策略
+	Strategies   []StrategyDef         //可切换策略列表
+	core.Buyer                         //买入策略(所有策略的Or联合体,扫描用)
 	core.Seller                        //卖出策略
-	Tags         map[string]core.Buyer //增加tags
+	Tags         map[string]core.Buyer //辅助标签(板块/市值等)
 
 	mu                sync.RWMutex
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
@@ -132,82 +133,21 @@ func (s *ScreenService) sendTo(ws *fbr.Websocket, payload any) {
 	ws.WriteText(msg)
 }
 
-// marshal - 将内部数据转换为前端期望的JSON格式
+// marshal - 将内部数据转换为前端期望的JSON格式(WS推送用)
 func (s *ScreenService) marshal(payload any) string {
 	now := time.Now().Format(time.DateTime)
 
 	var resp any
 	switch v := payload.(type) {
 	case []*core.Buy:
-		items := make([]BuyItem, len(v))
-		for i, b := range v {
-			s.mu.RLock()
-			ks := s.realtimeDayKlines[b.Code]
-			s.mu.RUnlock()
-			var rise float64
-			if len(ks) >= 2 && ks[len(ks)-2] != nil && ks[len(ks)-2].Close > 0 {
-				rise = (b.Price.Float64() - ks[len(ks)-2].Close.Float64()) / ks[len(ks)-2].Close.Float64() * 100
-			}
-			items[i] = BuyItem{
-				Code:  b.Code,
-				Name:  common.Manage.Codes.GetName(b.Code),
-				Time:  b.Time.Format(time.DateTime),
-				Price: b.Price.Float64(),
-				Rise:  rise,
-				Tags:  s.evalTags(b.Code, ks),
-			}
-		}
-		resp = BuyResponse{Type: "buy", Count: len(items), Time: now, Results: items}
+		resp = s.buildBuyResponse(v, now)
 
 	case []*core.Sell:
-		items := make([]Trade, len(v))
-		for i, se := range v {
-			//从lastTrades中匹配对应的交易
-			s.mu.RLock()
-			for _, t := range s.lastTrades {
-				if t.Code == se.Code {
-					items[i] = *t
-					break
-				}
-			}
-			s.mu.RUnlock()
-		}
-		resp = SellResponse{Type: "sell", Count: len(items), Time: now, Results: items}
+		resp = s.buildSellResponse(v, now)
 
 	case []*Trade:
-		items := make([]BuyItem, len(v))
-		for i, t := range v {
-			item := BuyItem{
-				Code:       t.Code,
-				Name:       t.Name,
-				Date:       t.BuyTime[:10],
-				Time:       t.BuyTime,
-				Price:      t.BuyPrice,
-				Sold:       t.Sold,
-				SellPrice:  t.SellPrice,
-				SellTime:   t.SellTime,
-				IncomeRate: t.ProfitRate,
-				Tags:       t.Tags,
-			}
-			if t.Sold {
-				item.CurrPrice = t.SellPrice
-			} else {
-				s.mu.RLock()
-				ks := s.realtimeDayKlines[t.Code]
-				s.mu.RUnlock()
-				if len(ks) > 0 && ks[len(ks)-1] != nil {
-					item.CurrPrice = ks[len(ks)-1].Close.Float64()
-					if t.BuyPrice > 0 {
-						item.IncomeRate = (item.CurrPrice - t.BuyPrice) / t.BuyPrice * 100
-					}
-				}
-			}
-			items[i] = item
-		}
-		sort.Slice(items, func(i, j int) bool {
-			return items[i].Time > items[j].Time
-		})
-		resp = HistoryResponse{Type: "history", Time: now, Total: len(items), Results: items}
+		// history 不再通过 WS 推送，但保留兼容
+		resp = s.buildHistoryResponse(v, now)
 
 	default:
 		resp = payload
@@ -219,6 +159,84 @@ func (s *ScreenService) marshal(payload any) string {
 		return ""
 	}
 	return string(data)
+}
+
+// buildBuyResponse 构建买点响应
+func (s *ScreenService) buildBuyResponse(v []*core.Buy, now string) BuyResponse {
+	items := make([]BuyItem, len(v))
+	for i, b := range v {
+		s.mu.RLock()
+		ks := s.realtimeDayKlines[b.Code]
+		s.mu.RUnlock()
+		var rise float64
+		if len(ks) >= 2 && ks[len(ks)-2] != nil && ks[len(ks)-2].Close > 0 {
+			rise = (b.Price.Float64() - ks[len(ks)-2].Close.Float64()) / ks[len(ks)-2].Close.Float64() * 100
+		}
+		items[i] = BuyItem{
+			Code:       b.Code,
+			Name:       common.Manage.Codes.GetName(b.Code),
+			Time:       b.Time.Format(time.DateTime),
+			Price:      b.Price.Float64(),
+			Rise:       rise,
+			Strategies: s.evalStrategies(b.Code, ks),
+			Tags:       s.evalTags(b.Code, ks),
+		}
+	}
+	return BuyResponse{Type: "buy", Count: len(items), Time: now, Results: items}
+}
+
+// buildSellResponse 构建卖点响应
+func (s *ScreenService) buildSellResponse(v []*core.Sell, now string) SellResponse {
+	items := make([]Trade, len(v))
+	for i, se := range v {
+		s.mu.RLock()
+		for _, t := range s.lastTrades {
+			if t.Code == se.Code {
+				items[i] = *t
+				break
+			}
+		}
+		s.mu.RUnlock()
+	}
+	return SellResponse{Type: "sell", Count: len(items), Time: now, Results: items}
+}
+
+// buildHistoryResponse 构建历史买卖点响应
+func (s *ScreenService) buildHistoryResponse(v []*Trade, now string) HistoryResponse {
+	items := make([]BuyItem, len(v))
+	for i, t := range v {
+		item := BuyItem{
+			Code:       t.Code,
+			Name:       t.Name,
+			Date:       t.BuyTime[:10],
+			Time:       t.BuyTime,
+			Price:      t.BuyPrice,
+			Sold:       t.Sold,
+			SellPrice:  t.SellPrice,
+			SellTime:   t.SellTime,
+			IncomeRate: t.ProfitRate,
+			Strategies: t.Strategies,
+			Tags:       t.Tags,
+		}
+		if t.Sold {
+			item.CurrPrice = t.SellPrice
+		} else {
+			s.mu.RLock()
+			ks := s.realtimeDayKlines[t.Code]
+			s.mu.RUnlock()
+			if len(ks) > 0 && ks[len(ks)-1] != nil {
+				item.CurrPrice = ks[len(ks)-1].Close.Float64()
+				if t.BuyPrice > 0 {
+					item.IncomeRate = (item.CurrPrice - t.BuyPrice) / t.BuyPrice * 100
+				}
+			}
+		}
+		items[i] = item
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Time > items[j].Time
+	})
+	return HistoryResponse{Type: "history", Time: now, Total: len(items), Results: items}
 }
 
 func (this *ScreenService) Run() {
@@ -242,11 +260,10 @@ func (this *ScreenService) Run() {
 				logs.Err(err)
 			}
 
-			//推送历史成交数据
+			//缓存历史交易数据(供HTTP读取)
 			this.mu.Lock()
 			this.lastTrades = trades
 			this.mu.Unlock()
-			this.broadcast(trades)
 
 			//计算实时卖点
 			sells := []*core.Sell(nil)
@@ -285,8 +302,6 @@ func (this *ScreenService) Run() {
 			this.mu.Unlock()
 			//推送实时卖点数据
 			this.broadcast(sells)
-			//推送历史成交数据
-			this.broadcast(trades)
 
 			//开始计算实时买点
 			buys := this.realtimeBuys()
@@ -318,6 +333,152 @@ func (this *ScreenService) realtimeBuys() []*core.Buy {
 		}
 	}
 	return bs
+}
+
+// evalStrategies 用 Strategies 中的策略对 ks 进行判断,返回命中的 key 列表
+func (this *ScreenService) evalStrategies(code string, ks extend.Klines) []string {
+	if len(this.Strategies) == 0 {
+		return nil
+	}
+	keys := []string(nil)
+	for _, st := range this.Strategies {
+		if st.Buyer == nil {
+			continue
+		}
+		if st.Buyer.Buy(code, ks) {
+			keys = append(keys, st.Key)
+		}
+	}
+	return keys
+}
+
+// findStrategy 按 key 查找策略
+func (this *ScreenService) findStrategy(key string) (StrategyDef, bool) {
+	for _, st := range this.Strategies {
+		if st.Key == key {
+			return st, true
+		}
+	}
+	return StrategyDef{}, false
+}
+
+// Diagnose 诊断指定股票在指定策略下的匹配情况
+func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, error) {
+	code = protocol.AddPrefix(code)
+
+	//选择策略
+	var buyer core.Buyer
+	var strategyName string
+	if strategyKey == "" || strategyKey == "all" {
+		buyer = s.Buyer
+		strategyName = "全部策略"
+	} else {
+		st, ok := s.findStrategy(strategyKey)
+		if !ok {
+			return nil, fmt.Errorf("策略不存在: %s", strategyKey)
+		}
+		buyer = st.Buyer
+		strategyName = st.Name
+	}
+
+	//优先用缓存K线,回退拉取
+	s.mu.RLock()
+	ks := s.realtimeDayKlines[code]
+	s.mu.RUnlock()
+	if len(ks) == 0 {
+		var err error
+		ks, err = common.Pull.DayKlines(code, time.Now().AddDate(-1, 0, 0), time.Now())
+		if err != nil {
+			return nil, fmt.Errorf("拉取数据失败: %v", err)
+		}
+	}
+	if len(ks) == 0 {
+		return nil, fmt.Errorf("无K线数据: %s", code)
+	}
+
+	//判断是否命中
+	matched := buyer.Buy(code, ks)
+
+	//获取标注点
+	var anns []core.Annotation
+	if v, ok := buyer.(core.Visualizer); ok {
+		anns = v.Annotate(code, ks)
+	}
+
+	//获取逐步判定原因
+	var explain []core.ExplainStep
+	if e, ok := buyer.(core.Explainer); ok {
+		explain = e.Explain(code, ks)
+	}
+
+	//获取诊断树
+	_, diagnosis := core.Diagnose(buyer, code, ks)
+
+	//计算历史买卖点,用于在K线图上标注
+	buyPoints := core.GetBuys(buyer, code, ks, len(ks))
+	type sellPoint struct {
+		BuyIdx  int
+		SellIdx int
+	}
+	sellPoints := []sellPoint(nil)
+	for i, b := range buyPoints {
+		s := core.GetSell(s.Seller, ks, *b, nil)
+		if s != nil {
+			//找到卖出K线在 ks 中的索引
+			for j := range ks {
+				if ks[j].Time.Equal(s.Time) {
+					sellPoints = append(sellPoints, sellPoint{BuyIdx: i, SellIdx: j})
+					break
+				}
+			}
+		}
+	}
+
+	//组装K线数据
+	klines := make([]ChartKline, 0, len(ks))
+	for _, k := range ks {
+		klines = append(klines, ChartKline{
+			Time:   k.Time.Format("2006-01-02"),
+			Open:   k.Open.Float64(),
+			High:   k.High.Float64(),
+			Low:    k.Low.Float64(),
+			Close:  k.Close.Float64(),
+			Volume: k.Volume,
+		})
+	}
+
+	//将买卖点追加到标注中
+	for i, b := range buyPoints {
+		anns = append(anns, core.Annotation{
+			Time:  b.Time,
+			Price: b.Price.Float64(),
+			Label: "买",
+			Color: "#ef4444", // A股: 红色买入
+			Note:  fmt.Sprintf("买入 %.2f @ %s", b.Price.Float64(), b.Time.Format("2006-01-02")),
+		})
+		_ = i
+	}
+	for _, sp := range sellPoints {
+		k := ks[sp.SellIdx]
+		anns = append(anns, core.Annotation{
+			Time:  k.Time,
+			Price: k.Close.Float64(),
+			Label: "卖",
+			Color: "#22c55e", // A股: 绿色卖出
+			Note:  fmt.Sprintf("卖出 %.2f @ %s", k.Close.Float64(), k.Time.Format("2006-01-02")),
+		})
+	}
+
+	return &DiagnoseResponse{
+		Code:        code,
+		Name:        common.Manage.Codes.GetName(code),
+		Strategy:    strategyName,
+		Matched:     matched,
+		Klines:      klines,
+		Annotations: anns,
+		Explain:     explain,
+		Diagnosis:   diagnosis,
+	}, nil
 }
 
 // evalTags 用 Tags 中的买点策略对 ks 进行判断,返回命中的 key
@@ -402,7 +563,8 @@ func (this *ScreenService) Init() error {
 	if err != nil {
 		return err
 	}
-	updated, err := update.Updated("history-trade")
+	//升级 update key,强制重算历史交易以填充 Strategies 字段
+	updated, err := update.Updated("history-trade-v2")
 	if err != nil {
 		return err
 	}
@@ -411,7 +573,7 @@ func (this *ScreenService) Init() error {
 		if err := this.updateHistoryTrade(); err != nil {
 			return err
 		}
-		if err = update.Update("history-trade"); err != nil {
+		if err = update.Update("history-trade-v2"); err != nil {
 			return err
 		}
 	}
@@ -486,7 +648,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			}
 
 			for _, b := range bs {
-				//用截止买入当日的 K 线切片评估 Tags,避免未来函数
+				//用截止买入当日的 K 线切片评估 Tags 和 Strategies,避免未来函数
 				hisKs := extend.Klines{}
 				for _, k := range ks {
 					hisKs = append(hisKs, k)
@@ -495,11 +657,12 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 					}
 				}
 				t := &Trade{
-					Code:     code,
-					Name:     common.Manage.Codes.GetName(code),
-					BuyTime:  b.Time.Format(time.DateTime),
-					BuyPrice: b.Price.Float64(),
-					Tags:     this.evalTags(code, hisKs),
+					Code:       code,
+					Name:       common.Manage.Codes.GetName(code),
+					BuyTime:    b.Time.Format(time.DateTime),
+					BuyPrice:   b.Price.Float64(),
+					Strategies: this.evalStrategies(code, hisKs),
+					Tags:       this.evalTags(code, hisKs),
 				}
 				s := core.GetSell(this.Seller, ks, *b, mmks)
 				mu.Lock()

@@ -10,9 +10,9 @@ import (
 
 // DiagnoseResult 单层诊断结果。
 type DiagnoseResult struct {
-	Name     string           // 条件名称
-	Matched  bool             // 是否满足
-	Children []DiagnoseResult // 子条件诊断（组合策略才有）
+	Name     string           `json:"name"`     // 条件名称
+	Matched  bool             `json:"matched"`  // 是否满足
+	Children []DiagnoseResult `json:"children"` // 子条件诊断（组合策略才有）
 }
 
 // Diagnoser 策略诊断器：配置好 Buyer + 数据源，传入代码即可逐层诊断。
@@ -36,8 +36,14 @@ func (d *Diagnoser) Check(code string, at ...time.Time) (matched bool, result Di
 	if err != nil {
 		return false, DiagnoseResult{Name: fmt.Sprintf("数据错误: %v", err)}
 	}
-	matched, result = diagnose(d.Buyer, code, dks)
+	matched, result = Diagnose(d.Buyer, code, dks)
 	return
+}
+
+// Diagnose 对给定策略和数据执行递归诊断，返回是否匹配 + 诊断树。
+// 与 Diagnoser.Check 不同，此函数直接使用调用方提供的 K 线数据，无需配置 GetDayKlines。
+func Diagnose(b Buyer, code string, dks extend.Klines) (matched bool, result DiagnoseResult) {
+	return diagnose(b, code, dks)
 }
 
 // diagnose 递归诊断。对实现 CompositeBuyer 接口的组合策略自动展开子节点。

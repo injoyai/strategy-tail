@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>选股系统</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+  <!-- ── 头部 ── -->
+  <header class="header">
+    <div class="header-left">
+      <span class="header-title">选股系统</span>
+      <span class="header-subtitle">多策略实时选股 · 诊断分析</span>
+    </div>
+    <div class="header-right">
+      <span class="refresh-time" id="refreshTime">--</span>
+      <div class="ws-status">
+        <span class="ws-dot offline"></span>
+        <span id="wsStatusText">连接中...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── 策略卡片栏 ── -->
+  <div class="strategy-bar" id="strategyBar">
+    <div class="strategy-card active">
+      <div class="strategy-name">全部策略</div>
+      <div class="strategy-count">加载中...</div>
+    </div>
+  </div>
+
+  <!-- ── 搜索 + 诊断栏 ── -->
+  <div class="search-bar">
+    <input type="text" id="searchInput" placeholder="搜索/输入股票代码..." oninput="onSearch(this)" onkeydown="if(event.key==='Enter')openDiagnoseByInput()">
+    <button class="diag-go-btn" onclick="openDiagnoseByInput()">查看K线</button>
+  </div>
+
+  <!-- ── 主内容区 ── -->
+  <div class="main-content">
+
+    <!-- 买点面板 -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="dot buy"></span>当日买点</div>
+        <span class="panel-count" id="buyCount">0</span>
+      </div>
+      <div class="panel-body" id="buyBody">
+        <div class="loading"><div class="spinner"></div><div>加载中...</div></div>
+      </div>
+    </div>
+
+    <!-- 卖点面板 -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title"><span class="dot sell"></span>当日卖点</div>
+        <span class="panel-count" id="sellCount">0</span>
+      </div>
+      <div class="panel-body" id="sellBody">
+        <div class="loading"><div class="spinner"></div><div>加载中...</div></div>
+      </div>
+    </div>
+
+    <!-- 历史买卖面板(跨两列) -->
+    <div class="panel panel-history">
+      <div class="panel-header history-header">
+        <div class="history-title-row">
+          <div class="panel-title"><span class="dot history"></span>历史买卖</div>
+          <span class="panel-count" id="historyCount">0</span>
+        </div>
+        <!-- 统计行 -->
+        <div class="history-stats">
+          <div class="stat-group">
+            <span class="stat-label">胜率</span>
+            <span class="stat-val" id="statWinRate">-</span>
+            <span id="statTagWinRate" class="stat-tags"></span>
+          </div>
+          <div class="stat-group">
+            <span class="stat-label">盈亏比</span>
+            <span class="stat-val" id="statProfitFactor">-</span>
+            <span id="statTagPF" class="stat-tags"></span>
+          </div>
+          <div class="stat-group">
+            <span class="stat-label">持仓天数</span>
+            <span class="stat-val" id="statHoldDays">-</span>
+          </div>
+        </div>
+      </div>
+      <!-- 筛选器 -->
+      <div class="history-filters">
+        <div class="filter-group">
+          <span class="filter-label">日期</span>
+          <button class="filter-btn" data-days="15" onclick="setDaysFilter(15)">15天</button>
+          <button class="filter-btn active" data-days="30" onclick="setDaysFilter(30)">30天</button>
+          <button class="filter-btn" data-days="60" onclick="setDaysFilter(60)">60天</button>
+          <button class="filter-btn" data-days="120" onclick="setDaysFilter(120)">120天</button>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label">状态</span>
+          <button class="filter-btn active" data-status="all" onclick="setStatusFilter('all')">全部</button>
+          <button class="filter-btn" data-status="sold" onclick="setStatusFilter('sold')">卖出</button>
+          <button class="filter-btn" data-status="holding" onclick="setStatusFilter('holding')">持有</button>
+        </div>
+        <div class="filter-group" id="historyTagFilters">
+          <span class="filter-label">标签</span>
+        </div>
+      </div>
+      <div class="panel-body" id="historyBody">
+        <div class="loading"><div class="spinner"></div><div>加载中...</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── 诊断弹窗 ── -->
+  <div class="diag-overlay" id="diagOverlay" style="display:none">
+    <div class="diag-modal">
+      <div class="diag-header">
+        <span class="diag-code" id="diagCode">--</span>
+        <span class="diag-name" id="diagName">--</span>
+        <select class="diag-strategy-select" id="diagStrategySelect"></select>
+        <span class="diag-badge" id="diagBadge">--</span>
+        <button class="diag-close" onclick="closeDiagnose()">&times;</button>
+      </div>
+      <div class="diag-body">
+        <div class="diag-chart-wrap">
+          <div id="diagChart"></div>
+        </div>
+        <div class="diag-side">
+          <div class="diag-section-title" id="diagExplainTitle">逐步判定</div>
+          <div id="diagExplain"></div>
+          <div class="diag-section-title" style="margin-top:16px">诊断树</div>
+          <div class="diag-tree" id="diagTree"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+  <script src="/diagnose.js"></script>
+</body>
+</html>

@@ -6,37 +6,21 @@ import (
 
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/protocol"
 )
 
 var (
 	DefaultBuyer  = MACDBuyer
 	DefaultSeller = MACDSeller
 
-	_ = buy.Strategy("MACD", MACDBuyer)
-
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
-		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
-
-		buy.MACD反转{MinLookback: 4}, //MACD
-		buy.MACD负数{MinDays: 5},     //MACD阴线,5
-
-		buy.A现价大于N日均线(30), //当天价格高于N日均线
-
-		buy.And{
-			buy.MAUp{Period: 20, MinSlope: 0.0002}, //N日均线向上,且增速大于0.05%
-			buy.MAUp{Period: 30, MinSlope: 0.0005}, //N日均线向上,且增速大于0.05%
-		},
-	}
-
-	MACDBuyer2 = buy.And{
-		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
+		buy.A现价{Max: 120},     //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
 		buy.MACD反转{MinLookback: 4}, //MACD
@@ -53,11 +37,25 @@ var (
 	MACDSeller = sell.Or{
 		sell.MACD反转{Lookback: 10},
 	}
+
+	// BaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化
+	BaseBuyer = buy.And{
+		buy.A流通市值{Min: 400},
+		buy.A现价{Max: 120},
+		buy.A过滤涨停{},
+
+		buy.MAUp{Period: 20},
+		buy.MAUp{Period: 30},
+		buy.MAUp{Period: 60},
+
+		// MACD量柱反转向上
+		buy.MACD反转{MinLookback: 4},
+	}
 )
 
 const (
-	万                 = 1e4
-	亿                 = 1e8
+	万                = 1e4
+	亿                = 1e8
 	DefaultGoroutines = 10
 	DatabaseDir       = tdx.DefaultDatabaseDir
 )
@@ -84,6 +82,28 @@ func init() {
 
 	Pull.Run(Manage)
 
+}
+
+// LoadBacktestConfig 从 config.yaml 读取回测引擎配置（成本/仓位/年份/基准）。
+// 未配置的字段使用 DefaultXxx() 填充。
+// 风控参数不在此读取——由 cmd/backtest 入口构造为 Seller（见 loadRiskSeller）。
+func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int, benchmark string, mcIterations int) {
+	cost = core.Cost{
+		CommissionRate:  cfg.GetFloat64("backtest.cost.commission_rate", 0.0001),
+		StampDutyRate:   cfg.GetFloat64("backtest.cost.stamp_duty_rate", 0.0005),
+		TransferFeeRate: cfg.GetFloat64("backtest.cost.transfer_fee_rate", 0.00001),
+		Slippage:        protocol.Yuan(cfg.GetFloat64("backtest.cost.slippage", 0.01)),
+		MinCommission:   cfg.GetFloat64("backtest.cost.min_commission", 0),
+	}
+	pos = core.PositionConfig{
+		MaxPositions: cfg.GetInt("backtest.position.max_positions", 0),
+		MaxPerCode:   cfg.GetInt("backtest.position.max_per_code", 1),
+		SharesPerLot: cfg.GetInt("backtest.position.shares_per_lot", 100),
+	}
+	years = cfg.GetInts("backtest.years", []int{2020, 2021, 2022, 2023, 2024, 2025, 2026})
+	benchmark = cfg.GetString("backtest.benchmark", "sh000300")
+	mcIterations = cfg.GetInt("backtest.monte_carlo_iterations", 1000)
+	return
 }
 
 func GetNoPriceLimitCodes() []string {
