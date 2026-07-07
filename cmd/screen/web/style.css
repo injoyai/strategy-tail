@@ -783,11 +783,87 @@ body {
   padding: 12px;
   overflow: hidden;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #diagChart {
   width: 100%;
-  height: 100%;
+  height: 520px;
+  flex-shrink: 0;
+}
+
+.diag-trade-summary {
+  flex-shrink: 0;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  padding: 10px 12px;
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+/* 交易汇总滚动条美化 */
+.diag-trade-summary::-webkit-scrollbar {
+  width: 6px;
+}
+.diag-trade-summary::-webkit-scrollbar-track {
+  background: transparent;
+}
+.diag-trade-summary::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+.diag-trade-summary::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+.diag-trade-summary {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.diag-trade-summary .trade-summary-header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+
+.diag-trade-summary .trade-summary-header .summary-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.diag-trade-summary .trade-summary-header .summary-label {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.diag-trade-summary .trade-summary-header .summary-val {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.diag-trade-summary table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.diag-trade-summary th,
+.diag-trade-summary td {
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.diag-trade-summary th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 500;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .diag-side {

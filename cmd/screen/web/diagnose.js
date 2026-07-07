@@ -93,6 +93,9 @@ async function loadDiagnose(code, strategy) {
     // 渲染K线图
     renderChart(data);
 
+    // 渲染交易汇总
+    renderTradeSummary(data.trades || []);
+
     // 渲染 explain
     renderExplain(data.explain || []);
 
@@ -244,6 +247,84 @@ function renderChart(data) {
   } else {
     chart.timeScale().fitContent();
   }
+}
+
+// ── 交易汇总渲染 ──
+
+function renderTradeSummary(trades) {
+  const el = document.getElementById('diagTradeSummary');
+  if (!el) return;
+
+  if (!trades || trades.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+
+  // 统计
+  let totalTrades = trades.length;
+  let soldTrades = 0;
+  let holdingTrades = 0;
+  let winCount = 0;
+  let totalProfit = 0; // 累计收益率(等额累加)
+  let totalWin = 0;
+  let totalLoss = 0;
+
+  for (const t of trades) {
+    if (t.sold) {
+      soldTrades++;
+      const rate = t.profit_rate || 0;
+      totalProfit += rate;
+      if (rate > 0) { winCount++; totalWin += rate; }
+      else { totalLoss += -rate; }
+    } else {
+      holdingTrades++;
+    }
+  }
+
+  const winRate = soldTrades > 0 ? (winCount / soldTrades * 100) : 0;
+  const profitFactor = totalLoss > 0 ? (totalWin / totalLoss) : (totalWin > 0 ? Infinity : 0);
+  const avgProfit = soldTrades > 0 ? (totalProfit / soldTrades) : 0;
+
+  const pfText = isFinite(profitFactor) ? profitFactor.toFixed(2) : '∞';
+  const profitCls = totalProfit >= 0 ? 'num-up' : 'num-down';
+  const winRateCls = winRate >= 50 ? 'num-up' : 'num-down';
+
+  let html = `<div class="trade-summary-header">
+    <div class="summary-item"><span class="summary-label">交易次数</span><span class="summary-val">${totalTrades}</span></div>
+    <div class="summary-item"><span class="summary-label">已卖出</span><span class="summary-val">${soldTrades}</span></div>
+    <div class="summary-item"><span class="summary-label">持有中</span><span class="summary-val">${holdingTrades}</span></div>
+    <div class="summary-item"><span class="summary-label">胜率</span><span class="summary-val ${winRateCls}">${soldTrades > 0 ? winRate.toFixed(1) + '%' : '--'}</span></div>
+    <div class="summary-item"><span class="summary-label">盈亏比</span><span class="summary-val">${soldTrades > 0 ? pfText : '--'}</span></div>
+    <div class="summary-item"><span class="summary-label">平均单笔</span><span class="summary-val ${avgProfit >= 0 ? 'num-up' : 'num-down'}">${soldTrades > 0 ? (avgProfit >= 0 ? '+' : '') + avgProfit.toFixed(2) + '%' : '--'}</span></div>
+    <div class="summary-item"><span class="summary-label">累计收益</span><span class="summary-val ${profitCls}">${totalProfit >= 0 ? '+' : ''}${totalProfit.toFixed(2)}%</span></div>
+  </div>`;
+
+  // 交易明细表
+  html += `<table><thead><tr>
+    <th>#</th><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>现价/卖价</th><th>收益率</th><th>状态</th>
+  </tr></thead><tbody>`;
+
+  for (let i = trades.length - 1; i >= 0; i--) {
+    const t = trades[i];
+    const rate = t.profit_rate || 0;
+    const rateCls = rate >= 0 ? 'num-up' : 'num-down';
+    const rateText = `${rate >= 0 ? '+' : ''}${rate.toFixed(2)}%`;
+    const statusText = t.sold ? '已卖出' : '持有中';
+    const statusCls = t.sold ? 'tag-sold' : 'tag-holding';
+    const currText = t.curr_price ? t.curr_price.toFixed(2) : '--';
+    html += `<tr>
+      <td>${trades.length - i}</td>
+      <td>${t.buy_time || '--'}</td>
+      <td>${t.buy_price ? t.buy_price.toFixed(2) : '--'}</td>
+      <td>${t.sold ? (t.sell_time || '--') : '--'}</td>
+      <td>${currText}</td>
+      <td class="${rateCls}">${rateText}</td>
+      <td><span class="${statusCls}">${statusText}</span></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+
+  el.innerHTML = html;
 }
 
 // ── explain 渲染 ──

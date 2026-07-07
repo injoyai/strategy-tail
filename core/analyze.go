@@ -59,7 +59,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 		if math.IsInf(r.ProfitFactor, 1) {
 			profitFactor = "∞"
 		}
-		fmt.Printf("%6d \t%10d \t%8s \t%10.2f \t%10s \t%10s \t%10s \t%8s \t%12.2f \t%12.2f \t%10s\n",
+		fmt.Printf("%6d \t%10d \t%9s \t%10.2f \t%12s \t%10s \t%10s \t%8s \t%12.2f \t%12.2f \t%10s\n",
 			r.Year,
 			r.TotalTrades,
 			formatPercent(r.WinRate),

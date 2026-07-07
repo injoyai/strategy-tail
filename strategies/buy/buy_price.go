@@ -234,3 +234,29 @@ func (b A突破N天新高) Buy(code string, dks extend.Klines) bool {
 	today := dks[len(dks)-1]
 	return today.High >= dks.HHV(days)
 }
+
+// A近N天最高价 是当前收盘价等于近 N 个交易日最高价的买入条件。
+// N 表示回看窗口长度（含今天），默认 20。
+// 触发条件：dks[n-1].Close >= HHV(High, N)，即今日收盘价达到近 N 天的最高价。
+// 与 A突破N天新高 的区别：A突破N天新高 用当日最高价判断，A近N天最高价 用收盘价判断，信号更保守。
+type A近N天最高价 int
+
+func (b A近N天最高价) Name() string {
+	days := int(b)
+	if days == 0 {
+		days = 20
+	}
+	return fmt.Sprintf("收盘价创近%d天最高", days)
+}
+
+func (b A近N天最高价) Buy(code string, dks extend.Klines) bool {
+	days := int(b)
+	if days == 0 {
+		days = 20
+	}
+	if len(dks) < days {
+		return false
+	}
+	today := dks[len(dks)-1]
+	return today.Close >= dks.HHV(days)
+}

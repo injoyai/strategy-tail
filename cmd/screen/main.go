@@ -15,8 +15,8 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.0")
-	logs.Info("详情:", "多策略")
+	logs.Info("版本:", "v1.0.1")
+	logs.Info("详情:", "多策略.")
 }
 
 func main() {
@@ -87,6 +87,9 @@ var (
 			Name:   "布林+RSI",
 			Buyer:  BollBuyer,
 			Seller: sell.A回到布林中轨{Period: 20},
+			Tags: map[string]core.Buyer{
+				"MACD": buy.MACD反转{MinLookback: 4},
+			},
 		},
 	}
 

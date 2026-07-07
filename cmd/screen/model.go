@@ -135,4 +135,16 @@ type DiagnoseResponse struct {
 	Annotations []core.Annotation   `json:"annotations"`
 	Explain     []core.ExplainStep  `json:"explain"`
 	Diagnosis   core.DiagnoseResult `json:"diagnosis"`
+	Trades      []DiagnoseTrade     `json:"trades"` // 该股票的历史成交记录
+}
+
+// DiagnoseTrade 诊断页单笔交易记录
+type DiagnoseTrade struct {
+	BuyTime    string  `json:"buy_time"`
+	BuyPrice   float64 `json:"buy_price"`
+	SellTime   string  `json:"sell_time"`
+	SellPrice  float64 `json:"sell_price"`
+	CurrPrice  float64 `json:"curr_price"`  // 现价(持仓中为最新收盘价,已卖出为卖出价)
+	ProfitRate float64 `json:"profit_rate"` // 收益率 %
+	Sold       bool    `json:"sold"`
 }

@@ -515,6 +515,41 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		})
 	}
 
+	//查询该股票的历史成交记录(从数据库)
+	trades := []*Trade(nil)
+	if err := s.DB.Where("Code=?", code).Asc("BuyTime").Find(&trades); err != nil {
+		logs.Errf("[诊断] 查询交易记录失败: %v", err)
+	}
+	diagTrades := make([]DiagnoseTrade, 0, len(trades))
+	for _, t := range trades {
+		//选了特定策略时,只展示该策略的成交记录
+		if strategyKey != "" && strategyKey != "all" {
+			if !containsKey(t.Strategies, strategyKey) {
+				continue
+			}
+		}
+		dt := DiagnoseTrade{
+			BuyTime:    t.BuyTime,
+			BuyPrice:   t.BuyPrice,
+			SellTime:   t.SellTime,
+			SellPrice:  t.SellPrice,
+			ProfitRate: t.ProfitRate,
+			Sold:       t.Sold,
+		}
+		if t.Sold {
+			dt.CurrPrice = t.SellPrice
+		} else {
+			//持仓中:用最新收盘价作为现价,计算实时收益率
+			if len(ks) > 0 && ks[len(ks)-1] != nil {
+				dt.CurrPrice = ks[len(ks)-1].Close.Float64()
+				if t.BuyPrice > 0 {
+					dt.ProfitRate = (dt.CurrPrice - t.BuyPrice) / t.BuyPrice * 100
+				}
+			}
+		}
+		diagTrades = append(diagTrades, dt)
+	}
+
 	return &DiagnoseResponse{
 		Code:        code,
 		Name:        common.Manage.Codes.GetName(code),
@@ -524,6 +559,7 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		Annotations: anns,
 		Explain:     explain,
 		Diagnosis:   diagnosis,
+		Trades:      diagTrades,
 	}, nil
 }
 

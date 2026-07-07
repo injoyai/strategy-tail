@@ -99,7 +99,7 @@ async function loadStrategies() {
 function renderStrategyBar() {
   const bar = document.getElementById('strategyBar');
 
-  // 统计各策略的买点/历史/胜率
+  // 统计各策略的买点/历史/胜率/盈亏比
   function statsForKey(key) {
     const buys = key === 'all'
       ? buyResults.length
@@ -110,7 +110,18 @@ function renderStrategyBar() {
     const sold = hist.filter(r => r.sold);
     const win = sold.filter(r => (r.income_rate || 0) > 0).length;
     const winRate = sold.length > 0 ? (win / sold.length * 100).toFixed(0) + '%' : '--';
-    return { buys, histCount: hist.length, winRate };
+    // 盈亏比 = 总盈利金额 / 总亏损金额
+    let winSum = 0, lossSum = 0;
+    for (const r of sold) {
+      const rate = r.income_rate || 0;
+      if (rate > 0) winSum += rate;
+      else lossSum += -rate;
+    }
+    let pf;
+    if (sold.length === 0) pf = '--';
+    else if (lossSum === 0) pf = '∞';
+    else pf = (winSum / lossSum).toFixed(2);
+    return { buys, histCount: hist.length, winRate, pf };
   }
 
   let html = '';
@@ -119,7 +130,7 @@ function renderStrategyBar() {
     html += `
       <div class="strategy-card ${currentStrategy === st.key ? 'active' : ''}" onclick="selectStrategy('${st.key}')">
         <div class="strategy-name">${esc(st.name)}</div>
-        <div class="strategy-count">买点 ${s.buys} · 历史 ${s.histCount} · 胜率 ${s.winRate}</div>
+        <div class="strategy-count">买点 ${s.buys} · 历史 ${s.histCount} · 盈亏比 ${s.pf} · 胜率 ${s.winRate}</div>
       </div>
     `;
   }
@@ -162,6 +173,7 @@ async function loadHistory() {
     const data = await resp.json();
     historyResults = data.results || [];
     ensureHistoryTagFilters();
+    renderStrategyBar();
     renderHistoryResults();
   } catch (e) {
     console.error('加载历史数据失败', e);
@@ -239,7 +251,7 @@ function renderBuyResults() {
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.price ? item.price.toFixed(2) : '--'}</td>
       <td class="${riseCls}">${fmtPct(item.rise)}</td>
-      <td>${renderStrategyBadges(item.strategies)}${renderTagBadges(item.tags)}</td>
+      <td>${renderTagBadges(item.tags)}</td>
     </tr>`;
   }
   html += `</tbody></table></div>`;
@@ -260,7 +272,7 @@ function renderSellResults() {
   }
 
   let html = `<div class="table-wrap"><table class="stock-table"><thead><tr>
-    <th>代码</th><th>名称</th><th>买入价</th><th>卖出价</th><th>收益率</th>
+    <th>代码</th><th>名称</th><th>买入价</th><th>卖出价</th><th>卖出时间</th><th>收益率</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
     const profitCls = numClass(item.profit_rate);
@@ -269,6 +281,7 @@ function renderSellResults() {
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
       <td>${item.sell_price ? item.sell_price.toFixed(2) : '--'}</td>
+      <td>${item.sell_time ? fmtMDHM(item.sell_time) : '--'}</td>
       <td class="${profitCls}">${fmtPct(item.profit_rate)}</td>
     </tr>`;
   }
@@ -393,7 +406,7 @@ function renderHistoryResults() {
       <td>${curr ? curr.toFixed(2) : '--'}</td>
       <td>${sellTime}</td>
       <td class="${profitCls}">${fmtPct(item.income_rate)}</td>
-      <td>${renderStrategyBadges(item.strategies)}${renderTagBadges(item.tags)}</td>
+      <td>${renderTagBadges(item.tags)}</td>
       <td>${statusHTML}</td>
     </tr>`;
   }

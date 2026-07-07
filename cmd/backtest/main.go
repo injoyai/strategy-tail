@@ -23,7 +23,7 @@ func main() {
 
 	core.Backtest{
 		Buyer:        TestBuy,
-		Seller:       common.MACDSeller,
+		Seller:       TestSell,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
 		Years:        years,
@@ -39,13 +39,13 @@ func main() {
 
 var (
 	TestBuy = buy.And{
-		common.MACDBaseBuyer,
+		//common.MACDBaseBuyer,
 		//buy.Not(buy.A近),
+		BollBuy,
+		//buy.MACD反转{MinLookback: 4},
 	}
 
-	TestSell = sell.Or{
-		sell.MACD反转{Lookback: 10},
-	}
+	TestSell = BollSell
 
 	BaseBuyer = buy.And{
 		buy.A价格{Min: 2, Max: 120},
