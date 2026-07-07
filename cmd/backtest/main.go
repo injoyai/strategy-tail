@@ -16,12 +16,14 @@ func main() {
 	// 从 config.yaml 加载成本和仓位配置
 	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
 
-	years := []int{2022, 2023, 2024, 2025, 2026}
+	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
+	years = []int{2022, 2023, 2024, 2025, 2026}
+	years = []int{2024, 2025, 2026}
 	years = []int{2026}
 
 	core.Backtest{
-		Buyer:        BollBuy,
-		Seller:       BollSell,
+		Buyer:        TestBuy,
+		Seller:       common.MACDSeller,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
 		Years:        years,
@@ -36,7 +38,10 @@ func main() {
 }
 
 var (
-	TestBuy = buy.A布林下轨RSI超卖{}
+	TestBuy = buy.And{
+		common.MACDBaseBuyer,
+		//buy.Not(buy.A近),
+	}
 
 	TestSell = sell.Or{
 		sell.MACD反转{Lookback: 10},

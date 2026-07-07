@@ -170,14 +170,15 @@ func (s *ScreenService) buildBuyResponse(v []*core.Buy, now string) BuyResponse 
 		if len(ks) >= 2 && ks[len(ks)-2] != nil && ks[len(ks)-2].Close > 0 {
 			rise = (b.Price.Float64() - ks[len(ks)-2].Close.Float64()) / ks[len(ks)-2].Close.Float64() * 100
 		}
+		matched := s.evalStrategies(b.Code, ks)
 		items[i] = BuyItem{
 			Code:       b.Code,
 			Name:       common.Manage.Codes.GetName(b.Code),
 			Time:       b.Time.Format(time.DateTime),
 			Price:      b.Price.Float64(),
 			Rise:       rise,
-			Strategies: s.evalStrategies(b.Code, ks),
-			Tags:       s.evalTags(b.Code, ks),
+			Strategies: matched,
+			Tags:       s.evalTags(b.Code, ks, matched),
 		}
 	}
 	return BuyResponse{Type: "buy", Count: len(items), Time: now, Results: items}
@@ -526,11 +527,14 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	}, nil
 }
 
-// evalTags 用所有策略的 Tags 对 ks 进行判断,返回命中的标签(去重)
-func (this *ScreenService) evalTags(code string, ks extend.Klines) []string {
+// evalTags 只评估命中策略的 Tags,返回命中的标签(去重)
+func (this *ScreenService) evalTags(code string, ks extend.Klines, matchedKeys []string) []string {
 	seen := map[string]bool{}
 	tags := []string(nil)
 	for _, st := range this.Strategies {
+		if !containsKey(matchedKeys, st.Key) {
+			continue
+		}
 		for name, b := range st.Tags {
 			if b == nil || seen[name] {
 				continue
@@ -542,6 +546,15 @@ func (this *ScreenService) evalTags(code string, ks extend.Klines) []string {
 		}
 	}
 	return tags
+}
+
+func containsKey(keys []string, key string) bool {
+	for _, k := range keys {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 func (this *ScreenService) Init() error {
@@ -603,8 +616,8 @@ func (this *ScreenService) Init() error {
 	if err != nil {
 		return err
 	}
-	//升级 update key,强制重算历史交易以填充 Strategies 字段
-	updated, err := update.Updated("history-trade-v2")
+	//升级 update key,强制重算历史交易(策略结构变更后 key 变化)
+	updated, err := update.Updated("history-trade-v3")
 	if err != nil {
 		return err
 	}
@@ -613,7 +626,7 @@ func (this *ScreenService) Init() error {
 		if err := this.updateHistoryTrade(); err != nil {
 			return err
 		}
-		if err = update.Update("history-trade-v2"); err != nil {
+		if err = update.Update("history-trade-v3"); err != nil {
 			return err
 		}
 	}
@@ -703,7 +716,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 					BuyTime:    b.Time.Format(time.DateTime),
 					BuyPrice:   b.Price.Float64(),
 					Strategies: matched,
-					Tags:       this.evalTags(code, hisKs),
+					Tags:       this.evalTags(code, hisKs, matched),
 				}
 				//按命中的策略选择卖出条件
 				var s *core.Sell

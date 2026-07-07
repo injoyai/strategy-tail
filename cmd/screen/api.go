@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/injoyai/frame/fbr"
@@ -66,12 +67,18 @@ func Api(port int, useLocal bool, svc *ScreenService) error {
 		// 策略列表
 		fbr.WithGET("/api/strategies", func(c fbr.Ctx) {
 			type strategyItem struct {
-				Key  string `json:"key"`
-				Name string `json:"name"`
+				Key  string   `json:"key"`
+				Name string   `json:"name"`
+				Tags []string `json:"tags"`
 			}
 			out := make([]strategyItem, 0, len(svc.Strategies))
 			for _, st := range svc.Strategies {
-				out = append(out, strategyItem{Key: st.Key, Name: st.Name})
+				tags := make([]string, 0, len(st.Tags))
+				for name := range st.Tags {
+					tags = append(tags, name)
+				}
+				sort.Strings(tags)
+				out = append(out, strategyItem{Key: st.Key, Name: st.Name, Tags: tags})
 			}
 			c.JSON(out)
 		}),

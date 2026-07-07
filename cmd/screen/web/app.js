@@ -128,7 +128,9 @@ function renderStrategyBar() {
 
 function selectStrategy(key) {
   currentStrategy = key;
+  historyFilter.tags = null; // 重置标签筛选,按新策略重建
   renderStrategyBar();
+  ensureHistoryTagFilters();
   renderBuyResults();
   renderSellResults();
   renderHistoryResults();
@@ -278,21 +280,11 @@ function renderSellResults() {
 // 历史面板：筛选 + 统计 + 表格
 // =========================================================
 
-// 获取所有可用标签(含无标签占位)
+// 获取当前策略定义的标签(策略无 Tags 定义时返回空)
 function getAllTags() {
-  const set = new Set();
-  for (const r of historyResults) {
-    if (r.tags && r.tags.length) {
-      r.tags.forEach(t => set.add(t));
-    } else {
-      set.add(NO_TAG_KEY);
-    }
-  }
-  return Array.from(set).sort((a, b) => {
-    if (a === NO_TAG_KEY) return 1;
-    if (b === NO_TAG_KEY) return -1;
-    return a.localeCompare(b, 'zh-CN');
-  });
+  const st = strategies.find(s => s.key === currentStrategy);
+  if (!st || !st.tags || st.tags.length === 0) return [];
+  return st.tags.slice().sort((a, b) => a.localeCompare(b, 'zh-CN'));
 }
 
 // 渲染标签筛选按钮
@@ -508,9 +500,14 @@ function renderTagPF(stats) {
 
 function renderStrategyBadges(arr) {
   if (!arr || arr.length === 0) return '';
+  const nameMap = {
+    'macd-premium': 'MACD',
+    'macd-base': 'Base',
+    'boll-rsi': 'BollRSI',
+  };
   return arr.map(k => {
-    const cls = k.toLowerCase();
-    const name = k === 'macd' ? 'MACD' : (k === 'base' ? 'Base' : k);
+    const cls = k.toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const name = nameMap[k] || k;
     return `<span class="badge-strategy ${cls}">${esc(name)}</span>`;
   }).join('');
 }
