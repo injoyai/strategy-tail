@@ -20,7 +20,7 @@ var (
 
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},     //价格小于120,太贵了买不起
+		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
 		buy.MACD反转{MinLookback: 4}, //MACD
@@ -38,8 +38,8 @@ var (
 		sell.MACD反转{Lookback: 10},
 	}
 
-	// BaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化
-	BaseBuyer = buy.And{
+	// MACDBaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化
+	MACDBaseBuyer = buy.And{
 		buy.A流通市值{Min: 400},
 		buy.A现价{Max: 120},
 		buy.A过滤涨停{},
@@ -51,11 +51,16 @@ var (
 		// MACD量柱反转向上
 		buy.MACD反转{MinLookback: 4},
 	}
+
+	BaseBuyer = buy.And{
+		buy.A价格{Min: 2, Max: 120},
+		buy.A过滤涨停{},
+	}
 )
 
 const (
-	万                = 1e4
-	亿                = 1e8
+	万                 = 1e4
+	亿                 = 1e8
 	DefaultGoroutines = 10
 	DatabaseDir       = tdx.DefaultDatabaseDir
 )

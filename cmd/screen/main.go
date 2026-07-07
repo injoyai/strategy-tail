@@ -8,6 +8,7 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
@@ -21,15 +22,10 @@ func main() {
 	}
 
 	//可切换策略列表
-	strategies := []StrategyDef{
-		{Key: "macd", Name: "MACD策略", Buyer: common.MACDBuyer},
-		{Key: "base", Name: "Base策略", Buyer: common.BaseBuyer},
-	}
-
-	//构建联合 Buyer(所有策略的 Or,扫描用)
-	union := make([]core.Buyer, 0, len(strategies))
-	for _, st := range strategies {
-		union = append(union, buy.Strategy(st.Name, st.Buyer))
+	strategies := []Strategy{
+		MACDPremium,
+		MACDBase,
+		BollRSI,
 	}
 
 	svc := &ScreenService{
@@ -39,15 +35,6 @@ func main() {
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetAllCodes(),
 		Strategies:   strategies,
-		Seller:       common.MACDSeller,
-		Buyer:        buy.Strategy("全部", buy.Or(union)),
-		Tags: map[string]core.Buyer{
-			"科创+":  buy.A科创板{},
-			"创业+":  buy.A创业板{},
-			"北证^":  buy.A北证板{},
-			"中市值+": buy.A流通市值{Min: 600, Max: 800},
-			"涨停^":  buy.A涨停{},
-		},
 	}
 
 	//初始化
@@ -63,14 +50,50 @@ func main() {
 	logs.PrintErr(Api(port, useLocal, svc))
 }
 
-var _ core.Buyer = Screen{}
+/*
 
-type Screen struct {
-	name string
-	core.Buyer
-	Tags map[string]core.Buyer
-}
 
-func (s Screen) Name() string {
-	return s.name
-}
+
+ */
+
+var (
+	MACDPremium = Strategy{
+		Key:    "macd-premium",
+		Name:   "MACD精选",
+		Buyer:  common.MACDBuyer,
+		Seller: common.MACDSeller,
+		Tags: map[string]core.Buyer{
+			"科创+":  buy.A科创板{},
+			"创业+":  buy.A创业板{},
+			"北证^":  buy.A北证板{},
+			"中市值+": buy.A流通市值{Min: 600, Max: 800},
+			"涨停^":  buy.A涨停{},
+		},
+	}
+
+	MACDBase = Strategy{
+		Key:    "macd-base",
+		Name:   "MACD基础",
+		Buyer:  common.MACDBaseBuyer,
+		Seller: common.MACDSeller,
+		Tags: map[string]core.Buyer{
+			"科创+":  buy.A科创板{},
+			"创业+":  buy.A创业板{},
+			"北证^":  buy.A北证板{},
+			"中市值+": buy.A流通市值{Min: 600, Max: 800},
+			"涨停^":  buy.A涨停{},
+		},
+	}
+
+	BollRSI = Strategy{
+		Key:  "boll-rsi",
+		Name: "布林+RSI",
+		Buyer: buy.And{
+			common.BaseBuyer,
+			buy.A布林下轨{Period: 20, StdTimes: 2},
+			buy.RSI{Period: 14, Threshold: 30},
+			buy.MAUp{Period: 60},
+		},
+		Seller: sell.A回到布林中轨{Period: 20},
+	}
+)

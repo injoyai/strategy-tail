@@ -11,11 +11,13 @@ import (
 // 策略定义
 // =========================================================
 
-// StrategyDef 可切换的策略卡片定义
-type StrategyDef struct {
-	Key   string     `json:"key"`  // 唯一标识，如 "macd"、"base"
-	Name  string     `json:"name"` // 显示名，如 "MACD策略"
-	Buyer core.Buyer // 买入策略（不序列化）
+// Strategy 可切换的策略卡片，包含买入/卖出/辅助标签
+type Strategy struct {
+	Key    string                // 唯一标识，如 "macd-premium"
+	Name   string                // 显示名，如 "MACD精选"
+	Buyer  core.Buyer            // 买入策略
+	Seller core.Seller           // 卖出策略
+	Tags   map[string]core.Buyer // 辅助标签(板块/市值等)
 }
 
 // =========================================================

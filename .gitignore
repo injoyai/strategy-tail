@@ -7,3 +7,4 @@ output/*
 *.log
 *bin
 .*
+*_report.html

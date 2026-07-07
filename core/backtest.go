@@ -76,7 +76,7 @@ func (this Backtest) Run() {
 	}
 	if len(allTrades) > 10 {
 		mc := MonteCarlo(allTrades, 1000, 100000)
-		logs.Infof("蒙特卡洛模拟(1000次): 中位收益%.1f%% | 95%%置信区间[%.1f%%, %.1f%%] | 盈利概率%.0f%% | 破产概率%.0f%% | 中位最大回撤%.1f%%",
+		logs.Infof("蒙特卡洛模拟(1000次): 中位收益%.1f%% | 95%%置信区间[%.1f%%, %.1f%%] | 盈利概率%.0f%% | 破产概率%.0f%% | 中位最大回撤%.1f%%\n",
 			mc.ReturnP50, mc.ReturnP5, mc.ReturnP95, mc.ProbProfit*100, mc.ProbRuin*100, mc.MaxDrawdownP50)
 	}
 
@@ -185,11 +185,14 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 		// ---- 1. 买入信号 ----
 		if this.Buy(code, ls) {
-			currentBuys = append(currentBuys, Buy{
-				Code:  code,
-				Time:  today.Time,
-				Price: today.Close,
-			})
+			// 仓位管理：单票持仓笔数上限（MaxPerCode > 0 时生效，0=不限）
+			if pos.MaxPerCode <= 0 || len(currentBuys) < pos.MaxPerCode {
+				currentBuys = append(currentBuys, Buy{
+					Code:  code,
+					Time:  today.Time,
+					Price: today.Close,
+				})
+			}
 		}
 
 		if len(currentBuys) == 0 {

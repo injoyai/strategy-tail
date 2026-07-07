@@ -15,7 +15,8 @@ import (
 	"github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"       // 选股核心模块
 	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
-	"github.com/injoyai/tdx"                      // 通达信SDK
+	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/tdx" // 通达信SDK
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
 	"xorm.io/xorm"
@@ -27,15 +28,12 @@ import (
 
 // ScreenService - 选股服务，管理买点历史、卖点判定和 WebSocket 推送
 type ScreenService struct {
-	DB           *xorms.Engine         //数据库引擎
-	LookbackDays int                   //历史交割单天数
-	Interval     time.Duration         //间隔时间
-	Goroutines   int                   //协程数量
-	Codes        []string              //计算的代码
-	Strategies   []StrategyDef         //可切换策略列表
-	core.Buyer                         //买入策略(所有策略的Or联合体,扫描用)
-	core.Seller                        //卖出策略
-	Tags         map[string]core.Buyer //辅助标签(板块/市值等)
+	DB           *xorms.Engine //数据库引擎
+	LookbackDays int           //历史交割单天数
+	Interval     time.Duration //间隔时间
+	Goroutines   int           //协程数量
+	Codes        []string      //计算的代码
+	Strategies   []Strategy    //可切换策略列表
 
 	mu                sync.RWMutex
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
@@ -287,12 +285,15 @@ func (this *ScreenService) Run() {
 				this.mu.RLock()
 				ks := this.realtimeDayKlines[t.Code]
 				this.mu.RUnlock()
-				//实时计算卖点
-				if s := core.GetSell(this.Seller, ks, b, nil); s != nil {
-					sells = append(sells, s)
-					//更新到数据库
-					_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t.Sell(s))
-					logs.PrintErr(err)
+				//实时计算卖点(按买入时命中的策略选择卖出条件)
+				seller := this.sellerFor(t.Strategies)
+				if seller != nil {
+					if s := core.GetSell(seller, ks, b, nil); s != nil {
+						sells = append(sells, s)
+						//更新到数据库
+						_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t.Sell(s))
+						logs.PrintErr(err)
+					}
 				}
 			}
 
@@ -319,11 +320,12 @@ func (this *ScreenService) Run() {
 // realtimeBuys 实时计算的买点
 func (this *ScreenService) realtimeBuys() []*core.Buy {
 	bs := []*core.Buy(nil)
+	buyer := this.combinedBuyer()
 	for _, code := range this.Codes {
 		this.mu.RLock()
 		ks := this.realtimeDayKlines[code]
 		this.mu.RUnlock()
-		if this.Buyer.Buy(code, ks) {
+		if buyer.Buy(code, ks) {
 			k := ks[len(ks)-1]
 			bs = append(bs, &core.Buy{
 				Code:  code,
@@ -333,6 +335,29 @@ func (this *ScreenService) realtimeBuys() []*core.Buy {
 		}
 	}
 	return bs
+}
+
+// combinedBuyer 联合所有策略的买入条件(Or),用于扫描
+func (this *ScreenService) combinedBuyer() core.Buyer {
+	union := make([]core.Buyer, 0, len(this.Strategies))
+	for _, st := range this.Strategies {
+		if st.Buyer != nil {
+			union = append(union, buy.Strategy(st.Name, st.Buyer))
+		}
+	}
+	return buy.Strategy("全部", buy.Or(union))
+}
+
+// sellerFor 根据命中的策略 key 找到对应的卖出策略(取第一个命中的)
+func (this *ScreenService) sellerFor(keys []string) core.Seller {
+	for _, key := range keys {
+		for _, st := range this.Strategies {
+			if st.Key == key && st.Seller != nil {
+				return st.Seller
+			}
+		}
+	}
+	return nil
 }
 
 // evalStrategies 用 Strategies 中的策略对 ks 进行判断,返回命中的 key 列表
@@ -353,13 +378,13 @@ func (this *ScreenService) evalStrategies(code string, ks extend.Klines) []strin
 }
 
 // findStrategy 按 key 查找策略
-func (this *ScreenService) findStrategy(key string) (StrategyDef, bool) {
+func (this *ScreenService) findStrategy(key string) (Strategy, bool) {
 	for _, st := range this.Strategies {
 		if st.Key == key {
 			return st, true
 		}
 	}
-	return StrategyDef{}, false
+	return Strategy{}, false
 }
 
 // Diagnose 诊断指定股票在指定策略下的匹配情况
@@ -368,9 +393,10 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 
 	//选择策略
 	var buyer core.Buyer
+	var fixedSeller core.Seller //特定策略时直接使用; 全部策略时为 nil,按买点动态匹配
 	var strategyName string
 	if strategyKey == "" || strategyKey == "all" {
-		buyer = s.Buyer
+		buyer = s.combinedBuyer()
 		strategyName = "全部策略"
 	} else {
 		st, ok := s.findStrategy(strategyKey)
@@ -378,6 +404,7 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 			return nil, fmt.Errorf("策略不存在: %s", strategyKey)
 		}
 		buyer = st.Buyer
+		fixedSeller = st.Seller
 		strategyName = st.Name
 	}
 
@@ -422,11 +449,29 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	}
 	sellPoints := []sellPoint(nil)
 	for i, b := range buyPoints {
-		s := core.GetSell(s.Seller, ks, *b, nil)
-		if s != nil {
+		var sel *core.Sell
+		if fixedSeller != nil {
+			//特定策略: 使用该策略的卖出条件
+			sel = core.GetSell(fixedSeller, ks, *b, nil)
+		} else {
+			//全部策略: 按买点命中的策略动态选择卖出条件
+			buyIdx := -1
+			for j := range ks {
+				if ks[j].Time.Equal(b.Time) {
+					buyIdx = j
+					break
+				}
+			}
+			if buyIdx >= 0 {
+				if seller := s.sellerFor(s.evalStrategies(b.Code, ks[:buyIdx+1])); seller != nil {
+					sel = core.GetSell(seller, ks, *b, nil)
+				}
+			}
+		}
+		if sel != nil {
 			//找到卖出K线在 ks 中的索引
 			for j := range ks {
-				if ks[j].Time.Equal(s.Time) {
+				if ks[j].Time.Equal(sel.Time) {
 					sellPoints = append(sellPoints, sellPoint{BuyIdx: i, SellIdx: j})
 					break
 				}
@@ -481,18 +526,19 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	}, nil
 }
 
-// evalTags 用 Tags 中的买点策略对 ks 进行判断,返回命中的 key
+// evalTags 用所有策略的 Tags 对 ks 进行判断,返回命中的标签(去重)
 func (this *ScreenService) evalTags(code string, ks extend.Klines) []string {
-	if len(this.Tags) == 0 {
-		return nil
-	}
+	seen := map[string]bool{}
 	tags := []string(nil)
-	for name, b := range this.Tags {
-		if b == nil {
-			continue
-		}
-		if b.Buy(code, ks) {
-			tags = append(tags, name)
+	for _, st := range this.Strategies {
+		for name, b := range st.Tags {
+			if b == nil || seen[name] {
+				continue
+			}
+			if b.Buy(code, ks) {
+				seen[name] = true
+				tags = append(tags, name)
+			}
 		}
 	}
 	return tags
@@ -511,12 +557,6 @@ func (this *ScreenService) Init() error {
 	}
 	if len(this.Codes) == 0 {
 		this.Codes = common.GetAllCodes()
-	}
-	if this.Buyer == nil {
-		this.Buyer = common.MACDBuyer
-	}
-	if this.Seller == nil {
-		this.Seller = common.MACDSeller
 	}
 
 	if this.historyDayKlines == nil {
@@ -618,7 +658,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
 			b.Flush()
 
-			bs := core.GetBuys(this.Buyer, code, ks, this.LookbackDays)
+			bs := core.GetBuys(this.combinedBuyer(), code, ks, this.LookbackDays)
 			if len(bs) == 0 {
 				return
 			}
@@ -656,15 +696,20 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 						break
 					}
 				}
+				matched := this.evalStrategies(code, hisKs)
 				t := &Trade{
 					Code:       code,
 					Name:       common.Manage.Codes.GetName(code),
 					BuyTime:    b.Time.Format(time.DateTime),
 					BuyPrice:   b.Price.Float64(),
-					Strategies: this.evalStrategies(code, hisKs),
+					Strategies: matched,
 					Tags:       this.evalTags(code, hisKs),
 				}
-				s := core.GetSell(this.Seller, ks, *b, mmks)
+				//按命中的策略选择卖出条件
+				var s *core.Sell
+				if seller := this.sellerFor(matched); seller != nil {
+					s = core.GetSell(seller, ks, *b, mmks)
+				}
 				mu.Lock()
 				ts = append(ts, t.Sell(s))
 				mu.Unlock()

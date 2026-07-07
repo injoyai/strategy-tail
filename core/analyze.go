@@ -52,14 +52,14 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	}
 	fmt.Printf("\n年度回测结果:\n")
 	// 第一行：基础指标
-	fmt.Printf("%5s \t%4s \t%6s \t%6s \t%10s \t%10s \t%10s \t%7s \t%10s \t%10s \t%8s\n",
+	fmt.Printf("%5s \t%4s \t%6s \t%6s \t%10s \t%8s \t%8s \t%7s \t%8s \t%8s \t%8s\n",
 		"年份", "交易", "胜率", "总盈亏", "平均收益", "最大收益", "最大亏损", "盈亏比", "最大回撤", "最低本金", "年化")
 	for _, r := range results {
 		profitFactor := fmt.Sprintf("%.2f", r.ProfitFactor)
 		if math.IsInf(r.ProfitFactor, 1) {
 			profitFactor = "∞"
 		}
-		fmt.Printf("%6d \t%8d \t%8s \t%12.2f \t%10s \t%10s \t%10s \t%8s \t%12.2f \t%12.2f \t%10s\n",
+		fmt.Printf("%6d \t%10d \t%8s \t%10.2f \t%10s \t%10s \t%10s \t%8s \t%12.2f \t%12.2f \t%10s\n",
 			r.Year,
 			r.TotalTrades,
 			formatPercent(r.WinRate),
@@ -232,12 +232,12 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 		Year:             year,
 		TotalTrades:      totalTrades,
 		WinRate:          stats.WinRate,
-		TotalProfit:      totalProfit * 100,
+		TotalProfit:      totalProfit,
 		AvgProfit:        stats.AvgProfit,
 		MaxProfit:        stats.MaxProfit,
 		MaxLoss:          stats.MaxLoss,
 		ProfitFactor:     stats.ProfitFactor,
-		MaxDrawdown:      maxDrawdown * 100,
+		MaxDrawdown:      maxDrawdown,
 		RequiredCapital:  requiredCapital,
 		AnnualReturn:     annualReturn,
 		Sharpe:           sharpe,
@@ -269,7 +269,7 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 			v.Code,
 			v.BuyTime.Format(time.DateTime), v.BuyPrice.Float64(),
 			v.SellTime.Format(time.DateTime), v.SellPrice.Float64(),
-			profit * 100,
+			profit,
 			profitRate,
 			v.HoldingDays(),
 		})

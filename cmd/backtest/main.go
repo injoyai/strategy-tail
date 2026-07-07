@@ -3,6 +3,8 @@ package main
 import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
 )
 
 func main() {
@@ -18,18 +20,38 @@ func main() {
 	years = []int{2026}
 
 	core.Backtest{
-		Buyer:        common.MACDBuyer,
-		Seller:       common.MACDSeller,
+		Buyer:        BollBuy,
+		Seller:       BollSell,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
 		Years:        years,
 		GetDayKlines: common.Pull.DayKlines,
 		GetMinKlines: common.Pull.MinKlines,
-		Benchmark:    benchmark,
 
-		// 成本和仓位从 config.yaml 读取
-		Cost:     cost,
-		Position: pos,
+		Benchmark: benchmark,
+		Cost:      cost,
+		Position:  pos,
 	}.Run()
 
 }
+
+var (
+	TestBuy = buy.A布林下轨RSI超卖{}
+
+	TestSell = sell.Or{
+		sell.MACD反转{Lookback: 10},
+	}
+
+	BaseBuyer = buy.And{
+		buy.A价格{Min: 2, Max: 120},
+		buy.A过滤涨停{},
+	}
+
+	BollBuy = buy.And{
+		BaseBuyer,
+		buy.A布林下轨{Period: 20, StdTimes: 2},
+		buy.RSI{Period: 14, Threshold: 30},
+		buy.MAUp{Period: 60},
+	}
+	BollSell = sell.A回到布林中轨{Period: 20}
+)
