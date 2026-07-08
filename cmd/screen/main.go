@@ -14,8 +14,8 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.0.1")
-	logs.Info("详情:", "多策略.")
+	logs.Info("版本:", "v1.1.0")
+	logs.Info("详情:", "修改MACD卖出策略")
 }
 
 func main() {
