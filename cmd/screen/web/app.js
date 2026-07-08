@@ -293,11 +293,11 @@ function renderSellResults() {
 // 历史面板：筛选 + 统计 + 表格
 // =========================================================
 
-// 获取当前策略定义的标签(策略无 Tags 定义时返回空)
+// 获取当前策略定义的标签 + "无标签"选项
 function getAllTags() {
   const st = strategies.find(s => s.key === currentStrategy);
-  if (!st || !st.tags || st.tags.length === 0) return [];
-  return st.tags.slice().sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  const defined = (st && st.tags && st.tags.length > 0) ? st.tags.slice().sort((a, b) => a.localeCompare(b, 'zh-CN')) : [];
+  return [...defined, NO_TAG_KEY];
 }
 
 // 渲染标签筛选按钮

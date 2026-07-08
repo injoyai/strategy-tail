@@ -19,10 +19,10 @@ func main() {
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2022, 2023, 2024, 2025, 2026}
 	years = []int{2024, 2025, 2026}
-	years = []int{2026}
+	//years = []int{2026}
 
 	core.Backtest{
-		Buyer:        TestBuy,
+		Buyer:        common.MACDBuyer,
 		Seller:       TestSell,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
@@ -45,7 +45,13 @@ var (
 		//buy.MACD反转{MinLookback: 4},
 	}
 
-	TestSell = BollSell
+	TestSell = sell.Or{
+		common.MACDSeller,
+		sell.And{
+			sell.A盈利(0.005),
+			sell.MACD反转{Lookback: 2},
+		},
+	}
 
 	BaseBuyer = buy.And{
 		buy.A价格{Min: 2, Max: 120},

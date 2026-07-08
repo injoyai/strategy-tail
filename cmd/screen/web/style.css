@@ -600,6 +600,16 @@ body {
   border: 1px solid var(--border-color);
 }
 
+/* 标签列固定宽度,避免随标签数量变化 */
+#buyBody .stock-table th:nth-child(5),
+#buyBody .stock-table td:nth-child(5),
+#historyBody .stock-table th:nth-child(8),
+#historyBody .stock-table td:nth-child(8) {
+  width: 160px;
+  max-width: 160px;
+  white-space: normal;
+}
+
 /* 状态标签 */
 .tag-sold {
   display: inline-block;
@@ -789,7 +799,7 @@ body {
 
 #diagChart {
   width: 100%;
-  height: 520px;
+  height: 420px;
   flex-shrink: 0;
 }
 

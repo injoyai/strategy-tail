@@ -35,7 +35,13 @@ var (
 	}
 
 	MACDSeller = sell.Or{
+		//无盈利等第二次上升浪
 		sell.MACD反转{Lookback: 10},
+		//有盈利则在反转的时候卖出
+		sell.And{
+			sell.A盈利(0.01),
+			sell.MACD反转{Lookback: 2},
+		},
 	}
 
 	// MACDBaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化

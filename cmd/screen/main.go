@@ -8,7 +8,6 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
@@ -71,7 +70,7 @@ var (
 		},
 		{
 			Key:    "macd-base",
-			Name:   "MACD基础",
+			Name:   "MACD基础(测试)",
 			Buyer:  common.MACDBaseBuyer,
 			Seller: common.MACDSeller,
 			Tags: map[string]core.Buyer{
@@ -82,15 +81,15 @@ var (
 				"涨停^":  buy.A涨停{},
 			},
 		},
-		{
-			Key:    "boll-rsi",
-			Name:   "布林+RSI",
-			Buyer:  BollBuyer,
-			Seller: sell.A回到布林中轨{Period: 20},
-			Tags: map[string]core.Buyer{
-				"MACD": buy.MACD反转{MinLookback: 4},
-			},
-		},
+		//{
+		//	Key:    "boll-rsi",
+		//	Name:   "布林+RSI(测试)",
+		//	Buyer:  BollBuyer,
+		//	Seller: sell.A回到布林中轨{Period: 20},
+		//	Tags: map[string]core.Buyer{
+		//		"MACD": buy.MACD反转{MinLookback: 4},
+		//	},
+		//},
 	}
 
 	BollBuyer = buy.And{
