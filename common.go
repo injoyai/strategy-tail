@@ -91,7 +91,7 @@ func init() {
 	})
 	logs.PanicErr(err)
 
-	Pull.Run(Manage)
+	Pull.Run(Manage, cfg.GetString("pull.spec", "0 0 22 * * *"))
 
 }
 

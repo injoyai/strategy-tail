@@ -4,6 +4,7 @@ pull:
     - minute
 
   goroutines: 10
+  spec: "0 15 15 * * *"
 
 screen:
   port: 9090

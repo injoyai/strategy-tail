@@ -66,10 +66,10 @@ type PullKline struct {
 	Types   []string
 }
 
-func (this *PullKline) Run(m *tdx.Manage) error {
+func (this *PullKline) Run(m *tdx.Manage, spec string) error {
 	this.Update(m, true)
 	cr := cron.New(cron.WithSeconds())
-	_, err := cr.AddFunc("0 15 15 * * *", func() { this.Update(m) })
+	_, err := cr.AddFunc(spec, func() { this.Update(m) })
 	return err
 }
 

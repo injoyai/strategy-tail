@@ -34,3 +34,33 @@ func (s Or) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	}
 	return false
 }
+
+type And []core.Seller
+
+func (s And) Name() string {
+	names := make([]string, 0, len(s))
+	for _, v := range s {
+		if v == nil {
+			continue
+		}
+		names = append(names, v.Name())
+	}
+	if len(names) == 0 {
+		return "Null"
+	}
+	return "[" + strings.Join(names, " & ") + "]"
+}
+
+func (s And) Sell(code string, dks extend.Klines, buy core.Buy) bool {
+	sell := false
+	for _, v := range s {
+		if v == nil {
+			continue
+		}
+		sell = true
+		if !v.Sell(code, dks, buy) {
+			return false
+		}
+	}
+	return sell
+}
