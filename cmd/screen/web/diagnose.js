@@ -184,8 +184,16 @@ function renderChart(data) {
   }));
   volumeSeries.setData(volumeData);
 
-  // 标注 markers — 买卖点用小三角,策略标注用小圆点
-  const markers = (data.annotations || []).map(a => {
+  // 标注 markers - 买卖点用独立 series 增加与K线的距离,策略标注用小圆点
+  const klineMap = new Map();
+  for (const k of (data.klines || [])) {
+    klineMap.set(k.time, k);
+  }
+
+  const buySellItems = [];
+  const otherMarkers = [];
+
+  for (const a of (data.annotations || [])) {
     const label = a.label || '';
     const color = a.color || '#3b82f6';
     const isBuy = label.includes('买');
@@ -193,19 +201,45 @@ function renderChart(data) {
     // 将 ISO 时间统一为 YYYY-MM-DD,与K线数据对齐
     let t = a.time || '';
     if (typeof t === 'string' && t.includes('T')) t = t.split('T')[0];
-    return {
-      time: t,
-      position: isBuy ? 'belowBar' : 'aboveBar',
-      color: color,
-      shape: isBuy ? 'arrowUp' : (isSell ? 'arrowDown' : 'circle'),
-      size: 1,
-      text: label,
-    };
-  }).filter(a => a.time); // 过滤掉无时间的标注
+    if (!t) continue;
+
+    if (isBuy || isSell) {
+      // 买卖点:在K线 low/high 外侧 1.5% 处放置标记,增加与K线的距离
+      const k = klineMap.get(t);
+      const basePrice = k ? (isBuy ? k.low : k.high) : a.price;
+      if (!basePrice || basePrice <= 0) continue;
+      buySellItems.push({
+        time: t,
+        marker: {
+          position: isBuy ? 'belowBar' : 'aboveBar',
+          color: isBuy ? '#ff6b35' : '#00d4ff',
+          shape: isBuy ? 'arrowUp' : 'arrowDown',
+          size: 2,
+          text: label,
+        },
+        value: isBuy ? basePrice * 0.97 : basePrice * 1.03,
+      });
+    } else {
+      otherMarkers.push({
+        time: t,
+        position: 'aboveBar',
+        color: color,
+        shape: 'circle',
+        size: 1,
+        text: label,
+      });
+    }
+  }
 
   // 去重: 同一天同一类型的标注只保留一个
   const seen = new Set();
-  const dedupedMarkers = markers.filter(m => {
+  const dedupedBuySell = buySellItems.filter(item => {
+    const key = item.time + '|' + item.marker.shape;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const dedupedOther = otherMarkers.filter(m => {
     const key = m.time + '|' + m.shape;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -213,17 +247,34 @@ function renderChart(data) {
   });
 
   // 按时间排序, lightweight-charts 要求 markers 时间有序
-  dedupedMarkers.sort((a, b) => {
-    if (a.time < b.time) return -1;
-    if (a.time > b.time) return 1;
-    return 0;
-  });
+  const byTime = (a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
+  const buySellMarkers = dedupedBuySell.map(i => ({ time: i.time, ...i.marker }));
+  const markerData = dedupedBuySell.map(i => ({ time: i.time, value: i.value }));
+  buySellMarkers.sort(byTime);
+  markerData.sort(byTime);
+  dedupedOther.sort(byTime);
 
-  if (dedupedMarkers.length > 0) {
+  // 买卖点标记用独立 line series,离K线有一定距离
+  if (buySellMarkers.length > 0) {
     try {
-      candleSeries.setMarkers(dedupedMarkers);
+      const markerSeries = chart.addLineSeries({
+        lineVisible: false,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      markerSeries.setData(markerData);
+      markerSeries.setMarkers(buySellMarkers);
     } catch (e) {
-      console.warn('设置标注失败', e);
+      console.warn('设置买卖点标注失败', e);
+    }
+  }
+
+  // 策略标注在 candleSeries 上
+  if (dedupedOther.length > 0) {
+    try {
+      candleSeries.setMarkers(dedupedOther);
+    } catch (e) {
+      console.warn('设置策略标注失败', e);
     }
   }
 

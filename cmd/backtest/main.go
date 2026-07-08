@@ -11,7 +11,6 @@ func main() {
 
 	//获取所有代码（与原版一致）
 	codes := common.GetAllCodes()
-	//codes = []string{"sh600887"}
 
 	// 从 config.yaml 加载成本和仓位配置
 	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
@@ -22,7 +21,7 @@ func main() {
 	//years = []int{2026}
 
 	core.Backtest{
-		Buyer:        common.MACDBuyer,
+		Buyer:        TestBuy,
 		Seller:       TestSell,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
@@ -41,16 +40,22 @@ var (
 	TestBuy = buy.And{
 		//common.MACDBaseBuyer,
 		//buy.Not(buy.A近),
-		BollBuy,
+		//BollBuy,
 		//buy.MACD反转{MinLookback: 4},
+
+		buy.A通达信倍量{
+			Ratio:   2.5,
+			UseMore: true,
+		},
 	}
 
 	TestSell = sell.Or{
 		common.MACDSeller,
-		sell.And{
-			sell.A盈利(0.005),
-			sell.MACD反转{Lookback: 2},
-		},
+		//sell.And{
+		//	sell.A盈利(0.005),
+		//	sell.MACD反转{Lookback: 2},
+		//},
+		//BollSell,
 	}
 
 	BaseBuyer = buy.And{
