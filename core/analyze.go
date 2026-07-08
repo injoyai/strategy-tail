@@ -59,7 +59,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 		if math.IsInf(r.ProfitFactor, 1) {
 			profitFactor = "∞"
 		}
-		fmt.Printf("%6d \t%10d \t%9s \t%10.2f \t%12s \t%10s \t%10s \t%8s \t%12.2f \t%12.2f \t%10s\n",
+		fmt.Printf("%6d \t%10d \t%9s \t%10.2f \t%12s \t%10s \t%12s \t%10s \t%12.2f \t%12.2f \t%10s\n",
 			r.Year,
 			r.TotalTrades,
 			formatPercent(r.WinRate),
@@ -78,7 +78,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	fmt.Printf("%5s \t%8s \t%8s \t%8s \t%10s \t%8s \t%8s\n",
 		"年份", "Sharpe", "Sortino", "Calmar", "基准收益", "Alpha", "Beta")
 	for _, r := range results {
-		fmt.Printf("%6d \t%8.2f \t%8.2f \t%8.2f \t%10s \t%8s \t%8.2f\n",
+		fmt.Printf("%6d \t%10.2f \t%8.2f \t%8.2f \t%12s \t%8s \t%8.2f\n",
 			r.Year,
 			r.Sharpe,
 			r.Sortino,
@@ -93,7 +93,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	fmt.Printf("%5s \t%8s \t%8s \t%8s \t%8s \t%8s \t%8s \t%8s \t%8s \t%8s\n",
 		"年份", "回撤率%", "回撤天数", "水下深度", "最大连胜", "最大连亏", "持仓天数", "偏度", "峰度", "VaR95")
 	for _, r := range results {
-		fmt.Printf("%6d \t%8.2f \t%8d \t%8.2f \t%8d \t%8d \t%8.1f \t%8.2f \t%8.2f \t%8.2f\n",
+		fmt.Printf("%6d \t%10.2f \t%8d \t%8.2f \t%8d \t%8d \t%8.1f \t%8.2f \t%8.2f \t%8.2f\n",
 			r.Year,
 			r.MaxDrawdownPct,
 			r.DrawdownDuration,
