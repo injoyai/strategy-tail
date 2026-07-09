@@ -3,6 +3,7 @@ package core
 import (
 	"time"
 
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -44,4 +45,58 @@ type ForwardReturnAnalysis struct {
 	GetDayKlines GetDayKlines
 	ForwardDays  []int // 为空时使用 DefaultForwardDays()
 	Goroutines   int
+}
+
+// Scan 对单只股票执行信号扫描,返回每次买入信号的未来收益记录。
+// his 为历史K线(当年之前),dks 为当年日线。
+// ls 构建方式与 Backtest.Do() 一致,确保信号检测结果相同。
+func (this ForwardReturnAnalysis) Scan(code string, his, dks extend.Klines) []ForwardReturn {
+	if len(dks) == 0 {
+		return nil
+	}
+
+	days := this.ForwardDays
+	if len(days) == 0 {
+		days = DefaultForwardDays()
+	}
+
+	joinKlines := func(base extend.Klines, extra ...*extend.Kline) extend.Klines {
+		ls := make(extend.Klines, 0, len(base)+len(extra))
+		ls = append(ls, base...)
+		ls = append(ls, extra...)
+		return ls
+	}
+
+	result := []ForwardReturn(nil)
+	for i := 0; i < len(dks); i++ {
+		today := dks[i]
+		_his := joinKlines(his, dks[:i]...)
+		ls := joinKlines(_his, today)
+
+		if !this.Buy(code, ls) {
+			continue
+		}
+
+		buyPrice := today.Close
+		returns := make(map[int]float64, len(days))
+		for _, n := range days {
+			idx := i + n
+			if idx < len(dks) {
+				futureClose := dks[idx].Close
+				bp := buyPrice.Float64()
+				if bp > 0 {
+					returns[n] = (futureClose.Float64() - bp) / bp * 100
+				}
+			}
+		}
+
+		result = append(result, ForwardReturn{
+			Code:     code,
+			BuyTime:  today.Time,
+			BuyPrice: buyPrice,
+			Returns:  returns,
+		})
+	}
+
+	return result
 }
