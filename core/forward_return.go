@@ -1,9 +1,13 @@
 package core
 
 import (
+	"fmt"
 	"sort"
+	"sync"
 	"time"
 
+	"github.com/injoyai/bar"
+	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
@@ -158,4 +162,102 @@ func summarizeOne(days int, values []float64) ForwardReturnSummary {
 		MaxReturn:    maxVal,
 		MinReturn:    minVal,
 	}
+}
+
+// Run 执行全部分析:并发扫描买入信号 -> 汇总统计 -> 控制台输出 -> HTML报告。
+func (this ForwardReturnAnalysis) Run() {
+	days := this.ForwardDays
+	if len(days) == 0 {
+		days = DefaultForwardDays()
+	}
+
+	buyerName := "未知策略"
+	if this.Buyer != nil {
+		buyerName = this.Buyer.Name()
+	}
+	logs.Info("买入信号未来N天收益分析: " + buyerName)
+
+	allReturns := []ForwardReturn(nil)
+	for _, year := range this.Years {
+		yearReturns := this.scanYear(year)
+		allReturns = append(allReturns, yearReturns...)
+	}
+
+	if len(allReturns) == 0 {
+		logs.Warn("未检测到任何买入信号")
+		return
+	}
+
+	logs.Infof("共检测到 %d 个买入信号", len(allReturns))
+
+	summaries := SummarizeForwardReturns(allReturns, days)
+	PrintForwardReturnSummary(buyerName, summaries)
+	exportForwardReturnHTML(buyerName, summaries, allReturns, days)
+}
+
+// scanYear 扫描单个年份的所有股票买入信号。
+func (this ForwardReturnAnalysis) scanYear(year int) []ForwardReturn {
+	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
+	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
+
+	goroutines := this.Goroutines
+	if goroutines <= 0 {
+		goroutines = 10
+	}
+
+	result := []ForwardReturn(nil)
+	mu := sync.Mutex{}
+	b := bar.NewCoroutine(
+		len(this.Codes),
+		goroutines,
+		bar.WithPrefix(fmt.Sprintf("[%d][%s]", year, "xx000000")),
+	)
+	defer b.Close()
+
+	for _, code := range this.Codes {
+		b.Go(func() {
+			b.SetPrefix(fmt.Sprintf("[%d][%s]", year, code))
+
+			dks, err := this.GetDayKlines(code, hisStart, end)
+			if err != nil {
+				b.Logf("[错误] %s", err)
+				b.Flush()
+				return
+			}
+
+			his := []*extend.Kline(nil)
+			for i, v := range dks {
+				if v.Time.Before(start) {
+					his = append(his, v)
+				} else {
+					dks = dks[i:]
+					break
+				}
+			}
+
+			frs := this.Scan(code, his, dks)
+			mu.Lock()
+			defer mu.Unlock()
+			result = append(result, frs...)
+		})
+	}
+	b.Wait()
+	return result
+}
+
+// PrintForwardReturnSummary 打印未来N天收益汇总到控制台。
+func PrintForwardReturnSummary(buyerName string, summaries []ForwardReturnSummary) {
+	fmt.Printf("\n买入信号未来N天收益分析: %s\n\n", buyerName)
+	fmt.Printf("%5s \t%8s \t%10s \t%10s \t%8s \t%10s \t%10s\n",
+		"N天", "信号数", "平均收益", "中位数", "胜率", "最大收益", "最大亏损")
+	for _, s := range summaries {
+		fmt.Printf("%6d \t%10d \t%12.2f%% \t%12.2f%% \t%9.1f%% \t%12.2f%% \t%12.2f%%\n",
+			s.Days, s.Count, s.AvgReturn, s.MedianReturn, s.WinRate, s.MaxReturn, s.MinReturn)
+	}
+}
+
+// exportForwardReturnHTML 生成HTML报告(Task 5实现)。
+func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary, allReturns []ForwardReturn, days []int) {
+	// Task 5 将实现HTML报告生成
 }

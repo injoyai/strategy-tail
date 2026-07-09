@@ -132,3 +132,12 @@ func TestSummarizeForwardReturnsEmpty(t *testing.T) {
 		}
 	}
 }
+
+func TestPrintForwardReturnSummary(t *testing.T) {
+	summaries := []core.ForwardReturnSummary{
+		{Days: 1, Count: 100, AvgReturn: 0.5, MedianReturn: 0.2, WinRate: 52.0, MaxReturn: 9.8, MinReturn: -8.2},
+		{Days: 3, Count: 98, AvgReturn: 1.2, MedianReturn: 0.5, WinRate: 55.0, MaxReturn: 18.5, MinReturn: -12.3},
+	}
+	// 只验证不 panic
+	core.PrintForwardReturnSummary("测试策略", summaries)
+}
