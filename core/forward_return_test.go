@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -62,5 +63,72 @@ func TestScanForwardReturns(t *testing.T) {
 	}
 	if _, ok := r4.Returns[3]; ok {
 		t.Fatal("last signal should not have N=3 return (out of range)")
+	}
+}
+
+func TestSummarizeForwardReturns(t *testing.T) {
+	returns := []core.ForwardReturn{
+		{Returns: map[int]float64{1: 10.0, 3: 20.0}},
+		{Returns: map[int]float64{1: -5.0, 3: 30.0}},
+		{Returns: map[int]float64{1: 0.0, 3: -10.0}},
+	}
+
+	summaries := core.SummarizeForwardReturns(returns, []int{1, 3})
+
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+
+	// N=1: values = [10, -5, 0], avg = 5/3 ≈ 1.667, win=1, winRate=33.33%
+	s1 := summaries[0]
+	if s1.Days != 1 {
+		t.Fatalf("days: expected 1, got %d", s1.Days)
+	}
+	if s1.Count != 3 {
+		t.Fatalf("count: expected 3, got %d", s1.Count)
+	}
+	if math.Abs(s1.AvgReturn-1.6667) > 0.01 {
+		t.Fatalf("avgReturn: expected ~1.6667, got %v", s1.AvgReturn)
+	}
+	if math.Abs(s1.WinRate-33.33) > 0.1 {
+		t.Fatalf("winRate: expected ~33.33, got %v", s1.WinRate)
+	}
+	if s1.MaxReturn != 10.0 {
+		t.Fatalf("maxReturn: expected 10.0, got %v", s1.MaxReturn)
+	}
+	if s1.MinReturn != -5.0 {
+		t.Fatalf("minReturn: expected -5.0, got %v", s1.MinReturn)
+	}
+	// median of [10, -5, 0] sorted = [-5, 0, 10], median = 0
+	if s1.MedianReturn != 0.0 {
+		t.Fatalf("medianReturn: expected 0.0, got %v", s1.MedianReturn)
+	}
+
+	// N=3: values = [20, 30, -10], avg = 40/3 ≈ 13.33, win=2, winRate=66.67%
+	s3 := summaries[1]
+	if s3.Days != 3 {
+		t.Fatalf("days: expected 3, got %d", s3.Days)
+	}
+	if math.Abs(s3.AvgReturn-13.333) > 0.01 {
+		t.Fatalf("avgReturn: expected ~13.333, got %v", s3.AvgReturn)
+	}
+	if math.Abs(s3.WinRate-66.67) > 0.1 {
+		t.Fatalf("winRate: expected ~66.67, got %v", s3.WinRate)
+	}
+	// median of [20, 30, -10] sorted = [-10, 20, 30], median = 20
+	if s3.MedianReturn != 20.0 {
+		t.Fatalf("medianReturn: expected 20.0, got %v", s3.MedianReturn)
+	}
+}
+
+func TestSummarizeForwardReturnsEmpty(t *testing.T) {
+	summaries := core.SummarizeForwardReturns(nil, []int{1, 3})
+	if len(summaries) != 2 {
+		t.Fatalf("expected 2 summaries, got %d", len(summaries))
+	}
+	for _, s := range summaries {
+		if s.Count != 0 {
+			t.Fatalf("expected count 0, got %d", s.Count)
+		}
 	}
 }

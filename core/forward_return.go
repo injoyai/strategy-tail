@@ -1,6 +1,7 @@
 package core
 
 import (
+	"sort"
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
@@ -99,4 +100,62 @@ func (this ForwardReturnAnalysis) Scan(code string, his, dks extend.Klines) []Fo
 	}
 
 	return result
+}
+
+// SummarizeForwardReturns 按N天汇总所有信号的未来收益统计。
+func SummarizeForwardReturns(returns []ForwardReturn, days []int) []ForwardReturnSummary {
+	summaries := make([]ForwardReturnSummary, 0, len(days))
+	for _, n := range days {
+		values := []float64(nil)
+		for _, fr := range returns {
+			if r, ok := fr.Returns[n]; ok {
+				values = append(values, r)
+			}
+		}
+		summaries = append(summaries, summarizeOne(n, values))
+	}
+	return summaries
+}
+
+// summarizeOne 计算单个N天的收益统计。
+func summarizeOne(days int, values []float64) ForwardReturnSummary {
+	if len(values) == 0 {
+		return ForwardReturnSummary{Days: days, Count: 0}
+	}
+
+	sum := 0.0
+	win := 0
+	maxVal := values[0]
+	minVal := values[0]
+	for _, v := range values {
+		sum += v
+		if v > 0 {
+			win++
+		}
+		if v > maxVal {
+			maxVal = v
+		}
+		if v < minVal {
+			minVal = v
+		}
+	}
+
+	// 中位数
+	sorted := make([]float64, len(values))
+	copy(sorted, values)
+	sort.Float64s(sorted)
+	median := sorted[len(sorted)/2]
+	if len(sorted)%2 == 0 {
+		median = (sorted[len(sorted)/2-1] + sorted[len(sorted)/2]) / 2
+	}
+
+	return ForwardReturnSummary{
+		Days:         days,
+		Count:        len(values),
+		AvgReturn:    sum / float64(len(values)),
+		MedianReturn: median,
+		WinRate:      float64(win) / float64(len(values)) * 100,
+		MaxReturn:    maxVal,
+		MinReturn:    minVal,
+	}
 }
