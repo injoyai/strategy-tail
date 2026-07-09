@@ -8,3 +8,4 @@ output/*
 *bin
 .*
 *_report.html
+*.go.*

@@ -160,9 +160,12 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	cost := this.Cost
 	pos := this.Position
 
-	// 分钟线按日期分组
+	// 分钟线按日期分组（跳过Close=0的无效数据，通常是开盘集合竞价前的空记录）
 	m := map[string]protocol.Klines{}
 	for _, mk := range mks {
+		if mk.Close == 0 {
+			continue
+		}
 		key := mk.Time.Format(time.DateOnly)
 		m[key] = append(m[key], mk)
 	}

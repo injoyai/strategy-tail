@@ -15,8 +15,7 @@ import (
 // UseMore 可选择是否把公式中定义但未参与 XG 的额外条件加入过滤。
 // 适合需要完整通达信"倍量"形态的场景，配合 buy.Strategy 包装可命名识别。
 type A通达信倍量 struct {
-	Ratio   float64
-	UseMore bool
+	Ratio float64
 }
 
 func (b A通达信倍量) Name() string {
@@ -46,10 +45,6 @@ func (b A通达信倍量) Buy(code string, dks extend.Klines) bool {
 
 	if !(TJ1 && TJ2 && TJ3 && TJ4) {
 		return false
-	}
-
-	if !b.UseMore {
-		return true
 	}
 
 	if countDoubleVolume(dks, 60, ratio) <= 1 {

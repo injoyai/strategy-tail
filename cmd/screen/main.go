@@ -8,6 +8,7 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
@@ -60,42 +61,37 @@ var (
 			Name:   "MACD精选",
 			Buyer:  common.MACDBuyer,
 			Seller: common.MACDSeller,
-			Tags: map[string]core.Buyer{
-				"科创+":  buy.A科创板{},
-				"创业+":  buy.A创业板{},
-				"北证^":  buy.A北证板{},
-				"中市值+": buy.A流通市值{Min: 600, Max: 800},
-				"涨停^":  buy.A涨停{},
-			},
+			Tags:   MACDTags,
 		},
 		{
 			Key:    "macd-base",
 			Name:   "MACD基础(测试)",
 			Buyer:  common.MACDBaseBuyer,
 			Seller: common.MACDSeller,
+			Tags:   MACDTags,
+		},
+		{
+			Key:  "boll-rsi",
+			Name: "布林+RSI(测试)",
+			Buyer: buy.And{
+				common.BaseBuyer,
+				buy.A布林下轨{Period: 20, StdTimes: 2},
+				buy.RSI{Period: 14, Threshold: 30},
+				buy.MAUp{Period: 60},
+			},
+			Seller: sell.A回到布林中轨{Period: 20},
 			Tags: map[string]core.Buyer{
-				"科创+":  buy.A科创板{},
-				"创业+":  buy.A创业板{},
-				"北证^":  buy.A北证板{},
-				"中市值+": buy.A流通市值{Min: 600, Max: 800},
-				"涨停^":  buy.A涨停{},
+				"MACD": buy.MACD反转{MinLookback: 4},
 			},
 		},
-		//{
-		//	Key:    "boll-rsi",
-		//	Name:   "布林+RSI(测试)",
-		//	Buyer:  BollBuyer,
-		//	Seller: sell.A回到布林中轨{Period: 20},
-		//	Tags: map[string]core.Buyer{
-		//		"MACD": buy.MACD反转{MinLookback: 4},
-		//	},
-		//},
 	}
 
-	BollBuyer = buy.And{
-		common.BaseBuyer,
-		buy.A布林下轨{Period: 20, StdTimes: 2},
-		buy.RSI{Period: 14, Threshold: 30},
-		buy.MAUp{Period: 60},
+	MACDTags = map[string]core.Buyer{
+		"科创+":  buy.A科创板{},
+		"创业+":  buy.A创业板{},
+		"北证^":  buy.A北证板{},
+		"中市值+": buy.A流通市值{Min: 600, Max: 800},
+		"涨停^":  buy.A涨停{},
+		"倍量^":  buy.A倍量{MinRatio: 1.8, BaseDays: 5},
 	}
 )

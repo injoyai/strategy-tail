@@ -43,18 +43,15 @@ var (
 		//BollBuy,
 		//buy.MACD反转{MinLookback: 4},
 
-		buy.A通达信倍量{
-			Ratio:   2.5,
-			UseMore: true,
-		},
+		buy.A通达信倍量{Ratio: 2.9},
 	}
 
 	TestSell = sell.Or{
 		common.MACDSeller,
-		//sell.And{
-		//	sell.A盈利(0.005),
-		//	sell.MACD反转{Lookback: 2},
-		//},
+		sell.And{
+			sell.A盈利(0.05),
+			sell.MACD反转{Lookback: 2},
+		},
 		//BollSell,
 	}
 
