@@ -15,8 +15,8 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.1.0")
-	logs.Info("详情:", "修改MACD卖出策略")
+	logs.Info("版本:", "v1.2.0")
+	logs.Info("详情:", "修复不会自动更新的问题")
 }
 
 func main() {
@@ -61,14 +61,28 @@ var (
 			Name:   "MACD精选",
 			Buyer:  common.MACDBuyer,
 			Seller: common.MACDSeller,
-			Tags:   MACDTags,
+			Tags: map[string]core.Buyer{
+				"科创+":  buy.A科创板{},
+				"创业+":  buy.A创业板{},
+				"北证^":  buy.A北证板{},
+				"中市值+": buy.A流通市值{Min: 600, Max: 800},
+				"涨停^":  buy.A涨停{},
+				"倍量^":  buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
+			},
 		},
 		{
 			Key:    "macd-base",
 			Name:   "MACD基础(测试)",
 			Buyer:  common.MACDBaseBuyer,
 			Seller: common.MACDSeller,
-			Tags:   MACDTags,
+			Tags: map[string]core.Buyer{
+				"科创+":  buy.A科创板{},
+				"创业+":  buy.A创业板{},
+				"北证^":  buy.A北证板{},
+				"中市值+": buy.A流通市值{Min: 600, Max: 800},
+				"涨停^":  buy.A涨停{},
+				"倍量^":  buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
+			},
 		},
 		{
 			Key:  "boll-rsi",
@@ -76,7 +90,7 @@ var (
 			Buyer: buy.And{
 				common.BaseBuyer,
 				buy.A布林下轨{Period: 20, StdTimes: 2},
-				buy.RSI{Period: 14, Threshold: 30},
+				buy.RSI{Period: 14, Threshold: 20},
 				buy.MAUp{Period: 60},
 			},
 			Seller: sell.A回到布林中轨{Period: 20},
@@ -84,14 +98,5 @@ var (
 				"MACD": buy.MACD反转{MinLookback: 4},
 			},
 		},
-	}
-
-	MACDTags = map[string]core.Buyer{
-		"科创+":  buy.A科创板{},
-		"创业+":  buy.A创业板{},
-		"北证^":  buy.A北证板{},
-		"中市值+": buy.A流通市值{Min: 600, Max: 800},
-		"涨停^":  buy.A涨停{},
-		"倍量^":  buy.A倍量{MinRatio: 1.8, BaseDays: 5},
 	}
 )

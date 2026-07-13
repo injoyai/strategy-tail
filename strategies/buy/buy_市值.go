@@ -6,40 +6,8 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
-func A流通市值小于(f float64) A流通市值范围 {
-	return A流通市值范围{Max: f}
-}
-
-type A流通市值范围 struct {
-	Min float64
-	Max float64
-}
-
-func (b A流通市值范围) Name() string {
-	switch {
-	case b.Min > 0 && b.Max > 0:
-		return fmt.Sprintf("流通市值[%.f,%.f]亿", b.Min, b.Max)
-	case b.Min > 0:
-		return fmt.Sprintf("流通市值[%.f,]亿", b.Min)
-	case b.Max > 0:
-		return fmt.Sprintf("流通市值[,%.f]亿", b.Max)
-	default:
-		return "Null"
-	}
-}
-
-func (b A流通市值范围) Buy(code string, dks extend.Klines) bool {
-	if len(dks) == 0 {
-		return false
-	}
-	last := dks[len(dks)-1]
-	if b.Min > 0 && last.FloatValue().Float64()/1e8 < b.Min {
-		return false
-	}
-	if b.Max > 0 && last.FloatValue().Float64()/1e8 > b.Max {
-		return false
-	}
-	return true
+func A流通市值小于(f float64) A流通市值 {
+	return A流通市值{Max: f}
 }
 
 type A流通市值 struct {

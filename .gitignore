@@ -4,6 +4,9 @@ data/*
 docs/*
 output/*
 *.exe
+*.pdf
+*.csv
+*.xlsx
 *.log
 *bin
 .*

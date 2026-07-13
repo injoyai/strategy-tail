@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -277,7 +278,9 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 
 	buf, err := csv.Export(data)
 	if err == nil {
-		output := filepath.Join("./output/", fmt.Sprintf("%d.csv", year))
+		dir := filepath.Join("output", "backtest")
+		os.MkdirAll(dir, 0755)
+		output := filepath.Join(dir, fmt.Sprintf("%d.csv", year))
 		oss.New(output, buf)
 	}
 
@@ -484,7 +487,9 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 	if err != nil {
 		return
 	}
-	output := filepath.Join("./output/", "trades.html")
+	dir := filepath.Join("output", "backtest")
+	os.MkdirAll(dir, 0755)
+	output := filepath.Join(dir, "trades.html")
 	oss.New(output, []byte(content))
 }
 
@@ -617,7 +622,7 @@ func professionalReportHTML(statsJSON, equityJSON, monthlyJSON, distJSON []byte,
 <title>策略回测报告</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
-:root{--bg:#f8f9fb;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--red:#ef4444;--green:#10b981}
+:root{--bg:#f8f9fb;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--red:#ef4444;--green:#22c55e}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,"Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;font-size:15px}
 .container{max-width:1200px;margin:0 auto;padding:24px 20px}
@@ -820,7 +825,7 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
 (function(){
   const chart = echarts.init(document.getElementById('distChart'));
   const labels = ['<-15%','-15~-10%','-10~-5%','-5~0%','0%','0~5%','5~10%','10~15%','15~20%','20~25%','>25%'];
-  const colors = distBuckets.map((_,i)=> i<4 ? '#10b981' : (i===4 ? '#999' : '#ef4444'));
+  const colors = distBuckets.map((_,i)=> i<4 ? '#22c55e' : (i===4 ? '#999' : '#ef4444'));
   chart.setOption({
     animation:false,
     tooltip:{trigger:'axis',appendToBody:true},
@@ -862,7 +867,7 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
     yAxis:{type:'category',data:months},
     visualMap:{
       min:minVal,max:maxVal,calculable:true,orient:'horizontal',left:'center',bottom:5,
-      inRange:{color:['#10b981','#f0f0f0','#ef4444']}
+      inRange:{color:['#22c55e','#f0f0f0','#ef4444']}
     },
     series:[{
       name:'月度收益',type:'heatmap',data:heatData,
@@ -920,7 +925,7 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
     const marks=(item.trades||[]).map(x=>{
       const k=dateMap.get(x.date);
       const bp=k?(x.type==='买'?k[3]:k[4]):x.price;
-      return{name:x.type,coord:[x.date,bp],value:x.type==='买'?'B':'S',symbol:'triangle',symbolRotate:x.type==='买'?0:180,symbolSize:14,symbolOffset:[0,x.type==='买'?12:-12],itemStyle:{color:x.type==='买'?'#ef4444':'#10b981'},label:{show:true,formatter:x.type==='买'?'B':'S',color:'#fff',fontWeight:'bold',fontSize:10,offset:[0,x.type==='买'?4:-4]},tooltip:{formatter:x.type+' '+x.date+' '+x.time+'<br/>价格:'+Number(x.price).toFixed(2)+'<br/>收益:'+Number(x.rate).toFixed(2)+'%'}};
+      return{name:x.type,coord:[x.date,bp],value:x.type==='买'?'B':'S',symbol:'triangle',symbolRotate:x.type==='买'?0:180,symbolSize:14,symbolOffset:[0,x.type==='买'?12:-12],itemStyle:{color:x.type==='买'?'#ef4444':'#22c55e'},label:{show:true,formatter:x.type==='买'?'B':'S',color:'#fff',fontWeight:'bold',fontSize:10,offset:[0,x.type==='买'?4:-4]},tooltip:{formatter:x.type+' '+x.date+' '+x.time+'<br/>价格:'+Number(x.price).toFixed(2)+'<br/>收益:'+Number(x.rate).toFixed(2)+'%'}};
     });
     chart.setOption({animation:false,
       title:{text:item.code+' K线买卖点',left:16,top:10},
@@ -932,13 +937,13 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
       xAxis:[{type:'category',data:dates,boundaryGap:false},{type:'category',gridIndex:1,data:dates,boundaryGap:false,axisLabel:{show:false}},{type:'category',gridIndex:2,data:dates,boundaryGap:false,axisLabel:{show:false}}],
       yAxis:[{scale:true,splitArea:{show:true}},{scale:true,gridIndex:1,splitNumber:2,axisLabel:{show:false},splitLine:{show:false}},{scale:true,gridIndex:2,splitNumber:3,splitLine:{show:true}}],
       series:[
-        {name:'日K',type:'candlestick',data:values,itemStyle:{color:'#ef4444',color0:'#10b981',borderColor:'#ef4444',borderColor0:'#10b981'},markPoint:{data:marks}},
+        {name:'日K',type:'candlestick',data:values,itemStyle:{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'},markPoint:{data:marks}},
         {name:'MA5',type:'line',data:ma(closes,5),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
         {name:'MA10',type:'line',data:ma(closes,10),symbol:'none',lineStyle:{width:1,color:'#8b5cf6'}},
         {name:'MA20',type:'line',data:ma(closes,20),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}},
-        {name:'MA60',type:'line',data:ma(closes,60),symbol:'none',lineStyle:{width:1,color:'#10b981'}},
-        {name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,data:vols,itemStyle:{color:p=>values[p.dataIndex]&&values[p.dataIndex][1]>=values[p.dataIndex][0]?'#ef4444':'#10b981'}},
-        {name:'MACD',type:'bar',xAxisIndex:2,yAxisIndex:2,data:macd.macd.map(v=>+v.toFixed(4)),itemStyle:{color:p=>p.data>=0?'#ef4444':'#10b981'}},
+        {name:'MA60',type:'line',data:ma(closes,60),symbol:'none',lineStyle:{width:1,color:'#22c55e'}},
+        {name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,data:vols,itemStyle:{color:p=>values[p.dataIndex]&&values[p.dataIndex][1]>=values[p.dataIndex][0]?'#ef4444':'#22c55e'}},
+        {name:'MACD',type:'bar',xAxisIndex:2,yAxisIndex:2,data:macd.macd.map(v=>+v.toFixed(4)),itemStyle:{color:p=>p.data>=0?'#ef4444':'#22c55e'}},
         {name:'DIF',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dif.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
         {name:'DEA',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dea.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}}
       ]

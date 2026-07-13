@@ -16,10 +16,30 @@ lib/extend/  ← K 线模型与拉取
 cmd/
   backtest/  ← 历史回测入口
   screen/    ← 实时选股 + Web 监控
+output/      ← 所有报告/CSV/HTML 统一输出目录（按模块分子文件夹）
 common.go    ← 全局组合好的 Buyer/Seller 与初始化
 ```
 
 新功能优先放进对应包，避免在 `cmd/` 写算法逻辑。
+
+### 输出报告目录规范
+
+**所有报告、CSV、HTML 等产物统一输出到** **`output/`** **下按模块分子文件夹，禁止散落在项目根目录。**
+
+| 模块         | 输出目录                   | 说明                            |
+| ---------- | ---------------------- | ----------------------------- |
+| 回测（backtest） | `output/backtest/`     | CSV 交易明细、`trades.html` 可视化报告 |
+| 前向收益分析     | `output/forward/`      | `forward_returns.html`        |
+| 均值回归对比     | `output/meanrevert/`   | `meanrevert_report.html`      |
+| 市值分组       | `output/marketcap/`    | 各市值分组回测输出                    |
+| 止损对比       | `output/stoploss/`     | 止损策略对比输出                     |
+| 布林+RSI     | `output/boll-rsi/`     | 布林带+RSI 策略报告                 |
+
+* 代码中输出路径必须使用 `filepath.Join("output", "<模块>", "文件名")`，不要用字符串拼接；
+
+* 写文件前确保目录存在（使用 `os.MkdirAll` 或等价工具）；
+
+* 已有的根目录报告目录（如 `boll-rsi-backtest-report/`、`marketcap-comparison/` 等）后续统一迁移到 `output/` 下对应子目录。
 
 ***
 

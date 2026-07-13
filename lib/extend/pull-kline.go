@@ -70,12 +70,14 @@ func (this *PullKline) Run(m *tdx.Manage, spec string) error {
 	this.Update(m, true)
 	cr := cron.New(cron.WithSeconds())
 	_, err := cr.AddFunc(spec, func() { this.Update(m) })
+	cr.Start()
 	return err
 }
 
 func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 	if len(must) == 0 || !must[0] {
 		if !m.Workday.TodayIs() {
+			logs.Debug("今天不是交易日")
 			return nil
 		}
 	}

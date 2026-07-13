@@ -161,6 +161,10 @@ func GetAllCodes() []string {
 	return Manage.Codes.GetStockCodes()
 }
 
+func GetIndexCodes() []string {
+	return Manage.Codes.GetIndexCodes()
+}
+
 // IsTradingTime - 判断是否处于交易时间段
 // 交易时间：上午 09:30 - 11:30，下午 13:00 - 15:01
 func IsTradingTime() bool {
