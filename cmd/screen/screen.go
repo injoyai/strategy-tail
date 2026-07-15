@@ -12,7 +12,7 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/frame/fbr" // Web框架
 	"github.com/injoyai/logs"      // 日志库
-	"github.com/injoyai/strategy-tail"
+	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"       // 选股核心模块
 	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
 	"github.com/injoyai/strategy-tail/strategies/buy"
@@ -39,9 +39,9 @@ type ScreenService struct {
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
 	realtimeDayKlines map[string]extend.Klines //实时数据缓存
 
-	lastBuys    []*core.Buy  // 最新买点快照
-	lastSells   []*core.Sell // 最新卖点快照
-	lastTrades  []*Trade     // 最新交易快照
+	lastBuys    []*core.Buy // 最新买点快照
+	lastSells   sellSignal  // 最新卖点快照(交易列表)
+	lastTrades  []*Trade    // 最新交易快照
 	subscribers map[*fbr.Websocket]bool
 }
 
@@ -103,7 +103,7 @@ func (s *ScreenService) removeSubscriber(ws *fbr.Websocket) {
 }
 
 // snapshot - 获取当前快照供新连接订阅时推送
-func (s *ScreenService) snapshot() ([]*core.Buy, []*core.Sell, []*Trade) {
+func (s *ScreenService) snapshot() ([]*core.Buy, sellSignal, []*Trade) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastBuys, s.lastSells, s.lastTrades
@@ -140,7 +140,7 @@ func (s *ScreenService) marshal(payload any) string {
 	case []*core.Buy:
 		resp = s.buildBuyResponse(v, now)
 
-	case []*core.Sell:
+	case sellSignal:
 		resp = s.buildSellResponse(v, now)
 
 	case []*Trade:
@@ -185,17 +185,10 @@ func (s *ScreenService) buildBuyResponse(v []*core.Buy, now string) BuyResponse 
 }
 
 // buildSellResponse 构建卖点响应
-func (s *ScreenService) buildSellResponse(v []*core.Sell, now string) SellResponse {
+func (s *ScreenService) buildSellResponse(v sellSignal, now string) SellResponse {
 	items := make([]Trade, len(v))
-	for i, se := range v {
-		s.mu.RLock()
-		for _, t := range s.lastTrades {
-			if t.Code == se.Code {
-				items[i] = *t
-				break
-			}
-		}
-		s.mu.RUnlock()
+	for i, t := range v {
+		items[i] = *t
 	}
 	return SellResponse{Type: "sell", Count: len(items), Time: now, Results: items}
 }
@@ -241,13 +234,29 @@ func (s *ScreenService) buildHistoryResponse(v []*Trade, now string) HistoryResp
 func (this *ScreenService) Run() {
 
 	first := true
+	lastRunDate := "" //跟踪上次运行日期,用于跨天检测
 
 	for range time.NewTicker(this.Interval).C {
 
 		now := time.Now()
+		today := now.Format(time.DateOnly)
 
 		//判断是否是交易日和交易时间
 		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
+
+			//跨天检测:刷新历史K线缓存 + 清空昨日实时信号 + 增量更新交易
+			if lastRunDate != "" && lastRunDate != today {
+				logs.Infof("检测到新交易日 %s,刷新历史数据...", today)
+				this.reloadHistoryKlines()
+				this.mu.Lock()
+				this.lastBuys = nil
+				this.lastSells = nil
+				this.mu.Unlock()
+				if err := this.incrementHistoryTrade(); err != nil {
+					logs.Errf("增量更新历史交易失败: %v", err)
+				}
+			}
+			lastRunDate = today
 
 			//更新实时数据
 			err := this.updateRealtime()
@@ -265,16 +274,11 @@ func (this *ScreenService) Run() {
 			this.mu.Unlock()
 
 			//计算实时卖点
-			sells := []*core.Sell(nil)
+			sells := sellSignal(nil)
 			for _, t := range trades {
 				if t.Sold {
 					if strings.HasPrefix(t.SellTime, now.Format(time.DateOnly)) {
-						sell, err := t.ToSell()
-						if err != nil {
-							logs.Err(err)
-							continue
-						}
-						sells = append(sells, sell)
+						sells = append(sells, t)
 					}
 					continue
 				}
@@ -290,9 +294,10 @@ func (this *ScreenService) Run() {
 				seller := this.sellerFor(t.Strategies)
 				if seller != nil {
 					if s := core.GetSell(seller, ks, b, nil); s != nil {
-						sells = append(sells, s)
+						t.Sell(s)
+						sells = append(sells, t)
 						//更新到数据库
-						_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t.Sell(s))
+						_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t)
 						logs.PrintErr(err)
 					}
 				}
@@ -322,16 +327,24 @@ func (this *ScreenService) Run() {
 func (this *ScreenService) realtimeBuys() []*core.Buy {
 	bs := []*core.Buy(nil)
 	buyer := this.combinedBuyer()
+	today := time.Now().Format(time.DateOnly)
 	for _, code := range this.Codes {
 		this.mu.RLock()
 		ks := this.realtimeDayKlines[code]
 		this.mu.RUnlock()
+		if len(ks) == 0 {
+			continue
+		}
+		//只评估当日K线的买点,避免盘前用昨日数据生成stale信号
+		last := ks[len(ks)-1]
+		if last.Time.Format(time.DateOnly) != today {
+			continue
+		}
 		if buyer.Buy(code, ks) {
-			k := ks[len(ks)-1]
 			bs = append(bs, &core.Buy{
 				Code:  code,
-				Time:  k.Time,
-				Price: k.Close,
+				Time:  last.Time,
+				Price: last.Close,
 			})
 		}
 	}
@@ -620,6 +633,18 @@ func (this *ScreenService) Init() error {
 	this.DB.Sync2(new(Trade))
 
 	//加载历史数据到缓存
+	this.reloadHistoryKlines()
+
+	//增量更新历史交易
+	if err := this.incrementHistoryTrade(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reloadHistoryKlines 重新加载历史日线缓存(用于跨天刷新)
+func (this *ScreenService) reloadHistoryKlines() {
 	b := bar.NewCoroutine(
 		len(this.Codes),
 		this.Goroutines,
@@ -646,36 +671,52 @@ func (this *ScreenService) Init() error {
 		})
 	}
 	b.Wait()
-
-	//更新历史买卖点,判断数据库是否有历史买卖点数据
-	update, err := tdx.NewUpdated(this.DB, 0, 1)
-	if err != nil {
-		return err
-	}
-	//升级 update key,强制重算历史交易(策略结构变更后 key 变化)
-	updated, err := update.Updated("history-trade-v3")
-	if err != nil {
-		return err
-	}
-	if !updated {
-		//更新历史交易数据
-		if err := this.updateHistoryTrade(); err != nil {
-			return err
-		}
-		if err = update.Update("history-trade-v3"); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
-func (this *ScreenService) updateHistoryTrade() error {
-	ts := this.getHistoryTrade()
-	return this.DB.SessionFunc(func(session *xorm.Session) error {
-		if _, err := session.Where("ID>0").Delete(new(Trade)); err != nil {
-			return err
+// incrementHistoryTrade 增量更新历史交易(只计算和插入新买点,不删除已有数据)
+func (this *ScreenService) incrementHistoryTrade() error {
+	//查询最新一条交易的买入时间
+	var lastTrade Trade
+	has, err := this.DB.Desc("BuyTime").Get(&lastTrade)
+	if err != nil {
+		return err
+	}
+
+	var days int
+	if has {
+		//从最新买入时间开始计算需要扫描的天数
+		latest, _ := time.Parse(time.DateTime, lastTrade.BuyTime)
+		days = int(time.Now().Sub(latest).Hours()/24) + 2 //+2天缓冲
+		if days < 1 {
+			days = 1
 		}
+		if days > this.LookbackDays {
+			days = this.LookbackDays
+		}
+	} else {
+		//数据库为空,全量计算
+		days = this.LookbackDays
+	}
+
+	//构建已存在的交易键集合,避免重复插入
+	existing := map[string]bool{}
+	var recentTrades []*Trade
+	cutoff := time.Now().AddDate(0, 0, -days-1)
+	if err := this.DB.Where("BuyTime >= ?", cutoff.Format(time.DateTime)).Cols("Code", "BuyTime").Find(&recentTrades); err != nil {
+		return err
+	}
+	for _, t := range recentTrades {
+		existing[t.Code+"|"+t.BuyTime] = true
+	}
+
+	//计算新交易
+	ts := this.getHistoryTrade(days, existing)
+	if len(ts) == 0 {
+		return nil
+	}
+
+	//插入新交易(不删除已有数据)
+	return this.DB.SessionFunc(func(session *xorm.Session) error {
 		for _, t := range ts {
 			if _, err := session.Insert(t); err != nil {
 				return err
@@ -686,7 +727,7 @@ func (this *ScreenService) updateHistoryTrade() error {
 }
 
 // getHistoryBuys 计算历史买点
-func (this *ScreenService) getHistoryTrade() []*Trade {
+func (this *ScreenService) getHistoryTrade(days int, existing map[string]bool) []*Trade {
 	b := bar.NewCoroutine(
 		len(this.Codes),
 		this.Goroutines,
@@ -707,7 +748,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
 			b.Flush()
 
-			bs := core.GetBuys(this.combinedBuyer(), code, ks, this.LookbackDays)
+			bs := core.GetBuys(this.combinedBuyer(), code, ks, days)
 			if len(bs) == 0 {
 				return
 			}
@@ -716,7 +757,7 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			var mks protocol.Klines
 			err := common.Manage.Do(func(c *tdx.Client) error {
 				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
-					return k.Time.Before(time.Now().AddDate(0, 0, -this.LookbackDays*2))
+					return k.Time.Before(time.Now().AddDate(0, 0, -days*2))
 				})
 				if err != nil {
 					return err
@@ -737,6 +778,10 @@ func (this *ScreenService) getHistoryTrade() []*Trade {
 			}
 
 			for _, b := range bs {
+				//跳过已存在的交易,避免重复插入
+				if existing[code+"|"+b.Time.Format(time.DateTime)] {
+					continue
+				}
 				//用截止买入当日的 K 线切片评估 Tags 和 Strategies,避免未来函数
 				hisKs := extend.Klines{}
 				for _, k := range ks {

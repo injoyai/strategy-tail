@@ -103,6 +103,9 @@ type SellResponse struct {
 	Results []Trade `json:"results"` // 列表
 }
 
+// sellSignal 卖点信号载荷(包装[]*Trade用于marshal类型区分,避免按Code匹配的歧义)
+type sellSignal []*Trade
+
 // HistoryResponse - 历史买点响应（扁平结构，按时间倒序）
 type HistoryResponse struct {
 	Type    string    `json:"type"`    // 固定 "history"

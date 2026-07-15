@@ -15,8 +15,8 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.2.0")
-	logs.Info("详情:", "修复不会自动更新的问题")
+	logs.Info("版本:", "v1.3.0")
+	logs.Info("详情:", "增量更新历史交易+跨天自动刷新+实时信号日期过滤")
 }
 
 func main() {
