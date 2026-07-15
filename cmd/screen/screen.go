@@ -39,10 +39,11 @@ type ScreenService struct {
 	historyDayKlines  map[string]extend.Klines //历史数据缓存
 	realtimeDayKlines map[string]extend.Klines //实时数据缓存
 
-	lastBuys    []*core.Buy // 最新买点快照
-	lastSells   sellSignal  // 最新卖点快照(交易列表)
-	lastTrades  []*Trade    // 最新交易快照
-	subscribers map[*fbr.Websocket]bool
+	lastBuys           []*core.Buy // 最新买点快照
+	lastSells          sellSignal  // 最新卖点快照(交易列表)
+	lastTrades         []*Trade    // 最新交易快照
+	lastPostMarketDate string      // 盘后更新日期,确保每天只执行一次
+	subscribers        map[*fbr.Websocket]bool
 }
 
 // update 更新实时数据
@@ -252,7 +253,8 @@ func (this *ScreenService) Run() {
 				this.lastBuys = nil
 				this.lastSells = nil
 				this.mu.Unlock()
-				if err := this.incrementHistoryTrade(); err != nil {
+				//跨天更新:排除今日K线(刚开盘,收盘价未确定)
+				if err := this.incrementHistoryTrade(false); err != nil {
 					logs.Errf("增量更新历史交易失败: %v", err)
 				}
 			}
@@ -319,6 +321,19 @@ func (this *ScreenService) Run() {
 			this.broadcast(buys)
 
 			first = false
+		} else if common.Manage.Workday.TodayIs() {
+			//盘后更新:15:05后用收盘价增量更新今日交易
+			afterClose := now.Hour() > 15 || (now.Hour() == 15 && now.Minute() >= 5)
+			if afterClose && this.lastPostMarketDate != today {
+				logs.Info("盘后定时更新:用收盘价增量更新历史交易...")
+				this.reloadHistoryKlines()
+				if err := this.incrementHistoryTrade(true); err != nil {
+					logs.Errf("盘后增量更新失败: %v", err)
+				} else {
+					logs.Info("盘后增量更新完成")
+				}
+				this.lastPostMarketDate = today
+			}
 		}
 	}
 }
@@ -635,9 +650,14 @@ func (this *ScreenService) Init() error {
 	//加载历史数据到缓存
 	this.reloadHistoryKlines()
 
-	//增量更新历史交易
-	if err := this.incrementHistoryTrade(); err != nil {
+	//增量更新历史交易(盘中启动排除今日未完成K线,盘后/非交易日包含已完成的K线)
+	includeToday := !(common.Manage.Workday.TodayIs() && common.IsTradingTime())
+	if err := this.incrementHistoryTrade(includeToday); err != nil {
 		return err
+	}
+	//盘后启动时已执行过更新,标记当天避免Run()重复触发
+	if includeToday {
+		this.lastPostMarketDate = time.Now().Format(time.DateOnly)
 	}
 
 	return nil
@@ -673,8 +693,10 @@ func (this *ScreenService) reloadHistoryKlines() {
 	b.Wait()
 }
 
-// incrementHistoryTrade 增量更新历史交易(只计算和插入新买点,不删除已有数据)
-func (this *ScreenService) incrementHistoryTrade() error {
+// incrementHistoryTrade 增量更新历史交易
+// 策略: 读取最新一条交易的买入日期,删除该日期起的交易数据,重新计算(确保价格修正)
+// includeToday: 是否包含今日K线(盘中为false,盘后为true)
+func (this *ScreenService) incrementHistoryTrade(includeToday bool) error {
 	//查询最新一条交易的买入时间
 	var lastTrade Trade
 	has, err := this.DB.Desc("BuyTime").Get(&lastTrade)
@@ -693,12 +715,20 @@ func (this *ScreenService) incrementHistoryTrade() error {
 		if days > this.LookbackDays {
 			days = this.LookbackDays
 		}
+
+		//删除最新买入日期起的交易数据,后续重新计算(修正盘中价→收盘价等场景)
+		deleteFrom := latest.Format(time.DateOnly) + " 00:00:00"
+		if deleted, err := this.DB.Where("BuyTime >= ?", deleteFrom).Delete(&Trade{}); err != nil {
+			return err
+		} else {
+			logs.Infof("删除 %s 起的交易数据 %d 条,准备重新计算...", deleteFrom, deleted)
+		}
 	} else {
 		//数据库为空,全量计算
 		days = this.LookbackDays
 	}
 
-	//构建已存在的交易键集合,避免重复插入
+	//构建已存在的交易键集合,避免重复插入(buffer期间的老数据)
 	existing := map[string]bool{}
 	var recentTrades []*Trade
 	cutoff := time.Now().AddDate(0, 0, -days-1)
@@ -710,7 +740,7 @@ func (this *ScreenService) incrementHistoryTrade() error {
 	}
 
 	//计算新交易
-	ts := this.getHistoryTrade(days, existing)
+	ts := this.getHistoryTrade(days, existing, includeToday)
 	if len(ts) == 0 {
 		return nil
 	}
@@ -726,8 +756,9 @@ func (this *ScreenService) incrementHistoryTrade() error {
 	})
 }
 
-// getHistoryBuys 计算历史买点
-func (this *ScreenService) getHistoryTrade(days int, existing map[string]bool) []*Trade {
+// getHistoryTrade 计算历史买点
+// includeToday: 是否包含今日K线(盘中排除,避免用实时价误判收盘价策略)
+func (this *ScreenService) getHistoryTrade(days int, existing map[string]bool, includeToday bool) []*Trade {
 	b := bar.NewCoroutine(
 		len(this.Codes),
 		this.Goroutines,
@@ -743,6 +774,12 @@ func (this *ScreenService) getHistoryTrade(days int, existing map[string]bool) [
 		this.mu.RLock()
 		ks := this.historyDayKlines[code]
 		this.mu.RUnlock()
+
+		//盘中排除今日未完成K线(收盘价策略:今日收盘价未确定)
+		if !includeToday && len(ks) > 0 {
+			ks = ks[:len(ks)-1]
+		}
+
 		b.Go(func() {
 
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
