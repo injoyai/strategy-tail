@@ -95,7 +95,7 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 	if len(codes) == 0 {
 		codes = m.Codes.GetStockCodes()
 		codes = append(codes, m.Codes.GetETFCodes()...)
-		codes = append(codes, m.Codes.GetIndexCodes()...)
+		//codes = append(codes, m.Codes.GetIndexCodes()...)
 	}
 	for _, v := range this.Types {
 		switch v {

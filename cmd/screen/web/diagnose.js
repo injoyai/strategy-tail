@@ -157,6 +157,11 @@ function renderChart(data) {
   });
   diagCandleSeries = candleSeries;
 
+  // K线与量柱之间留出间隔: K线底部留白,量柱顶部下移
+  chart.priceScale('right').applyOptions({
+    scaleMargins: { top: 0.08, bottom: isMobile ? 0.28 : 0.22 },
+  });
+
   const candleData = (data.klines || []).map(k => ({
     time: k.time,
     open: k.open,
@@ -174,13 +179,14 @@ function renderChart(data) {
   });
   diagVolumeSeries = volumeSeries;
   chart.priceScale('volume').applyOptions({
-    scaleMargins: { top: 0.85, bottom: 0 },
+    scaleMargins: { top: isMobile ? 0.74 : 0.82, bottom: 0.02 },
   });
 
+  const volOpacity = isMobile ? 0.5 : 0.3;
   const volumeData = (data.klines || []).map(k => ({
     time: k.time,
     value: k.volume,
-    color: k.close >= k.open ? 'rgba(239, 68, 68, 0.3)' : 'rgba(34, 197, 94, 0.3)', // A股: 涨红跌绿
+    color: k.close >= k.open ? `rgba(239, 68, 68, ${volOpacity})` : `rgba(34, 197, 94, ${volOpacity})`, // A股: 涨红跌绿
   }));
   volumeSeries.setData(volumeData);
 
@@ -365,9 +371,9 @@ function renderTradeSummary(trades) {
     const currText = t.curr_price ? t.curr_price.toFixed(2) : '--';
     html += `<tr>
       <td>${trades.length - i}</td>
-      <td>${t.buy_time || '--'}</td>
+      <td>${fmtTime(t.buy_time)}</td>
       <td>${t.buy_price ? t.buy_price.toFixed(2) : '--'}</td>
-      <td>${t.sold ? (t.sell_time || '--') : '--'}</td>
+      <td>${t.sold ? fmtTime(t.sell_time) : '--'}</td>
       <td>${currText}</td>
       <td class="${rateCls}">${rateText}</td>
       <td><span class="${statusCls}">${statusText}</span></td>
@@ -453,6 +459,14 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
+}
+
+// 时间格式化: "2024-01-15 10:30:00" → "01-15 10:30"
+function fmtTime(s) {
+  if (!s) return '--';
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+  if (m) return `${m[2]}-${m[3]} ${m[4]}:${m[5]}`;
+  return s;
 }
 
 // ESC 关闭弹窗

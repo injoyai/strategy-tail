@@ -1191,8 +1191,18 @@ body {
     flex-direction: column;
   }
   .diag-chart-wrap {
-    height: 280px;
+    height: 50dvh;
+    min-height: 280px;
     flex-shrink: 0;
+  }
+  #diagChart {
+    height: auto;
+    flex: 1;
+    flex-shrink: 1;
+    min-height: 0;
+  }
+  .diag-trade-summary {
+    max-height: 130px;
   }
   .diag-side {
     width: 100%;
@@ -1232,7 +1242,8 @@ body {
     font-size: 11px;
   }
   .diag-chart-wrap {
-    height: 220px;
+    height: 45dvh;
+    min-height: 240px;
   }
 }
 
@@ -1256,6 +1267,12 @@ body {
   }
   .diag-chart-wrap {
     height: 100%;
+  }
+  #diagChart {
+    height: auto;
+    flex: 1;
+    flex-shrink: 1;
+    min-height: 0;
   }
   .diag-side {
     width: 320px;
