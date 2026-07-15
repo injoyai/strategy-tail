@@ -272,7 +272,7 @@ function renderSellResults() {
   }
 
   let html = `<div class="table-wrap"><table class="stock-table"><thead><tr>
-    <th>代码</th><th>名称</th><th>买入价</th><th>卖出价</th><th>卖出时间</th><th>收益率</th>
+    <th>代码</th><th>名称</th><th>买入价</th><th>买入时间</th><th>卖出价</th><th>卖出时间</th><th>收益率</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
     const profitCls = numClass(item.profit_rate);
@@ -280,6 +280,7 @@ function renderSellResults() {
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
+      <td>${item.buy_time ? fmtMDHM(item.buy_time) : '--'}</td>
       <td>${item.sell_price ? item.sell_price.toFixed(2) : '--'}</td>
       <td>${item.sell_time ? fmtMDHM(item.sell_time) : '--'}</td>
       <td class="${profitCls}">${fmtPct(item.profit_rate)}</td>
