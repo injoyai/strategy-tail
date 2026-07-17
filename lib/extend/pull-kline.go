@@ -87,7 +87,6 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 		return err
 	}
 	if updated {
-		logs.Info("已更新，跳过")
 		return nil
 	}
 

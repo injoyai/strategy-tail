@@ -91,8 +91,12 @@ func init() {
 	})
 	logs.PanicErr(err)
 
-	Pull.Run(Manage, cfg.GetString("pull.spec", "0 0 22 * * *"))
+	Pull.Update(Manage)
 
+}
+
+func Update() error {
+	return Pull.Update(Manage)
 }
 
 // LoadBacktestConfig 从 config.yaml 读取回测引擎配置（成本/仓位/年份/基准）。
