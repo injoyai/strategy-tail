@@ -45,9 +45,9 @@ type ScreenService struct {
 
 	update *tdx.Updated //
 
-	lastBuys   []BuyItem  // 最新买点快照(含策略/标签)
-	lastSells  sellSignal // 最新卖点快照(交易列表)
-	lastTrades []*Trade   // 最新交易快照
+	lastBuys   []*Trade // 最新买点快照(含策略/标签)
+	lastSells  []*Trade // 最新卖点快照(交易列表)
+	lastTrades []*Trade // 最新交易快照
 
 }
 
@@ -104,7 +104,7 @@ func (this *ScreenService) updateRealtime() error {
 }
 
 // snapshot - 获取当前快照供新连接订阅时推送
-func (s *ScreenService) snapshot() ([]BuyItem, sellSignal, []*Trade) {
+func (s *ScreenService) snapshot() ([]*Trade, []*Trade, []*Trade) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.lastBuys, s.lastSells, s.lastTrades
@@ -125,8 +125,8 @@ func (s *ScreenService) removeSubscriber(ws *fbr.Websocket) {
 }
 
 // broadcast - 向所有订阅者广播消息，自动转换为前端期望的格式
-func (s *ScreenService) broadcast(payload any) {
-	msg := s.marshal(payload)
+func (s *ScreenService) broadcast(_type string, payload any) {
+	msg := s.marshal(_type, payload)
 	if msg == "" {
 		return
 	}
@@ -138,8 +138,8 @@ func (s *ScreenService) broadcast(payload any) {
 }
 
 // sendTo - 向单个连接推送消息，自动转换为前端期望的格式
-func (s *ScreenService) sendTo(ws *fbr.Websocket, payload any) {
-	msg := s.marshal(payload)
+func (s *ScreenService) sendTo(ws *fbr.Websocket, _type string, payload any) {
+	msg := s.marshal(_type, payload)
 	if msg == "" {
 		return
 	}
@@ -147,23 +147,19 @@ func (s *ScreenService) sendTo(ws *fbr.Websocket, payload any) {
 }
 
 // marshal - 将内部数据转换为前端期望的JSON格式(WS推送用)
-func (s *ScreenService) marshal(payload any) string {
-	now := time.Now().Format(time.DateTime)
+func (s *ScreenService) marshal(_type string, payload any) string {
 
 	var resp any
-	switch v := payload.(type) {
-	case []BuyItem:
-		resp = s.buildBuyResponse(v, now)
-
-	case sellSignal:
-		resp = s.buildSellResponse(v, now)
-
-	case []*Trade:
-		// history 不再通过 WS 推送，但保留兼容
-		resp = s.buildHistoryResponse(v, now)
+	switch _type {
+	case TypeBuy, TypeSell, TypeHistory:
+		ts, ok := payload.([]*Trade)
+		if ok {
+			resp = s.response(_type, ts)
+		}
 
 	default:
 		resp = payload
+
 	}
 
 	data, err := json.Marshal(resp)
@@ -174,23 +170,8 @@ func (s *ScreenService) marshal(payload any) string {
 	return string(data)
 }
 
-// buildBuyResponse 构建买点响应
-// items 已由 realtimeBuys 完整构建(含 Strategy/Tags/Rise),此处仅做响应包装
-func (s *ScreenService) buildBuyResponse(items []BuyItem, now string) BuyResponse {
-	return BuyResponse{Type: TypeBuy, Count: len(items), Time: now, Results: items}
-}
-
-// buildSellResponse 构建卖点响应
-func (s *ScreenService) buildSellResponse(v sellSignal, now string) SellResponse {
-	items := make([]Trade, len(v))
-	for i, t := range v {
-		items[i] = *t
-	}
-	return SellResponse{Type: TypeSell, Count: len(items), Time: now, Results: items}
-}
-
 // buildHistoryResponse 构建历史买卖点响应
-func (s *ScreenService) buildHistoryResponse(ts []*Trade, now string) HistoryResponse {
+func (s *ScreenService) response(_type string, ts []*Trade) Response {
 	for i := range ts {
 		s.mu.RLock()
 		k := s.lastPrices[ts[i].Code]
@@ -200,7 +181,11 @@ func (s *ScreenService) buildHistoryResponse(ts []*Trade, now string) HistoryRes
 	sort.Slice(ts, func(i, j int) bool {
 		return ts[i].BuyTime > ts[j].BuyTime
 	})
-	return HistoryResponse{Type: TypeHistory, Time: now, Total: len(ts), Results: ts}
+	return Response{
+		Type:    _type,
+		Count:   len(ts),
+		Results: ts,
+	}
 }
 
 func (this *ScreenService) init() error {
@@ -336,13 +321,13 @@ func (this *ScreenService) realtimeShells() error {
 	this.lastSells = sells
 	this.mu.Unlock()
 	//推送实时卖点数据
-	this.broadcast(sells)
+	this.broadcast(TypeSell, sells)
 	return nil
 }
 
 // realtimeBuys 实时计算的买点
 func (this *ScreenService) realtimeBuys() {
-	items := []BuyItem(nil)
+	items := []*Trade(nil)
 	today := time.Now().Format(time.DateOnly)
 	for _, code := range this.Codes {
 		this.mu.RLock()
@@ -358,15 +343,16 @@ func (this *ScreenService) realtimeBuys() {
 		}
 		for _, s := range this.Strategies {
 			if s.Buyer.Buy(code, ks) {
-				items = append(items, BuyItem{
+				t := &Trade{
 					Code:     code,
 					Name:     common.Manage.Codes.GetName(code),
-					Time:     last.Time.Format(time.DateTime),
-					Price:    last.Close.Float64(),
-					Rise:     last.RiseRate(),
+					BuyTime:  last.Time.Format(time.DateTime),
+					BuyPrice: last.Close.Float64(),
 					Strategy: s.Key,
 					Tags:     s.checkTags(code, ks),
-				})
+				}
+				t.Realtime(last.Kline)
+				items = append(items)
 			}
 		}
 	}
@@ -374,7 +360,7 @@ func (this *ScreenService) realtimeBuys() {
 	this.mu.Lock()
 	this.lastBuys = items
 	this.mu.Unlock()
-	this.broadcast(items)
+	this.broadcast(TypeBuy, items)
 }
 
 // Diagnose 诊断指定股票在指定策略下的匹配情况
@@ -752,12 +738,18 @@ func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, erro
 	quoteKline := make(map[string]*protocol.Kline, len(codes))
 	batchSize := 80
 
+	b := bar.New(
+		bar.WithTotal(int64(len(codes))),
+		bar.WithPrefix("[实时行情]"),
+		bar.WithFlush(),
+	)
+	defer b.Close()
+
 	for i := 0; i < len(codes); i += batchSize {
 		end := i + batchSize
 		if end > len(codes) {
 			end = len(codes)
 		}
-
 		if err := common.Manage.Do(func(c *tdx.Client) error {
 			quotes, err := c.GetQuote(codes[i:end]...)
 			if err != nil {
@@ -770,6 +762,7 @@ func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, erro
 		}); err != nil {
 			logs.Errf("[行情] 批量获取失败(%d-%d): %v", i, end, err)
 		}
+		b.Add(int64(end - i)).Flush()
 	}
 
 	return quoteKline, nil

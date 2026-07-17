@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"os"
 	"sort"
-	"time"
 
 	"github.com/injoyai/frame/fbr"
 )
@@ -86,8 +85,7 @@ func Api(port int, useLocal bool, svc *ScreenService) error {
 		// 历史买卖点（全量，前端过滤）
 		fbr.WithGET("/api/history", func(c fbr.Ctx) {
 			_, _, trades := svc.snapshot()
-			now := time.Now().Format(time.DateTime)
-			resp := svc.buildHistoryResponse(trades, now)
+			resp := svc.response(TypeHistory, trades)
 			c.JSON(resp)
 		}),
 
@@ -111,8 +109,8 @@ func Api(port int, useLocal bool, svc *ScreenService) error {
 
 				// 新连接立即推送当前快照（买点+卖点，历史走HTTP）
 				buys, sells, _ := svc.snapshot()
-				svc.sendTo(ws, buys)
-				svc.sendTo(ws, sells)
+				svc.sendTo(ws, TypeBuy, buys)
+				svc.sendTo(ws, TypeSell, sells)
 
 				ws.DiscardRead()
 			})

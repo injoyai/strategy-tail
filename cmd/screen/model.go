@@ -43,38 +43,10 @@ func (this Strategy) checkTags(code string, ks extend.Klines) []string {
 // 响应数据结构
 // =========================================================
 
-// BuyItem - 买入信号条目
-type BuyItem struct {
-	Code       string   `json:"code"`        // 股票代码（带前缀）
-	Name       string   `json:"name"`        // 股票名称
-	Date       string   `json:"date"`        // 日期 YYYY-MM-DD
-	Time       string   `json:"time"`        // 信号产生时间
-	Price      float64  `json:"price"`       // 买入价
-	Rise       float64  `json:"rise"`        // 盘中涨幅百分比（仅当日买点有效）
-	CurrPrice  float64  `json:"curr_price"`  // 现价
-	IncomeRate float64  `json:"income_rate"` // 收益率百分比
-	Sold       bool     `json:"sold"`        // 是否已卖出
-	SellPrice  float64  `json:"sell_price"`  // 卖出价（已卖出时有效）
-	SellTime   string   `json:"sell_time"`   // 卖出时间（已卖出时有效）
-	Strategy   string   `json:"strategy"`    // 命中的策略 key 列表
-	Tags       []string `json:"tags"`        // 满足的辅助标签
-}
-
-func (this *BuyItem) AddLast(k *protocol.Kline) {
-	if k != nil && !this.Sold {
-		this.CurrPrice = k.Close.Float64()
-		if this.Price != 0 {
-			this.IncomeRate = (this.CurrPrice - this.Price) / this.Price * 100
-		}
-	}
-}
-
-// BuyResponse - 买点响应
-type BuyResponse struct {
-	Type    string    `json:"type"`    // 固定 "buy"
-	Count   int       `json:"count"`   // 数量
-	Time    string    `json:"time"`    // 刷新时间
-	Results []BuyItem `json:"results"` // 列表
+type Response struct {
+	Type    string   `json:"type"`    // 固定 "buy"
+	Count   int      `json:"count"`   // 数量
+	Results []*Trade `json:"results"` // 列表
 }
 
 // Trade - 交易数据
@@ -130,25 +102,6 @@ func (this *Trade) ToSell() (*core.Sell, error) {
 		Time:  t,
 		Price: protocol.Yuan(this.SellPrice),
 	}, err
-}
-
-// SellResponse - 卖点响应
-type SellResponse struct {
-	Type    string  `json:"type"`    // 固定 "sell"
-	Count   int     `json:"count"`   // 数量
-	Time    string  `json:"time"`    // 刷新时间
-	Results []Trade `json:"results"` // 列表
-}
-
-// sellSignal 卖点信号载荷(包装[]*Trade用于marshal类型区分,避免按Code匹配的歧义)
-type sellSignal []*Trade
-
-// HistoryResponse - 历史买点响应（扁平结构，按时间倒序）
-type HistoryResponse struct {
-	Type    string   `json:"type"`    // 固定 "history"
-	Time    string   `json:"time"`    // 刷新时间
-	Total   int      `json:"total"`   // 总买点数量
-	Results []*Trade `json:"results"` // 所有历史买点，按时间倒序
 }
 
 // =========================================================
