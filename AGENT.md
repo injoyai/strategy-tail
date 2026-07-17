@@ -4,6 +4,25 @@
 
 ***
 
+## 0. 结构对象格式保护（重要）
+
+**未经用户明确确认，禁止修改以下核心结构对象的格式（字段增删、重命名、类型变更）：**
+
+| 文件 | 受保护的结构体/接口 |
+|------|---------------------|
+| [core/types.go](core/types.go) | `Trade`、`Buy`、`Buyer`、`Seller`、`Klines` |
+| [core/stats.go](core/stats.go) | `TradeStats` |
+| [core/cost.go](core/cost.go) | `Cost` |
+| [core/backtest.go](core/backtest.go) | `PositionConfig`、`Backtest` |
+| [cmd/screen/model.go](cmd/screen/model.go) | `Strategy`、`BuyItem`、`BuyResponse`、`Trade`、`SellResponse`、`sellSignal`、`HistoryResponse`、`ChartKline`、`DiagnoseResponse`、`DiagnoseTrade` |
+| [cmd/screen/screen.go](cmd/screen/screen.go) | `ScreenService` |
+
+* **修改前必须先描述拟变更内容及理由，等待用户确认后再执行；**
+* **此约束适用于 `core/` 和 `cmd/screen/` 目录下所有类型的定义文件；**
+* **新增字段时需同步更新所有序列化/反序列化逻辑（如 JSON marshal/unmarshal、xorm tag），确保前后兼容。**
+
+***
+
 ## 1. 项目结构
 
 ```

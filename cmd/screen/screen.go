@@ -711,7 +711,7 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 			b.Flush()
 
 			//获取历史买点
-			var mbs map[string][]*core.Buy
+			mbs := map[string][]*core.Buy{}
 			for _, v := range this.Strategies {
 				mbs[v.Key] = core.GetBuys(v.Buyer, code, ks, days)
 			}

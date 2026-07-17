@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -18,6 +19,18 @@ type Strategy struct {
 	Buyer  core.Buyer            // 买入策略
 	Seller core.Seller           // 卖出策略
 	Tags   map[string]core.Buyer // 辅助标签(板块/市值等)
+}
+
+func (this Strategy) checkTags(code string, ks extend.Klines) []string {
+	ls := []string(nil)
+	for k, v := range this.Tags {
+		if v != nil {
+			if v.Buy(code, ks) {
+				ls = append(ls, k)
+			}
+		}
+	}
+	return ls
 }
 
 // =========================================================
@@ -37,7 +50,7 @@ type BuyItem struct {
 	Sold       bool     `json:"sold"`        // 是否已卖出
 	SellPrice  float64  `json:"sell_price"`  // 卖出价（已卖出时有效）
 	SellTime   string   `json:"sell_time"`   // 卖出时间（已卖出时有效）
-	Strategies []string `json:"strategies"`  // 命中的策略 key 列表
+	Strategy   string   `json:"strategy"`    // 命中的策略 key 列表
 	Tags       []string `json:"tags"`        // 满足的辅助标签
 }
 
@@ -51,17 +64,17 @@ type BuyResponse struct {
 
 // Trade - 卖出信号条目
 type Trade struct {
-	ID         int64    `json:"id"`                          //唯一标识
-	Code       string   `json:"code"`                        // 股票代码
-	Name       string   `json:"name"`                        // 股票名称
-	BuyTime    string   `json:"buy_time"`                    // 买入时间
-	BuyPrice   float64  `json:"buy_price"`                   // 买入价
-	Sold       bool     `json:"sold" xorm:"index"`           //是否卖出
-	SellTime   string   `json:"sell_time"`                   // 卖出时间
-	SellPrice  float64  `json:"sell_price"`                  // 卖出价
-	ProfitRate float64  `json:"profit_rate"`                 // 收益率百分比
-	Strategies []string `json:"strategies" xorm:"text json"` // 命中策略
-	Tags       []string `json:"tags" xorm:"text json"`       //满足的标签
+	ID         int64    `json:"id"`                        //唯一标识
+	Code       string   `json:"code"`                      // 股票代码
+	Name       string   `json:"name"`                      // 股票名称
+	BuyTime    string   `json:"buy_time"`                  // 买入时间
+	BuyPrice   float64  `json:"buy_price"`                 // 买入价
+	Sold       bool     `json:"sold" xorm:"index"`         //是否卖出
+	SellTime   string   `json:"sell_time"`                 // 卖出时间
+	SellPrice  float64  `json:"sell_price"`                // 卖出价
+	ProfitRate float64  `json:"profit_rate"`               // 收益率百分比
+	Strategy   string   `json:"strategy" xorm:"text json"` // 命中策略
+	Tags       []string `json:"tags" xorm:"text json"`     //满足的标签
 }
 
 func (this *Trade) Sell(s *core.Sell) *Trade {
