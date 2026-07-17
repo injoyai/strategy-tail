@@ -655,7 +655,7 @@ func (this *ScreenService) updateHistoryTrade() error {
 		days = int(time.Since(latest)/(time.Hour*24)) + 1
 
 		//删除最新买入日期起的交易数据,后续重新计算(修正盘中价→收盘价等场景)
-		logs.Debug(latest.Format(time.DateTime))
+		logs.Debug("重新历史节点:", latest.Format(time.DateTime))
 		if _, err := this.DB.Where("BuyTime >= ?", latest.Format(time.DateTime)).Delete(&Trade{}); err != nil {
 			return err
 		}
