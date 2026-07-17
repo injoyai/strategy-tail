@@ -108,12 +108,12 @@ function renderStrategyBar() {
       ? historyResults
       : historyResults.filter(r => r.strategy === key);
     const sold = hist.filter(r => r.sold);
-    const win = sold.filter(r => (r.income_rate || 0) > 0).length;
+    const win = sold.filter(r => (r.income || 0) > 0).length;
     const winRate = sold.length > 0 ? (win / sold.length * 100).toFixed(0) + '%' : '--';
     // 盈亏比 = 总盈利金额 / 总亏损金额
     let winSum = 0, lossSum = 0;
     for (const r of sold) {
-      const rate = r.income_rate || 0;
+      const rate = r.income || 0;
       if (rate > 0) winSum += rate;
       else lossSum += -rate;
     }
@@ -245,12 +245,12 @@ function renderBuyResults() {
     <th>代码</th><th>名称</th><th>买入价</th><th>涨幅</th><th>标签</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
-    const riseCls = numClass(item.rise);
+    const riseCls = numClass(item.income);
     html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
-      <td>${item.price ? item.price.toFixed(2) : '--'}</td>
-      <td class="${riseCls}">${fmtPct(item.rise)}</td>
+      <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
+      <td class="${riseCls}">${fmtPct(item.income)}</td>
       <td>${renderTagBadges(item.tags)}</td>
     </tr>`;
   }
@@ -275,7 +275,7 @@ function renderSellResults() {
     <th>代码</th><th>名称</th><th>买入价</th><th>买入时间</th><th>卖出价</th><th>卖出时间</th><th>收益率</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
-    const profitCls = numClass(item.profit_rate);
+    const profitCls = numClass(item.income);
     html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
@@ -283,7 +283,7 @@ function renderSellResults() {
       <td>${item.buy_time ? fmtMDHM(item.buy_time) : '--'}</td>
       <td>${item.sell_price ? item.sell_price.toFixed(2) : '--'}</td>
       <td>${item.sell_time ? fmtMDHM(item.sell_time) : '--'}</td>
-      <td class="${profitCls}">${fmtPct(item.profit_rate)}</td>
+      <td class="${profitCls}">${fmtPct(item.income)}</td>
     </tr>`;
   }
   html += `</tbody></table></div>`;
@@ -362,7 +362,7 @@ function getFilteredHistory() {
     // 搜索过滤
     if (!matchSearch(r)) return false;
     // 日期过滤
-    if (toTs(r.time) < minTs) return false;
+    if (toTs(r.buy_time) < minTs) return false;
     // 状态过滤
     if (historyFilter.status === 'sold' && !r.sold) return false;
     if (historyFilter.status === 'holding' && r.sold) return false;
@@ -392,9 +392,9 @@ function renderHistoryResults() {
     <th>代码</th><th>名称</th><th>买入时间</th><th>买入价</th><th>现价/卖价</th><th>卖出时间</th><th>收益率</th><th>标签</th><th>状态</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
-    const profitCls = numClass(item.income_rate);
-    const curr = item.sold ? item.sell_price : item.curr_price;
-    const buyTime = fmtMDHM(item.time);
+    const profitCls = numClass(item.income);
+    const curr = item.sell_price;
+    const buyTime = fmtMDHM(item.buy_time);
     const sellTime = item.sold ? fmtMDHM(item.sell_time) : '--';
     const statusHTML = item.sold
       ? `<span class="tag-sold">已卖出</span>`
@@ -403,10 +403,10 @@ function renderHistoryResults() {
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${buyTime}</td>
-      <td>${item.price ? item.price.toFixed(2) : '--'}</td>
+      <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
       <td>${curr ? curr.toFixed(2) : '--'}</td>
       <td>${sellTime}</td>
-      <td class="${profitCls}">${fmtPct(item.income_rate)}</td>
+      <td class="${profitCls}">${fmtPct(item.income)}</td>
       <td>${renderTagBadges(item.tags)}</td>
       <td>${statusHTML}</td>
     </tr>`;
@@ -424,9 +424,9 @@ function renderHistoryStats(results) {
   const tagPF = {};      // tag -> {winSum, lossSum, winN, lossN}
 
   for (const r of results) {
-    const rate = r.income_rate || 0;
+    const rate = r.income || 0;
     totalCnt++;
-    const buyTs = toTs(r.time);
+    const buyTs = toTs(r.buy_time);
     const endTs = r.sold ? toTs(r.sell_time) : Date.now();
     if (buyTs > 0 && endTs >= buyTs) {
       holdDaysSum += (endTs - buyTs) / (24 * 60 * 60 * 1000);

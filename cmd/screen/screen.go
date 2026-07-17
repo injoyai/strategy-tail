@@ -352,7 +352,7 @@ func (this *ScreenService) realtimeBuys() {
 					Tags:     s.checkTags(code, ks),
 				}
 				t.Realtime(last.Kline)
-				items = append(items)
+				items = append(items, t)
 			}
 		}
 	}
