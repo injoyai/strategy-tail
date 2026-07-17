@@ -64,8 +64,8 @@ function fmtMDHM(v) {
 
 function matchStrategy(item) {
   if (!currentStrategy) return true; // 未选中策略时显示全部
-  if (!item.strategies || item.strategies.length === 0) return true;
-  return item.strategies.includes(currentStrategy);
+  if (!item.strategy) return true;
+  return item.strategy === currentStrategy;
 }
 
 function matchSearch(item) {
@@ -103,10 +103,10 @@ function renderStrategyBar() {
   function statsForKey(key) {
     const buys = key === 'all'
       ? buyResults.length
-      : buyResults.filter(b => b.strategies && b.strategies.includes(key)).length;
+      : buyResults.filter(b => b.strategy === key).length;
     const hist = key === 'all'
       ? historyResults
-      : historyResults.filter(r => r.strategies && r.strategies.includes(key));
+      : historyResults.filter(r => r.strategy === key);
     const sold = hist.filter(r => r.sold);
     const win = sold.filter(r => (r.income_rate || 0) > 0).length;
     const winRate = sold.length > 0 ? (win / sold.length * 100).toFixed(0) + '%' : '--';
