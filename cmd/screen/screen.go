@@ -228,7 +228,7 @@ func (this *ScreenService) init() error {
 
 func (this *ScreenService) _update() {
 	logs.PrintErr(common.Update())
-	if update, err := this.update.Updated("history"); err != nil || !update {
+	if update, err := this.update.Updated("history"); err != nil || !update || true {
 		logs.PrintErr(this.updateHistoryTrade())
 		this.update.Update("history")
 	}
@@ -569,7 +569,7 @@ func (this *ScreenService) updateHistoryTrade() error {
 		days = int(time.Since(latest)/(time.Hour*24)) + 1
 
 		//删除最新买入日期起的交易数据,后续重新计算(修正盘中价→收盘价等场景)
-		logs.Debug("重新历史节点:", latest.Format(time.DateTime))
+		logs.Debug("重新历史节点:", latest.Format(time.DateTime), days)
 		if _, err := this.DB.Where("BuyTime >= ?", latest.Format(time.DateTime)).Delete(&Trade{}); err != nil {
 			return err
 		}
@@ -633,17 +633,7 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 			}
 
 			//获取历史分钟数据
-			var mks protocol.Klines
-			err := common.Manage.Do(func(c *tdx.Client) error {
-				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
-					return k.Time.Before(time.Now().AddDate(0, 0, -days*2))
-				})
-				if err != nil {
-					return err
-				}
-				mks = resp.List
-				return nil
-			})
+			mks, err := common.Pull.MinKlines(code, time.Now().AddDate(0, 0, -days*2), time.Now())
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()

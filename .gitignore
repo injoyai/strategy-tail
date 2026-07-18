@@ -9,6 +9,7 @@ output/*
 *.xlsx
 *.log
 *bin
+*.py
 .*
 *_report.html
 *.go.*
