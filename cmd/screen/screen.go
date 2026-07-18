@@ -369,7 +369,6 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 
 	//选择策略
 	var buyer core.Buyer
-	var fixedSeller core.Seller //特定策略时直接使用; 全部策略时为 nil,按买点动态匹配
 	var strategyName string
 	if strategyKey == "" || strategyKey == "all" {
 		ss := make([]core.Buyer, 0, len(s.Strategies))
@@ -384,7 +383,6 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		for _, st := range s.Strategies {
 			if st.Key == strategyKey {
 				buyer = st.Buyer
-				fixedSeller = st.Seller
 				strategyName = st.Name
 				break
 			}
@@ -427,42 +425,10 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	//获取诊断树
 	_, diagnosis := core.Diagnose(buyer, code, ks)
 
-	//计算历史买卖点,用于在K线图上标注
-	buyPoints := core.GetBuys(buyer, code, ks, len(ks))
-	type sellPoint struct {
-		BuyIdx  int
-		SellIdx int
-	}
-	sellPoints := []sellPoint(nil)
-	for i, b := range buyPoints {
-		var sel *core.Sell
-		if fixedSeller != nil {
-			//特定策略: 使用该策略的卖出条件
-			sel = core.GetSell(fixedSeller, ks, *b, nil)
-		} else {
-			//全部策略: 按买点命中的策略动态选择卖出条件
-			//buyIdx := -1
-			for j := range ks {
-				if ks[j].Time.Equal(b.Time) {
-					//buyIdx = j
-					break
-				}
-			}
-			//if buyIdx >= 0 {
-			//	if seller := s.sellerFor(s.evalStrategies(b.Code, ks[:buyIdx+1])); seller != nil {
-			//		sel = core.GetSell(seller, ks, *b, nil)
-			//	}
-			//}
-		}
-		if sel != nil {
-			//找到卖出K线在 ks 中的索引
-			for j := range ks {
-				if ks[j].Time.Equal(sel.Time) {
-					sellPoints = append(sellPoints, sellPoint{BuyIdx: i, SellIdx: j})
-					break
-				}
-			}
-		}
+	//查询该股票的历史成交记录(从数据库),作为K线图买卖点标注的权威数据源
+	trades := []*Trade(nil)
+	if err := s.DB.Where("Code=?", code).Asc("BuyTime").Find(&trades); err != nil {
+		logs.Errf("[诊断] 查询交易记录失败: %v", err)
 	}
 
 	//组装K线数据
@@ -478,32 +444,34 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		})
 	}
 
-	//将买卖点追加到标注中
-	for i, b := range buyPoints {
-		anns = append(anns, core.Annotation{
-			Time:  b.Time,
-			Price: b.Price.Float64(),
-			Label: "买",
-			Color: "#ef4444", // A股: 红色买入
-			Note:  fmt.Sprintf("买入 %.2f @ %s", b.Price.Float64(), b.Time.Format("2006-01-02")),
-		})
-		_ = i
-	}
-	for _, sp := range sellPoints {
-		k := ks[sp.SellIdx]
-		anns = append(anns, core.Annotation{
-			Time:  k.Time,
-			Price: k.Close.Float64(),
-			Label: "卖",
-			Color: "#22c55e", // A股: 绿色卖出
-			Note:  fmt.Sprintf("卖出 %.2f @ %s", k.Close.Float64(), k.Time.Format("2006-01-02")),
-		})
-	}
-
-	//查询该股票的历史成交记录(从数据库)
-	trades := []*Trade(nil)
-	if err := s.DB.Where("Code=?", code).Asc("BuyTime").Find(&trades); err != nil {
-		logs.Errf("[诊断] 查询交易记录失败: %v", err)
+	//将买卖点追加到标注中(直接使用 trades 表的买卖时间,与成交记录一致)
+	for _, t := range trades {
+		//选了特定策略时,只展示该策略的标注
+		if strategyKey != "" && strategyKey != "all" && t.Strategy != strategyKey {
+			continue
+		}
+		//买点标注
+		if buyTime, err := time.Parse(time.DateTime, t.BuyTime); err == nil {
+			anns = append(anns, core.Annotation{
+				Time:  buyTime,
+				Price: t.BuyPrice,
+				Label: "买",
+				Color: "#ef4444", // A股: 红色买入
+				Note:  fmt.Sprintf("买入 %.2f @ %s", t.BuyPrice, buyTime.Format("2006-01-02")),
+			})
+		}
+		//卖点标注(仅已卖出的)
+		if t.Sold {
+			if sellTime, err := time.Parse(time.DateTime, t.SellTime); err == nil {
+				anns = append(anns, core.Annotation{
+					Time:  sellTime,
+					Price: t.SellPrice,
+					Label: "卖",
+					Color: "#22c55e", // A股: 绿色卖出
+					Note:  fmt.Sprintf("卖出 %.2f @ %s", t.SellPrice, sellTime.Format("2006-01-02")),
+				})
+			}
+		}
 	}
 	diagTrades := make([]DiagnoseTrade, 0, len(trades))
 	for _, t := range trades {

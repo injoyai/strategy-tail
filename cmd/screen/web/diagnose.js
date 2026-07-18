@@ -237,18 +237,28 @@ function renderChart(data) {
     }
   }
 
-  // 去重: 同一天同一类型的标注只保留一个
-  const seen = new Set();
-  const dedupedBuySell = buySellItems.filter(item => {
+  // 去重: 同一天同一类型的标注合并显示(text 加 xN 后缀)
+  const grouped = new Map(); // key: time|shape -> { item, count }
+  for (const item of buySellItems) {
     const key = item.time + '|' + item.marker.shape;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      grouped.set(key, { item, count: 1 });
+    }
+  }
+  const dedupedBuySell = [];
+  for (const { item, count } of grouped.values()) {
+    const marker = { ...item.marker };
+    if (count > 1) {
+      marker.text = `${item.marker.text} x${count}`;
+    }
+    dedupedBuySell.push({ time: item.time, marker, value: item.value });
+  }
   const dedupedOther = otherMarkers.filter(m => {
     const key = m.time + '|' + m.shape;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    if (grouped.has(key)) return false;
     return true;
   });
 

@@ -52,7 +52,7 @@ type Response struct {
 // Trade - 交易数据
 type Trade struct {
 	ID        int64    `json:"id"`                    //唯一标识
-	Code      string   `json:"code"`                  // 股票代码
+	Code      string   `json:"code" xorm:"index"`     // 股票代码
 	Name      string   `json:"name"`                  // 股票名称
 	BuyTime   string   `json:"buy_time"`              // 买入时间
 	BuyPrice  float64  `json:"buy_price"`             // 买入价
