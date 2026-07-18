@@ -228,7 +228,7 @@ func (this *ScreenService) init() error {
 
 func (this *ScreenService) _update() {
 	logs.PrintErr(common.Update())
-	if update, err := this.update.Updated("history"); err != nil || !update || true {
+	if update, err := this.update.Updated("history"); err != nil || !update {
 		logs.PrintErr(this.updateHistoryTrade())
 		this.update.Update("history")
 	}

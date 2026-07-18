@@ -15,7 +15,7 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.4.1")
+	logs.Info("版本:", "v1.4.2")
 	logs.Info("详情:", "古法编程优化版")
 }
 
