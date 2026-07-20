@@ -57,6 +57,7 @@ func (this Screen) Run(at ...time.Time) ([]*Buy, error) {
 					Code:  code,
 					Time:  today.Time,
 					Price: today.Close,
+					Rise:  today.RiseRate(),
 				})
 				mu.Unlock()
 			}
@@ -78,6 +79,7 @@ func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
 					Code:  code,
 					Time:  k.Time,
 					Price: k.Close,
+					Rise:  k.RiseRate(),
 				})
 			}
 		}

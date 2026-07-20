@@ -56,6 +56,7 @@ type Trade struct {
 	Name      string   `json:"name"`                  // 股票名称
 	BuyTime   string   `json:"buy_time"`              // 买入时间
 	BuyPrice  float64  `json:"buy_price"`             // 买入价
+	BuyRise   float64  `json:"buy_rise"`              // 买入(当天)涨幅
 	Sold      bool     `json:"sold" xorm:"index"`     //是否卖出
 	SellTime  string   `json:"sell_time"`             // 卖出时间
 	SellPrice float64  `json:"sell_price"`            // 卖出价

@@ -242,15 +242,15 @@ function renderBuyResults() {
   }
 
   let html = `<div class="table-wrap"><table class="stock-table"><thead><tr>
-    <th>代码</th><th>名称</th><th>买入价</th><th>涨幅</th><th>标签</th>
+    <th>代码</th><th>名称</th><th>买入价</th><th>买入涨幅</th><th>标签</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
-    const riseCls = numClass(item.income);
+    const riseCls = numClass(item.buy_rise);
     html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
-      <td class="${riseCls}">${fmtPct(item.income)}</td>
+      <td class="${riseCls}">${fmtPct(item.buy_rise)}</td>
       <td>${renderTagBadges(item.tags)}</td>
     </tr>`;
   }
@@ -389,7 +389,7 @@ function renderHistoryResults() {
   }
 
   let html = `<div class="table-wrap"><table class="stock-table"><thead><tr>
-    <th>代码</th><th>名称</th><th>买入时间</th><th>买入价</th><th>现价/卖价</th><th>卖出时间</th><th>收益率</th><th>标签</th><th>状态</th>
+    <th>代码</th><th>名称</th><th>买入时间</th><th>买入价</th><th>买入涨幅</th><th>现价/卖价</th><th>卖出时间</th><th>收益率</th><th>标签</th><th>状态</th>
   </tr></thead><tbody>`;
   for (const item of filtered) {
     const profitCls = numClass(item.income);
@@ -404,6 +404,7 @@ function renderHistoryResults() {
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${buyTime}</td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
+      <td class="${numClass(item.buy_rise)}">${fmtPct(item.buy_rise)}</td>
       <td>${curr ? curr.toFixed(2) : '--'}</td>
       <td>${sellTime}</td>
       <td class="${profitCls}">${fmtPct(item.income)}</td>

@@ -92,6 +92,7 @@ type Buy struct {
 	Code  string
 	Time  time.Time
 	Price protocol.Price
+	Rise  float64
 }
 
 func (b *Buy) String() string {

@@ -348,6 +348,7 @@ func (this *ScreenService) realtimeBuys() {
 					Name:     common.Manage.Codes.GetName(code),
 					BuyTime:  last.Time.Format(time.DateTime),
 					BuyPrice: last.Close.Float64(),
+					BuyRise:  last.RiseRate(),
 					Strategy: s.Key,
 					Tags:     s.checkTags(code, ks),
 				}
@@ -671,6 +672,7 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 								Name:     common.Manage.Codes.GetName(code),
 								BuyTime:  b.Time.Format(time.DateTime),
 								BuyPrice: b.Price.Float64(),
+								BuyRise:  b.Rise,
 								Strategy: st.Key,
 								Tags:     st.checkTags(code, hisKs),
 							}
