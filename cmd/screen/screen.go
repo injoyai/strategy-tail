@@ -52,7 +52,7 @@ type ScreenService struct {
 }
 
 // update 更新实时数据
-func (this *ScreenService) updateRealtime() error {
+func (this *ScreenService) updateRealtime(first bool) error {
 	realKlines, err := this.getRealtimeKlines()
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func (this *ScreenService) updateRealtime() error {
 	this.lastPrices = realKlines
 	this.mu.Unlock()
 
-	if !common.IsTradingTime() {
+	if !common.IsTradingTime() && !first {
 		return nil
 	}
 
@@ -259,7 +259,7 @@ func (this *ScreenService) Run() error {
 		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
 
 			//更新实时数据
-			err := this.updateRealtime()
+			err := this.updateRealtime(first)
 			logs.PrintErr(err)
 
 			//计算实时卖点
