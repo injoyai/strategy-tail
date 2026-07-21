@@ -15,8 +15,8 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.4.3")
-	logs.Info("详情:", "修复无单日涨幅数据的问题")
+	logs.Info("版本:", "v1.4.5")
+	logs.Info("详情:", "修复盘后历史数据没有更新的问题")
 }
 
 func main() {
@@ -35,8 +35,10 @@ func main() {
 		Strategies:   strategies,
 	}
 
-	logs.Info("开始运行主程序...")
-	go svc.Run()
+	go func() {
+		logs.Info("开始运行主程序...")
+		logs.PrintErr(svc.Run())
+	}()
 
 	port := cfg.GetInt("screen.port", 9090)
 	useLocal := cfg.GetBool("screen.html.local")

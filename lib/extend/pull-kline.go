@@ -48,7 +48,7 @@ func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
 		return nil, err
 	}
 
-	updated, err := tdx.NewUpdated(db, 15, 1)
+	updated, err := tdx.NewUpdated(db, 15, 31)
 	if err != nil {
 		return nil, err
 	}

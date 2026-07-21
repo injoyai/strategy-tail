@@ -215,7 +215,7 @@ func (this *ScreenService) init() error {
 		if err != nil {
 			return err
 		}
-		this.update, err = tdx.NewUpdated(db, 15, 1)
+		this.update, err = tdx.NewUpdated(db, 15, 31)
 		if err != nil {
 			return err
 		}
@@ -227,7 +227,10 @@ func (this *ScreenService) init() error {
 }
 
 func (this *ScreenService) _update() {
+	//更新最新数据到本地数据库
 	logs.PrintErr(common.Update())
+	//加载本地日线数据到缓存
+	this.getHistoryDayKlines()
 	if update, err := this.update.Updated("history"); err != nil || !update {
 		logs.PrintErr(this.updateHistoryTrade())
 		this.update.Update("history")
@@ -241,14 +244,11 @@ func (this *ScreenService) Run() error {
 		return err
 	}
 
-	//加载历史日线数据到缓存
-	this.getHistoryDayKlines()
-
 	//增量更新历史交易
 	this._update()
 
 	cr := cron.New(cron.WithSeconds())
-	cr.AddFunc("0 5 15 * * *", this._update)
+	cr.AddFunc("0 32 15 * * *", this._update)
 	cr.Start()
 
 	first := true
@@ -311,7 +311,7 @@ func (this *ScreenService) realtimeShells() error {
 					t.Sell(s)
 					sells = append(sells, t)
 					//更新到数据库
-					_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,ProfitRate").Update(t)
+					_, err := this.DB.Where("ID=?", t.ID).Cols("Sold,SellTime,SellPrice,Income").Update(t)
 					logs.PrintErr(err)
 				}
 			}
