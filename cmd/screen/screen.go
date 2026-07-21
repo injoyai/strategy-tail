@@ -633,8 +633,22 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 				return
 			}
 
-			//获取历史分钟数据
-			mks, err := common.Pull.MinKlines(code, time.Now().AddDate(0, 0, -days*2), time.Now())
+			//实时获取历史分钟数据
+			var mks protocol.Klines
+			err := common.Manage.Do(func(c *tdx.Client) error {
+				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
+					return k.Time.Before(time.Now().AddDate(0, 0, -days-3))
+				})
+				if err != nil {
+					return err
+				}
+				mks = resp.List
+				return nil
+			})
+
+			//本地获取历史分钟数据
+			//mks, err := common.Pull.MinKlines(code, time.Now().AddDate(0, 0, -days*2), time.Now())
+
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()
