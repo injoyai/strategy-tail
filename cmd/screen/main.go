@@ -15,7 +15,7 @@ import (
 const dbPath = "./data/database/trade.db"
 
 func init() {
-	logs.Info("版本:", "v1.4.5")
+	logs.Info("版本:", "v1.4.6")
 	logs.Info("详情:", "修复盘后历史数据没有更新的问题")
 }
 

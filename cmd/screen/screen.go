@@ -233,6 +233,8 @@ func (this *ScreenService) _update() {
 	this.getHistoryDayKlines()
 	if update, err := this.update.Updated("history"); err != nil || !update {
 		logs.PrintErr(this.updateHistoryTrade())
+		_, err = this.loadingTrades()
+		logs.PrintErr(err)
 		this.update.Update("history")
 	}
 }
@@ -279,14 +281,13 @@ func (this *ScreenService) Run() error {
 // realtimeShells 计算实时卖点
 func (this *ScreenService) realtimeShells() error {
 	todayDate := time.Now().Format(time.DateOnly)
-	trades := []*Trade(nil)
-	if err := this.DB.Find(&trades); err != nil {
+
+	//从本地加载历史成交
+	trades, err := this.loadingTrades()
+	if err != nil {
 		return err
 	}
-	//缓存历史交易数据(供HTTP读取)
-	this.mu.Lock()
-	this.lastTrades = trades
-	this.mu.Unlock()
+
 	//计算实时卖点
 	sells := []*Trade(nil)
 	for _, t := range trades {
@@ -543,6 +544,18 @@ func (this *ScreenService) getHistoryDayKlines() {
 		})
 	}
 	b.Wait()
+}
+
+func (this *ScreenService) loadingTrades() ([]*Trade, error) {
+	trades := []*Trade(nil)
+	if err := this.DB.Find(&trades); err != nil {
+		return nil, err
+	}
+	//缓存历史交易数据(供HTTP读取)
+	this.mu.Lock()
+	this.lastTrades = trades
+	this.mu.Unlock()
+	return trades, nil
 }
 
 // UpdateHistoryTrade 更新历史买卖点数据
