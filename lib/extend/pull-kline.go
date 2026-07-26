@@ -94,7 +94,7 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 	if len(codes) == 0 {
 		codes = m.Codes.GetStockCodes()
 		codes = append(codes, m.Codes.GetETFCodes()...)
-		//codes = append(codes, m.Codes.GetIndexCodes()...)
+		codes = append(codes, m.Codes.GetIndexCodes()...)
 	}
 	for _, v := range this.Types {
 		switch v {
@@ -265,9 +265,16 @@ func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string) error {
 			//3. 从服务器获取数据
 			var resp *protocol.KlineResp
 			err = m.Do(func(c *tdx.Client) error {
-				resp, err = c.GetKlineDayUntil(code, func(k *protocol.Kline) bool {
-					return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
-				})
+				switch {
+				case protocol.IsIndex(code):
+					resp, err = c.GetIndexDayUntil(code, func(k *protocol.Kline) bool {
+						return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
+					})
+				default:
+					resp, err = c.GetKlineDayUntil(code, func(k *protocol.Kline) bool {
+						return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
+					})
+				}
 				return err
 			})
 			if err != nil {
@@ -337,6 +344,11 @@ func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string) error {
 				}
 			}()
 
+			//暂时去掉指数的分钟数据更新
+			if protocol.IsIndex(code) {
+				return
+			}
+
 			ks := protocol.Klines{}
 			//判断数据库文件是否存在,如果今年的数据库文件不存在,则按年向前填充
 			filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
@@ -361,6 +373,7 @@ func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string) error {
 }
 
 func (this *PullKline) updateMinuteKlineYear(m *tdx.Manage, code string, year int, ks protocol.Klines) (protocol.Klines, error) {
+
 	//去年的数据库文件
 	filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
 
