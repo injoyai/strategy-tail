@@ -464,7 +464,8 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 	for streakStart > 0 && hist[streakStart] > hist[streakStart-1] {
 		streakStart--
 	}
-	streakDays := streakEnd - streakStart + 1
+	// 连涨天数 = 上涨步数（今天>昨天算1步），等于连涨段除基础柱外的步数
+	streakDays := streakEnd - streakStart
 
 	// 校验连涨天数下限
 	if streakDays < s.MinDays {
