@@ -496,3 +496,169 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 
 	return true
 }
+
+// MACD负柱缩短 是 MACD 绿柱（负柱）逐渐缩短的买入条件。
+//
+// 社区经典"绿柱缩短"抄底逻辑：下跌趋势中，绿柱（负柱）由长变短代表
+// 空头动能衰竭，是底部反转的早期信号。
+// 本条件要求：昨日为负柱，且今日负柱比昨日更接近零轴（hist[n-1] > hist[n-2]），
+// 并且近 Lookback 根柱子内负柱总体在收窄（最近 MinDays 根中递增步数 >= MinDays）。
+//
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// MinDays 表示最近连续"负柱变短"的最少天数，默认 1。
+// MaxDays 表示最近连续"负柱变短"的最多天数，默认 0 表示不限。
+//   - 配置范围：MinDays=2, MaxDays=3 表示最近 2~3 天负柱都在变短。
+//   - 若 MaxDays < MinDays 或 MaxDays == 0，则上限不生效，只校验下限 MinDays。
+//
+// Lookback 表示负柱缩短前的回看窗口，默认 0（不校验）。
+// 当 Lookback > 0 时，要求近 Lookback 根柱子内存在"负柱缩短"的起点，
+// 即窗口内较早位置曾出现连续负柱（体现"大量负柱"前提）。
+//
+// 该策略常与 MACD负数 / A企稳信号 / MACD转红 组合使用：
+//
+//	buy.And{ buy.MACD负数{MinDays:5}, buy.MACD负柱缩短{MinDays:2}, buy.A企稳信号{}, buy.MACD转红{} }
+type MACD负柱缩短 struct {
+	Fast     int
+	Slow     int
+	Signal   int
+	MinDays  int
+	MaxDays  int
+	Lookback int
+}
+
+func (s MACD负柱缩短) Name() string {
+	minDays := s.MinDays
+	if minDays == 0 {
+		minDays = 1
+	}
+	if s.MaxDays > 0 && s.MaxDays >= minDays {
+		return fmt.Sprintf("MACD负柱缩短%d-%d天", minDays, s.MaxDays)
+	}
+	return fmt.Sprintf("MACD负柱缩短%d天", minDays)
+}
+
+func (s MACD负柱缩短) Buy(code string, dks extend.Klines) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+	if s.MinDays == 0 {
+		s.MinDays = 1
+	}
+	// MaxDays 仅在大于等于 MinDays 时才生效
+	maxDays := s.MaxDays
+	if maxDays > 0 && maxDays < s.MinDays {
+		maxDays = 0
+	}
+
+	n := len(dks)
+	if n < 2 || n < s.Slow+s.Signal || n < s.MinDays+1 {
+		return false
+	}
+
+	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != n {
+		return false
+	}
+
+	// 昨天必须是负柱（今天转红由 MACD转红 负责）
+	yesterday := hist[n-2]
+	if yesterday >= 0 {
+		return false
+	}
+
+	// 从最新交易日向前数连续"负柱变短"天数
+	// 负柱变短 = 今天比昨天更接近零轴（更大），且两者都为负
+	streakEnd := n - 1
+	if !(hist[streakEnd] > hist[streakEnd-1]) {
+		return false
+	}
+	streakStart := streakEnd
+	for streakStart > 0 && hist[streakStart] > hist[streakStart-1] && hist[streakStart-1] < 0 {
+		streakStart--
+	}
+	streakDays := streakEnd - streakStart
+
+	if streakDays < s.MinDays {
+		return false
+	}
+	if maxDays > 0 && streakDays > maxDays {
+		return false
+	}
+
+	// 校验回看窗口内曾出现连续负柱（"大量负柱"前提）
+	if s.Lookback > 0 {
+		windowStart := n - 1 - s.Lookback
+		if windowStart < 0 {
+			windowStart = 0
+		}
+		hasNegative := false
+		for i := windowStart; i < n; i++ {
+			if hist[i] < 0 {
+				hasNegative = true
+				break
+			}
+		}
+		if !hasNegative {
+			return false
+		}
+	}
+
+	return true
+}
+
+// MACD转红 是 MACD 量柱由负转正（零轴金叉）的买入条件。
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// 触发条件：今天 MACD 量柱 > 0（变红），昨天 MACD 量柱 <= 0（此前为绿/非红），
+// 即量柱从零轴下方穿越到上方。
+//
+// 常与 MACD连涨 组合使用，表达“此前量柱为负、连续上涨数日后今天转红”的买点：
+//
+//	buy.And{ buy.MACD转红{}, buy.MACD连涨{MinDays: 3, MaxDays: 5} }
+//
+// 其中 MACD连涨{MinDays: N} 已隐含“此前至少 N-1 天量柱为负”（因昨天 <= 0 且连涨使得更早的柱子更负）。
+type MACD转红 struct {
+	Fast   int
+	Slow   int
+	Signal int
+}
+
+func (s MACD转红) Name() string {
+	return "MACD量柱转红"
+}
+
+func (s MACD转红) Buy(code string, dks extend.Klines) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+
+	n := len(dks)
+	if n < 2 || n < s.Slow+s.Signal {
+		return false
+	}
+
+	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	if len(hist) != n {
+		return false
+	}
+
+	today := hist[n-1]
+	yesterday := hist[n-2]
+	// 今天变红（>0），昨天非红（<=0），确认零轴穿越
+	return today > 0 && yesterday <= 0
+}

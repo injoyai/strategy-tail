@@ -12,16 +12,18 @@ import (
 
 func main() {
 
+	common.Update()
+
 	codes := common.GetNoPriceLimitCodes()
 
-	ks, err := common.Pull.DayKlines("sh000300", time.Time{}, time.Now())
+	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
 	logs.PanicErr(err)
 	// logs.Debug(len(ks))
 	// return
 
 	b := buy.A指数多头排列{
 		Ks:      ks,
-		Periods: []int{10, 20, 60, 120},
+		Periods: []int{5, 60},
 	}
 	_ = b
 
@@ -31,30 +33,14 @@ func main() {
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2022, 2023, 2024, 2025, 2026}
 	//years = []int{2020, 2021, 2022, 2023, 2024, 2025, 2026}
-	//years = []int{2026}
-
-	core.Backtest{
-		Buyer: buy.And{
-			TestBuy,
-		},
-		Seller:       TestSell,
-		Goroutines:   common.DefaultGoroutines * 2,
-		Codes:        codes,
-		Years:        years,
-		GetDayKlines: common.Pull.DayKlines,
-		GetMinKlines: common.Pull.MinKlines,
-
-		Benchmark: benchmark,
-		Cost:      cost,
-		Position:  pos,
-	}.Run()
+	years = []int{2026}
 
 	core.Backtest{
 		Buyer: buy.And{
 			b,
-			TestBuy,
+			MACDBuyer,
 		},
-		Seller:       TestSell,
+		Seller:       MACDSeller,
 		Goroutines:   common.DefaultGoroutines * 2,
 		Codes:        codes,
 		Years:        years,
@@ -92,14 +78,31 @@ var (
 	}
 
 	MACDBuyer = buy.And{
-		buy.A流通市值{Min: 400},
+		buy.A流通市值{Min: 800},
 		buy.A现价{Max: 120},
 		buy.A过滤涨停{},
 
 		buy.MACD负数{MinDays: 6},
-		buy.MACD连涨{MinDays: 1, MaxDays: 1},
+		buy.MACD连涨{MinDays: 2, MaxDays: 2},
 
-		buy.A现价大于N日均线(45),
+		buy.A现价大于N日均线(30),
+
+		buy.And{
+			buy.MAUp{Period: 30, MinSlope: 0.0005},
+			buy.MAUp{Period: 20, MinSlope: 0.0005},
+		},
+	}
+
+	// MACD转红Buyer 之前MACD量柱为负、连续涨数日后今天量柱由负转红（零轴金叉）。
+	// MACD转红 保证今天>0且昨天<=0；MACD连涨{MinDays:3} 保证含今天连涨3天，
+	// 因昨天<=0且连涨使得更早柱子更负，已隐含“此前量柱为负”。
+	MACD转红Buyer = buy.And{
+		buy.A流通市值{Min: 100},
+		buy.A现价{Max: 120},
+		buy.A过滤涨停{},
+
+		buy.MACD转红{},
+		buy.MACD连涨{MinDays: 3, MaxDays: 5},
 
 		buy.And{
 			buy.MAUp{Period: 30, MinSlope: 0.0005},

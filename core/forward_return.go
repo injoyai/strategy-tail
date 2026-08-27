@@ -225,6 +225,38 @@ func summarizeOne(days int, values []float64) ForwardReturnSummary {
 
 // Run 执行全部分析:并发扫描买入信号 -> 汇总统计 -> 控制台输出 -> HTML报告。
 func (this ForwardReturnAnalysis) Run() {
+	allReturns, summaries := this.Collect()
+
+	if len(allReturns) == 0 {
+		logs.Warn("未检测到任何买入信号")
+		return
+	}
+
+	logs.Infof("共检测到 %d 个买入信号", len(allReturns))
+
+	buyerName := "未知策略"
+	if this.Buyer != nil {
+		buyerName = this.Buyer.Name()
+	}
+	days := this.ForwardDays
+	if len(days) == 0 {
+		days = DefaultForwardDays()
+	}
+	PrintForwardReturnSummary(buyerName, summaries)
+	before := this.KlineBefore
+	if before <= 0 {
+		before = 10
+	}
+	after := this.KlineAfter
+	if after <= 0 {
+		after = 10
+	}
+	exportForwardReturnHTML(buyerName, summaries, allReturns, days, before, after)
+}
+
+// Collect 执行全部分析，返回所有买入信号与按N天汇总的统计结果。
+// 供外部程序复用（如导出数据生成报告），与 Run 共享同一扫描逻辑。
+func (this ForwardReturnAnalysis) Collect() ([]ForwardReturn, []ForwardReturnSummary) {
 	days := this.ForwardDays
 	if len(days) == 0 {
 		days = DefaultForwardDays()
@@ -242,24 +274,8 @@ func (this ForwardReturnAnalysis) Run() {
 		allReturns = append(allReturns, yearReturns...)
 	}
 
-	if len(allReturns) == 0 {
-		logs.Warn("未检测到任何买入信号")
-		return
-	}
-
-	logs.Infof("共检测到 %d 个买入信号", len(allReturns))
-
 	summaries := SummarizeForwardReturns(allReturns, days)
-	PrintForwardReturnSummary(buyerName, summaries)
-	before := this.KlineBefore
-	if before <= 0 {
-		before = 10
-	}
-	after := this.KlineAfter
-	if after <= 0 {
-		after = 10
-	}
-	exportForwardReturnHTML(buyerName, summaries, allReturns, days, before, after)
+	return allReturns, summaries
 }
 
 // scanYear 扫描单个年份的所有股票买入信号。

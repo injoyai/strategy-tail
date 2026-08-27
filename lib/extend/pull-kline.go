@@ -77,7 +77,7 @@ func (this *PullKline) Run(m *tdx.Manage, spec string) error {
 func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 	if len(must) == 0 || !must[0] {
 		if !m.Workday.TodayIs() {
-			logs.Debug("今天不是交易日")
+			logs.Debug("今天不是交易日,不更新数据")
 			return nil
 		}
 	}

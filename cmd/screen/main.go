@@ -21,6 +21,32 @@ func init() {
 
 func main() {
 
+	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
+	logs.PanicErr(err)
+	// logs.Debug(len(ks))
+	// return
+
+	b := buy.A指数多头排列{
+		Ks:      ks,
+		Periods: []int{5, 10},
+	}
+	_ = b
+
+	strategies = append(strategies, Strategy{
+		Key:  "macd-premium2",
+		Name: "MACD精选2",
+		Buyer: buy.And{
+			b,
+			common.MACDBuyer,
+		},
+		Seller: common.MACDSeller,
+		Tags: map[string]core.Buyer{
+			"中市值+": buy.A流通市值{Min: 600, Max: 800},
+			"涨停^":   buy.A涨停{},
+			"倍量^":   buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
+		},
+	})
+
 	db, err := xorms.NewSqlite(dbPath)
 	if err != nil {
 		logs.Panicf("初始化服务失败: %v\n", err)
@@ -59,12 +85,12 @@ var (
 			Buyer:  common.MACDBuyer,
 			Seller: common.MACDSeller,
 			Tags: map[string]core.Buyer{
-				"科创+":  buy.A科创板{},
-				"创业+":  buy.A创业板{},
-				"北证^":  buy.A北证板{},
+				"科创+":   buy.A科创板{},
+				"创业+":   buy.A创业板{},
+				"北证^":   buy.A北证板{},
 				"中市值+": buy.A流通市值{Min: 600, Max: 800},
-				"涨停^":  buy.A涨停{},
-				"倍量^":  buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
+				"涨停^":   buy.A涨停{},
+				"倍量^":   buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
 			},
 		},
 		{
@@ -73,12 +99,12 @@ var (
 			Buyer:  common.MACDBaseBuyer,
 			Seller: common.MACDSeller,
 			Tags: map[string]core.Buyer{
-				"科创+":  buy.A科创板{},
-				"创业+":  buy.A创业板{},
-				"北证^":  buy.A北证板{},
+				"科创+":   buy.A科创板{},
+				"创业+":   buy.A创业板{},
+				"北证^":   buy.A北证板{},
 				"中市值+": buy.A流通市值{Min: 600, Max: 800},
-				"涨停^":  buy.A涨停{},
-				"倍量^":  buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
+				"涨停^":   buy.A涨停{},
+				"倍量^":   buy.N天前符合{From: 5, To: 20, Buyer: buy.A通达信倍量{Ratio: 2.9}},
 			},
 		},
 		{

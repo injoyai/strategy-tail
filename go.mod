@@ -40,10 +40,13 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
+	github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
+	github.com/signintech/gopdf v0.38.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tinylib/msgp v1.5.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

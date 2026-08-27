@@ -114,3 +114,85 @@ func TestMACD连涨StreakIsRisingSteps(t *testing.T) {
 		}
 	}
 }
+
+// TestMACD负柱缩短 验证绿柱缩短（负柱收窄）判断：
+// 1) 下跌后回升的转折日（量柱转红）应触发负柱缩短；
+// 2) 负柱仍在放大的加速下跌段不应触发；
+// 3) MaxDays 上限生效时，过长的缩短连续段应被拒绝。
+func TestMACD负柱缩短(t *testing.T) {
+	// 1) 线性下跌后回升：负柱持续收窄，转折日（转红）应触发 MinDays=2
+	ks := linearDeclineThenUp(50, 15)
+	turnIdx := -1
+	for i := 2; i <= len(ks); i++ {
+		h := util.MACDHistogram(ks[:i], 12, 26, 9)
+		if h[len(h)-1] > 0 && h[len(h)-2] <= 0 {
+			turnIdx = i
+			break
+		}
+	}
+	if turnIdx < 0 {
+		t.Fatal("测试序列未出现量柱转红，测试无效")
+	}
+	s := MACD负柱缩短{MinDays: 2}
+	if !s.Buy("sz000001", ks[:turnIdx]) {
+		t.Fatalf("转折日(第%d天)应触发负柱缩短", turnIdx)
+	}
+	// 转折日当天组合 MACD转红 也应通过
+	turn := MACD转红{}
+	if !turn.Buy("sz000001", ks[:turnIdx]) {
+		t.Fatalf("转折日(第%d天)应触发MACD转红", turnIdx)
+	}
+
+	// 2) 加速下跌段：负柱持续放大，不应触发
+	ks2 := accelDeclineThenUp(58)
+	found := false
+	for i := 2; i <= len(ks2); i++ {
+		h := util.MACDHistogram(ks2[:i], 12, 26, 9)
+		if h[len(h)-1] < h[len(h)-2] {
+			found = true
+			if s.Buy("sz000001", ks2[:i]) {
+				t.Fatalf("第%d天负柱在放大却触发了负柱缩短 (%v -> %v)", i, h[len(h)-2], h[len(h)-1])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("加速下跌序列未出现负柱放大段，测试无效")
+	}
+
+	// 3) MaxDays 上限：转折日前的连续缩短段很长，应被 MaxDays=5 拒绝
+	sMax := MACD负柱缩短{MinDays: 2, MaxDays: 5}
+	if sMax.Buy("sz000001", ks[:turnIdx]) {
+		t.Fatal("连续缩短段超过5天，MaxDays=5 应拒绝")
+	}
+}
+
+// TestMACD转红 验证量柱由负转正（零轴金叉）的判断。
+// 用“长期下跌 + 末段回升”序列，使 MACD 量柱在回升段穿越零轴，
+// 逐个截断点校验买家触发条件与 hist[n-1]>0 && hist[n-2]<=0 完全一致。
+func TestMACD转红(t *testing.T) {
+	ks := linearDeclineThenUp(50, 15)
+	s := MACD转红{}
+
+	triggered := false
+	for i := 2; i <= len(ks); i++ {
+		sub := ks[:i]
+		h := util.MACDHistogram(sub, 12, 26, 9)
+		last := len(h) - 1
+		expectCross := h[last] > 0 && h[last-1] <= 0
+		got := s.Buy("sz000001", sub)
+		if expectCross && !got {
+			t.Fatalf("第 %d 天应为穿越日但未触发 (hist[last]=%v, hist[last-1]=%v)",
+				i, h[last], h[last-1])
+		}
+		if !expectCross && got {
+			t.Fatalf("第 %d 天不应触发但触发了 (hist[last]=%v, hist[last-1]=%v)",
+				i, h[last], h[last-1])
+		}
+		if expectCross {
+			triggered = true
+		}
+	}
+	if !triggered {
+		t.Fatalf("测试序列中未出现任何穿越日，测试无效")
+	}
+}

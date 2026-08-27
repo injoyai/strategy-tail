@@ -14,8 +14,8 @@ import (
 // ============================================================================
 
 // MonteCarloResult 蒙特卡洛模拟结果。
-// 通过对历史交易顺序进行多次重采样，得到收益与回撤的经验分布，
-// 用于评估策略对交易顺序的敏感度与尾部风险。
+// 通过对历史逐笔收益率进行多次有放回重采样（bootstrap），
+// 得到最终收益与回撤的经验分布，用于评估策略的抽样不确定性与尾部风险。
 type MonteCarloResult struct {
 	ReturnP5       float64 // 最终收益率第 5 百分位（%，悲观情景）
 	ReturnP25      float64 // 最终收益率第 25 百分位（%）
@@ -56,9 +56,13 @@ func percentile(sorted []float64, p float64) float64 {
 
 // MonteCarlo 蒙特卡洛模拟。
 //
-// 对历史交易顺序进行 iterations 次随机重采样（shuffle），
-// 每次将打乱后的逐笔收益率（tradeReturnRate/100）复利累计，
-// 得到最终收益率与最大回撤的经验分布。
+// 对历史逐笔收益率进行 iterations 次有放回重采样（bootstrap）：
+// 每次从收益率池中随机抽取与交易数等量的样本（允许重复），
+// 将抽样序列复利累计，得到最终收益率与最大回撤的经验分布。
+//
+// 注意：最终收益率只取决于"抽到了哪些收益率"（复利乘法可交换，
+// 与顺序无关），因此必须使用有放回重采样才能体现抽样不确定性；
+// 单纯对历史交易顺序做无放回 shuffle 会导致最终收益率收敛为单一值。
 //
 // 返回收益率的百分位带（P5/P25/P50/P75/P95）、回撤分布（P50/P95）、
 // 盈利概率与破产概率（最终亏损 > 20%）。
@@ -93,18 +97,15 @@ func MonteCarlo(trades []Trade, iterations int, initialCapital float64) MonteCar
 	const ruinThreshold = -20.0 // 破产阈值：最终亏损超过 20%
 
 	for it := 0; it < iterations; it++ {
-		// 复制收益序列并随机打乱顺序
-		shuffled := make([]float64, len(returns))
-		copy(shuffled, returns)
-		rng.Shuffle(len(shuffled), func(i, j int) {
-			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-		})
-
-		// 复利累计资金曲线，同时跟踪最大回撤
+		// 有放回重采样：随机抽取与交易数等量的样本（允许重复），
+		// 模拟未来可能出现的不同收益组合。
 		equity := initialCapital
 		peak := initialCapital
 		maxDD := 0.0
-		for _, ret := range shuffled {
+		for i := 0; i < len(returns); i++ {
+			ret := returns[rng.Intn(len(returns))]
+
+			// 复利累计资金曲线，同时跟踪最大回撤
 			equity *= (1 + ret)
 			if equity > peak {
 				peak = equity
