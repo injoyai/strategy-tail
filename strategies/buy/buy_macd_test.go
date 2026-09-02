@@ -79,6 +79,108 @@ func countRisingSteps(hist []float64) int {
 	return steps
 }
 
+// smoothDeclineThenUp 构造"长期线性下跌 + 末段线性回升"序列。
+// 线性下跌和线性回升段产生的 MACD 量柱变化平滑，方向反转少。
+func smoothDeclineThenUp(declineDays, riseDays int) extend.Klines {
+	n := declineDays + riseDays
+	closes := make([]float64, n)
+	for i := 0; i < n; i++ {
+		if i < declineDays {
+			closes[i] = 100 - float64(i)*0.5
+		} else {
+			base := 100 - float64(declineDays-1)*0.5
+			closes[i] = base + float64(i-declineDays+1)*1.0
+		}
+	}
+	return makeKlinesFromCloses(closes)
+}
+
+// zigzagCloses 构造"锯齿形"收盘价序列，使 MACD 量柱忽上忽下。
+// 交替出现涨-跌-涨-跌，产生大量方向反转。
+func zigzagCloses(days int) extend.Klines {
+	closes := make([]float64, days)
+	closes[0] = 100
+	for i := 1; i < days; i++ {
+		if i%2 == 1 {
+			closes[i] = closes[i-1] + 3 // 涨
+		} else {
+			closes[i] = closes[i-1] - 2.5 // 跌
+		}
+	}
+	return makeKlinesFromCloses(closes)
+}
+
+// sameSideZigzag 构造"同侧锯齿"序列：价格小幅震荡上行，
+// 使平滑后 MACD 量柱停留在正数侧并反复上下波动，
+// 从而在同一个正数段内产生多次方向反转（拐头）。
+func sameSideZigzag(days int) extend.Klines {
+	closes := make([]float64, days)
+	closes[0] = 100
+	for i := 1; i < days; i++ {
+		if i%4 == 1 {
+			closes[i] = closes[i-1] + 1.5
+		} else if i%4 == 2 {
+			closes[i] = closes[i-1] - 1.0
+		} else if i%4 == 3 {
+			closes[i] = closes[i-1] + 1.5
+		} else {
+			closes[i] = closes[i-1] - 1.0
+		}
+	}
+	return makeKlinesFromCloses(closes)
+}
+
+// TestMACD顺滑 验证 MACD 量柱曲线光滑度判断（按同号段统计拐头）：
+// 1) 线性下跌+回升序列，量柱方向一致，应通过；
+// 2) 同侧锯齿形序列，同一个正数段内多次拐头，应被拒绝；
+// 3) 交替穿越零轴的锯齿，因零轴穿越不计拐头，应通过；
+// 4) MaxReversals 参数控制段内拐头容忍度。
+func TestMACD顺滑(t *testing.T) {
+	// 1) 线性下跌后回升：量柱走势平滑，方向反转少
+	ks := smoothDeclineThenUp(50, 15)
+	s := MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1}
+	if !s.Buy("sz000001", ks) {
+		t.Fatal("线性下跌+回升序列，量柱曲线应足够光滑（段内反转≤1），却未通过")
+	}
+
+	// 严格单调（MaxReversals=0）也应通过，因为 EMA 平滑后方向一致
+	s0 := MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 0}
+	if !s0.Buy("sz000001", ks) {
+		t.Fatal("线性序列 EMA 平滑后应严格单调（段内反转=0），却未通过")
+	}
+
+	// 2) 同侧锯齿形序列：量柱停留在正数侧反复上下波动，
+	//    同一个正数段内拐头多次（>1），应被拒绝
+	ks2 := sameSideZigzag(80)
+	s1 := MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1}
+	if s1.Buy("sz000001", ks2) {
+		t.Fatal("同侧锯齿形序列，正数段内多次拐头，反转应>1，却通过了")
+	}
+
+	// 3) 交替穿越零轴的锯齿：每个同号段只含 1 天，段内无拐头，
+	//    零轴穿越不计入拐头，应通过（MaxReversals=1 甚至 0 均通过）
+	ks3 := zigzagCloses(80)
+	sZ1 := MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1}
+	if !sZ1.Buy("sz000001", ks3) {
+		t.Fatal("交替穿越零轴的锯齿，每个同号段内无拐头，应通过，却未通过")
+	}
+	sZ0 := MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 0}
+	if !sZ0.Buy("sz000001", ks3) {
+		t.Fatal("交替穿越零轴的锯齿，零轴穿越不计拐头，MaxReversals=0 也应通过，却未通过")
+	}
+
+	// 4) 验证 SmoothedMACDHistogram 与原始 MACDHistogram 的关系
+	smoothed := util.SmoothedMACDHistogram(ks, 12, 26, 9, 5)
+	raw := util.MACDHistogram(ks, 12, 26, 9)
+	if len(smoothed) != len(raw) {
+		t.Fatalf("平滑序列长度 %d != 原始序列长度 %d", len(smoothed), len(raw))
+	}
+	// 平滑后的末尾值应与原始值不同（EMA 平滑改变了值）
+	if smoothed[len(smoothed)-1] == raw[len(raw)-1] {
+		t.Fatal("EMA 平滑后末尾值应与原始值不同")
+	}
+}
+
 // TestMACD连涨StreakIsRisingSteps 验证 MinDays/MaxDays 表示"上涨步数"
 // （今天量柱 > 昨天量柱 为 1 步），而非柱子根数。
 //

@@ -260,6 +260,132 @@ func (s MACD平滑) Buy(code string, dks extend.Klines) bool {
 	return true
 }
 
+// MACD顺滑 是 MACD 量柱曲线光滑的买入条件。
+// 对原始 MACD 量柱序列再做一次 EMA 平滑，然后检查最近 Days 天平滑后量柱的
+// 方向反转次数。与旧版不同，本版按"正数段/负数段"分别统计反转次数：
+// 量柱穿越零轴时不计入反转（零轴穿越是正常反转），但同号段（连续正数或连续负数）
+// 内的方向变化才算拐头。
+//
+// Fast 表示快线 EMA 周期，默认 12。
+// Slow 表示慢线 EMA 周期，默认 26。
+// Signal 表示 DEA EMA 周期，默认 9。
+// Smooth 表示对量柱做 EMA 平滑的周期，默认 5。值越大曲线越光滑但滞后越大。
+// Days 表示回看最近多少个交易日检查曲线光滑度，默认 10。
+// MaxReversals 表示最近 Days 天内，每个同号段（连续正数或连续负数）内允许的
+// 量柱方向反转次数，默认 1。
+//   - MaxReversals=0 要求每个同号段内量柱严格单调。
+//   - MaxReversals=1 允许每个同号段内 1 次方向反转（如先降后升的 V 形）。
+//   - 零轴穿越（正→负或负→正）不计入反转，但会开启一个新的同号段，
+//     段内反转计数随之归零。
+//
+// 触发条件：最近 Days 天内，任一同号段（连续正数段或连续负数段）内的量柱方向
+// 反转次数均 <= MaxReversals。即"连续正数时每个正数段最多 1 次拐头、连续负数
+// 时每个负数段最多 1 次拐头"。该策略适合作为 buy.And 的过滤条件，排除量柱忽上
+// 忽下、走势锯齿的股票。
+type MACD顺滑 struct {
+	Fast         int
+	Slow         int
+	Signal       int
+	Smooth       int
+	Days         int
+	MaxReversals int
+}
+
+func (s MACD顺滑) Name() string {
+	smooth := s.Smooth
+	if smooth == 0 {
+		smooth = 5
+	}
+	days := s.Days
+	if days == 0 {
+		days = 10
+	}
+	maxRev := s.MaxReversals
+	return fmt.Sprintf("MACD量柱EMA%d平滑%d日(同号段反转≤%d)", smooth, days, maxRev)
+}
+
+func (s MACD顺滑) Buy(code string, dks extend.Klines) bool {
+	if s.Fast == 0 {
+		s.Fast = 12
+	}
+	if s.Slow == 0 {
+		s.Slow = 26
+	}
+	if s.Signal == 0 {
+		s.Signal = 9
+	}
+	if s.Smooth == 0 {
+		s.Smooth = 5
+	}
+	if s.Days == 0 {
+		s.Days = 10
+	}
+
+	n := len(dks)
+	if n < s.Slow+s.Signal || n < s.Days+1 {
+		return false
+	}
+
+	smoothed := util.SmoothedMACDHistogram(dks, s.Fast, s.Slow, s.Signal, s.Smooth)
+	if len(smoothed) != n {
+		return false
+	}
+
+	// 按同号段（连续正数 / 连续负数）分段统计方向反转次数：
+	// 零轴穿越开启新段，段内反转计数归零；任一段内反转数 > MaxReversals 即拒绝。
+	maxRev := s.MaxReversals
+	prevDir := 0  // 0:未知, 1:上升, -1:下降
+	prevSign := 0 // 0:未知, 1:正, -1:负
+	segRev := 0   // 当前同号段内反转次数
+	for i := n - s.Days; i < n; i++ {
+		if i <= 0 {
+			continue
+		}
+		curr := smoothed[i]
+		prev := smoothed[i-1]
+
+		// 确定当前量柱符号
+		sign := 0
+		if curr > 0 {
+			sign = 1
+		} else if curr < 0 {
+			sign = -1
+		}
+
+		// 符号变化（零轴穿越）→ 开启新段，重置方向与段内反转计数
+		if prevSign != 0 && sign != 0 && sign != prevSign {
+			prevDir = 0
+			segRev = 0
+		}
+		if sign != 0 {
+			prevSign = sign
+		}
+
+		// 统计同号段内方向反转
+		diff := curr - prev
+		dir := 0
+		if diff > 0 {
+			dir = 1
+		} else if diff < 0 {
+			dir = -1
+		}
+		if dir == 0 {
+			continue
+		}
+		if prevDir != 0 && dir != prevDir {
+			segRev++
+			if segRev > maxRev {
+				return false
+			}
+		}
+		if dir != 0 {
+			prevDir = dir
+		}
+	}
+
+	return true
+}
+
 // MACD负数 是 MACD 连续负数买入条件。
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。

@@ -31,6 +31,17 @@ func MACDHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
 	return hist
 }
 
+// SmoothedMACDHistogram 返回对原始 MACD 量柱再做一次 EMA 平滑后的序列。
+// 平滑后的量柱曲线更圆润，消除毛刺和锯齿。
+// smoothPeriod 为平滑用的 EMA 周期，一般取 3~10，值越大曲线越光滑但滞后越大。
+func SmoothedMACDHistogram(dks extend.Klines, fast, slow, signal, smoothPeriod int) []float64 {
+	hist := MACDHistogram(dks, fast, slow, signal)
+	if hist == nil {
+		return nil
+	}
+	return emaSeries(hist, smoothPeriod)
+}
+
 // emaSeries 计算 EMA 序列。
 // 第一个值直接使用原始序列第一个值作为初始 EMA。
 // period 小于等于 1 时直接返回原始序列副本。
