@@ -11,7 +11,7 @@ import (
 
 func TestDefaultForwardDays(t *testing.T) {
 	days := core.DefaultForwardDays()
-	expected := []int{1, 3, 5, 10, 15, 20, 30, 45, 60}
+	expected := []int{1, 3, 5, 10, 15, 20, 30, 45, 60, 90}
 	if len(days) != len(expected) {
 		t.Fatalf("expected %d days, got %d", len(expected), len(days))
 	}

@@ -28,7 +28,7 @@ func main() {
 	_ = b
 
 	// 从 config.yaml 加载成本和仓位配置
-	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
+	cost, pos, _, benchmark, mcIterations := common.LoadBacktestConfig()
 
 	years := []int{2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026}
 	years = []int{2022, 2023, 2024, 2025, 2026}
@@ -38,7 +38,7 @@ func main() {
 	core.Backtest{
 		Buyer: buy.And{
 			b,
-			MACDBuyer,
+			MACDBuyer2,
 		},
 		Seller:       MACDSeller,
 		Goroutines:   common.DefaultGoroutines * 2,
@@ -50,11 +50,13 @@ func main() {
 		Benchmark: benchmark,
 		Cost:      cost,
 		Position:  pos,
+
+		MCIterations: mcIterations,
 	}.Run()
 }
 
 var (
-	TestBuy = MACDBuyer
+	TestBuy = MACDBuyer2
 
 	TestSell = sell.Or{
 		MACDSeller,
@@ -77,8 +79,25 @@ var (
 		sell.MACD反转{Lookback: 10},
 	}
 
+	MACDBuyer2 = buy.And{
+		// 常规过滤：流通市值、价格、涨停
+		buy.A流通市值{Min: 400},
+		buy.A现价{Max: 120},
+		buy.A过滤涨停{},
+
+		// MACD 量柱流畅（EMA 平滑后每个同号段反转 <= MaxReversals）
+		buy.MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1},
+
+		// MACD 低位反转（今天量柱变大 + 昨天为近 4 日最低点）
+		buy.MACD反转{MinLookback: 4},
+
+		// 30 日均线向上（趋势方向确认）
+		buy.MAUp{Period: 20, MinSlope: 0.0005},
+		buy.MAUp{Period: 30, MinSlope: 0.0005},
+	}
+
 	MACDBuyer = buy.And{
-		buy.A流通市值{Min: 800},
+		buy.A流通市值{Min: 400},
 		buy.A现价{Max: 120},
 		buy.A过滤涨停{},
 

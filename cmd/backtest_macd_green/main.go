@@ -11,26 +11,14 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/lib/report"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/protocol"
 )
 
 // ReportData 汇总回测结果，供 PDF 报告渲染。
-type ReportData struct {
-	StrategyName string
-	BuyerName    string
-	SellerName   string
-	Benchmark    string
-	Years        []int
-	Results      []core.AnalyzeResult
-	AllTrades    []core.Trade
-	MC           core.MonteCarloResult
-	Audit        core.AuditResult
-	Cost         core.Cost
-	Position     core.PositionConfig
-	GeneratedAt  string
-}
+type ReportData = report.ReportData
 
 func main() {
 	// 默认跳过数据更新：全量拉取分钟线（全 A 股）耗时数小时。
@@ -124,7 +112,7 @@ func main() {
 		GeneratedAt:  time.Now().Format("2006-01-02"),
 	}
 
-	if err := ExportPDF(data); err != nil {
+	if err := exportReport(data); err != nil {
 		logs.Errorf("PDF 生成失败: %v", err)
 		os.Exit(1)
 	}

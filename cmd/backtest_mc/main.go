@@ -15,9 +15,11 @@ func main() {
 	mcMax := flag.Float64("mcMax", 0, "流通市值上限(亿), 0=无上限")
 	flag.Parse()
 
+	common.Update()
+
 	codes := common.GetAllCodes()
 
-	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
+	cost, pos, _, benchmark, mcIterations := common.LoadBacktestConfig()
 	_ = cost
 	_ = pos
 	_ = benchmark
@@ -74,5 +76,6 @@ func main() {
 		Years:        years,
 		GetDayKlines: common.Pull.DayKlines,
 		GetMinKlines: nil,
+		MCIterations: mcIterations,
 	}.Run()
 }

@@ -20,7 +20,7 @@ var (
 
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},     //价格小于120,太贵了买不起
+		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
 		buy.MACD反转{MinLookback: 4}, //MACD
@@ -65,8 +65,8 @@ var (
 )
 
 const (
-	万                = 1e4
-	亿                = 1e8
+	万                 = 1e4
+	亿                 = 1e8
 	DefaultGoroutines = 10
 	DatabaseDir       = tdx.DefaultDatabaseDir
 )
@@ -91,8 +91,7 @@ func init() {
 	})
 	logs.PanicErr(err)
 
-	Pull.Update(Manage)
-
+	// 数据更新改为显式调用 Update()，避免 import 本包即触发全量数据更新副作用
 }
 
 func Update() error {
@@ -182,7 +181,7 @@ func IsTradingTime() bool {
 	if h == 10 {
 		return true
 	}
-	if h == 11 && m <= 31 {
+	if h == 11 && m <= 30 {
 		return true
 	}
 

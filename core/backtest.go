@@ -29,15 +29,28 @@ type Backtest struct {
 	//基准,例沪深300
 	Benchmark string
 
-	// 成本模型（默认 DefaultCost）
+	// 成本模型（零值时 Run 回退 DefaultCost，避免零成本回测失真）
 	Cost Cost
 
-	// 仓位管理（默认 DefaultPositionConfig）
+	// 仓位管理（零值=不限笔数；SharesPerLot<=0 时 executeSell 回退一手100股）
 	Position PositionConfig
+
+	// MCIterations 蒙特卡洛模拟次数（<=0 时默认1000），对应 config.yaml 的 backtest.monte_carlo_iterations
+	MCIterations int
 }
 
 // Run 执行多年份回测，打印结果并导出可视化。
 func (this Backtest) Run() {
+
+	// Cost 零值回退默认值，防止调用方漏设成本导致零佣金零滑点回测
+	if this.Cost == (Cost{}) {
+		this.Cost = DefaultCost()
+	}
+
+	mcIterations := this.MCIterations
+	if mcIterations <= 0 {
+		mcIterations = 1000
+	}
 
 	logs.Info(this.Buyer.Name() + " 买入")
 	logs.Info(this.Seller.Name() + " 卖出")
@@ -75,9 +88,9 @@ func (this Backtest) Run() {
 		allTrades = append(allTrades, tradeResults[year]...)
 	}
 	if len(allTrades) > 10 {
-		mc := MonteCarlo(allTrades, 1000, 100000)
-		logs.Infof("蒙特卡洛模拟(1000次): 中位收益%.1f%% | 95%%置信区间[%.1f%%, %.1f%%] | 盈利概率%.0f%% | 破产概率%.0f%% | 中位最大回撤%.1f%%\n",
-			mc.ReturnP50, mc.ReturnP5, mc.ReturnP95, mc.ProbProfit*100, mc.ProbRuin*100, mc.MaxDrawdownP50)
+		mc := MonteCarlo(allTrades, mcIterations, 100000)
+		logs.Infof("蒙特卡洛模拟(%d次): 中位收益%.1f%% | 95%%置信区间[%.1f%%, %.1f%%] | 盈利概率%.0f%% | 破产概率%.0f%% | 中位最大回撤%.1f%%\n",
+			mcIterations, mc.ReturnP50, mc.ReturnP5, mc.ReturnP95, mc.ProbProfit*100, mc.ProbRuin*100, mc.MaxDrawdownP50)
 	}
 
 	// ---- 阶段三：前视偏差审计 ----
@@ -170,12 +183,14 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		m[key] = append(m[key], mk)
 	}
 
-	joinKlines := func(base extend.Klines, extra ...*extend.Kline) extend.Klines {
-		ls := make(extend.Klines, 0, len(base)+len(extra))
-		ls = append(ls, base...)
-		ls = append(ls, extra...)
-		return ls
-	}
+	// full = his + dks 一次性合并缓冲，策略每轮只读取前缀切片 full[:len(his)+i+1]，
+	// 与原先逐日 joinKlines(his, dks[:i]..., today) 的内容完全一致（元素为指针，共享同一 Kline），
+	// 但避免了每个交易日 O(n) 的重复分配，整体从 O(n²) 降为 O(n)。
+	// 注意：元素指针共享意味着 today.Kline 的分钟级覆写会实时反映到 full 中，
+	// 这与原版行为一致（原版 joinKlines 同样复制指针）。
+	full := make(extend.Klines, 0, len(his)+len(dks))
+	full = append(full, his...)
+	full = append(full, dks...)
 
 	ts := []Trade(nil)
 	currentBuys := make([]Buy, 0)
@@ -183,8 +198,8 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	for i := 0; i < len(dks); i++ {
 
 		today := dks[i]
-		_his := joinKlines(his, dks[:i]...)
-		ls := joinKlines(_his, today)
+		// ls = his + dks[:i] + today，即截至今日（含）的全部K线
+		ls := full[:len(his)+i+1]
 
 		// ---- 1. 买入信号 ----
 		if this.Buy(code, ls) {
@@ -223,7 +238,8 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 				// 这会影响后续交易日的 _his，是原版行为，不可更改
 				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
 
-				lsSell := joinKlines(_his, today)
+				// lsSell 与买入阶段共享同一前缀（末元素即 today 指针，覆写实时可见）
+				lsSell := full[:len(his)+i+1]
 				if this.Sell(code, lsSell, currentBuy) {
 					ts = append(ts, this.executeSell(code, currentBuy, today.Close, pos, cost, todayMinuteKlines[ii].Time))
 					sold = true

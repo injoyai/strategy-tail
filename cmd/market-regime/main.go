@@ -22,6 +22,8 @@ import (
 func main() {
 	logs.Info("=== 大盘状态分析 ===")
 
+	common.Update()
+
 	// 1. 加载配置
 	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
 	years := []int{2022, 2023, 2024, 2025, 2026}

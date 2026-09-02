@@ -11,7 +11,7 @@ func main() {
 	codes := common.GetNoPriceLimitCodes()
 
 	// 从 config.yaml 加载成本和仓位配置
-	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()
+	cost, pos, _, benchmark, mcIterations := common.LoadBacktestConfig()
 
 	// 仅测 2026 年（与前面几轮策略回测保持一致口径）
 	years := []int{2026}
@@ -25,8 +25,9 @@ func main() {
 		GetDayKlines: common.Pull.DayKlines,
 		GetMinKlines: common.Pull.MinKlines,
 
-		Benchmark: benchmark,
-		Cost:      cost,
-		Position:  pos,
+		Benchmark:    benchmark,
+		Cost:         cost,
+		Position:     pos,
+		MCIterations: mcIterations,
 	}.Run()
 }
