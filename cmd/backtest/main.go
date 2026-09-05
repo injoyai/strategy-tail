@@ -38,7 +38,8 @@ func main() {
 	core.Backtest{
 		Buyer: buy.And{
 			b,
-			MACDBuyer2,
+			MACDBuyer,
+			//common.MACDBuyer,
 		},
 		Seller:       MACDSeller,
 		Goroutines:   common.DefaultGoroutines * 2,
@@ -56,8 +57,6 @@ func main() {
 }
 
 var (
-	TestBuy = MACDBuyer2
-
 	TestSell = sell.Or{
 		MACDSeller,
 	}
@@ -86,10 +85,12 @@ var (
 		buy.A过滤涨停{},
 
 		// MACD 量柱流畅（EMA 平滑后每个同号段反转 <= MaxReversals）
-		buy.MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1},
+		//buy.MACD顺滑{Smooth: 5, Days: 10, MaxReversals: 1},
 
 		// MACD 低位反转（今天量柱变大 + 昨天为近 4 日最低点）
 		buy.MACD反转{MinLookback: 4},
+
+		buy.A现价大于N日均线(30),
 
 		// 30 日均线向上（趋势方向确认）
 		buy.MAUp{Period: 20, MinSlope: 0.0005},

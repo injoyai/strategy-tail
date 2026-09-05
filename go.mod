@@ -11,6 +11,8 @@ require (
 	github.com/injoyai/logs v1.0.12
 	github.com/injoyai/lorca v0.0.0-20241219020631-030018723d82
 	github.com/injoyai/tdx v0.0.82
+	github.com/robfig/cron/v3 v3.0.1
+	github.com/signintech/gopdf v0.38.0
 	xorm.io/xorm v1.3.11
 )
 
@@ -43,10 +45,8 @@ require (
 	github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240704082632-aef3928b8a38 // indirect
-	github.com/signintech/gopdf v0.38.0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tinylib/msgp v1.5.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

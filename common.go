@@ -14,13 +14,72 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
+// Market 表示市场（板块）类型。
+type Market int
+
+const (
+	MarketAll      Market = iota // 全部
+	Market沪深主板               // 沪深主板（sh60/sz00）
+	Market科创板                 // 科创板（sh68）
+	Market创业板                 // 创业板（sz30）
+)
+
+var marketNames = map[Market]string{
+	MarketAll:      "全部",
+	Market沪深主板: "沪深主板",
+	Market科创板:   "科创板",
+	Market创业板:   "创业板",
+}
+
+// String 返回市场中文名。
+func (m Market) String() string {
+	if s, ok := marketNames[m]; ok {
+		return s
+	}
+	return "未知市场"
+}
+
+// Prefixes 返回该市场对应的股票代码前缀。
+func (m Market) Prefixes() []string {
+	switch m {
+	case Market沪深主板:
+		return []string{"sh60", "sz00"}
+	case Market科创板:
+		return []string{"sh68"}
+	case Market创业板:
+		return []string{"sz30"}
+	default:
+		return nil
+	}
+}
+
+// Codes 返回该市场对应的股票代码列表。
+func (m Market) Codes() []string {
+	if m == MarketAll {
+		return GetAllCodes()
+	}
+	codes := []string(nil)
+	for _, code := range GetAllCodes() {
+		for _, prefix := range m.Prefixes() {
+			if strings.HasPrefix(code, prefix) {
+				codes = append(codes, code)
+				break
+			}
+		}
+	}
+	return codes
+}
+
+// AllCodes 返回该市场的全部股票代码，等价于 Codes()。
+func (m Market) AllCodes() []string { return m.Codes() }
+
 var (
 	DefaultBuyer  = MACDBuyer
 	DefaultSeller = MACDSeller
 
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
+		buy.A现价{Max: 120},     //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
 		buy.MACD反转{MinLookback: 4}, //MACD
@@ -37,11 +96,6 @@ var (
 	MACDSeller = sell.Or{
 		//无盈利等第二次上升浪
 		sell.MACD反转{Lookback: 10},
-		//有盈利则在反转的时候卖出
-		sell.And{
-			sell.A盈利(0.005),
-			sell.MACD反转{Lookback: 2},
-		},
 	}
 
 	// MACDBaseBuyer 57.58% 胜率 1.58 盈亏比 105.01% 年化
@@ -65,8 +119,8 @@ var (
 )
 
 const (
-	万                 = 1e4
-	亿                 = 1e8
+	万                = 1e4
+	亿                = 1e8
 	DefaultGoroutines = 10
 	DatabaseDir       = tdx.DefaultDatabaseDir
 )
@@ -98,7 +152,7 @@ func Update() error {
 	return Pull.Update(Manage, true)
 }
 
-// LoadBacktestConfig 从 config.yaml 读取回测引擎配置（成本/仓位/年份/基准）。
+// LoadBacktestConfig 从 config.yaml 读取回测引擎配置（成本/仓位/基准）。
 // 未配置的字段使用 DefaultXxx() 填充。
 // 风控参数不在此读取——由 cmd/backtest 入口构造为 Seller（见 loadRiskSeller）。
 func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int, benchmark string, mcIterations int) {
@@ -121,13 +175,7 @@ func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int,
 }
 
 func GetNoPriceLimitCodes() []string {
-	codes := []string(nil)
-	for _, code := range Manage.Codes.GetStockCodes() {
-		if strings.HasPrefix(code, "sh60") || strings.HasPrefix(code, "sz00") {
-			codes = append(codes, code)
-		}
-	}
-	return codes
+	return Market沪深主板.Codes()
 }
 
 func Get沪深Codes() []string {
@@ -141,23 +189,11 @@ func Get沪深Codes() []string {
 }
 
 func Get科创Codes() []string {
-	codes := []string(nil)
-	for _, code := range Manage.Codes.GetStockCodes() {
-		if strings.HasPrefix(code, "sh68") {
-			codes = append(codes, code)
-		}
-	}
-	return codes
+	return Market科创板.Codes()
 }
 
 func Get创业Codes() []string {
-	codes := []string(nil)
-	for _, code := range Manage.Codes.GetStockCodes() {
-		if strings.HasPrefix(code, "sz30") {
-			codes = append(codes, code)
-		}
-	}
-	return codes
+	return Market创业板.Codes()
 }
 
 func GetAllCodes() []string {
