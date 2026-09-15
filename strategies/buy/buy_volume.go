@@ -166,29 +166,16 @@ func (b A倍量) Buy(code string, dks extend.Klines) bool {
 	return true
 }
 
-// BuyCloseAboveMA 是收盘价站上指定均线的买入条件。
-// Period 表示均线周期，默认 20。
-// 当最新收盘价大于指定周期均线时返回买入信号。
-// 适合作为趋势过滤条件与其它买入策略放入 BuyAll 组合使用。
-type BuyCloseAboveMA struct {
-	Period int
-}
+// BuyCloseAboveMA 是 A收盘高于均线 的兼容包装器。
+// Deprecated: 新代码使用 A收盘高于均线。
+type BuyCloseAboveMA A收盘高于均线
 
 func (b BuyCloseAboveMA) Name() string {
 	return fmt.Sprintf("收盘高于%d日均线", b.Period)
 }
 
 func (b BuyCloseAboveMA) Buy(code string, dks extend.Klines) bool {
-	if b.Period == 0 {
-		b.Period = 20
-	}
-	if len(dks) < b.Period {
-		return false
-	}
-
-	today := dks[len(dks)-1]
-	ma := core.MA(dks, b.Period)
-	return today.Close.Float64() > ma
+	return A收盘高于均线(b).Buy(code, dks)
 }
 
 // A现价大于N日均线 是当天价格高于指定均线的买入条件。
@@ -346,21 +333,21 @@ func maUp2(dks protocol.Klines, period, lookback int, minSlope float64) bool {
 	return true
 }
 
-// VolumeShrink 是缩量买入条件。
-// Period 表示对比的前 N 日成交量均值，默认 5。
+// A缩量 是缩量买入条件。
+// Days 表示对比的前 N 日成交量均值，默认 5。
 // Ratio 表示今日成交量必须低于前 N 日均量的比例，默认 0.8。
 // 例如 Ratio=0.8 表示今日成交量小于前 5 日均量的 80%。
 // 常用于“回调缩量”或“整理缩量”的组合过滤。
-type VolumeShrink struct {
+type A缩量 struct {
 	Days  int
 	Ratio float64
 }
 
-func (b VolumeShrink) Name() string {
+func (b A缩量) Name() string {
 	return "缩量"
 }
 
-func (b VolumeShrink) Buy(code string, dks extend.Klines) bool {
+func (b A缩量) Buy(code string, dks extend.Klines) bool {
 	if b.Days == 0 {
 		b.Days = 5
 	}
@@ -379,6 +366,10 @@ func (b VolumeShrink) Buy(code string, dks extend.Klines) bool {
 
 	return true
 }
+
+// VolumeShrink 是 A缩量 的兼容旧名。
+// Deprecated: 使用 A缩量。
+type VolumeShrink = A缩量
 
 //// BuyVolumeExpand 是放量买入条件。
 //// Period 表示对比的前 N 日成交量均值，默认 5。

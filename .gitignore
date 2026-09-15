@@ -1,7 +1,9 @@
 .idea/*
+.superpowers/
 .uploads/*
 .trae-html-share-packages/*
 data/*
+internal/lab/data/
 docs/*
 output/*
 *.exe

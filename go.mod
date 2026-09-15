@@ -13,6 +13,7 @@ require (
 	github.com/injoyai/tdx v0.0.82
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/signintech/gopdf v0.38.0
+	github.com/traefik/yaegi v0.16.1
 	xorm.io/xorm v1.3.11
 )
 

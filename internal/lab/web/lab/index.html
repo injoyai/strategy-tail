@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>策略实验室</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+:root{--bg:#f5f6fa;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--accent2:#1e293b;--red:#ef4444;--green:#22c55e;--ok:#10b981;--warn:#f59e0b}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px}
+header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px}
+header h1{font-size:18px;font-weight:700}
+header .sub{opacity:.7;font-size:12px}
+.tabs{display:flex;gap:4px;padding:10px 24px 0;background:var(--bg2);border-bottom:1px solid var(--rule)}
+.tabs button{border:none;background:none;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
+.tabs button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+main{padding:20px 24px;max-width:1400px;margin:0 auto}
+.tab-panel{display:none}.tab-panel.active{display:block}
+/* Tab1 */
+.grid2{display:grid;grid-template-columns:1fr 340px;gap:16px}
+.card{background:var(--bg2);border:1px solid var(--rule);border-radius:10px;padding:16px}
+.card h3{font-size:14px;margin-bottom:10px;color:var(--accent2);border-bottom:2px solid var(--accent);padding-bottom:6px}
+textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;border:1px solid var(--rule);border-radius:6px;padding:10px;resize:vertical;background:#fafafa}
+textarea:focus{outline:2px solid var(--accent);border-color:transparent}
+.editor-actions{display:flex;gap:8px;margin-top:10px;align-items:center}
+button.primary{background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:not-allowed}
+button.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
+button.danger{background:#fff;color:var(--red);border:1px solid var(--red);padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
+.msg{font-size:12px;margin-top:8px;white-space:pre-wrap;font-family:Consolas,monospace;max-height:120px;overflow:auto}
+.msg.ok{color:var(--ok)}.msg.err{color:var(--red)}
+.form-row{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.form-row label{width:88px;font-size:13px;color:var(--muted);flex-shrink:0}
+.form-row input,.form-row select{flex:1;min-width:0;height:32px;border:1px solid var(--rule);border-radius:6px;padding:0 8px;font-size:13px}
+.form-row input[type=checkbox]{flex:none;width:auto}
+.statusbar{margin-top:16px;padding:12px 16px;background:#f0f4ff;border:1px solid #c7d7ff;border-radius:8px;display:none}
+.statusbar.show{display:block}
+.progress-outer{background:#e5e7eb;border-radius:4px;height:8px;margin:8px 0;overflow:hidden}
+.progress-inner{background:var(--accent);height:100%;width:0;transition:width .3s}
+.status-line{display:flex;justify-content:space-between;font-size:13px}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+/* Tab2 */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--rule);white-space:nowrap}
+th{background:#f9fafb;color:var(--muted);position:sticky;top:0}
+tbody tr{cursor:pointer}
+tbody tr:hover{background:#f0f4ff}
+tbody tr.selected{background:#e0eaff}
+.pos{color:var(--red)}.neg{color:var(--green)}
+#trendChart,#winChart{width:100%;height:340px;margin-top:16px}
+.charts2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+/* Tab3 */
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.filters input,.filters select{height:32px;border:1px solid var(--rule);border-radius:6px;padding:0 8px;font-size:13px}
+.filters input{width:120px}
+.detail-wrap{max-height:520px;overflow:auto}
+#klineChart{width:100%;height:480px;margin-top:16px;display:none}
+.empty{color:var(--muted);text-align:center;padding:40px}
+</style>
+</head>
+<body>
+<header>
+  <h1>策略实验室</h1>
+  <span class="sub">Yaegi 脚本策略 · 本地回测 · 仅 127.0.0.1</span>
+</header>
+
+<div class="tabs">
+  <button class="active" data-tab="1">① 策略与运行</button>
+  <button data-tab="2">② 组合对比</button>
+  <button data-tab="3">③ 交易明细</button>
+</div>
+
+<main>
+<!-- Tab1 -->
+<div class="tab-panel active" id="tab1">
+  <div class="grid2">
+    <div class="card">
+      <h3>策略脚本（strategies/script/matrix.go）</h3>
+      <textarea id="editor" spellcheck="false"></textarea>
+      <div class="editor-actions">
+        <button class="secondary" onclick="checkScript()">语法检查</button>
+        <button class="secondary" onclick="saveScript()">保存脚本</button>
+        <button class="primary" id="btnRun" onclick="runBacktest()">运行回测</button>
+        <button class="danger" id="btnStop" onclick="stopBacktest()" style="display:none">停止</button>
+      </div>
+      <div class="msg" id="scriptMsg"></div>
+      <div class="hint">脚本契约：package main + func Strategy() []core.Variant。可 import strategies/buy、strategies/sell、core。重逻辑请组合现有组件，内联循环会被解释执行变慢。</div>
+    </div>
+    <div>
+      <div class="card">
+        <h3>运行配置</h3>
+        <div class="form-row"><label>时间范围</label>
+          <input type="number" id="startYear" value="2025" min="2000" max="2026" style="width:80px">
+          <span> - </span>
+          <input type="number" id="endYear" value="2026" min="2000" max="2026" style="width:80px">
+        </div>
+        <div class="form-row"><label>样本池</label>
+          <select id="sampleMode" onchange="sampleModeChange()">
+            <option value="all">全部（沪深主板）</option>
+            <option value="random">随机 N 只</option>
+            <option value="codes">指定代码</option>
+          </select>
+        </div>
+        <div class="form-row" id="sampleSizeRow" style="display:none"><label>随机数量</label>
+          <input type="number" id="sampleSize" value="50" min="1">
+        </div>
+        <div class="form-row" id="sampleCodesRow" style="display:none"><label>代码列表</label>
+          <input type="text" id="sampleCodes" placeholder="sh600000,sz000001" style="width:100%">
+        </div>
+        <div class="form-row"><label>持仓N天</label>
+          <input type="checkbox" id="holdingOn" checked>
+          <input type="number" id="holdingDays" value="1" min="1" style="width:80px">
+        </div>
+        <div class="form-row"><label>止盈</label>
+          <input type="checkbox" id="tpOn">
+          <input type="number" id="takeProfit" value="10" step="0.5" style="width:80px"><span>%</span>
+        </div>
+        <div class="form-row"><label>止损</label>
+          <input type="checkbox" id="slOn">
+          <input type="number" id="stopLoss" value="8" step="0.5" style="width:80px"><span>%</span>
+        </div>
+        <div class="hint">成本/仓位沿用 config.yaml 回测配置。同时只允许 1 个回测任务。</div>
+      </div>
+      <div class="statusbar" id="statusbar">
+        <div class="status-line">
+          <span id="statusState"></span>
+          <span id="statusDetail"></span>
+        </div>
+        <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
+        <div class="status-line"><span id="statusCurrent"></span><button class="danger" onclick="stopBacktest()" style="padding:2px 12px;font-size:12px">停止</button></div>
+        <div class="msg" id="statusErr"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab2 -->
+<div class="tab-panel" id="tab2">
+  <div class="card">
+    <h3>变体汇总 <span class="hint" id="reportMeta"></span></h3>
+    <div class="detail-wrap">
+      <table>
+        <thead><tr><th>#</th><th>变体</th><th>笔数</th><th>胜率%</th><th>平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
+        <tbody id="variantRows"><tr><td colspan="9" class="empty">暂无报告，先在 ① 运行回测</td></tr></tbody>
+      </table>
+    </div>
+    <div class="charts2">
+      <div id="trendChart"></div>
+      <div id="winChart"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Tab3 -->
+<div class="tab-panel" id="tab3">
+  <div class="card">
+    <h3>交易明细与K线</h3>
+    <div class="filters">
+      <select id="fVariant"><option value="">全部变体</option></select>
+      <input type="text" id="fCode" placeholder="代码">
+      <input type="date" id="fFrom" title="买入日期从">
+      <input type="date" id="fTo" title="买入日期到">
+      <input type="number" id="fRateMin" placeholder="收益率≥%" step="0.1" style="width:90px">
+      <input type="number" id="fRateMax" placeholder="收益率≤%" step="0.1" style="width:90px">
+    </div>
+    <div class="detail-wrap">
+      <table>
+        <thead><tr><th>变体</th><th>代码</th><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>盈亏(元)</th><th>收益率%</th><th>持仓天</th></tr></thead>
+        <tbody id="tradeRows"><tr><td colspan="10" class="empty">暂无数据</td></tr></tbody>
+      </table>
+    </div>
+    <div id="klineChart"></div>
+  </div>
+</div>
+</main>
+
+<script>
+// ============ 通用 ============
+const $ = id => document.getElementById(id);
+let currentReport = null;   // Tab2/3 共享的报告数据
+let selectedVariant = null; // Tab2 行点击 → Tab3 筛选
+
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === '2') renderTab2();
+    if (btn.dataset.tab === '3') renderTab3();
+  };
+});
+
+async function api(method, url, body) {
+  const opt = {method, headers: {'Content-Type': 'application/json'}};
+  if (body !== undefined) opt.body = JSON.stringify(body);
+  const resp = await fetch(url, opt);
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || resp.statusText);
+  return data;
+}
+
+// ============ Tab1 脚本编辑 ============
+async function loadScript() {
+  try {
+    const d = await api('GET', '/api/script');
+    $('editor').value = d.content;
+  } catch (e) { showScriptMsg(e.message, false); }
+}
+function showScriptMsg(msg, ok) {
+  const el = $('scriptMsg');
+  el.textContent = msg;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+async function checkScript() {
+  try {
+    const d = await api('POST', '/api/script/check', {content: $('editor').value});
+    showScriptMsg(d.ok ? '语法检查通过' : d.error, d.ok);
+  } catch (e) { showScriptMsg(e.message, false); }
+}
+async function saveScript() {
+  try {
+    await api('PUT', '/api/script', {content: $('editor').value});
+    showScriptMsg('已保存', true);
+  } catch (e) { showScriptMsg(e.message, false); }
+}
+
+// ============ Tab1 运行 ============
+function sampleModeChange() {
+  const m = $('sampleMode').value;
+  $('sampleSizeRow').style.display = m === 'random' ? 'flex' : 'none';
+  $('sampleCodesRow').style.display = m === 'codes' ? 'flex' : 'none';
+}
+function buildConfig() {
+  const cfg = {
+    startYear: +$('startYear').value,
+    endYear: +$('endYear').value,
+    sampleMode: $('sampleMode').value,
+    holdingDays: $('holdingOn').checked ? +$('holdingDays').value : 0,
+    takeProfit: $('tpOn').checked ? +$('takeProfit').value / 100 : 0,
+    stopLoss: $('slOn').checked ? +$('stopLoss').value / 100 : 0,
+  };
+  if (cfg.sampleMode === 'random') cfg.sampleSize = +$('sampleSize').value;
+  if (cfg.sampleMode === 'codes') cfg.sampleCodes = $('sampleCodes').value.split(',').map(s => s.trim()).filter(Boolean);
+  return cfg;
+}
+async function runBacktest() {
+  showScriptMsg('', true);
+  try {
+    await api('PUT', '/api/script', {content: $('editor').value}); // 运行前先保存
+    const d = await api('POST', '/api/run', buildConfig());
+    showScriptMsg(`已启动：${d.variants} 个变体`, true);
+    pollStatus();
+  } catch (e) { showScriptMsg(e.message, false); }
+}
+async function stopBacktest() { try { await api('POST', '/api/stop'); } catch (e) {} }
+
+let pollTimer = null;
+function pollStatus() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollStatusOnce();
+  pollTimer = setInterval(pollStatusOnce, 2000);
+}
+async function pollStatusOnce() {
+  try {
+    const s = await api('GET', '/api/status');
+    const bar = $('statusbar');
+    bar.classList.toggle('show', s.state === 'running' || s.state === 'done' || s.state === 'error');
+    $('btnRun').disabled = s.state === 'running';
+    $('btnStop').style.display = s.state === 'running' ? '' : 'none';
+    $('statusState').textContent = {idle: '空闲', running: '回测中', done: '已完成', error: '出错'}[s.state] || s.state;
+    $('statusDetail').textContent = s.state === 'running' ? `${s.doneCodes}/${s.totalCodes} 只` : '';
+    $('progressBar').style.width = (s.progress || 0) + '%';
+    $('statusCurrent').textContent = s.currentCode ? ('当前: ' + s.currentCode) : '';
+    $('statusErr').textContent = s.error || '';
+    $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
+    if (s.state === 'done') {
+      clearInterval(pollTimer); pollTimer = null;
+      currentReport = await api('GET', '/api/report/latest');
+      switchTab(2);
+    } else if (s.state === 'idle' || s.state === 'error') {
+      clearInterval(pollTimer); pollTimer = null;
+    }
+  } catch (e) { clearInterval(pollTimer); pollTimer = null; }
+}
+function switchTab(n) {
+  document.querySelector(`.tabs button[data-tab="${n}"]`).click();
+}
+
+// ============ Tab2 组合对比 ============
+function renderTab2() {
+  if (!currentReport) return;
+  $('reportMeta').textContent = `${currentReport.config.startYear}-${currentReport.config.endYear} · ${new Date(currentReport.finishedAt).toLocaleString()}`;
+  const vs = [...currentReport.variants].sort((a, b) => (b.stats.total ? b.stats.avgProfit : -1e9) - (a.stats.total ? a.stats.avgProfit : -1e9));
+  $('variantRows').innerHTML = vs.map((v, i) => {
+    const s = v.stats;
+    const profitWan = v.trades.reduce((sum, t) => sum + t.profit, 0) / 1e4;
+    if (!s.total) return `<tr data-name="${v.name}"><td>${i + 1}</td><td>${v.name}</td><td>0</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>`;
+    return `<tr data-name="${v.name}">
+      <td>${i + 1}</td><td>${v.name}</td><td>${s.total}</td>
+      <td class="${s.winRate >= 50 ? 'pos' : 'neg'}">${s.winRate.toFixed(1)}</td>
+      <td class="${s.avgProfit >= 0 ? 'pos' : 'neg'}">${s.avgProfit.toFixed(2)}</td>
+      <td>${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '+Inf'}</td>
+      <td class="pos">${s.maxProfit.toFixed(1)}</td>
+      <td class="neg">${s.maxLoss.toFixed(1)}</td>
+      <td class="${profitWan >= 0 ? 'pos' : 'neg'}">${profitWan.toFixed(1)}</td>
+    </tr>`;
+  }).join('');
+  $('variantRows').querySelectorAll('tr').forEach(tr => {
+    tr.onclick = () => {
+      $('variantRows').querySelectorAll('tr').forEach(x => x.classList.remove('selected'));
+      tr.classList.add('selected');
+      selectedVariant = tr.dataset.name;
+      switchTab(3);
+    };
+  });
+  renderCharts(vs);
+}
+function ma(v, p) {
+  return v.map((_, i) => {
+    if (i + 1 < p) return null;
+    let s = 0;
+    for (let j = i - p + 1; j <= i; j++) s += Number(v[j] || 0);
+    return Number((s / p).toFixed(3));
+  });
+}
+let trendC = null, winC = null;
+function renderCharts(vs) {
+  // 累计收益曲线：每变体按买入时间排交易，累计收益率
+  const series = vs.filter(v => v.stats.total > 0).map(v => {
+    const ts = [...v.trades].sort((a, b) => a.buyTime.localeCompare(b.buyTime));
+    let acc = 0;
+    return {name: v.name, type: 'line', showSymbol: false, lineStyle: {width: 1.5},
+      data: ts.map(t => { acc += t.rate; return [t.buyTime, Number(acc.toFixed(2))]; })};
+  });
+  if (!trendC) trendC = echarts.init($('trendChart'));
+  trendC.setOption({
+    title: {text: '累计收益率%（按买入时间）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    tooltip: {trigger: 'axis'},
+    legend: {top: 6, right: 10, type: 'scroll'},
+    grid: {left: 50, right: 20, top: 60, bottom: 40},
+    xAxis: {type: 'time'},
+    yAxis: {scale: true},
+    series
+  }, true);
+  if (!winC) winC = echarts.init($('winChart'));
+  winC.setOption({
+    title: {text: '胜率%', left: 10, top: 6, textStyle: {fontSize: 13}},
+    tooltip: {},
+    grid: {left: 50, right: 20, top: 60, bottom: 80},
+    xAxis: {type: 'category', data: vs.map(v => v.name), axisLabel: {rotate: 30, fontSize: 11}},
+    yAxis: {max: 100},
+    series: [{type: 'bar', data: vs.map(v => v.stats.winRate), itemStyle: {color: p => p.value >= 50 ? '#ef4444' : '#22c55e'}, label: {show: true, position: 'top', fontSize: 11}}]
+  }, true);
+}
+
+// ============ Tab3 交易明细 ============
+function renderTab3() {
+  if (!currentReport) return;
+  // 变体筛选下拉
+  const sel = $('fVariant');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部变体</option>' + currentReport.variants.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+  if (selectedVariant) { sel.value = selectedVariant; }
+  else if (cur) { sel.value = cur; }
+  renderTrades();
+}
+function filteredTrades() {
+  const vName = $('fVariant').value, code = $('fCode').value.trim(),
+    from = $('fFrom').value, to = $('fTo').value,
+    rMin = parseFloat($('fRateMin').value), rMax = parseFloat($('fRateMax').value);
+  const rows = [];
+  for (const v of currentReport.variants) {
+    if (vName && v.name !== vName) continue;
+    for (const t of v.trades) {
+      if (code && !t.code.includes(code)) continue;
+      if (from && t.buyTime.slice(0, 10) < from) continue;
+      if (to && t.buyTime.slice(0, 10) > to) continue;
+      if (!isNaN(rMin) && t.rate < rMin) continue;
+      if (!isNaN(rMax) && t.rate > rMax) continue;
+      rows.push({...t, variant: v.name});
+    }
+  }
+  return rows;
+}
+function renderTrades() {
+  const rows = filteredTrades();
+  $('tradeRows').innerHTML = rows.length ? rows.slice(0, 2000).map((t, i) => `<tr data-idx="${i}">
+    <td>${t.variant}</td><td>${t.code}</td><td>${t.buyTime}</td><td>${t.buyPrice.toFixed(2)}</td>
+    <td>${t.sellTime}</td><td>${t.sellPrice.toFixed(2)}</td><td>${t.quantity}</td>
+    <td class="${t.profit >= 0 ? 'pos' : 'neg'}">${t.profit.toFixed(0)}</td>
+    <td class="${t.rate >= 0 ? 'pos' : 'neg'}">${t.rate.toFixed(2)}</td><td>${t.holdingDays}</td></tr>`).join('')
+    : '<tr><td colspan="10" class="empty">无匹配交易</td></tr>';
+  $('tradeRows').querySelectorAll('tr[data-idx]').forEach(tr => {
+    tr.onclick = () => showKline(rows[+tr.dataset.idx]);
+  });
+}
+let klineC = null;
+async function showKline(t) {
+  const box = $('klineChart');
+  box.style.display = 'block';
+  box.innerHTML = '<div class="empty">加载K线中…</div>';
+  // 拉取买入前30天到卖出后5天
+  const from = new Date(t.buyTime); from.setDate(from.getDate() - 30);
+  const to = new Date(t.sellTime); to.setDate(to.getDate() + 5);
+  const fmt = d => d.toISOString().slice(0, 10);
+  let ks;
+  try {
+    ks = await api('GET', `/api/kline/${t.code}?from=${fmt(from)}&to=${fmt(to)}`);
+  } catch (e) { box.innerHTML = `<div class="empty">K线加载失败: ${e.message}</div>`; return; }
+  box.innerHTML = '';
+  if (!klineC) klineC = echarts.init(box);
+  const dates = ks.map(k => k.date);
+  const values = ks.map(k => [k.open, k.close, k.low, k.high]);
+  const closes = ks.map(k => k.close);
+  const vols = ks.map(k => k.volume);
+  const dateMap = new Map(ks.map(k => [k.date, k]));
+  const mk = (time, type, price, rate) => {
+    const k = dateMap.get(time.slice(0, 10));
+    const bp = k ? (type === '买' ? k.low : k.high) : price;
+    const isBuy = type === '买';
+    return {name: type, coord: [time.slice(0, 10), bp], value: isBuy ? 'B' : 'S',
+      symbol: 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 14, symbolOffset: [0, isBuy ? 12 : -12],
+      itemStyle: {color: isBuy ? '#ef4444' : '#22c55e'},
+      label: {show: true, formatter: isBuy ? 'B' : 'S', color: '#fff', fontSize: 10, offset: [0, isBuy ? 4 : -4]}};
+  };
+  klineC.setOption({
+    title: {text: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`, left: 12, top: 6, textStyle: {fontSize: 13}},
+    tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
+    legend: {top: 6, right: 10, data: ['日K', 'MA5', 'MA10', 'MA20']},
+    dataZoom: [{type: 'inside', xAxisIndex: [0, 1]}, {show: true, xAxisIndex: [0, 1], type: 'slider', bottom: 8}],
+    grid: [{left: 60, right: 30, top: 50, height: '55%'}, {left: 60, right: 30, top: '74%', height: '14%'}],
+    xAxis: [
+      {type: 'category', data: dates, boundaryGap: false},
+      {type: 'category', gridIndex: 1, data: dates, boundaryGap: false, axisLabel: {show: false}}
+    ],
+    yAxis: [
+      {scale: true, splitArea: {show: true}},
+      {scale: true, gridIndex: 1, splitNumber: 2, axisLabel: {show: false}, splitLine: {show: false}}
+    ],
+    series: [
+      {name: '日K', type: 'candlestick', data: values, itemStyle: {color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e'},
+        markPoint: {data: [mk(t.buyTime, '买', t.buyPrice), mk(t.sellTime, '卖', t.sellPrice)]}},
+      {name: 'MA5', type: 'line', data: ma(closes, 5), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
+      {name: 'MA10', type: 'line', data: ma(closes, 10), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
+      {name: 'MA20', type: 'line', data: ma(closes, 20), symbol: 'none', lineStyle: {width: 1, color: '#3b82f6'}},
+      {name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: {color: p => values[p.dataIndex] && values[p.dataIndex][1] >= values[p.dataIndex][0] ? '#ef4444' : '#22c55e'}}
+    ]
+  }, true);
+}
+['fVariant', 'fCode', 'fFrom', 'fTo', 'fRateMin', 'fRateMax'].forEach(id => {
+  $(id).addEventListener(id === 'fVariant' ? 'change' : 'input', renderTrades);
+});
+
+// ============ 初始化 ============
+loadScript();
+pollStatusOnce(); // 页面刷新后恢复运行状态显示
+</script>
+</body>
+</html>
