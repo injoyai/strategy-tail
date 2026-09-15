@@ -82,10 +82,13 @@ type Report struct {
 	Coverage Coverage
 }
 
-type yearData struct {
-	his extend.Klines
-	dks extend.Klines
-	mks protocol.Klines
+// YearData holds one code-year data slice produced by loadYear: His covers
+// the warm-up window before the requested year, Dks covers the requested
+// year and Mks carries intraday bars when the config requests them.
+type YearData struct {
+	His extend.Klines
+	Dks extend.Klines
+	Mks protocol.Klines
 }
 
 type codeResult struct {
@@ -189,6 +192,106 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 	return report, nil
 }
 
+// ForEachCodeData loads each code in cfg.Codes for every cfg.Years with a
+// worker pool and invokes fn once per successfully loaded code. Loading
+// reuses the exact Run/loadYear path so factor snapshot filling and IC
+// analysis observe the same data slices the backtest would load.
+// fn runs on worker goroutines; callers must synchronize any shared state
+// it touches, and a blocking fn stalls its worker. His/Dks alias the slices
+// returned by the provider, so mutating them inside fn may corrupt cached
+// provider data. Codes whose data cannot be loaded are skipped without
+// invoking fn but reported through cfg.OnCodeDone with a non-nil Failure.
+// Codes cancelled mid-load also skip fn and report Failure nil; treat the
+// returned ctx.Err() as authoritative for whether the visit is complete.
+// Returns ctx.Err() when the context is cancelled.
+func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas []YearData)) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if len(cfg.Years) == 0 {
+		return fmt.Errorf("researchrun: years is empty")
+	}
+	if cfg.GetDayKlines == nil {
+		return fmt.Errorf("researchrun: day K-line provider is nil")
+	}
+	if cfg.DataMode != DailyClose && cfg.DataMode != Intraday {
+		return fmt.Errorf("researchrun: unsupported data mode %d", cfg.DataMode)
+	}
+	if cfg.DataMode == Intraday && cfg.GetMinKlines == nil {
+		return fmt.Errorf("researchrun: minute K-line provider is nil")
+	}
+	if len(cfg.Codes) == 0 {
+		return nil
+	}
+
+	workers := cfg.Workers
+	if workers <= 0 {
+		workers = 10
+	}
+	if workers > len(cfg.Codes) {
+		workers = len(cfg.Codes)
+	}
+
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case code, ok := <-jobs:
+					if !ok {
+						return
+					}
+					datas := make([]YearData, 0, len(cfg.Years))
+					var fail *Failure
+					for _, year := range cfg.Years {
+						if ctx.Err() != nil {
+							break
+						}
+						data, failure := loadYear(cfg, code, year)
+						if failure != nil {
+							fail = failure
+							break
+						}
+						datas = append(datas, data)
+					}
+					if fail == nil && ctx.Err() == nil {
+						fn(code, datas)
+					}
+					mu.Lock()
+					done++
+					if cfg.OnCodeDone != nil {
+						cfg.OnCodeDone(Progress{
+							Done: done, Total: len(cfg.Codes), Code: code, Failure: fail,
+						})
+					}
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, code := range cfg.Codes {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- code:
+			}
+		}
+	}()
+	wg.Wait()
+
+	return ctx.Err()
+}
+
 func validate(cfg Config) error {
 	if len(cfg.Years) == 0 {
 		return fmt.Errorf("researchrun: years is empty")
@@ -217,7 +320,7 @@ func validate(cfg Config) error {
 }
 
 func runCode(ctx context.Context, cfg Config, code string) codeResult {
-	datas := make([]yearData, 0, len(cfg.Years))
+	datas := make([]YearData, 0, len(cfg.Years))
 	for _, year := range cfg.Years {
 		if ctx.Err() != nil {
 			return codeResult{code: code}
@@ -248,24 +351,24 @@ func runCode(ctx context.Context, cfg Config, code string) codeResult {
 		}
 		for _, data := range datas {
 			variantTrades[i] = append(variantTrades[i], bt.Do(
-				code, cloneKlines(data.his), cloneKlines(data.dks), data.mks,
+				code, cloneKlines(data.His), cloneKlines(data.Dks), data.Mks,
 			)...)
 		}
 	}
 	return codeResult{code: code, trades: variantTrades}
 }
 
-func loadYear(cfg Config, code string, year int) (yearData, *Failure) {
+func loadYear(cfg Config, code string, year int) (YearData, *Failure) {
 	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
 	all, err := cfg.GetDayKlines(code, hisStart, end)
 	if err != nil {
-		return yearData{}, failure(code, year, "day", err.Error())
+		return YearData{}, failure(code, year, "day", err.Error())
 	}
 	if len(all) == 0 {
-		return yearData{}, failure(code, year, "day", "no day K-line data")
+		return YearData{}, failure(code, year, "day", "no day K-line data")
 	}
 
 	split := -1
@@ -276,14 +379,14 @@ func loadYear(cfg Config, code string, year int) (yearData, *Failure) {
 		}
 	}
 	if split < 0 {
-		return yearData{}, failure(code, year, "period", "no K-line data in requested year")
+		return YearData{}, failure(code, year, "period", "no K-line data in requested year")
 	}
 
-	data := yearData{his: all[:split], dks: all[split:]}
+	data := YearData{His: all[:split], Dks: all[split:]}
 	if cfg.DataMode == Intraday {
-		data.mks, err = cfg.GetMinKlines(code, start, end)
+		data.Mks, err = cfg.GetMinKlines(code, start, end)
 		if err != nil {
-			return yearData{}, failure(code, year, "minute", err.Error())
+			return YearData{}, failure(code, year, "minute", err.Error())
 		}
 	}
 	return data, nil
