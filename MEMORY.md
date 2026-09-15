@@ -7,7 +7,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **回测引擎 `core.Backtest`**：`Run()` 中 Cost 零值自动回退 `DefaultCost()`（防止零佣金零滑点失真）；`MCIterations` 字段接入 `config.yaml` 的 `backtest.monte_carlo_iterations`（<=0 默认 1000）。只有 `cmd/backtest`、`cmd/backtest_macd`、`cmd/backtest_mc` 调用 `Run()`；`backtest_macd_smooth/green`、`market-regime`、`index_filter` 系列自行复现 `_backtest` 循环。
 - **`Do()` 指针覆写副作用（多组合复用数据必须隔离）**：`Do()` 分钟级卖出循环会原地覆写 `dks[i].Kline` 指针（`today.Kline = minuteKlines.Kline(...)`，等价性测试锁定为"原版行为不可更改"）。同一份 `extend.Klines` 要跑多个回测组合/多次复用时，必须深拷贝 `*extend.Kline` 与内嵌 `*protocol.Kline`，否则组合间互相污染；生产实现统一收口在 `internal/researchrun`，命令与 Lab 不再各自复制。
 - **研究矩阵统一执行层（2026-09）**：`internal/researchrun` 统一负责多变体回测的数据加载、worker 池、日线/分钟线模式、K 线深拷贝隔离、取消传播和覆盖率统计。`cmd/backtest_tail`、`backtest_macd_bar`、`backtest_yopen`、`backtest_winrate` 及 `internal/lab` 只保留策略定义与展示/落盘；任一请求年份取数失败仍按旧行为跳过整只股票，但必须通过 `Coverage{Requested,Completed,Skipped,Failures}` 显式披露。
-- **因子框架基础（2026-09，Task 1-2）**：`core.Factor` 约定无状态数值因子以 `NaN` 表示无效值；`core` 内存横截面快照按交易日、因子名和排序方向隔离。`strategies/factor` 已实现 `N日动量`、`均线偏离`、`N日斜率`，周期 `Days<=0` 默认 20；斜率以窗口均价归一化。注册表、Factor→Buyer 桥接、Lab 注入和 IC/分位研究尚未落地，不得当作可端到端功能使用。
+- **因子框架基础（2026-09，Task 1-3）**：`core.Factor` 约定无状态数值因子以 `NaN` 表示无效值；`core` 内存横截面快照按交易日、因子名和排序方向隔离。`strategies/factor` 已实现动量族 `N日动量`、`均线偏离`、`N日斜率`（默认 20，斜率以窗口均价归一化），波动族 `N日波动`（总体标准差）、`N日振幅`（HHV/LLV 区间比，默认 20），量能族 `量比`（默认 5）、`量分位`（默认 60）、`放量占比`（1.5 倍均量阈值，默认 20）。注册表、Factor→Buyer 桥接、Lab 注入和 IC/分位研究尚未落地，不得当作可端到端功能使用。
 - **`Do()` 性能优化（2026-09）**：逐日 `joinKlines` O(n²) 复制改为一次性 `full = his + dks` 缓冲 + 前缀切片 `full[:len(his)+i+1]`。切片元素为指针，与原版语义完全一致；`today.Kline` 的分钟级覆写通过共享指针实时可见，是"原版行为，不可更改"。**等价性已由差分测试锁定**：`core/backtest_equiv_test.go` 保存原版 `DoLegacy`（自 git HEAD 逐行复制），同一随机数据（固定种子、深拷贝隔离输入）跑新旧两版逐笔 `reflect.DeepEqual` 比对；今后改 `Do` 必须保持该测试通过。
 - **`common.go` init 副作用已移除**：import 不再自动 `Pull.Update`；数据更新须显式 `common.Update()`（各 cmd 入口已补齐，`backtest_mc`/`market-regime` 原先依赖隐式更新）。
 - **PDF 报告公共包 `lib/report`**：`ReportData` + `Options{OutputDir, Filename, StrategyDesc, Advice}`；`backtest_macd_smooth` 与 `backtest_macd_green` 的 report_pdf.go 重复实现已抽取至此，cmd 侧仅保留策略文案。`market-regime/report_pdf.go` 结构差异大，刻意不合并。依赖 `C:\Windows\Fonts\simhei.ttf`。
@@ -15,6 +15,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **通用交易记录落盘（2026-09，AGENTS.md 6.1 硬性要求）**：`core/trades_export.go` 的 `ExportTradesCSV(strategyName, filename, trades)`（CSV 明细）与 `ExportTradesHTML(strategyName, filename, trades, getDayKlines)`（ECharts K线买卖点+明细表 HTML，getDayKlines 传 nil 时仅明细）。输出到 `output/trades/<策略名>/`（策略名/文件名经 `TradesExportName` 清洗路径非法字符），按买入时间排序，空交易不生成文件并返回空串。与 `Analyze()` 的按年落盘（`output/backtest/<year>.csv` + `trades.html`）并存：多组合/参数矩阵场景用前者，单策略走 `Run()` 的场景用后者。`backtest_tail` 已接入（每组合 CSV + 全组合汇总 HTML）。
 
 ## 约定与坑点
+- `extend.Klines.LLV`（lib/extend/model_kline.go）的 `p == 0` 是哨兵判断而非真实最小值：低点 0 被赋值后 p 仍处哨兵态，其后任何低点都会强制覆盖它；窗口最后一个低点为 0 时 LLV==0，否则返回最后一个 0 之后的最小正低点（窗口内无 0 时为真实最小值）（HHV 无此问题）。依赖 `LLV==0 → NaN` 判断的指标（如因子 `N日振幅`）测试数据须按"窗口最后一个低点为 0"构造。
 - 仓库 Go 源文件为 **LF** 行结尾；Windows PowerShell `Set-Content` 会写 CRLF（PS5.1 还加 BOM），批量改文件后需转 LF 并跑 `gofmt -l` 核对。
 - `gofmt -l` 存在历史遗留未格式化文件（common.go、market-regime/* 等，对齐类问题），按最小改动原则未全仓库格式化。
 - 大量 `gofmt`/测试验证基线：`go build ./...`、`go test ./...` 全绿（strategies/buy、strategies/sell、core）。
