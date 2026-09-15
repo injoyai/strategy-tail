@@ -1,6 +1,6 @@
 # strategy-tail
 
-本项目是面向 A 股的本地策略研究与回测工具。当前主线是组合式 `Buyer` / `Seller` 策略、历史回测、结果分析和策略实验室；它不是实盘交易系统，也尚未实现正式的因子研究层。
+本项目是面向 A 股的本地策略研究与回测工具。当前主线是组合式 `Buyer` / `Seller` 策略、历史回测、结果分析和策略实验室；因子框架正在分阶段实施，目前只有核心契约、横截面快照和首批动量因子，不是可端到端使用的完整研究层。本项目不是实盘交易系统。
 
 ## 当前架构
 
@@ -9,7 +9,7 @@ TDX / SQLite K 线
         ↓
 lib/extend 数据访问与 K 线扩展
         ↓
-strategies/buy + strategies/sell 组合策略
+strategies/factor 数值因子 + strategies/buy + strategies/sell 组合策略
         ↓
 core.Backtest / Stats / Analyze
         ↓
@@ -25,6 +25,7 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `core/` | 稳定的回测、交易、统计、绩效和审计契约 |
 | `strategies/buy/` | 实现 `core.Buyer` 的买入条件与组合子 |
 | `strategies/sell/` | 实现 `core.Seller` 的卖出和风控条件 |
+| `strategies/factor/` | 实现 `core.Factor` 的无状态数值因子；尚未接入完整研究工作流 |
 | `strategies/util/` | MACD、RSI 等策略共用计算 |
 | `lib/extend/` | TDX K 线读取与本地 SQLite 存储适配 |
 | `internal/researchrun/` | 多变体回测的数据加载、并发、取消、隔离和覆盖率 |
@@ -108,7 +109,9 @@ type Seller interface {
 
 ## 因子框架状态
 
-仓库中存在因子框架的设计和实施计划，但当前代码没有 `core.Factor`、`strategies/factor`、Rank IC 或分位收益分析实现。因此当前有效链路仍是：
+当前代码已经具备 `core.Factor`、交易日归一、内存横截面排名快照，以及 `N日动量`、`均线偏离`、`N日斜率` 三个动量族因子。因子注册表、因子过滤/TopN Buyer、Lab 快照注入、Rank IC、分位收益分析和前端研究页仍未实现。
+
+因此当前可端到端运行的有效链路仍是：
 
 ```text
 K 线 → Buyer/Seller → Backtest → Stats/Analyze
