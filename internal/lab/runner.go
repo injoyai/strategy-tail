@@ -43,12 +43,34 @@ type RunConfig struct {
 
 // Validate 配置合法性检查。
 func (c RunConfig) Validate() error {
+	if err := c.validateYears(); err != nil {
+		return err
+	}
+	if err := c.validateSample(); err != nil {
+		return err
+	}
+	if c.HoldingDays <= 0 && c.TakeProfit <= 0 && c.StopLoss <= 0 {
+		return fmt.Errorf("卖出规则至少启用一项（持仓天数/止盈/止损）")
+	}
+	if c.HoldingDays < 0 || c.TakeProfit < 0 || c.StopLoss < 0 {
+		return fmt.Errorf("卖出参数不能为负")
+	}
+	return nil
+}
+
+// validateYears 年份范围检查（回测/因子分析共用）。
+func (c RunConfig) validateYears() error {
 	if c.StartYear <= 0 || c.EndYear <= 0 || c.StartYear > c.EndYear {
 		return fmt.Errorf("年份范围无效: %d-%d", c.StartYear, c.EndYear)
 	}
 	if c.EndYear > time.Now().Year() {
 		return fmt.Errorf("结束年份 %d 超过当前年份", c.EndYear)
 	}
+	return nil
+}
+
+// validateSample 样本配置检查（回测/因子分析共用）。
+func (c RunConfig) validateSample() error {
 	switch c.SampleMode {
 	case "all":
 	case "random":
@@ -61,12 +83,6 @@ func (c RunConfig) Validate() error {
 		}
 	default:
 		return fmt.Errorf("样本模式无效: %s", c.SampleMode)
-	}
-	if c.HoldingDays <= 0 && c.TakeProfit <= 0 && c.StopLoss <= 0 {
-		return fmt.Errorf("卖出规则至少启用一项（持仓天数/止盈/止损）")
-	}
-	if c.HoldingDays < 0 || c.TakeProfit < 0 || c.StopLoss < 0 {
-		return fmt.Errorf("卖出参数不能为负")
 	}
 	return nil
 }
@@ -136,11 +152,13 @@ type Runner struct {
 	doneCodes   atomic.Int64
 	currentCode atomic.Pointer[string]
 
-	state      atomic.Pointer[string] // idle/running/error/done
-	errMsg     atomic.Pointer[string]
-	lastRun    atomic.Pointer[RunConfig]
-	lastReport atomic.Pointer[Report]
-	runID      atomic.Pointer[string] // 本次运行目录名
+	state        atomic.Pointer[string] // idle/running/error/done
+	errMsg       atomic.Pointer[string]
+	lastRun      atomic.Pointer[RunConfig]
+	lastReport   atomic.Pointer[Report]
+	runID        atomic.Pointer[string] // 本次运行目录名
+	task         atomic.Pointer[string] // 当前任务类型 backtest/analysis
+	lastAnalysis atomic.Pointer[AnalysisReport]
 }
 
 // NewRunner 创建执行器。
@@ -241,6 +259,50 @@ func (r *Runner) Status() map[string]any {
 // LatestReport 最新完成报告（无则 nil）。
 func (r *Runner) LatestReport() *Report {
 	return r.lastReport.Load()
+}
+
+// StartAnalysis 启动因子分析（与回测共用 mu 互斥）。
+func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if !r.mu.TryLock() {
+		return fmt.Errorf("已有任务在运行")
+	}
+
+	stop := make(chan struct{})
+	r.stopCh = stop
+	r.running.Store(true)
+	r.doneCodes.Store(0)
+	state := "running"
+	r.state.Store(&state)
+	task := "analysis"
+	r.task.Store(&task)
+	rc := cfg.RunConfig
+	r.lastRun.Store(&rc)
+
+	go func() {
+		defer r.mu.Unlock()
+		defer r.running.Store(false)
+
+		rep, err := r.runAnalysis(cfg, stop)
+		if err != nil {
+			if err == errStopped {
+				st := "idle"
+				r.state.Store(&st)
+				return
+			}
+			msg := err.Error()
+			r.errMsg.Store(&msg)
+			st := "error"
+			r.state.Store(&st)
+			return
+		}
+		r.lastAnalysis.Store(rep)
+		st := "done"
+		r.state.Store(&st)
+	}()
+	return nil
 }
 
 // RunID 本次/最近一次运行的目录名。
