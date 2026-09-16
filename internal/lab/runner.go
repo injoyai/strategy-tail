@@ -271,14 +271,6 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, stop chan struct{})
 	r.totalCodes.Store(int64(len(codes)))
 
 	years := cfg.years()
-	seller := cfg.seller()
-	cost, pos, _, _, _ := common.LoadBacktestConfig()
-	runVariants := make([]researchrun.Variant, len(variants))
-	for i, variant := range variants {
-		runVariants[i] = researchrun.Variant{
-			Name: variant.Name, Buyer: sb.Strategy(variant.Name, variant.Buyer),
-		}
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -289,6 +281,30 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, stop chan struct{})
 		case <-ctx.Done():
 		}
 	}()
+
+	// TopN 横截面快照：回测前统一填充（无快照时 A因子TopN 恒 false）。
+	// 无请求零开销跳过，普通策略路径不受影响；快照仅本进程内存，
+	// 任务结束清理（无论填充成败，防部分写入残留）；填充中 ctx 取消
+	// （用户停止）→ errStopped。
+	if reqs := collectTopN(variants); len(reqs) > 0 {
+		defer core.ClearCrossSection()
+		if err := fillCrossSection(ctx, codes, years, reqs); err != nil {
+			if errors.Is(err, context.Canceled) {
+				return nil, errStopped
+			}
+			return nil, err
+		}
+		r.doneCodes.Store(0) // 填充进度不计入回测进度，从头计
+	}
+
+	seller := cfg.seller()
+	cost, pos, _, _, _ := common.LoadBacktestConfig()
+	runVariants := make([]researchrun.Variant, len(variants))
+	for i, variant := range variants {
+		runVariants[i] = researchrun.Variant{
+			Name: variant.Name, Buyer: sb.Strategy(variant.Name, variant.Buyer),
+		}
+	}
 
 	run, err := researchrun.Run(ctx, researchrun.Config{
 		Codes:         codes,
