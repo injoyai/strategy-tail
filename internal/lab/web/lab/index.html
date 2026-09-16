@@ -69,6 +69,7 @@ tbody tr.selected{background:#e0eaff}
   <button class="active" data-tab="1">① 策略与运行</button>
   <button data-tab="2">② 组合对比</button>
   <button data-tab="3">③ 交易明细</button>
+  <button data-tab="4">④ 因子研究</button>
 </div>
 
 <main>
@@ -173,6 +174,31 @@ tbody tr.selected{background:#e0eaff}
     <div id="klineChart"></div>
   </div>
 </div>
+
+<!-- Tab4 -->
+<div class="tab-panel" id="tab4">
+  <div class="card">
+    <h3>因子研究（横截面 IC）</h3>
+    <div class="form-row"><label>因子</label>
+      <select id="factorKind" style="min-width:220px"></select>
+      <label style="margin-left:16px">参数 Days</label>
+      <input type="number" id="factorDays" value="20" min="1" style="width:80px">
+      <label style="margin-left:16px">收益窗口(日)</label>
+      <select id="factorWindow">
+        <option value="1" selected>1</option>
+        <option value="5">5</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+    <div class="editor-actions">
+      <button class="primary" id="btnAnalyze" onclick="runAnalysis()">开始分析</button>
+    </div>
+    <div class="msg" id="factorMsg"></div>
+    <div class="hint">每日计算全样本因子值与未来 Window 日收益的 Spearman 秩相关（IC）：均值显著为正 → 因子值越大未来收益越高，为负则反之。运行配置复用 Tab① 的年份与样本池。</div>
+    <div class="hint" id="factorSummary"></div>
+    <div id="icChart" style="height:360px"></div>
+  </div>
+</div>
 </main>
 
 <script>
@@ -189,6 +215,7 @@ document.querySelectorAll('.tabs button').forEach(btn => {
     $('tab' + btn.dataset.tab).classList.add('active');
     if (btn.dataset.tab === '2') renderTab2();
     if (btn.dataset.tab === '3') renderTab3();
+    if (btn.dataset.tab === '4') renderAnalysis();
   };
 });
 
@@ -268,8 +295,9 @@ async function pollStatusOnce() {
     const bar = $('statusbar');
     bar.classList.toggle('show', s.state === 'running' || s.state === 'done' || s.state === 'error');
     $('btnRun').disabled = s.state === 'running';
+    $('btnAnalyze').disabled = s.state === 'running';
     $('btnStop').style.display = s.state === 'running' ? '' : 'none';
-    $('statusState').textContent = {idle: '空闲', running: '回测中', done: '已完成', error: '出错'}[s.state] || s.state;
+    $('statusState').textContent = {idle: '空闲', running: s.task === 'analysis' ? '因子分析中' : '回测中', done: '已完成', error: '出错'}[s.state] || s.state;
     $('statusDetail').textContent = s.state === 'running' ? `${s.doneCodes}/${s.totalCodes} 只` : '';
     $('progressBar').style.width = (s.progress || 0) + '%';
     $('statusCurrent').textContent = s.currentCode ? ('当前: ' + s.currentCode) : '';
@@ -277,8 +305,13 @@ async function pollStatusOnce() {
     $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
     if (s.state === 'done') {
       clearInterval(pollTimer); pollTimer = null;
-      currentReport = await api('GET', '/api/report/latest');
-      switchTab(2);
+      if (s.task === 'analysis') {
+        currentAnalysis = await api('GET', '/api/analysis/latest');
+        switchTab(4);
+      } else {
+        currentReport = await api('GET', '/api/report/latest');
+        switchTab(2);
+      }
     } else if (s.state === 'idle' || s.state === 'error') {
       clearInterval(pollTimer); pollTimer = null;
     }
@@ -286,6 +319,55 @@ async function pollStatusOnce() {
 }
 function switchTab(n) {
   document.querySelector(`.tabs button[data-tab="${n}"]`).click();
+}
+
+// ============ Tab4 因子研究 ============
+let factorCatalog = [];
+let currentAnalysis = null; // Tab4 共享的分析报告
+let icC = null;             // IC 图表实例（惰性初始化）
+
+async function loadFactors() {
+  try {
+    factorCatalog = await api('GET', '/api/factors');
+    $('factorKind').innerHTML = factorCatalog.map(e => `<option value="${e.kind}">${e.name}</option>`).join('');
+  } catch (e) { showFactorMsg(e.message, false); }
+}
+function showFactorMsg(msg, ok) {
+  const el = $('factorMsg');
+  el.textContent = msg;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+async function runAnalysis() {
+  showFactorMsg('', true);
+  try {
+    const cfg = buildConfig(); // 复用 Tab1 年份/样本配置
+    cfg.kind = $('factorKind').value;
+    cfg.days = +$('factorDays').value;
+    cfg.window = +$('factorWindow').value;
+    await api('POST', '/api/analyze', cfg);
+    showFactorMsg('分析已启动', true);
+    pollStatus();
+  } catch (e) { showFactorMsg(e.message, false); }
+}
+function renderAnalysis() {
+  if (!currentAnalysis) return;
+  const s = currentAnalysis.stats;
+  $('factorSummary').textContent =
+    `${currentAnalysis.factorName} · 窗口${currentAnalysis.window}日 · 有效日 ${s.pairs} · IC均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · t值 ${s.tStat.toFixed(2)}`;
+  const days = currentAnalysis.daily.map(d => d.date);
+  const ics = currentAnalysis.daily.map(d => d.ic);
+  if (!icC) icC = echarts.init($('icChart'));
+  icC.setOption({
+    tooltip: {trigger: 'axis'},
+    grid: {left: 60, right: 20, top: 20, bottom: 60},
+    xAxis: {type: 'category', data: days},
+    yAxis: {type: 'value', min: -1, max: 1},
+    series: [{
+      name: 'IC', type: 'line', data: ics, symbol: 'none',
+      connectNulls: true, // 无效日（null）跨过补线，与导出 report.html 口径一致
+      markLine: {silent: true, symbol: 'none', lineStyle: {type: 'dashed'}, data: [{yAxis: 0}]}
+    }]
+  });
 }
 
 // ============ Tab2 组合对比 ============
@@ -455,6 +537,7 @@ async function showKline(t) {
 
 // ============ 初始化 ============
 loadScript();
+loadFactors();
 pollStatusOnce(); // 页面刷新后恢复运行状态显示
 </script>
 </body>
