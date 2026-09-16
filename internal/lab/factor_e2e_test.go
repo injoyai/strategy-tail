@@ -121,3 +121,90 @@ func TestServerTopNRun(t *testing.T) {
 		t.Fatalf("快照未清理: 名次 = %d", got)
 	}
 }
+
+// TestServerAnalysisAPI 端到端：因子目录 → 非法 kind 409 → 合法分析 → task=analysis → 最新报告。
+func TestServerAnalysisAPI(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+
+	base := time.Date(2024, 12, 24, 0, 0, 0, 0, time.Local)
+	up := append([]float64{9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5},
+		10, 10.2, 10.4, 10.6, 10.8, 11, 11.2, 11.4, 11.6, 11.8,
+		12, 12.2, 12.4, 12.6, 12.8, 13, 13.2, 13.4, 13.6, 13.8)
+	down := append([]float64{21, 21, 21, 21, 21, 21, 21, 21},
+		20.8, 20.6, 20.4, 20.2, 20, 19.8, 19.6, 19.4, 19.2, 19,
+		18.8, 18.6, 18.4, 18.2, 18, 17.8, 17.6, 17.4, 17.2, 17)
+	writeDayDBCloses(t, dir, "sh600001", up, base)
+	writeDayDBCloses(t, dir, "sh600002", down, base)
+
+	h := NewServer().Handler()
+
+	// 因子目录：14 项，每项含 kind/name/description
+	res := doReq(t, h, http.MethodGet, "/api/factors", nil, http.StatusOK)
+	var catalog []map[string]any
+	if err := json.Unmarshal(res, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) != 14 {
+		t.Fatalf("因子目录项数 = %d", len(catalog))
+	}
+	for _, e := range catalog {
+		for _, k := range []string{"kind", "name", "description"} {
+			if _, ok := e[k]; !ok {
+				t.Fatalf("目录项缺字段 %s: %v", k, e)
+			}
+		}
+	}
+
+	// 未知因子 → StartAnalysis 校验失败 → 409
+	res = doReq(t, h, http.MethodPost, "/api/analyze", map[string]any{
+		"kind": "nope",
+	}, http.StatusConflict)
+
+	// 合法分析请求
+	res = doReq(t, h, http.MethodPost, "/api/analyze", map[string]any{
+		"startYear": 2025, "endYear": 2025,
+		"sampleMode": "codes", "sampleCodes": []string{"sh600001", "sh600002"},
+		"kind": "momentum", "days": 2, "window": 1,
+	}, http.StatusOK)
+	if !bytes.Contains(res, []byte(`"ok":true`)) {
+		t.Fatalf("analyze 响应异常: %s", res)
+	}
+
+	// 轮询至完成，task 应为 analysis
+	deadline := time.Now().Add(30 * time.Second)
+	var st map[string]any
+	for {
+		res = doReq(t, h, http.MethodGet, "/api/status", nil, http.StatusOK)
+		st = nil
+		if err := json.Unmarshal(res, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st["state"] == "done" || st["state"] == "error" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("分析超时未完成: %v", st)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if st["state"] != "done" {
+		t.Fatalf("分析失败: %v", st)
+	}
+	if st["task"] != "analysis" {
+		t.Fatalf("task = %v, want analysis", st["task"])
+	}
+
+	// 最新分析报告
+	res = doReq(t, h, http.MethodGet, "/api/analysis/latest", nil, http.StatusOK)
+	var rep AnalysisReport
+	if err := json.Unmarshal(res, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.FactorName != "N日动量(2)" {
+		t.Fatalf("FactorName = %q", rep.FactorName)
+	}
+	if !nearlyEq(rep.Stats.Mean, 1) {
+		t.Fatalf("Mean = %v, want 1", rep.Stats.Mean)
+	}
+}

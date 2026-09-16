@@ -201,6 +201,11 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 		Workers:      common.DefaultGoroutines * 2,
 		DataMode:     researchrun.DailyClose,
 		GetDayKlines: common.Pull.DayKlines,
+		OnCodeDone: func(progress researchrun.Progress) {
+			r.doneCodes.Store(int64(progress.Done))
+			current := progress.Code
+			r.currentCode.Store(&current)
+		},
 	}, func(code string, datas []researchrun.YearData) {
 		lv := map[time.Time]map[string]float64{}
 		lr := map[time.Time]map[string]float64{}

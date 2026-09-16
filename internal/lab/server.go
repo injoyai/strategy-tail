@@ -13,6 +13,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // server.go REST API + 静态页服务。
@@ -28,6 +29,9 @@ import (
 //	GET      /api/reports       历史报告列表
 //	GET      /api/report/{id}   指定报告
 //	GET      /api/kline/{code}  日K数据
+//	GET      /api/factors       因子目录
+//	POST     /api/analyze       启动因子分析（与回测共用任务互斥）
+//	GET      /api/analysis/latest 最新分析报告
 
 // ScriptPath 策略脚本路径（页面编辑器直接读写该文件）。
 const ScriptPath = "strategies/script/matrix.go"
@@ -51,6 +55,9 @@ func NewServer() *Server {
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)
 	s.mux.HandleFunc("GET /api/report/{id}", s.handleReport)
 	s.mux.HandleFunc("GET /api/kline/{code}", s.handleKline)
+	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
+	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
+	s.mux.HandleFunc("GET /api/analysis/latest", s.handleLatestAnalysis)
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	return s
 }
@@ -189,6 +196,36 @@ func (s *Server) handleLatestReport(w http.ResponseWriter, r *http.Request) {
 	rep := s.runner.LatestReport()
 	if rep == nil {
 		writeErr(w, http.StatusNotFound, "暂无完成的报告")
+		return
+	}
+	writeJSON(w, rep)
+}
+
+// handleFactors 因子目录（注册表 All()，供前端下拉）。
+func (s *Server) handleFactors(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, f.All())
+}
+
+// handleAnalyze 启动因子分析（不加载脚本，与回测共用 Runner 互斥）。
+func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
+	var cfg AnalyzeConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
+		return
+	}
+	cfg.ScriptName = scriptName()
+	if err := s.runner.StartAnalysis(cfg); err != nil {
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
+}
+
+// handleLatestAnalysis 最新完成的分析报告。
+func (s *Server) handleLatestAnalysis(w http.ResponseWriter, r *http.Request) {
+	rep := s.runner.LatestAnalysis()
+	if rep == nil {
+		writeErr(w, http.StatusNotFound, "暂无完成的分析报告")
 		return
 	}
 	writeJSON(w, rep)

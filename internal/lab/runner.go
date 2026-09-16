@@ -185,6 +185,9 @@ func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
 	r.stopCh = stop
 	r.running.Store(true)
 	r.doneCodes.Store(0)
+	// task 先于 state 写入：读侧见 state=running 必见当前 task
+	task := "backtest"
+	r.task.Store(&task)
 	state := "running"
 	r.state.Store(&state)
 	rc := cfg
@@ -238,6 +241,7 @@ func (r *Runner) Status() map[string]any {
 		"progress":   0.0,
 		"doneCodes":  r.doneCodes.Load(),
 		"totalCodes": r.totalCodes.Load(),
+		"task":       "backtest",
 	}
 	if p := r.currentCode.Load(); p != nil {
 		m["currentCode"] = *p
@@ -253,12 +257,20 @@ func (r *Runner) Status() map[string]any {
 	if cfg := r.lastRun.Load(); cfg != nil {
 		m["config"] = *cfg
 	}
+	if p := r.task.Load(); p != nil {
+		m["task"] = *p
+	}
 	return m
 }
 
 // LatestReport 最新完成报告（无则 nil）。
 func (r *Runner) LatestReport() *Report {
 	return r.lastReport.Load()
+}
+
+// LatestAnalysis 最近一次完成的因子分析报告（无则 nil）。
+func (r *Runner) LatestAnalysis() *AnalysisReport {
+	return r.lastAnalysis.Load()
 }
 
 // StartAnalysis 启动因子分析（与回测共用 mu 互斥）。
@@ -274,10 +286,11 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	r.stopCh = stop
 	r.running.Store(true)
 	r.doneCodes.Store(0)
-	state := "running"
-	r.state.Store(&state)
+	// task 先于 state 写入：读侧见 state=running 必见当前 task
 	task := "analysis"
 	r.task.Store(&task)
+	state := "running"
+	r.state.Store(&state)
 	rc := cfg.RunConfig
 	r.lastRun.Store(&rc)
 
