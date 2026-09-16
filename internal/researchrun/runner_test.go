@@ -315,3 +315,150 @@ func testKlines() extend.Klines {
 	}
 	return result
 }
+
+// klinesInYear 生成指定年份内连续 3 根日 K（provider 按请求年份返回数据）。
+func klinesInYear(year int) extend.Klines {
+	prices := []float64{10, 10.1, 10.2}
+	result := make(extend.Klines, len(prices))
+	for i, price := range prices {
+		result[i] = &extend.Kline{Kline: &protocol.Kline{
+			Time: time.Date(year, 1, i+1, 0, 0, 0, 0, time.Local),
+			Open: protocol.Yuan(price), High: protocol.Yuan(price),
+			Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+		}}
+	}
+	return result
+}
+
+// TestForEachCodeYearDataKeepsPartialYears 单年缺失不得作废该股票其他年份：
+// 缺失年份进入失败明细与 SkippedCodeYears，成功年份照常回调。
+func TestForEachCodeYearDataKeepsPartialYears(t *testing.T) {
+	day := func(_ string, _, end time.Time) (extend.Klines, error) {
+		if end.Year() != 2024 {
+			return nil, nil // 2023 年无数据 → loadYear 报 no day K-line data
+		}
+		return klinesInYear(2024), nil
+	}
+	var mu sync.Mutex
+	type visit struct {
+		code string
+		year int
+		days int
+	}
+	visits := []visit(nil)
+	progress := make([]Progress, 0, 1)
+	coverage, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600000"},
+		Years:        []int{2023, 2024},
+		Workers:      1,
+		DataMode:     DailyClose,
+		GetDayKlines: day,
+		OnCodeDone:   func(p Progress) { progress = append(progress, p) },
+	}, func(code string, year int, data YearData) {
+		mu.Lock()
+		visits = append(visits, visit{code: code, year: year, days: len(data.Dks)})
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(visits) != 1 || visits[0].code != "sh600000" || visits[0].year != 2024 || visits[0].days != 3 {
+		t.Fatalf("expected only 2024 to be visited, got %+v", visits)
+	}
+	if coverage.RequestedCodes != 1 || coverage.CompletedCodes != 1 {
+		t.Fatalf("CompletedCodes 应为至少有一个成功年份的股票数: %+v", coverage)
+	}
+	if coverage.RequestedCodeYears != 2 || coverage.CompletedCodeYears != 1 || coverage.SkippedCodeYears != 1 {
+		t.Fatalf("unexpected code-year coverage: %+v", coverage)
+	}
+	if len(coverage.Failures) != 1 || coverage.Failures[0].Code != "sh600000" ||
+		coverage.Failures[0].Year != 2023 || coverage.Failures[0].Stage != "day" {
+		t.Fatalf("unexpected failures: %+v", coverage.Failures)
+	}
+	// 部分年份成功时该票仍算完成，进度不得报整票失败
+	if len(progress) != 1 || progress[0].Done != 1 || progress[0].Failure != nil {
+		t.Fatalf("unexpected progress: %+v", progress)
+	}
+}
+
+// TestForEachCodeYearDataReportsWholeCodeFailure 整票所有年份失败时进度报失败，
+// 失败明细区分年份。
+func TestForEachCodeYearDataReportsWholeCodeFailure(t *testing.T) {
+	progress := make([]Progress, 0, 1)
+	coverage, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600003"},
+		Years:        []int{2024, 2025},
+		Workers:      1,
+		DataMode:     DailyClose,
+		GetDayKlines: func(string, time.Time, time.Time) (extend.Klines, error) { return nil, nil },
+		OnCodeDone:   func(p Progress) { progress = append(progress, p) },
+	}, func(string, int, YearData) { t.Error("整票无数据时不应回调") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if coverage.CompletedCodes != 0 || coverage.CompletedCodeYears != 0 || coverage.SkippedCodeYears != 2 {
+		t.Fatalf("unexpected coverage: %+v", coverage)
+	}
+	if len(coverage.Failures) != 2 {
+		t.Fatalf("expected 2 code-year failures, got %+v", coverage.Failures)
+	}
+	if len(progress) != 1 || progress[0].Failure == nil || progress[0].Failure.Code != "sh600003" {
+		t.Fatalf("unexpected progress: %+v", progress)
+	}
+}
+
+// TestForEachCodeYearDataCancelInsideFnStopsWithoutMissingCounts 回调内取消后
+// 不再访问后续年份，也不把未访问年份计为普通缺失。
+func TestForEachCodeYearDataCancelInsideFnStopsWithoutMissingCounts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	visited := []int(nil)
+	coverage, err := ForEachCodeYearData(ctx, Config{
+		Codes:    []string{"sh600000"},
+		Years:    []int{2024, 2025},
+		Workers:  1,
+		DataMode: DailyClose,
+		GetDayKlines: func(_ string, _, end time.Time) (extend.Klines, error) {
+			return klinesInYear(end.Year()), nil
+		},
+	}, func(_ string, year int, _ YearData) {
+		visited = append(visited, year)
+		cancel()
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if len(visited) != 1 || visited[0] != 2024 {
+		t.Fatalf("expected only the first year to be visited, got %v", visited)
+	}
+	if coverage.CompletedCodes != 0 || coverage.CompletedCodeYears != 0 || coverage.SkippedCodeYears != 0 {
+		t.Fatalf("取消不得计入覆盖率: %+v", coverage)
+	}
+}
+
+func TestForEachCodeYearDataValidatesConfig(t *testing.T) {
+	day := func(string, time.Time, time.Time) (extend.Klines, error) { return testKlines(), nil }
+	cases := []struct {
+		name string
+		cfg  Config
+	}{
+		{"empty years", Config{Codes: []string{"sh600000"}, DataMode: DailyClose, GetDayKlines: day}},
+		{"nil day provider", Config{Codes: []string{"sh600000"}, Years: []int{2024}, DataMode: DailyClose}},
+		{"intraday without minute provider", Config{Codes: []string{"sh600000"}, Years: []int{2024}, DataMode: Intraday, GetDayKlines: day}},
+		{"unsupported data mode", Config{Codes: []string{"sh600000"}, Years: []int{2024}, DataMode: 99, GetDayKlines: day}},
+	}
+	for _, tc := range cases {
+		if _, err := ForEachCodeYearData(context.Background(), tc.cfg, func(string, int, YearData) {}); err == nil {
+			t.Fatalf("%s: expected validation error", tc.name)
+		}
+	}
+	coverage, err := ForEachCodeYearData(context.Background(), Config{
+		Years: []int{2024}, DataMode: DailyClose, GetDayKlines: day,
+	}, func(string, int, YearData) {})
+	if err != nil {
+		t.Fatalf("expected empty codes to succeed, got %v", err)
+	}
+	if coverage.RequestedCodeYears != 0 || coverage.CompletedCodes != 0 {
+		t.Fatalf("unexpected coverage for empty codes: %+v", coverage)
+	}
+}

@@ -5,131 +5,237 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>策略实验室</title>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
 <style>
-:root{--bg:#f5f6fa;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--accent2:#1e293b;--red:#ef4444;--green:#22c55e;--ok:#10b981;--warn:#f59e0b}
+:root{
+  color-scheme:dark;
+  --bg:#070c15;--bg2:#0d1626;--ink:#e9eef8;--ink2:#c2ccdd;--muted:#7d8ba0;
+  --rule:rgba(255,255,255,.075);--rule2:rgba(255,255,255,.14);
+  --accent:#4c8dff;--accent-strong:#3a76e6;--accent-soft:rgba(76,141,255,.13);
+  --gold:#d8b45a;--gold-soft:#ecd69c;--gold-deep:#9d7c33;--gold-glow:rgba(216,180,90,.18);
+  /* A 股口径：红涨绿跌（PROJECT_RULES §5 强制） */
+  --color-up:#ef4444;--color-down:#22c55e;
+  --red:#ef4444;--green:#22c55e;--ok:#34d399;--warn:#e0a83c;
+  --surface:#0f1929;--surface-soft:rgba(255,255,255,.035);
+  --shadow:0 26px 60px rgba(0,0,0,.5);--radius:16px;--control-radius:10px;
+  --font-disp:"Bahnschrift","DIN Alternate","Segoe UI Variable Display","Microsoft YaHei UI",system-ui,sans-serif;
+  --font-num:"Bahnschrift","DIN Alternate",Consolas,"Courier New",monospace;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,"Microsoft YaHei","PingFang SC",sans-serif;background:var(--bg);color:var(--ink);line-height:1.6;font-size:14px}
-header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:14px 24px;display:flex;align-items:center;gap:16px}
-header h1{font-size:18px;font-weight:700}
-header .sub{opacity:.7;font-size:12px}
-.tabs{display:flex;gap:4px;padding:10px 24px 0;background:var(--bg2);border-bottom:1px solid var(--rule)}
-.tabs [role=tab]{border:none;background:none;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-family:inherit}
-.tabs [role=tab][aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
-.tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-main{padding:20px 24px;max-width:1400px;margin:0 auto}
+html{background:var(--bg);scrollbar-gutter:stable}
+body{min-height:100vh;font-family:"Segoe UI Variable Text","Microsoft YaHei UI","PingFang SC",system-ui,sans-serif;background-color:var(--bg);background-image:radial-gradient(1100px 580px at 10% -12%,rgba(76,141,255,.13),transparent 62%),radial-gradient(880px 520px at 94% 0%,rgba(216,180,90,.10),transparent 64%),linear-gradient(rgba(255,255,255,.022) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.022) 1px,transparent 1px);background-size:auto,auto,44px 44px,44px 44px;color:var(--ink);line-height:1.6;font-size:14px}
+button,input,select,textarea{font:inherit;color:inherit}
+button,input,select,textarea,summary{outline:none}
+input::placeholder,textarea::placeholder{color:rgba(125,139,160,.75)}
+select option{background:#0f1a2b;color:var(--ink)}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:rgba(255,255,255,.03)}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.14);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:rgba(216,180,90,.38);background-clip:padding-box}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{box-shadow:0 0 0 2px var(--bg),0 0 0 4px rgba(216,180,90,.55);border-color:var(--gold)!important}
+.masthead{min-height:88px;background:linear-gradient(118deg,#0a1320,#13223a 58%,#0b1526);color:#fff;padding:18px max(24px,calc((100vw - 1400px)/2 + 24px));display:flex;align-items:center;gap:15px;position:relative;overflow:hidden;border-bottom:1px solid rgba(216,180,90,.28);box-shadow:inset 0 -1px 0 rgba(216,180,90,.10),0 18px 40px rgba(0,0,0,.35)}
+.masthead:after{content:"";position:absolute;inset:0 0 0 auto;width:min(44vw,660px);opacity:.16;background-image:linear-gradient(90deg,transparent 49%,rgba(216,180,90,.5) 50%,transparent 51%),linear-gradient(0deg,transparent 49%,rgba(216,180,90,.34) 50%,transparent 51%);background-size:30px 30px;transform:skewX(-14deg);pointer-events:none;-webkit-mask-image:linear-gradient(90deg,transparent,#000 45%);mask-image:linear-gradient(90deg,transparent,#000 45%)}
+.brand-mark{width:46px;height:46px;border:1px solid rgba(216,180,90,.42);border-radius:13px;display:grid;place-items:center;background:linear-gradient(155deg,rgba(216,180,90,.18),rgba(216,180,90,.02));box-shadow:inset 0 0 20px rgba(216,180,90,.12);position:relative;z-index:1}
+.brand-mark svg{width:27px;height:27px}
+.brand-copy{position:relative;z-index:1}
+.brand-copy h1{font-family:var(--font-disp);font-size:21px;font-weight:600;line-height:1.16;letter-spacing:.10em}
+.eyebrow{display:block;color:var(--gold);font-family:var(--font-num);font-size:10px;font-weight:600;line-height:1.3;letter-spacing:.22em;text-transform:uppercase;margin-bottom:4px}
+.header-meta{margin-left:auto;display:flex;align-items:center;gap:10px;position:relative;z-index:1;color:#93a3bb;font-family:var(--font-num);font-size:12px;line-height:1.2;letter-spacing:.06em}
+.local-badge{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid rgba(216,180,90,.24);border-radius:10px;background:rgba(216,180,90,.06)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.12)}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0;padding:0 max(24px,calc((100vw - 1400px)/2 + 24px));background:rgba(7,12,21,.82);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(140%)}
+.tabs [role=tab]{min-height:68px;border:0;border-right:1px solid var(--rule);background:transparent;padding:12px 16px;text-align:left;color:var(--muted);cursor:pointer;position:relative;display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:center;transition:color .18s ease,background-color .18s ease}
+.tabs [role=tab]:first-child{border-left:1px solid var(--rule)}
+.tabs [role=tab]:hover{color:var(--ink2);background:rgba(255,255,255,.025)}
+.tabs [role=tab]:after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:linear-gradient(90deg,transparent,var(--gold),transparent);transform:scaleX(0);transform-origin:center;transition:transform .24s ease}
+.tabs [role=tab][aria-selected=true]{color:#fff;background:linear-gradient(180deg,rgba(216,180,90,.10),transparent 78%);font-weight:600}
+.tabs [role=tab][aria-selected=true]:after{transform:scaleX(1)}
+.tab-index{font-family:var(--font-num);font-size:11px;font-weight:600;line-height:28px;letter-spacing:.06em;text-align:center;width:30px;height:30px;border:1px solid var(--rule2);border-radius:9px;color:var(--muted);background:rgba(255,255,255,.03)}
+.tabs [aria-selected=true] .tab-index{background:linear-gradient(160deg,var(--gold-soft),var(--gold-deep));border-color:transparent;color:#0a1220;box-shadow:0 6px 16px rgba(216,180,90,.28)}
+.tab-copy{display:flex;flex-direction:column;min-width:0}
+.tab-title{font-family:var(--font-disp);font-size:13px;letter-spacing:.04em;line-height:1.25}
+.tab-desc{font-size:10px;font-weight:400;color:#6d7b91;white-space:nowrap;margin-top:2px}
+main{padding:26px;max-width:1448px;margin:0 auto}
 .tab-panel[hidden]{display:none}
 .tab-panel:focus{outline:none}
-/* Tab1 */
-.grid2{display:grid;grid-template-columns:1fr 340px;gap:16px}
-.card{background:var(--bg2);border:1px solid var(--rule);border-radius:10px;padding:16px}
-.card h3{font-size:14px;margin-bottom:10px;color:var(--accent2);border-bottom:2px solid var(--accent);padding-bottom:6px}
-textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;border:1px solid var(--rule);border-radius:6px;padding:10px;resize:vertical;background:#fafafa}
-textarea:focus{outline:2px solid var(--accent);border-color:transparent}
-.editor-actions{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
-button.primary{background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer}
-button.primary:disabled{opacity:.5;cursor:not-allowed}
-button.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
-button.danger{background:#fff;color:var(--red);border:1px solid var(--red);padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
-.msg{font-size:12px;margin-top:8px;white-space:pre-wrap;font-family:Consolas,monospace;max-height:120px;overflow:auto}
-.msg.ok{color:var(--ok)}.msg.err{color:var(--red)}
-.form-row{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.form-row label{width:88px;font-size:13px;color:var(--muted);flex-shrink:0}
-.form-row input,.form-row select{flex:1;min-width:0;height:32px;border:1px solid var(--rule);border-radius:6px;padding:0 8px;font-size:13px}
-.form-row input[type=checkbox]{flex:none;width:auto}
-.statusbar{margin-top:16px;padding:12px 16px;background:#f0f4ff;border:1px solid #c7d7ff;border-radius:8px;display:none}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:18px;align-items:start}
+.card{background:linear-gradient(180deg,var(--surface),#0b1421);border:1px solid var(--rule);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+.card:before{content:"";position:absolute;left:0;top:22px;width:2px;height:26px;border-radius:0 4px 4px 0;background:linear-gradient(180deg,var(--gold-soft),var(--gold-deep))}
+.card:after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(216,180,90,.35),transparent);pointer-events:none}
+.card h3{font-family:var(--font-disp);font-size:14px;font-weight:600;line-height:1.4;margin:-1px 0 18px;color:var(--ink);padding:0 0 12px 4px;border-bottom:1px solid var(--rule);letter-spacing:.08em}
+textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;line-height:1.65;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:14px;resize:vertical;background:#080e18;color:#cfe0f7;caret-color:var(--gold)}
+.editor-actions{display:flex;gap:9px;margin-top:12px;align-items:center;flex-wrap:wrap}
+button.primary,button.secondary,button.danger{min-height:36px;padding:8px 18px;border-radius:var(--control-radius);font-size:13px;font-weight:600;letter-spacing:.03em;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background-color .16s ease,border-color .16s ease,color .16s ease}
+button.primary{background:linear-gradient(160deg,#4a86ff,#2450c0);color:#fff;border:1px solid rgba(140,180,255,.42);box-shadow:0 10px 24px rgba(35,85,190,.35),inset 0 1px 0 rgba(255,255,255,.20)}
+button.primary:hover{background:linear-gradient(160deg,#5b93ff,#2a5ad0);border-color:rgba(170,205,255,.6);transform:translateY(-1px);box-shadow:0 14px 30px rgba(35,85,190,.45)}
+button.primary:disabled{opacity:.4;cursor:not-allowed;transform:none;box-shadow:none;filter:grayscale(.35)}
+button.secondary{background:rgba(255,255,255,.045);color:#b9cdf0;border:1px solid var(--rule2)}
+button.secondary:hover{background:rgba(255,255,255,.09);border-color:rgba(216,180,90,.5);color:#fff;transform:translateY(-1px)}
+button.danger{background:rgba(239,68,68,.10);color:#ff9a9a;border:1px solid rgba(239,68,68,.34)}
+button.danger:hover{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.6);color:#ffc0c0}
+.msg{font-size:12px;margin-top:9px;white-space:pre-wrap;font-family:var(--font-num);max-height:120px;overflow:auto}
+.msg:empty{display:none}.msg.ok{color:var(--ok)}.msg.err{color:#ff8080}
+.form-row{display:flex;gap:9px;align-items:center;margin-bottom:11px;flex-wrap:wrap}
+.form-row label{width:88px;font-size:12px;color:var(--muted);flex-shrink:0;font-weight:600;letter-spacing:.03em}
+.form-row input,.form-row select,.filters input,.filters select{min-width:0;height:36px;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:0 10px;font-size:13px;background:rgba(255,255,255,.045);color:var(--ink);transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease}
+.form-row input:hover,.form-row select:hover,.filters input:hover,.filters select:hover{border-color:rgba(255,255,255,.24)}
+.form-row input,.form-row select{flex:1}
+.form-row input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--gold);box-shadow:none}
+.statusbar{margin:0 0 18px;padding:16px 18px;background:linear-gradient(135deg,rgba(76,141,255,.14),rgba(216,180,90,.06) 68%,rgba(255,255,255,.025));border:1px solid rgba(76,141,255,.32);border-radius:14px;display:none;overflow:hidden;box-shadow:0 16px 36px rgba(0,0,0,.24)}
 .statusbar.show{display:block}
-.progress-outer{background:#e5e7eb;border-radius:4px;height:8px;margin:8px 0;overflow:hidden}
-.progress-inner{background:var(--accent);height:100%;width:0;transition:width .3s}
-.status-line{display:flex;justify-content:space-between;font-size:13px}
-.hint{font-size:12px;color:var(--muted);margin-top:6px}
-/* Tab2 */
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--rule);white-space:nowrap}
-th{background:#f9fafb;color:var(--muted);position:sticky;top:0}
-tbody tr{cursor:pointer}
-tbody tr:hover{background:#f0f4ff}
-tbody tr.selected{background:#e0eaff}
-.pos{color:var(--red)}.neg{color:var(--green)}
+.statusbar[data-state=done]{border-color:rgba(52,211,153,.34);background:linear-gradient(135deg,rgba(52,211,153,.10),rgba(216,180,90,.05))}
+.statusbar[data-state=error],.statusbar[data-state=stopped]{border-color:rgba(239,68,68,.34);background:linear-gradient(135deg,rgba(239,68,68,.09),rgba(255,255,255,.025))}
+.status-head,.status-foot{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.status-title-wrap{display:flex;align-items:baseline;gap:11px;min-width:0}
+.status-kicker{font-family:var(--font-num);font-size:9px;font-weight:600;letter-spacing:.18em;color:var(--gold);white-space:nowrap}
+#statusState{font-family:var(--font-disp);font-weight:600;letter-spacing:.06em}
+#statusPercent{font-family:var(--font-num);font-size:18px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap}
+.progress-outer{margin:12px 0 10px}
+.progress-inner{display:block;appearance:none;-webkit-appearance:none;width:100%;height:8px;border:0;border-radius:999px;overflow:hidden;background:rgba(255,255,255,.08)}
+.progress-inner::-webkit-progress-bar{background:rgba(255,255,255,.08);border-radius:999px}
+.progress-inner::-webkit-progress-value{background:linear-gradient(90deg,var(--accent),var(--gold-soft));border-radius:999px;box-shadow:0 0 12px rgba(216,180,90,.42);transition:width .3s ease}
+.progress-inner::-moz-progress-bar{background:linear-gradient(90deg,var(--accent),var(--gold-soft));border-radius:999px;box-shadow:0 0 12px rgba(216,180,90,.42)}
+.progress-inner.indeterminate{background:linear-gradient(90deg,rgba(76,141,255,.18),rgba(216,180,90,.72),rgba(76,141,255,.18));background-size:180% 100%;animation:progress-scan 1.2s linear infinite}
+.status-meta{display:flex;align-items:center;gap:14px;min-width:0;font-size:12px;color:var(--ink2)}
+#statusDetail{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+#statusCurrent{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.status-actions button{min-height:32px!important;padding:5px 13px!important;font-size:12px!important}
+@keyframes progress-scan{to{background-position:-180% 0}}
+.hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.7}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums}
+th,td{padding:9px 10px;text-align:center;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+th{background:linear-gradient(180deg,#132034,#0e1828);color:var(--muted);position:sticky;top:0;font-family:var(--font-disp);font-weight:500;letter-spacing:.05em;z-index:1;border-bottom:1px solid rgba(216,180,90,.2)}
+tbody td{color:var(--ink2)}
+tbody tr{cursor:pointer;transition:background-color .14s ease}
+tbody tr:hover{background:rgba(216,180,90,.06)}
+tbody tr.selected{background:rgba(76,141,255,.14)}
+.pos{color:var(--color-up);font-weight:600}.neg{color:var(--color-down);font-weight:600}
 #trendChart,#winChart{width:100%;height:340px;margin-top:16px}
 .charts2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-/* Tab3 */
-.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-.filters input,.filters select{height:32px;border:1px solid var(--rule);border-radius:6px;padding:0 8px;font-size:13px}
-.filters input{width:120px}
-.detail-wrap{max-height:520px;overflow:auto}
+.filters{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px;padding:13px;background:rgba(255,255,255,.03);border:1px solid var(--rule);border-radius:12px}
+.filters input{width:124px}
+.detail-wrap{max-height:520px;overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
 #klineChart{width:100%;height:480px;margin-top:16px;display:none}
-.empty{color:var(--muted);text-align:center;padding:40px}
-/* Tab4 因子研究 */
-.concept{border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin:10px 0;background:#fafbfd}
-.concept-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
-#fcName{font-weight:600;font-size:15px}
-.badge{background:#e0eaff;color:#1d4ed8;border-radius:10px;padding:1px 10px;font-size:12px}
-.concept-line{font-size:13px;color:#374151;margin:2px 0}
-.summary-line{font-size:14px;font-weight:600;margin:12px 0 4px;color:var(--accent2)}
-#quintileChart{width:100%;height:300px;margin-top:4px}
+.empty{color:var(--muted);text-align:center;padding:30px 20px;background:rgba(255,255,255,.02);border:1px dashed var(--rule2);border-radius:12px}
+.factor-controls{padding:13px;background:rgba(255,255,255,.03);border:1px solid var(--rule);border-radius:12px;margin-bottom:0}
+.factor-controls .factor-inline-label{margin-left:16px;width:auto}
+.factor-control-help{margin:7px 4px 0 109px}
+.concept{border:1px solid rgba(216,180,90,.22);border-radius:14px;padding:18px 20px;margin:16px 0;background:linear-gradient(135deg,rgba(216,180,90,.07),rgba(76,141,255,.05) 60%,transparent);position:relative;overflow:hidden}
+.concept:before{content:"OBSERVATION";position:absolute;right:16px;top:12px;font-family:var(--font-num);font-size:9px;font-weight:600;letter-spacing:.22em;color:rgba(216,180,90,.5)}
+.concept-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;padding-right:104px}
+#fcName{font-family:var(--font-disp);font-weight:600;font-size:18px;letter-spacing:.05em;color:#fff}
+.badge{background:rgba(216,180,90,.16);color:var(--gold-soft);border:1px solid rgba(216,180,90,.3);border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600;letter-spacing:.04em}
+.concept-line{font-size:13px;color:var(--ink2);margin:3px 0}
+.summary-line{font-family:var(--font-disp);font-size:15px;font-weight:600;letter-spacing:.03em;margin:20px 0 2px;color:#fff;padding-left:13px;border-left:3px solid var(--gold)}
+#quintileChart{width:100%;height:310px;margin-top:4px}
 #icChart{width:100%;height:320px;margin-top:8px}
-.coverage{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0 0;font-size:13px;color:var(--muted)}
+.coverage{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:14px 0 0;font-size:12px;color:var(--muted)}
 .coverage b{color:var(--ink)}
-.warnbar{background:#fef3c7;border:1px solid var(--warn);color:#92400e;border-radius:6px;padding:6px 12px;font-size:12px;margin:8px 0 0}
-details.stat{border:1px solid var(--rule);border-radius:8px;padding:10px 14px;margin-top:14px;background:#fafbfd}
-details.stat>summary{cursor:pointer;font-weight:600;color:var(--accent2);font-size:13px}
-details.stat>summary:focus-visible{outline:2px solid var(--accent)}
-#failList{margin:6px 0 0 18px;font-size:12px;color:var(--red);max-height:160px;overflow:auto}
-#icStats{font-size:13px;color:var(--muted);margin-top:8px}
-/* Tab1 简单配置 / 高级脚本 */
-.mode-switch{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:12px}
-.mode-switch button{border:none;background:#fff;padding:8px 18px;font-size:13px;cursor:pointer;color:var(--muted);font-family:inherit}
-.mode-switch button+button{border-left:1px solid var(--rule)}
-.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff;font-weight:600}
-.mode-switch button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.cond-card{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;background:#fafbfd}
-.cond-card.highlight{border-color:var(--accent);box-shadow:0 0 0 2px #bfdbfe}
-.cond-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
-.cond-no{font-weight:600;font-size:13px;color:var(--accent2)}
-.cond-del{border:none;background:none;color:var(--red);cursor:pointer;font-size:12px;padding:2px 6px}
-.cond-del:focus-visible{outline:2px solid var(--accent)}
+.warnbar{background:rgba(224,168,60,.12);border:1px solid rgba(224,168,60,.4);color:#f0cd86;border-radius:10px;padding:9px 13px;font-size:12px;margin:10px 0 0}
+details.stat{border:1px solid var(--rule);border-radius:12px;padding:12px 15px;margin-top:14px;background:rgba(255,255,255,.03)}
+details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600;letter-spacing:.05em;color:var(--gold-soft);font-size:13px}
+#failList{margin:8px 0 0 18px;font-size:12px;color:#ff8080;max-height:160px;overflow:auto}
+#icStats{font-size:13px;color:var(--muted);margin-top:10px;font-family:var(--font-num)}
+.year-title{font-family:var(--font-disp);font-weight:600;letter-spacing:.05em;color:var(--gold-soft);font-size:13px;margin:18px 0 8px}
+.year-wrap{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
+#yearStability td{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+#yearStability tbody tr{cursor:default}
+#yearStability td.na{color:var(--muted);font-family:inherit}
+.mode-switch{display:inline-flex;border:1px solid var(--rule2);border-radius:11px;overflow:hidden;margin-bottom:15px;background:rgba(0,0,0,.25);padding:3px}
+.mode-switch button{border:none;background:transparent;padding:7px 17px;border-radius:8px;font-size:12px;cursor:pointer;color:var(--muted);transition:color .16s ease,background-color .16s ease}
+.mode-switch button+button{border-left:0}
+.mode-switch button[aria-pressed=true]{background:linear-gradient(160deg,rgba(216,180,90,.22),rgba(216,180,90,.07));color:var(--gold-soft);font-weight:700;box-shadow:inset 0 0 0 1px rgba(216,180,90,.3)}
+.cond-card{border:1px solid var(--rule);border-radius:12px;padding:13px 14px;background:rgba(255,255,255,.032)}
+.cond-card.highlight{border-color:rgba(216,180,90,.55);box-shadow:0 0 0 3px var(--gold-glow)}
+.cond-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cond-no{font-family:var(--font-disp);font-weight:600;font-size:12px;letter-spacing:.05em;color:var(--gold-soft)}
+.cond-del{border:none;background:none;color:#ff8080;cursor:pointer;font-size:12px;padding:3px 8px;border-radius:7px;transition:background-color .16s ease}
+.cond-del:hover{background:rgba(239,68,68,.14)}
 .cond-grid{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.cond-grid .lbl{font-size:12px;color:var(--muted)}
-.cond-grid select,.cond-grid input{height:30px;border:1px solid var(--rule);border-radius:6px;padding:0 6px;font-size:13px;font-family:inherit}
-.cond-grid input[type=number]{width:84px}
-.cond-grid select:focus-visible,.cond-grid input:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
-.cond-grid .invalid{border-color:var(--red)}
-.and-sep{text-align:center;font-size:12px;color:var(--muted);margin:6px 0;font-weight:600}
-.cond-err{color:var(--red);font-size:12px;margin-top:4px}
-.cond-err:empty{display:none}
-.preset-rules{font-size:12px;color:var(--muted);margin:4px 0 8px;padding-left:20px}
-.subhead{font-size:13px;font-weight:600;color:var(--accent2);margin:12px 0 6px}
-.group-sep{font-size:13px;font-weight:600;color:var(--accent2);margin:12px 0 6px;border-top:1px dashed var(--rule);padding-top:10px}
-#editor{resize:none}
-#editor.expanded{height:720px}
-/* Tab2 多条件对照摘要 */
-.cmp-hero{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
-.cmp-box{border:1px solid var(--rule);border-radius:8px;padding:10px 14px}
-.cmp-box.base{background:#f8fafc}
-.cmp-box.combo{background:#f0f4ff;border-color:#c7d7ff}
-.cmp-box .t{font-weight:600;font-size:13px;color:var(--accent2);word-break:break-all;white-space:normal}
-.cmp-box .big{font-size:20px;font-weight:700;margin:2px 0}
+.cond-grid .lbl{font-size:11px;color:var(--muted);font-weight:600}
+.cond-grid select,.cond-grid input{height:32px;border:1px solid var(--rule2);border-radius:8px;padding:0 8px;font-size:12px;background:rgba(255,255,255,.045);color:var(--ink)}
+.cond-grid input[type=number]{width:86px}
+.cond-grid .invalid{border-color:var(--red);box-shadow:0 0 0 2px rgba(239,68,68,.2)}
+.and-sep{text-align:center;font-family:var(--font-num);font-size:10px;font-weight:700;line-height:1.5;color:rgba(216,180,90,.65);margin:7px 0;letter-spacing:.2em}
+.cond-err{color:#ff8080;font-size:12px;margin-top:5px}.cond-err:empty{display:none}
+.preset-rules{font-size:12px;color:var(--muted);margin:5px 0 10px;padding-left:20px}
+.subhead{font-family:var(--font-disp);font-size:12px;font-weight:600;color:var(--gold-soft);margin:16px 0 9px;letter-spacing:.08em}
+.group-sep{font-family:var(--font-disp);font-size:12px;font-weight:600;color:var(--gold-soft);margin:16px 0 10px;border-top:1px dashed rgba(216,180,90,.22);padding-top:13px;letter-spacing:.08em}
+#editor{resize:none}#editor.expanded{height:720px}
+.cmp-hero{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0 16px}
+.cmp-box{border:1px solid var(--rule);border-radius:12px;padding:15px 17px;background:rgba(255,255,255,.035)}
+.cmp-box.base{background:rgba(255,255,255,.022)}
+.cmp-box.combo{background:linear-gradient(140deg,rgba(216,180,90,.10),rgba(76,141,255,.07));border-color:rgba(216,180,90,.3)}
+.cmp-box .t{font-family:var(--font-disp);font-weight:600;font-size:12px;letter-spacing:.04em;color:var(--ink2);word-break:break-all;white-space:normal}
+.cmp-box .big{font-family:var(--font-disp);font-size:22px;font-weight:600;margin:4px 0;color:#fff;font-variant-numeric:tabular-nums}
 .cmp-box .sub{font-size:12px;color:var(--muted);white-space:normal}
-.cmp-contrib h4{font-size:13px;color:var(--accent2);margin:12px 0 4px}
+.cmp-contrib h4{font-family:var(--font-disp);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold-soft);margin:15px 0 6px}
 #cmpSection .coverage{margin-top:10px}
+@media (max-width:900px){
+  .masthead{min-height:74px;padding:14px 16px}.header-meta{display:none}.brand-mark{width:42px;height:42px}
+  .tabs{padding:0;grid-template-columns:repeat(4,1fr)}.tabs [role=tab]{min-height:58px;padding:9px 8px;grid-template-columns:28px minmax(0,1fr);gap:7px;border-right:0}.tabs [role=tab]:first-child{border-left:0}.tab-desc{display:none}.tab-index{width:28px;height:28px;line-height:26px}
+  main{padding:14px}.grid2{grid-template-columns:1fr}.charts2,.cmp-hero{grid-template-columns:1fr}.card{padding:16px;border-radius:14px}
+  .factor-controls{display:grid;grid-template-columns:88px 1fr}.factor-controls label{width:auto}.factor-controls .factor-inline-label{margin-left:0}.factor-controls input,.factor-controls select{width:100%!important;min-width:0!important}.factor-control-help{margin-left:0}
+}
+@media (max-width:560px){
+  body{font-size:13px;background-size:auto,auto,28px 28px,28px 28px}.eyebrow{font-size:9px;letter-spacing:.16em}.brand-copy h1{font-size:18px;letter-spacing:.06em}
+  .tabs [role=tab]{display:flex;flex-direction:column;gap:4px;min-height:67px;padding:7px 3px}.tab-title{font-size:11px;white-space:nowrap}.tab-index{width:26px;height:26px;line-height:24px}
+  main{padding:10px}.card{padding:14px;box-shadow:0 14px 34px rgba(0,0,0,.45)}.card h3{margin-bottom:13px}
+  .form-row{align-items:flex-start}.form-row>label{width:100%;margin-bottom:-3px}.form-row input,.form-row select{flex-basis:100%}
+  .factor-controls{grid-template-columns:1fr}.editor-actions .hint{flex-basis:100%}.concept{padding:15px}.concept-head{padding-right:0}.concept:before{display:none}
+  #quintileChart{height:280px}.filters>*{flex:1 1 120px;width:auto!important}.detail-wrap{border-radius:10px}.cmp-box .big{font-size:18px}
+  .summary-line{font-size:14px}
+  .statusbar{padding:14px;margin-bottom:12px}.status-head,.status-foot{align-items:flex-start}.status-title-wrap{display:block}.status-kicker{display:block;margin-bottom:2px}.status-meta{display:block;min-width:0}#statusDetail,#statusCurrent{display:block}.status-actions{margin-left:auto}#statusPercent{font-size:16px}
+}
+@media (prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.001ms!important;animation-duration:.001ms!important;animation-iteration-count:1!important}.progress-inner.indeterminate{animation:none;background-position:50% 0}}
 </style>
 </head>
 <body>
-<header>
-  <h1>策略实验室</h1>
-  <span class="sub">Yaegi 脚本策略 · 本地回测 · 仅 127.0.0.1</span>
+<header class="masthead">
+  <div class="brand-mark" aria-hidden="true">
+    <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
+  </div>
+  <div class="brand-copy">
+    <span class="eyebrow">A-SHARE RESEARCH WORKBENCH</span>
+    <h1>策略实验室</h1>
+  </div>
+  <div class="header-meta" aria-label="运行环境">
+    <span class="local-badge"><span class="live-dot" aria-hidden="true"></span>本地研究会话</span>
+    <span>127.0.0.1:8765</span>
+  </div>
 </header>
 
 <div class="tabs" role="tablist" aria-label="功能区">
-  <button role="tab" id="tabbtn1" data-tab="1" aria-controls="tab1" aria-selected="true" tabindex="0">① 策略与运行</button>
-  <button role="tab" id="tabbtn2" data-tab="2" aria-controls="tab2" aria-selected="false" tabindex="-1">② 组合对比</button>
-  <button role="tab" id="tabbtn3" data-tab="3" aria-controls="tab3" aria-selected="false" tabindex="-1">③ 交易明细</button>
-  <button role="tab" id="tabbtn4" data-tab="4" aria-controls="tab4" aria-selected="false" tabindex="-1">④ 因子研究</button>
+  <button type="button" role="tab" id="tabbtn4" data-tab="4" aria-controls="tab4" aria-selected="true" tabindex="0" onclick="switchTab(4)"><span class="tab-index">01</span><span class="tab-copy"><span class="tab-title">因子研究</span><span class="tab-desc">观察分组 · 形成条件</span></span></button>
+  <button type="button" role="tab" id="tabbtn1" data-tab="1" aria-controls="tab1" aria-selected="false" tabindex="-1" onclick="switchTab(1)"><span class="tab-index">02</span><span class="tab-copy"><span class="tab-title">策略与运行</span><span class="tab-desc">配置假设 · 发起回测</span></span></button>
+  <button type="button" role="tab" id="tabbtn2" data-tab="2" aria-controls="tab2" aria-selected="false" tabindex="-1" onclick="switchTab(2)"><span class="tab-index">03</span><span class="tab-copy"><span class="tab-title">组合对比</span><span class="tab-desc">读取差异 · 审视贡献</span></span></button>
+  <button type="button" role="tab" id="tabbtn3" data-tab="3" aria-controls="tab3" aria-selected="false" tabindex="-1" onclick="switchTab(3)"><span class="tab-index">04</span><span class="tab-copy"><span class="tab-title">交易明细</span><span class="tab-desc">回到逐笔 · 核对路径</span></span></button>
 </div>
 
 <main>
+<section class="statusbar" id="statusbar" data-state="idle" aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
+  <div class="status-head">
+    <div class="status-title-wrap">
+      <span class="status-kicker">BATCH JOB</span>
+      <span id="statusState">批量任务</span>
+    </div>
+    <span id="statusPercent">0%</span>
+  </div>
+  <div class="progress-outer">
+    <progress class="progress-inner" id="progressBar" max="100" value="0" aria-label="批量任务进度">0%</progress>
+  </div>
+  <div class="status-foot">
+    <div class="status-meta"><span id="statusDetail"></span><span id="statusCurrent"></span></div>
+    <div class="status-actions">
+      <button type="button" class="secondary" id="btnStatusRetry" onclick="pollStatus()" hidden>重试读取</button>
+      <button type="button" class="danger" id="btnStop" onclick="stopBatchTask()" hidden>停止任务</button>
+    </div>
+  </div>
+  <div class="msg" id="statusErr" role="alert"></div>
+</section>
 <!-- Tab1 -->
-<div class="tab-panel" id="tab1" role="tabpanel" aria-labelledby="tabbtn1" tabindex="0">
+<div class="tab-panel" id="tab1" role="tabpanel" aria-labelledby="tabbtn1" tabindex="0" hidden>
   <div class="grid2">
     <div class="card">
       <div class="mode-switch" role="group" aria-label="配置模式">
@@ -161,7 +267,7 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
       <!-- 高级模式：脚本编辑 -->
       <div id="modeAdv" hidden>
         <h3>策略脚本（strategies/script/matrix.go）</h3>
-        <textarea id="editor" spellcheck="false"></textarea>
+        <textarea id="editor" class="resize-none" spellcheck="false"></textarea>
         <div class="editor-actions">
           <button class="secondary" onclick="checkScript()">语法检查</button>
           <button class="secondary" onclick="saveScript()">保存脚本</button>
@@ -172,7 +278,6 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
 
       <div class="editor-actions" style="margin-top:12px">
         <button class="primary" id="btnRun" onclick="runBacktest()">运行回测</button>
-        <button class="danger" id="btnStop" onclick="stopBacktest()" style="display:none">停止</button>
       </div>
       <div class="msg" id="scriptMsg" role="status" aria-live="polite"></div>
     </div>
@@ -212,15 +317,6 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
         </div>
         <div class="hint">成本/仓位沿用 config.yaml 回测配置。同时只允许 1 个回测任务。</div>
       </div>
-      <div class="statusbar" id="statusbar">
-        <div class="status-line">
-          <span id="statusState"></span>
-          <span id="statusDetail"></span>
-        </div>
-        <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
-        <div class="status-line"><span id="statusCurrent"></span><button class="danger" onclick="stopBacktest()" style="padding:2px 12px;font-size:12px">停止</button></div>
-        <div class="msg" id="statusErr"></div>
-      </div>
     </div>
   </div>
 </div>
@@ -254,7 +350,7 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
     <div class="detail-wrap">
       <table>
         <thead><tr><th>#</th><th>变体</th><th>笔数</th><th>胜率%</th><th>平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
-        <tbody id="variantRows"><tr><td colspan="9" class="empty">暂无报告，先在 ① 运行回测</td></tr></tbody>
+        <tbody id="variantRows"><tr><td colspan="9" class="empty">暂无报告，先在 ② 运行回测</td></tr></tbody>
       </table>
     </div>
     <div class="charts2">
@@ -287,20 +383,25 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
 </div>
 
 <!-- Tab4 因子研究（概念优先） -->
-<div class="tab-panel" id="tab4" role="tabpanel" aria-labelledby="tabbtn4" tabindex="0" hidden>
+<div class="tab-panel" id="tab4" role="tabpanel" aria-labelledby="tabbtn4" tabindex="0">
   <div class="card">
     <h3>因子研究</h3>
-    <div class="form-row"><label>因子</label>
+    <div class="form-row factor-controls"><label for="factorKind">因子</label>
       <select id="factorKind" style="min-width:220px"></select>
-      <label style="margin-left:16px;width:auto">参数 Days</label>
-      <input type="number" id="factorDays" value="20" min="1" style="width:80px">
-      <label style="margin-left:16px;width:auto">收益窗口(日)</label>
-      <select id="factorWindow">
-        <option value="1" selected>1</option>
-        <option value="5">5</option>
-        <option value="20">20</option>
+      <label class="factor-inline-label" id="factorDaysLabel" for="factorDays">回看天数</label>
+      <input type="number" id="factorDays" value="20" min="1" style="width:80px" aria-describedby="factorParamHelp">
+      <label class="factor-inline-label" for="factorWindow">未来收益窗口</label>
+      <select id="factorWindow" aria-describedby="factorParamHelp">
+        <option value="1" selected>1 日</option>
+        <option value="5">5 日</option>
+        <option value="20">20 日</option>
       </select>
+      <label class="factor-inline-label" for="factorStartYear">开始年份</label>
+      <input type="number" id="factorStartYear" value="2018" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
+      <label class="factor-inline-label" for="factorEndYear">结束年份</label>
+      <input type="number" id="factorEndYear" value="2026" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
     </div>
+    <div class="hint factor-control-help" id="factorParamHelp">因子参数决定历史计算区间；未来收益窗口只用于评估因子之后的表现。开始/结束年份是本页独立的分析区间，不影响策略回测页。</div>
     <div class="editor-actions">
       <button class="primary" id="btnAnalyze" onclick="runAnalysis()">开始分析</button>
     </div>
@@ -317,6 +418,7 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
     <div id="factorResult">
       <div class="empty" id="factorEmpty" role="status">暂无分析结果，选择因子后点击“开始分析”。</div>
       <div id="factorBody" style="display:none">
+        <div class="coverage" id="rangeMeta"></div>
         <div class="summary-line" id="quintileSummary"></div>
         <div id="quintileChart"></div>
         <div class="empty" id="quintileNA" style="display:none">结果不足：有效样本过少，无法把样本分成五组并计算分组收益。</div>
@@ -332,8 +434,21 @@ details.stat>summary:focus-visible{outline:2px solid var(--accent)}
 
         <div class="editor-actions" style="margin-top:14px">
           <button class="secondary" id="btnAddCond" onclick="addFactorToStrategy()">添加到策略条件</button>
-          <span class="hint">把该因子与参数（不含阈值）加入 ① 的简单配置，阈值由你在那里填写。</span>
+          <span class="hint">把该因子与参数（不含阈值）加入 ② 的简单配置，阈值由你在那里填写。</span>
         </div>
+
+        <div class="year-title" id="yearTitle">年度稳定性</div>
+        <div class="year-wrap" id="yearWrap">
+          <table id="yearStability">
+            <thead><tr>
+              <th>年份</th><th>有效日</th><th>IC 均值</th><th>IC 标准差</th><th>t 值</th>
+              <th id="q1Head">Q1</th><th id="q5Head">Q5</th><th>Q5-Q1</th><th>方向</th>
+            </tr></thead>
+            <tbody id="yearBody"></tbody>
+          </table>
+        </div>
+        <div class="empty" id="yearNA" style="display:none">历史报告未记录年度拆分，仅展示全区间结果。</div>
+        <div class="hint" id="yearBias">样本池说明：当前 all 股票池取自当前沪深主板代码列表，不是历史时点成分股，退市股票缺失，存在生存者偏差；后上市股票只从其有数据的年份起参与，缺失年份见失败明细。</div>
 
         <details class="stat" id="statDetails">
           <summary>统计详情（IC、显著性、逐日 IC）</summary>
@@ -355,6 +470,53 @@ let selectedVariant = null; // Tab2 行点击 → Tab3 筛选
 const charts = [];          // 全部 ECharts 实例：窗口 resize 时统一 resize()
 window.addEventListener('resize', () => charts.forEach(c => c.resize()));
 
+// GSAP 只用于建立工作流层级：首屏、Tab 切换、任务状态与结果揭示。
+// CDN 不可用或用户偏好减少动态效果时，页面保持完整可用。
+let motionReady = false;
+let motionMM = null;
+function animatePanel(panel) {
+  if (!motionReady || !panel || typeof gsap === 'undefined') return;
+  gsap.killTweensOf(panel);
+  gsap.fromTo(panel, {autoAlpha: 0, y: 12}, {
+    autoAlpha: 1, y: 0, duration: .36, ease: 'power2.out', overwrite: 'auto',
+    clearProps: 'opacity,visibility,transform'
+  });
+}
+function animateStatus(bar) {
+  if (!motionReady || typeof gsap === 'undefined') return;
+  gsap.fromTo(bar, {autoAlpha: 0, y: -7}, {
+    autoAlpha: 1, y: 0, duration: .3, ease: 'power2.out', overwrite: 'auto',
+    clearProps: 'opacity,visibility,transform'
+  });
+}
+function animateFactorResult() {
+  if (!motionReady || typeof gsap === 'undefined') return;
+  const items = $('factorBody').querySelectorAll('.summary-line,#quintileChart,.coverage,.warnbar,.editor-actions,.year-title,.year-wrap,details.stat');
+  gsap.killTweensOf(items);
+  gsap.fromTo(items, {autoAlpha: 0, y: 8}, {
+    autoAlpha: 1, y: 0, duration: .32, stagger: .045, ease: 'power2.out', overwrite: 'auto',
+    clearProps: 'opacity,visibility,transform'
+  });
+}
+function initMotion() {
+  if (typeof gsap === 'undefined') return;
+  motionMM = gsap.matchMedia();
+  motionMM.add({allowMotion: '(prefers-reduced-motion: no-preference)'}, context => {
+    if (!context.conditions.allowMotion) return;
+    motionReady = true;
+    gsap.fromTo('.brand-mark,.brand-copy,.header-meta', {autoAlpha: 0, y: -8}, {
+      autoAlpha: 1, y: 0, duration: .45, stagger: .07, ease: 'power2.out',
+      clearProps: 'opacity,visibility,transform'
+    });
+    gsap.fromTo('.tabs [role="tab"]', {autoAlpha: 0, y: -5}, {
+      autoAlpha: 1, y: 0, duration: .34, delay: .08, stagger: .045, ease: 'power2.out',
+      clearProps: 'opacity,visibility,transform'
+    });
+    animatePanel(document.querySelector('.tab-panel:not([hidden])'));
+    return () => { motionReady = false; };
+  });
+}
+
 // ============ Tabs（WAI-ARIA + URL 持久化） ============
 const TAB_SLUG = {1: 'strategy', 2: 'compare', 3: 'trades', 4: 'factor'};
 const TAB_NUM = {strategy: 1, compare: 2, trades: 3, factor: 4};
@@ -366,10 +528,11 @@ function switchTab(n) {
     b.tabIndex = on ? 0 : -1;
   });
   document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.id !== 'tab' + n; });
-  history.replaceState(null, '', n === 1 ? location.pathname : '?tab=' + TAB_SLUG[n]);
+  history.replaceState(null, '', n === 4 ? location.pathname : '?tab=' + TAB_SLUG[n]);
   if (n === 2) renderTab2();
   if (n === 3) renderTab3();
   if (n === 4) renderAnalysis();
+  animatePanel($('tab' + n));
 }
 document.querySelectorAll('[role="tab"]').forEach(btn => {
   btn.onclick = () => switchTab(btn.dataset.tab);
@@ -461,7 +624,8 @@ async function runBacktest() {
   try {
     await api('PUT', '/api/script', {content: $('editor').value}); // 运行前先保存
     const d = await api('POST', '/api/run', buildConfig());
-    showScriptMsg(`已启动：${d.variants} 个变体`, true);
+    showScriptMsg(`已提交 ${d.variants} 个变体，运行进度见上方任务条。`, true);
+    showPendingTask('backtest');
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
 }
@@ -471,11 +635,26 @@ async function runSimple() {
   if (!spec) return;
   try {
     const d = await api('POST', '/api/strategy/run', spec);
-    showScriptMsg(`已启动：${d.variants} 个变体（基准 + ${d.variants - 2} 个单条件 + 组合增强）`, true);
+    showScriptMsg(`已提交 ${d.variants} 个变体（基准 + ${d.variants - 2} 个单条件 + 组合增强），运行进度见上方任务条。`, true);
+    showPendingTask('backtest');
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
 }
-async function stopBacktest() { try { await api('POST', '/api/stop'); } catch (e) {} }
+async function stopBatchTask() {
+  const btn = $('btnStop');
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+  $('statusCurrent').textContent = '正在停止任务…';
+  try {
+    await api('POST', '/api/stop');
+  } catch (e) {
+    $('statusErr').textContent = `停止失败：${e.message}`;
+    $('statusErr').className = 'msg err';
+  } finally {
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+  }
+}
 
 // ============ 简单配置：预设 + 条件卡 + 校验 ============
 let presetInfos = [];
@@ -759,6 +938,81 @@ function focusSimpleCondition(kind, days) {
 let pollTimer = null;
 let prevRunning = false;  // 用于识别“任务被停止”（running → idle）
 let lastTask = '';        // 最近一次启动的任务类型：backtest | analysis
+const TASK_LABEL = {backtest: '策略回测', analysis: '因子分析'};
+
+function setTaskButtonsBusy(running) {
+  ['btnRun', 'btnAnalyze'].forEach(id => {
+    const btn = $(id);
+    btn.disabled = running;
+    if (running) btn.setAttribute('aria-busy', 'true');
+    else btn.removeAttribute('aria-busy');
+  });
+}
+
+// 分析与回测共用唯一的批量任务组件；总量未就绪时保持不定进度，避免伪造百分比。
+function renderTaskProgress(s) {
+  const bar = $('statusbar');
+  const state = s.state || 'idle';
+  if (state === 'idle') {
+    bar.classList.remove('show');
+    bar.dataset.state = 'idle';
+    return;
+  }
+
+  const wasVisible = bar.classList.contains('show');
+  const taskName = TASK_LABEL[s.task] || '批量任务';
+  const done = Number(s.doneCodes) || 0;
+  const total = Number(s.totalCodes) || 0;
+  const rawProgress = Number(s.progress);
+  const progress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : 0;
+  const connectionError = state === 'connection-error';
+  const determinate = state !== 'running' || (total > 0 && done > 0);
+  const progressEl = $('progressBar');
+
+  bar.dataset.state = connectionError ? 'error' : state;
+  bar.classList.add('show');
+  if (!wasVisible) animateStatus(bar);
+
+  if (determinate) {
+    progressEl.value = state === 'done' ? 100 : progress;
+    progressEl.classList.remove('indeterminate');
+    $('statusPercent').textContent = `${Math.round(progressEl.value)}%`;
+  } else {
+    progressEl.removeAttribute('value');
+    progressEl.classList.add('indeterminate');
+    $('statusPercent').textContent = '准备中';
+  }
+
+  const title = {
+    running: `${taskName}进行中`,
+    done: `${taskName}已完成`,
+    error: `${taskName}失败`,
+    stopped: `${taskName}已停止`,
+    'connection-error': '进度读取中断',
+  }[state] || taskName;
+  $('statusState').textContent = title;
+  $('statusDetail').textContent = total > 0 && (done > 0 || state !== 'running')
+    ? `${done}/${total} 只股票`
+    : '正在准备股票列表';
+  $('statusCurrent').textContent = s.currentCode && done > 0
+    ? `当前 ${s.currentCode}`
+    : state === 'done' ? '结果已就绪'
+    : state === 'stopped' ? '已保留当前表单配置'
+    : connectionError ? '任务可能仍在后台运行'
+    : '加载任务范围与数据';
+  $('statusErr').textContent = s.error || '';
+  $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
+  $('btnStop').hidden = state !== 'running';
+  $('btnStatusRetry').hidden = !connectionError;
+}
+
+function showPendingTask(task) {
+  lastTask = task;
+  prevRunning = true;
+  setTaskButtonsBusy(true);
+  renderTaskProgress({state: 'running', task, doneCodes: 0, totalCodes: 0, progress: 0});
+}
+
 function pollStatus() {
   if (pollTimer) clearInterval(pollTimer);
   pollStatusOnce();
@@ -768,19 +1022,15 @@ async function pollStatusOnce() {
   try {
     const s = await api('GET', '/api/status');
     const running = s.state === 'running';
-    if (running) lastTask = s.task || lastTask;
-    const bar = $('statusbar');
-    bar.classList.toggle('show', s.state === 'running' || s.state === 'done' || s.state === 'error');
-    $('btnRun').disabled = running;
-    $('btnAnalyze').disabled = running;
-    $('btnStop').style.display = running ? '' : 'none';
-    $('statusState').textContent = {idle: '空闲', running: s.task === 'analysis' ? '因子分析中' : '回测中', done: '已完成', error: '出错'}[s.state] || s.state;
-    $('statusDetail').textContent = running ? `${s.doneCodes}/${s.totalCodes} 只` : '';
-    $('progressBar').style.width = (s.progress || 0) + '%';
-    $('statusCurrent').textContent = s.currentCode ? ('当前: ' + s.currentCode) : '';
-    $('statusErr').textContent = s.error || '';
-    $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
-    if (running && s.task === 'analysis') setFactorMsg(`分析中：${s.doneCodes}/${s.totalCodes} 只…`, true);
+    if (s.state !== 'idle') lastTask = s.task || lastTask;
+    const visibleStatus = s.state === 'idle' && prevRunning
+      ? {...s, state: 'stopped', task: lastTask}
+      : s;
+    renderTaskProgress(visibleStatus);
+    setTaskButtonsBusy(running);
+    // 页面刷新只触发一次轮询；若任务仍在运行则续上轮询，直至完成/停止，
+    // 否则进度条会冻结在刷新时的快照上。
+    if (running && !pollTimer) pollTimer = setInterval(pollStatusOnce, 2000);
     if (s.state === 'done') {
       clearInterval(pollTimer); pollTimer = null;
       if (s.task === 'analysis') {
@@ -802,13 +1052,23 @@ async function pollStatusOnce() {
       }
     } else if (s.state === 'idle' && prevRunning && lastTask === 'analysis') {
       setFactorMsg('任务已停止', false);
+      clearInterval(pollTimer); pollTimer = null;
     } else if (s.state === 'error' && lastTask === 'analysis') {
       setFactorMsg(s.error || '分析失败', false);
+      clearInterval(pollTimer); pollTimer = null;
     } else if (s.state === 'idle' || s.state === 'error') {
       clearInterval(pollTimer); pollTimer = null;
     }
     prevRunning = running;
-  } catch (e) { clearInterval(pollTimer); pollTimer = null; prevRunning = false; }
+  } catch (e) {
+    clearInterval(pollTimer); pollTimer = null;
+    setTaskButtonsBusy(false);
+    renderTaskProgress({
+      state: 'connection-error', task: lastTask, progress: 0,
+      error: `无法读取任务进度：${e.message}。请重试；后台任务状态尚未确认。`,
+    });
+    prevRunning = false;
+  }
 }
 
 // ============ Tab4 因子研究 ============
@@ -824,7 +1084,7 @@ async function loadFactors() {
     factorCatalog.forEach(e => {
       const o = document.createElement('option');
       o.value = e.kind;
-      o.textContent = e.name;
+      o.textContent = factorTypeName(e);
       sel.appendChild(o);
     });
     renderConcept();
@@ -834,16 +1094,43 @@ async function loadFactors() {
 function currentFactor() {
   return factorCatalog.find(e => e.kind === $('factorKind').value);
 }
+function factorHasDays(e) {
+  return !e.parameterLabel.startsWith('无参数');
+}
+// 目录 name 是默认参数实例名（如 N日动量(20)）；选择器只展示稳定的因子类型名。
+function factorTypeName(e) {
+  const suffix = `(${e.defaultDays})`;
+  return e.name.endsWith(suffix) ? e.name.slice(0, -suffix.length) : e.name;
+}
+function factorInstanceName(e, days) {
+  return factorHasDays(e) ? `${factorTypeName(e)}(${days})` : e.name;
+}
+function renderFactorParameter() {
+  const e = currentFactor();
+  if (!e) return;
+  if (!factorHasDays(e)) {
+    $('fcName').textContent = e.name;
+    $('fcParam').textContent = `参数：${e.parameterLabel}`;
+    return;
+  }
+  const days = +$('factorDays').value > 0 ? +$('factorDays').value : e.defaultDays;
+  $('fcName').textContent = factorInstanceName(e, days);
+  $('fcParam').textContent = `参数（${e.parameterLabel}）：当前 ${days} 日，默认 ${e.defaultDays} 日`;
+}
 // 概念卡：中文名/类别/一句话定义/参数含义与默认窗口/原始值示例（全部 textContent）
 function renderConcept() {
   const e = currentFactor();
   if (!e) return;
-  $('fcName').textContent = e.name;
+  const hasDays = factorHasDays(e);
+  $('factorDaysLabel').textContent = e.parameterLabel;
+  $('factorDaysLabel').hidden = !hasDays;
+  $('factorDays').hidden = !hasDays;
+  $('factorDays').disabled = !hasDays;
+  $('factorDays').value = e.defaultDays; // 切换因子时回到默认窗口，用户可改
   $('fcCat').textContent = e.category;
   $('fcDesc').textContent = '定义：' + e.description;
-  $('fcParam').textContent = `参数（${e.parameterLabel}）：默认 ${e.defaultDays}`;
   $('fcExample').textContent = '原始值示例：' + e.example;
-  $('factorDays').value = e.defaultDays; // 切换因子时回到默认窗口，用户可改
+  renderFactorParameter();
 }
 function setFactorMsg(msg, ok) {
   const el = $('factorMsg');
@@ -852,18 +1139,32 @@ function setFactorMsg(msg, ok) {
 }
 async function runAnalysis() {
   setFactorMsg('', true);
-  $('factorEmpty').textContent = '正在准备分析结果…';
+  // 因子研究页独立的年份控件；后端 AnalyzeConfig.RunConfig 校验为最终约束
+  const yr = analysisYears();
+  if (yr.err) { (yr.el || $('factorStartYear')).focus(); setFactorMsg(yr.err, false); return; }
+  $('factorEmpty').textContent = '分析完成后将在这里显示结果。';
   try {
-    const cfg = buildConfig(); // 复用 Tab1 年份/样本配置
+    const cfg = buildConfig(); // 复用 Tab1 样本配置
+    cfg.startYear = yr.startYear; // 仅覆盖本次请求，不回写 Tab1（回测年份不受影响）
+    cfg.endYear = yr.endYear;
     cfg.kind = $('factorKind').value;
     cfg.days = +$('factorDays').value;
     cfg.window = +$('factorWindow').value;
     await api('POST', '/api/analyze', cfg);
-    setFactorMsg('分析已启动', true);
-    lastTask = 'analysis';
-    prevRunning = true;
+    showPendingTask('analysis');
     pollStatus();
   } catch (e) { setFactorMsg(e.message, false); }
+}
+// analysisYears 前端即时校验（与后端 validateYears 同口径），返回 {startYear,endYear} 或 {err,el}
+function analysisYears() {
+  const sy = +$('factorStartYear').value, ey = +$('factorEndYear').value;
+  const now = new Date().getFullYear();
+  if (!Number.isInteger(sy) || !Number.isInteger(ey) || sy <= 0 || ey <= 0) {
+    return {err: '开始年份与结束年份必须为正整数', el: $('factorStartYear')};
+  }
+  if (sy > ey) return {err: '时间范围无效：开始年份不能大于结束年份', el: $('factorStartYear')};
+  if (ey > now) return {err: `结束年份不能超过当前年份（${now}）`, el: $('factorEndYear')};
+  return {startYear: sy, endYear: ey};
 }
 // “添加到策略条件”：只传 kind/days，不猜 min/max；重复添加聚焦原条件
 function addFactorToStrategy() {
@@ -874,7 +1175,7 @@ function addFactorToStrategy() {
   if (!dup) simpleConds.push({kind: e.kind, days});
   switchTab(1);
   if (typeof focusSimpleCondition === 'function') focusSimpleCondition(e.kind, days);
-  setFactorMsg(`已${dup ? '定位到已有条件' : '添加条件'}：${e.name}（${days} 日），请在“简单配置”中填写阈值。`, true);
+  setFactorMsg(`已${dup ? '定位到已有条件' : '添加条件'}：${factorInstanceName(e, days)}，请在“简单配置”中填写阈值。`, true);
 }
 function renderAnalysis() {
   if (!currentAnalysis) return;
@@ -907,15 +1208,107 @@ function renderAnalysis() {
   }
   // 3) Coverage：请求/完成/跳过 + 失败明细可展开
   renderCoverage(currentAnalysis.coverage);
-  // 4) 统计详情：仅在 <details> 展开时初始化 IC 图（容器可见）
+  // 4) 区间口径与年度稳定性（历史报告缺新字段时只提示“未记录”）
+  renderRangeMeta(currentAnalysis);
+  renderYearStability(currentAnalysis);
+  // 5) 统计详情：仅在 <details> 展开时初始化 IC 图（容器可见）
   $('icStats').textContent = `有效日 ${s.pairs} · IC 均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · t 值 ${s.tStat.toFixed(2)}`;
   if ($('statDetails').open) renderICChart();
+  animateFactorResult();
+}
+// metaItem 元数据项：label 普通文本 + value 加粗文本（不用 innerHTML，避免注入）
+function metaItem(label, value) {
+  const s = document.createElement('span');
+  s.textContent = label;
+  if (value != null) {
+    const b = document.createElement('b');
+    b.textContent = value;
+    s.appendChild(b);
+  }
+  return s;
+}
+// renderRangeMeta 配置区间与实际有效日期必须分开：前者来自请求，后者来自成功生成标签的
+// 首末交易日，数据不足时两者不同。
+function renderRangeMeta(rep) {
+  const el = $('rangeMeta');
+  el.innerHTML = '';
+  const r = rep.range || {};
+  if (r.startYear > 0 && r.endYear > 0) {
+    el.appendChild(metaItem('分析区间：', `${r.startYear}–${r.endYear}`));
+  } else {
+    el.appendChild(metaItem('分析区间：历史报告未记录'));
+  }
+  if (rep.firstDataDate && rep.lastDataDate) {
+    el.appendChild(metaItem('实际有效日期：', `${rep.firstDataDate}–${rep.lastDataDate}`));
+  } else {
+    el.appendChild(metaItem('实际有效日期：历史报告未记录'));
+  }
+  if (rep.window > 0) el.appendChild(metaItem('未来收益窗口：', `${rep.window} 个交易日`));
+  const MODE = {all: '全部股票', random: '随机抽样', codes: '指定代码'};
+  if (r.sampleMode) {
+    el.appendChild(metaItem('样本：', (MODE[r.sampleMode] || r.sampleMode) + (r.sampleSize > 0 ? ` · ${r.sampleSize} 只` : '')));
+  }
+}
+// renderYearStability 年度稳定性表：IC 保持原值（不乘 100），收益转百分比，
+// 有效日不足不得以 0.0000 冒充，统一显示“样本不足”。
+function renderYearStability(rep) {
+  const years = Array.isArray(rep.years) ? rep.years : null;
+  const show = !!(years && years.length);
+  $('yearTitle').style.display = show ? '' : 'none';
+  $('yearWrap').style.display = show ? '' : 'none';
+  $('yearBias').style.display = show ? '' : 'none';
+  $('yearNA').style.display = show ? 'none' : '';
+  $('yearNA').textContent = years
+    ? '本次分析没有可用的年度观测（有效交易日不足或全部年份数据缺失）。'
+    : '历史报告未记录年度拆分，仅展示全区间结果。';
+  if (!show) return;
+  const isBins = !!(rep.grouping && rep.grouping.mode === 'bins');
+  $('q1Head').textContent = isBins ? 'B1' : 'Q1';
+  $('q5Head').textContent = isBins ? 'B5' : 'Q5';
+  const tb = $('yearBody');
+  tb.innerHTML = '';
+  years.forEach(y => {
+    const st = y.stats || {};
+    const ok = st.pairs >= 10; // 与后端 minPairs 同口径
+    const qs = Array.isArray(y.quintiles) && y.quintiles.length === 5 ? y.quintiles : null;
+    const tr = document.createElement('tr');
+    const cell = (txt, cls) => {
+      const td = document.createElement('td');
+      td.textContent = txt;
+      if (cls) td.className = cls;
+      tr.appendChild(td);
+    };
+    const pct = v => (typeof v === 'number' && isFinite(v))
+      ? {txt: (v * 100).toFixed(2) + '%', cls: v > 0 ? 'pos' : (v < 0 ? 'neg' : '')} : {txt: '样本不足', cls: 'na'};
+    cell(String(y.year));
+    cell(String(st.pairs || 0));
+    if (!ok) {
+      for (let i = 0; i < 6; i++) cell('样本不足', 'na');
+    } else {
+      cell(st.mean.toFixed(4));
+      cell(st.std.toFixed(4));
+      cell(st.tStat.toFixed(2));
+      const q1 = pct(qs && qs[0]), q5 = pct(qs && qs[4]);
+      const sp = pct(qs && qs[4] - qs[0]);
+      cell(q1.txt, q1.cls);
+      cell(q5.txt, q5.cls);
+      cell(sp.txt, sp.cls);
+    }
+    const DIR = {
+      ascending: '正向', descending: '反向', mixed: '不一致',
+      flat: '无区分', insufficient: '样本不足',
+    };
+    const dir = (y.summary || {}).direction;
+    cell(DIR[dir] || dir || '样本不足', DIR[dir] ? '' : 'na');
+    tb.appendChild(tr);
+  });
 }
 function renderQuintiles(qs) {
   const el = $('quintileChart');
-  if (!quintileC) { quintileC = echarts.init(el); charts.push(quintileC); }
+  if (!quintileC) { quintileC = echarts.init(el, 'dark'); charts.push(quintileC); }
   quintileC.setOption({
-    title: {text: '五组平均收益%（按因子值升序等频分组）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    backgroundColor: 'transparent',
+    title: {text: '五组平均收益%（按因子值升序等频分组）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis', valueFormatter: v => v + '%'},
     grid: {left: 60, right: 20, top: 50, bottom: 40},
     xAxis: {type: 'category', data: ['最低组', '第2组', '第3组', '第4组', '最高组']},
@@ -946,11 +1339,12 @@ function renderCoverage(cov) {
 function renderICChart() {
   if (!currentAnalysis) return;
   const el = $('icChart');
-  if (!icC) { icC = echarts.init(el); charts.push(icC); }
+  if (!icC) { icC = echarts.init(el, 'dark'); charts.push(icC); }
   const days = currentAnalysis.daily.map(d => d.date);
   const ics = currentAnalysis.daily.map(d => d.ic);
   icC.setOption({
-    title: {text: '逐日 IC（Spearman 秩相关）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    backgroundColor: 'transparent',
+    title: {text: '逐日 IC（Spearman 秩相关）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis'},
     grid: {left: 60, right: 20, top: 50, bottom: 60},
     xAxis: {type: 'category', data: days},
@@ -963,6 +1357,7 @@ function renderICChart() {
   }, true);
 }
 $('factorKind').addEventListener('change', renderConcept);
+$('factorDays').addEventListener('input', renderFactorParameter);
 $('statDetails').addEventListener('toggle', () => {
   if ($('statDetails').open && currentAnalysis) renderICChart(); // 展开后容器可见才 init
 });
@@ -1053,9 +1448,10 @@ function renderCharts(vs) {
     return {name: v.name, type: 'line', showSymbol: false, lineStyle: {width: 1.5},
       data: ts.map(t => { acc += t.rate; return [t.buyTime, Number(acc.toFixed(2))]; })};
   });
-  if (!trendC) { trendC = echarts.init($('trendChart')); charts.push(trendC); }
+  if (!trendC) { trendC = echarts.init($('trendChart'), 'dark'); charts.push(trendC); }
   trendC.setOption({
-    title: {text: '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    backgroundColor: 'transparent',
+    title: {text: '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis'},
     legend: {top: 6, right: 10, type: 'scroll'},
     grid: {left: 50, right: 20, top: 60, bottom: 40},
@@ -1063,9 +1459,10 @@ function renderCharts(vs) {
     yAxis: {scale: true},
     series
   }, true);
-  if (!winC) { winC = echarts.init($('winChart')); charts.push(winC); }
+  if (!winC) { winC = echarts.init($('winChart'), 'dark'); charts.push(winC); }
   winC.setOption({
-    title: {text: '胜率%', left: 10, top: 6, textStyle: {fontSize: 13}},
+    backgroundColor: 'transparent',
+    title: {text: '胜率%', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {},
     grid: {left: 50, right: 20, top: 60, bottom: 80},
     xAxis: {type: 'category', data: vs.map(v => v.name), axisLabel: {rotate: 30, fontSize: 11}},
@@ -1129,7 +1526,7 @@ async function showKline(t) {
     ks = await api('GET', `/api/kline/${encodeURIComponent(t.code)}?from=${fmt(from)}&to=${fmt(to)}`);
   } catch (e) { box.innerHTML = `<div class="empty">K线加载失败: ${esc(e.message)}</div>`; return; }
   box.innerHTML = '';
-  if (!klineC) { klineC = echarts.init(box); charts.push(klineC); }
+  if (!klineC) { klineC = echarts.init(box, 'dark'); charts.push(klineC); }
   const dates = ks.map(k => k.date);
   const values = ks.map(k => [k.open, k.close, k.low, k.high]);
   const closes = ks.map(k => k.close);
@@ -1145,7 +1542,8 @@ async function showKline(t) {
       label: {show: true, formatter: isBuy ? 'B' : 'S', color: '#fff', fontSize: 10, offset: [0, isBuy ? 4 : -4]}};
   };
   klineC.setOption({
-    title: {text: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`, left: 12, top: 6, textStyle: {fontSize: 13}},
+    backgroundColor: 'transparent',
+    title: {text: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`, left: 12, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
     legend: {top: 6, right: 10, data: ['日K', 'MA5', 'MA10', 'MA20']},
     dataZoom: [{type: 'inside', xAxisIndex: [0, 1]}, {show: true, xAxisIndex: [0, 1], type: 'slider', bottom: 8}],
@@ -1176,9 +1574,10 @@ async function showKline(t) {
 loadScript();
 loadPresets();
 loadFactors();
-pollStatusOnce(); // 页面刷新后恢复运行状态显示
-// Tab 状态从 URL 恢复（刷新后保留当前 Tab，但不自动重跑任务）
-switchTab(TAB_NUM[new URLSearchParams(location.search).get('tab')] || 1);
+pollStatusOnce(); // 页面刷新后恢复运行状态显示；运行中由 pollStatusOnce 续上轮询
+// Tab 状态从 URL 恢复；无参数时优先进入因子研究，但不自动重跑任务。
+switchTab(TAB_NUM[new URLSearchParams(location.search).get('tab')] || 4);
+initMotion();
 </script>
 </body>
 </html>

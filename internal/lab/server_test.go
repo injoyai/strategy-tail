@@ -239,6 +239,82 @@ func TestServerRunLifecycle(t *testing.T) {
 	doReq(t, h, http.MethodPost, "/api/stop", nil, http.StatusOK)
 }
 
+// TestServerAnalyzeYearRange 因子分析 API 契约：请求年份决定报告区间，非法年份被拒绝，
+// 最新报告携带配置区间、实际有效日期与逐年覆盖率。
+func TestServerAnalyzeYearRange(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	old := common.Pull
+	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	t.Cleanup(func() { common.Pull = old })
+
+	now := time.Now().Year()
+	base := time.Date(now-1, 12, 24, 0, 0, 0, 0, time.Local)
+	codes := []string{"sh600001", "sh600002", "sh600003", "sh600004", "sh600005"}
+	for i, step := range []float64{0.6, 0.1, 0, -0.12, -0.35} {
+		closes := make([]float64, 28)
+		for j := range closes {
+			closes[j] = 10 + step*float64(j)
+		}
+		writeDayDBCloses(t, dir, codes[i], closes, base)
+	}
+
+	h := NewServer().Handler()
+	// 非法年份：后端校验是最终约束，不依赖前端输入限制
+	bad := map[string]any{"startYear": now, "endYear": now + 1, "sampleMode": "codes",
+		"sampleCodes": codes, "kind": "momentum", "days": 2, "window": 1}
+	doReq(t, h, http.MethodPost, "/api/analyze", bad, http.StatusConflict)
+	bad["startYear"], bad["endYear"] = now, now-1
+	doReq(t, h, http.MethodPost, "/api/analyze", bad, http.StatusConflict)
+
+	// 合法区间：now-2 无数据，now-1 与 now 参与分析
+	cfg := map[string]any{"startYear": now - 2, "endYear": now, "sampleMode": "codes",
+		"sampleCodes": codes, "kind": "momentum", "days": 2, "window": 1}
+	res := doReq(t, h, http.MethodPost, "/api/analyze", cfg, http.StatusOK)
+	if !bytes.Contains(res, []byte(`"ok":true`)) {
+		t.Fatalf("analyze 响应异常: %s", res)
+	}
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		res = doReq(t, h, http.MethodGet, "/api/status", nil, http.StatusOK)
+		var st map[string]any
+		if err := json.Unmarshal(res, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st["state"] == "done" || st["state"] == "error" {
+			if st["state"] != "done" {
+				t.Fatalf("分析失败: %v", st)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("分析超时未完成: %v", st)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	res = doReq(t, h, http.MethodGet, "/api/analysis/latest", nil, http.StatusOK)
+	var rep AnalysisReport
+	if err := json.Unmarshal(res, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Range.StartYear != now-2 || rep.Range.EndYear != now ||
+		rep.Range.SampleMode != "codes" || rep.Range.SampleSize != len(codes) {
+		t.Fatalf("Range = %+v", rep.Range)
+	}
+	if len(rep.Years) != 2 || rep.Years[0].Year != now-1 || rep.Years[1].Year != now {
+		t.Fatalf("Years = %+v", rep.Years)
+	}
+	if rep.FirstDataDate == "" || rep.LastDataDate == "" {
+		t.Fatalf("实际有效日期缺失: %q–%q", rep.FirstDataDate, rep.LastDataDate)
+	}
+	if rep.YearCoverage.RequestedCodeYears != len(codes)*3 ||
+		rep.YearCoverage.CompletedCodeYears != len(codes)*2 ||
+		rep.YearCoverage.SkippedCodeYears != len(codes) {
+		t.Fatalf("YearCoverage = %+v", rep.YearCoverage)
+	}
+}
+
 // TestRunnerMutualExclusion 已有任务运行时 Start 报错（单任务互斥）。
 func TestRunnerMutualExclusion(t *testing.T) {
 	r := NewRunner()

@@ -1,37 +1,17 @@
 {
-  "$schema": "premium-ui-audit-config/v1",
-  "note": "因子 WEB MVP 审计配置基线。本环境中未提供 Premium UI 审计工具，此文件仅作为审计范围的声明基线；实际审计状态见 DESIGN.md（记录为未验证）。",
-  "audit": {
-    "sourceDirectories": [
-      "internal/lab/web/lab"
-    ],
-    "locale": "zh-CN",
-    "viewport": {
-      "minWidth": 1280,
-      "target": "desktop-first",
-      "note": "桌面优先的本地研究工具，密度紧凑，不做移动端适配"
-    }
+  "profile": "product-admin",
+  "sourceRoots": ["internal/lab/web/lab"],
+  "locale": "zh-CN",
+  "canonicalMap": "DESIGN.md",
+  "requiredCapabilities": ["Select/Listbox", "Date", "Form", "Scrollbar"],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Date": "native",
+    "Form": "application",
+    "Scrollbar": "native"
   },
-  "decisions": {
-    "nativeControls": {
-      "select": "原生 <select>：组合框一律使用原生控件，不做自定义下拉",
-      "date": "原生日期/数字输入：年份等数值输入使用原生 <input type=number>，不引入日期选择器组件",
-      "checkbox": "原生 <input type=checkbox>（若出现布尔开关）"
-    },
-    "appOwnedControls": {
-      "tabs": {
-        "owner": "application",
-        "pattern": "WAI-ARIA tabs：role=tablist/tab/tabpanel，左右方向键与 Home/End 移动焦点，当前 tab 状态同步到 URL 查询参数 ?tab="
-      },
-      "validation": {
-        "owner": "application",
-        "pattern": "应用自有校验：表单 novalidate，错误以行内文本 + aria-describedby 呈现"
-      },
-      "status": {
-        "owner": "application",
-        "pattern": "应用自有状态区：进度/完成/错误用 aria-live=polite 的状态行播报"
-      }
-    }
-  },
-  "outOfScope": "既有问题清单与本次必须修复项的划分见 DESIGN.md 末节"
+  "requiredCommands": [],
+  "commands": {},
+  "evidence": {},
+  "note": "桌面优先、窄屏可用的本地单页研究工具；行为与视觉合同维护在 DESIGN.md。"
 }

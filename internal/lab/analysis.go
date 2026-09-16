@@ -67,34 +67,7 @@ func spearmanIC(vals, rets []float64) float64 {
 	return f.Pearson(avgRanks(vals), avgRanks(rets))
 }
 
-// quintileMeans 按因子值升序等频五分位（Q1=因子最低 20%），返回各组
-// 收益均值；n<5 返回 nil。vals 与 rets 须等长且无 NaN，由调用方保证
-// （NaN 会经组均值传播，不 panic）。
-func quintileMeans(vals, rets []float64) []float64 {
-	n := len(vals)
-	if n < 5 {
-		return nil
-	}
-	idx := make([]int, n)
-	for i := range idx {
-		idx[i] = i
-	}
-	sort.Slice(idx, func(i, j int) bool { return vals[idx[i]] < vals[idx[j]] })
-	sums := make([]float64, 5)
-	cnts := make([]int, 5)
-	for k, i := range idx {
-		q := k * 5 / n
-		sums[q] += rets[i]
-		cnts[q]++
-	}
-	out := make([]float64, 5)
-	for q := range out {
-		out[q] = sums[q] / float64(cnts[q])
-	}
-	return out
-}
-
-// QuintileSummary 五分位收益摘要：方向与 spread 由后端计算，前端不做二次推断。
+// QuintileSummary 五组收益摘要：方向与 spread 由后端计算，前端不做二次推断。
 type QuintileSummary struct {
 	Direction string   `json:"direction"` // ascending|descending|mixed|flat|insufficient
 	Spread    *float64 `json:"spread"`    // Q5−Q1；五组不完整为 null
@@ -180,9 +153,143 @@ func icStats(ics []float64) ICStats {
 // 卖出规则与分析无关（不校验）。
 type AnalyzeConfig struct {
 	RunConfig
-	Kind   string `json:"kind"`   // 因子类型（registry kind）
-	Days   int    `json:"days"`   // 因子窗口参数（≤0 用各因子默认）
-	Window int    `json:"window"` // 未来收益窗口（交易日）
+	Kind     string         `json:"kind"`               // 因子类型（registry kind）
+	Days     int            `json:"days"`               // 因子窗口参数（≤0 用各因子默认）
+	Window   int            `json:"window"`             // 未来收益窗口（交易日）
+	Grouping GroupingConfig `json:"grouping,omitempty"` // 分组方式；缺省等数量五组
+}
+
+// GroupingConfig 分组方式配置：mode 缺省（空）或 quantile 为每日等数量五组；
+// bins 为固定数值区间，cuts 必须恰好 4 个严格递增断点，形成
+// B1=(-∞,b1] B2=(b1,b2] B3=(b2,b3] B4=(b3,b4] B5=(b4,+∞)。
+type GroupingConfig struct {
+	Mode string    `json:"mode,omitempty"` // quantile | bins
+	Cuts []float64 `json:"cuts,omitempty"` // bins 模式必须恰好 4 个
+}
+
+// Validate 校验分组配置：未知模式报错；quantile 不接受断点；
+// bins 要求恰好 4 个有限且严格递增的断点（-0 与 0 视为重复）。
+func (c GroupingConfig) Validate() error {
+	switch c.Mode {
+	case "", "quantile":
+		if len(c.Cuts) > 0 {
+			return fmt.Errorf("等数量五组模式不接受断点")
+		}
+	case "bins":
+		if len(c.Cuts) != 4 {
+			return fmt.Errorf("固定区间模式需要恰好 4 个断点, 得到 %d 个", len(c.Cuts))
+		}
+		for i, v := range c.Cuts {
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return fmt.Errorf("断点 %d 不是有限值", i+1)
+			}
+			if i > 0 && v <= c.Cuts[i-1] {
+				return fmt.Errorf("断点必须严格递增: %v", c.Cuts)
+			}
+		}
+	default:
+		return fmt.Errorf("未知分组模式: %s", c.Mode)
+	}
+	return nil
+}
+
+// factorObs 单条因子观测：股票与因子值。分组只需值与 code tie-break，
+// 收益与统计由调用方按返回的组号归集。
+type factorObs struct {
+	Code  string
+	Value float64
+}
+
+// quantileAssign 等数量五组（分位）分组：观测按因子值升序、code 升序排序，
+// 相同因子值的连续观测为并列块，整块按排序位置中点归组（避免拆块产生
+// 虚假组间差异），公式 floor(((i+j)/2)×5/n) 以整数倍增 (i+j)×5/(2n) 计算。
+// 返回与输入同序的组号 0..4（0=因子值最低组）；相同输入结果恒定。
+func quantileAssign(obs []factorObs) []int {
+	n := len(obs)
+	idx := make([]int, n)
+	for i := range idx {
+		idx[i] = i
+	}
+	sort.Slice(idx, func(a, b int) bool {
+		if obs[idx[a]].Value != obs[idx[b]].Value {
+			return obs[idx[a]].Value < obs[idx[b]].Value
+		}
+		return obs[idx[a]].Code < obs[idx[b]].Code
+	})
+	out := make([]int, n)
+	for i := 0; i < n; {
+		j := i
+		for j+1 < n && obs[idx[j+1]].Value == obs[idx[i]].Value {
+			j++
+		}
+		g := (i + j) * 5 / (2 * n) // 中点公式整数形式；n≥1 时结果天然在 0..4
+		for k := i; k <= j; k++ {
+			out[idx[k]] = g
+		}
+		i = j + 1
+	}
+	return out
+}
+
+// binGroup 固定区间分组：断点值归左侧组，即 v≤b1→B1、b1<v≤b2→B2、…、
+// v>b4→B5；调用方保证 cuts 为 4 个严格递增有限值。
+func binGroup(v float64, cuts []float64) int {
+	for i, c := range cuts {
+		if v <= c {
+			return i
+		}
+	}
+	return 4
+}
+
+// percentileSorted Type-7 线性插值百分位（输入须升序）：h=(n-1)p，
+// q=x[⌊h⌋]+(h-⌊h⌋)×(x[⌈h⌉]-x[⌊h⌋])，与常见数据分析工具默认口径一致。
+func percentileSorted(sorted []float64, p float64) float64 {
+	n := len(sorted)
+	if n == 0 {
+		return math.NaN()
+	}
+	h := float64(n-1) * p
+	lo := int(math.Floor(h))
+	hi := int(math.Ceil(h))
+	if hi > n-1 {
+		hi = n - 1
+	}
+	return sorted[lo] + (h-math.Floor(h))*(sorted[hi]-sorted[lo])
+}
+
+// groupValueStats 组内因子值分布统计（原始值）。
+type groupValueStats struct {
+	Min, P25, Median, Mean, P75, Max, Std float64
+}
+
+// valueStats 汇总一组因子值：P25/Median/P75 用 Type-7 插值，
+// Std 为总体标准差（除以 n）；空输入返回 nil（空组 JSON null 语义）。
+func valueStats(vals []float64) *groupValueStats {
+	n := len(vals)
+	if n == 0 {
+		return nil
+	}
+	x := append([]float64(nil), vals...)
+	sort.Float64s(x)
+	sum := 0.0
+	for _, v := range x {
+		sum += v
+	}
+	mean := sum / float64(n)
+	ss := 0.0
+	for _, v := range x {
+		ss += (v - mean) * (v - mean)
+	}
+	return &groupValueStats{
+		Min:    x[0],
+		P25:    percentileSorted(x, 0.25),
+		Median: percentileSorted(x, 0.5),
+		Mean:   mean,
+		P75:    percentileSorted(x, 0.75),
+		Max:    x[n-1],
+		Std:    math.Sqrt(ss / float64(n)),
+	}
 }
 
 // Validate 校验分析配置（复用回测的年份/样本检查）。
@@ -199,27 +306,248 @@ func (c AnalyzeConfig) Validate() error {
 	if f.Build(c.Kind, c.Days) == nil {
 		return fmt.Errorf("未知因子类型: %s", c.Kind)
 	}
+	if err := c.Grouping.Validate(); err != nil {
+		return err
+	}
 	return nil
+}
+
+// FactorSnapshot 因子元数据快照：报告自包含，前端与历史文件无需再查因子目录。
+type FactorSnapshot struct {
+	Kind           string `json:"kind"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	ParameterLabel string `json:"parameterLabel"`
+	Days           int    `json:"days"`
+	Unit           string `json:"unit"` // ratio | multiple | score | correlation
+}
+
+// FactorGroupStats 单组统计：因子值分布为全样本累计（原始值），
+// ForwardReturn 为每日组均值再按日期等权；空组数值字段为 null。
+type FactorGroupStats struct {
+	Index         int      `json:"index"` // 1..5
+	Label         string   `json:"label"` // Q1..Q5 或 B1..B5
+	Lower         *float64 `json:"lower"` // 固定区间边界；开放端为 null
+	Upper         *float64 `json:"upper"`
+	FactorMin     *float64 `json:"factorMin"`
+	FactorP25     *float64 `json:"factorP25"`
+	FactorMedian  *float64 `json:"factorMedian"`
+	FactorMean    *float64 `json:"factorMean"`
+	FactorP75     *float64 `json:"factorP75"`
+	FactorMax     *float64 `json:"factorMax"`
+	FactorStd     *float64 `json:"factorStd"`
+	Observations  int      `json:"observations"` // 股票×日期有效观测数
+	Dates         int      `json:"dates"`        // 该组非空日期数
+	CountPct      float64  `json:"countPct"`     // 占全部有效观测比例，0..1
+	ForwardReturn *float64 `json:"forwardReturn"`
+}
+
+// f64p 数值指针（null 语义：不存在为 nil，不以 0 冒充）。
+func f64p(v float64) *float64 { return &v }
+
+// AnalysisRange 本次分析实际使用的配置区间与样本口径。报告必须能自证区间，
+// 因为“配置区间”与“实际有效日期”（见 AnalysisReport.FirstDataDate）可能不同：
+// 早期年份无数据、后上市股票不参与早期统计、未来收益窗口尾部被剔除等都会缩短
+// 实际有效区间。
+type AnalysisRange struct {
+	StartYear  int    `json:"startYear"`
+	EndYear    int    `json:"endYear"`
+	SampleMode string `json:"sampleMode"`           // all | random | codes
+	SampleSize int    `json:"sampleSize,omitempty"` // 实际请求代码数
+}
+
+// YearAnalysis 单年度统计，与全区间使用同一批逐日观测、同口径（有效交易日
+// 等权）。有效日不足 minPairs 时 Stats.Pairs 保留样本数、其余字段为 0，
+// Quintiles 为 nil、Summary 为 insufficient：零值不得被解释为“真实 IC 为零”。
+type YearAnalysis struct {
+	Year        int             `json:"year"`
+	Stats       ICStats         `json:"stats"`
+	Quintiles   []float64       `json:"quintiles"` // 该年五组收益；组不完整为 null
+	Summary     QuintileSummary `json:"summary"`
+	TradingDays int             `json:"tradingDays"` // 该年有横截面观测的交易日数
 }
 
 // AnalysisReport 因子分析报告。
 type AnalysisReport struct {
-	FactorName string               `json:"factorName"` // 因子中文名（如 N日动量(2)）
-	Kind       string               `json:"kind"`
-	Window     int                  `json:"window"`
-	Stats      ICStats              `json:"stats"`
-	Quintiles  []float64            `json:"quintiles"` // 逐日五分位收益均值的再平均；无有效日为 nil
-	Summary    QuintileSummary      `json:"summary"`
-	Coverage   researchrun.Coverage `json:"coverage"`
-	Daily      []DailyIC            `json:"daily"`
-	StartedAt  string               `json:"startedAt"`
-	FinishedAt string               `json:"finishedAt"`
+	FactorName string        `json:"factorName"` // 因子中文名（如 N日动量(2)）
+	Kind       string        `json:"kind"`
+	Window     int           `json:"window"`
+	Range      AnalysisRange `json:"range"`
+	// v2 新增：固定区间模式以 Groups 为唯一分组结果；分位模式组完整时
+	// Quintiles 镜像 Groups 的 ForwardReturn（旧页面兼容），否则为 null。
+	AnalysisVersion int                `json:"analysisVersion"`
+	Factor          FactorSnapshot     `json:"factor"`
+	Grouping        GroupingConfig     `json:"grouping"`
+	Groups          []FactorGroupStats `json:"groups"`
+	// Years 为年度拆分（升序）：跨周期汇总不得掩盖某些年份失效或反向。
+	// 历史报告无此字段时为空切片，前端显示“历史报告未记录”。
+	Years     []YearAnalysis       `json:"years"`
+	Stats     ICStats              `json:"stats"`
+	Quintiles []float64            `json:"quintiles"` // 分位模式五组收益；组不完整或 bins 模式为 nil
+	Summary   QuintileSummary      `json:"summary"`
+	Coverage  researchrun.Coverage `json:"coverage"`
+	// YearCoverage 逐“股票×年份”覆盖率：回测按整票判定，分析保留同一股票的
+	// 其他可用年份，缺失年份只在此披露，不静默作废整只股票。
+	YearCoverage researchrun.YearCoverage `json:"yearCoverage"`
+	// FirstDataDate/LastDataDate 为成功生成标签的首末交易日；无有效日为空串。
+	FirstDataDate string    `json:"firstDataDate"`
+	LastDataDate  string    `json:"lastDataDate"`
+	Daily         []DailyIC `json:"daily"`
+	StartedAt     string    `json:"startedAt"`
+	FinishedAt    string    `json:"finishedAt"`
 }
 
 // DailyIC 单日横截面 IC；IC=nil 表示当日无效（NaN，JSON 序列化为 null）。
 type DailyIC struct {
 	Date string   `json:"date"`
 	IC   *float64 `json:"ic"`
+}
+
+// dayIC 一组交易日的逐日 IC 与汇总。
+type dayIC struct {
+	Daily []DailyIC
+	Stats ICStats
+}
+
+// aggregateIC 对一组交易日计算逐日 Spearman IC 与该组汇总（交易日等权）。
+// days 须按日期升序且 vals/rets 覆盖其中日期；全区间与年度共用本函数，
+// 避免“先算年度均值再加权”——那样交易日较少的年份会获得过高权重。
+func aggregateIC(days []time.Time, vals, rets map[time.Time]map[string]float64) dayIC {
+	daily := make([]DailyIC, 0, len(days))
+	ics := make([]float64, 0, len(days))
+	for _, day := range days {
+		vs := make([]float64, 0, len(vals[day]))
+		rs := make([]float64, 0, len(vals[day]))
+		for c, v := range vals[day] {
+			vs = append(vs, v)
+			rs = append(rs, rets[day][c])
+		}
+		di := DailyIC{Date: day.Format("2006-01-02")}
+		if ic := spearmanIC(vs, rs); !math.IsNaN(ic) {
+			ics = append(ics, ic)
+			v := ic
+			di.IC = &v
+		}
+		daily = append(daily, di)
+	}
+	return dayIC{Daily: daily, Stats: icStats(ics)}
+}
+
+// groupDaysByYear 把升序交易日按自然年切成连续分组（组内仍升序），供年度
+// 统计使用；空输入返回 nil。
+func groupDaysByYear(days []time.Time) [][]time.Time {
+	var groups [][]time.Time
+	for i, day := range days {
+		if i == 0 || day.Year() != days[i-1].Year() {
+			groups = append(groups, nil)
+		}
+		groups[len(groups)-1] = append(groups[len(groups)-1], day)
+	}
+	return groups
+}
+
+// sortFailures 失败明细按 code/year/stage 排序，保证报告与测试稳定。
+func sortFailures(fs []researchrun.Failure) {
+	sort.Slice(fs, func(i, j int) bool {
+		if fs[i].Code != fs[j].Code {
+			return fs[i].Code < fs[j].Code
+		}
+		if fs[i].Year != fs[j].Year {
+			return fs[i].Year < fs[j].Year
+		}
+		return fs[i].Stage < fs[j].Stage
+	})
+}
+
+// aggregateGroups 对一组交易日聚合五组统计：分位模式按并列块整块归组
+// （确定性 tie-break），bins 模式按固定区间；组内因子值为全样本累计（原始值），
+// 组收益先算日内组均值、再对非空交易日等权。返回五组统计、五组收益
+// （任一组无收益即为 nil，不以 0 冒充）与摘要。全区间与年度共用本函数，
+// 保证两者口径一致。
+func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float64,
+	grouping GroupingConfig) ([]FactorGroupStats, []float64, QuintileSummary) {
+	isBins := grouping.Mode == "bins"
+	accVals := make([][]float64, 5) // 组内因子值（全样本累计）
+	accObs := make([]int, 5)        // 有效观测数
+	dayCnts := make([]int, 5)       // 组非空日期数
+	dayRets := make([]float64, 5)   // 组非空日期的日内组均值之和
+	for _, day := range days {
+		obs := make([]factorObs, 0, len(vals[day]))
+		for c, v := range vals[day] {
+			obs = append(obs, factorObs{Code: c, Value: v})
+		}
+		assign := make([]int, len(obs))
+		if isBins {
+			for i, o := range obs {
+				assign[i] = binGroup(o.Value, grouping.Cuts)
+			}
+		} else {
+			assign = quantileAssign(obs)
+		}
+		gSums, gCnts := make([]float64, 5), make([]int, 5)
+		for i, o := range obs {
+			g := assign[i]
+			accVals[g] = append(accVals[g], o.Value)
+			accObs[g]++
+			gSums[g] += rets[day][o.Code]
+			gCnts[g]++
+		}
+		for g := 0; g < 5; g++ {
+			if gCnts[g] > 0 {
+				dayCnts[g]++
+				dayRets[g] += gSums[g] / float64(gCnts[g])
+			}
+		}
+	}
+
+	totalObs := 0
+	for _, n := range accObs {
+		totalObs += n
+	}
+	groups := make([]FactorGroupStats, 5)
+	for g := range groups {
+		gs := FactorGroupStats{Index: g + 1}
+		if isBins {
+			gs.Label = fmt.Sprintf("B%d", g+1)
+			if g > 0 {
+				gs.Lower = f64p(grouping.Cuts[g-1])
+			}
+			if g < 4 {
+				gs.Upper = f64p(grouping.Cuts[g])
+			}
+		} else {
+			gs.Label = fmt.Sprintf("Q%d", g+1)
+		}
+		if st := valueStats(accVals[g]); st != nil {
+			gs.FactorMin, gs.FactorP25, gs.FactorMedian = f64p(st.Min), f64p(st.P25), f64p(st.Median)
+			gs.FactorMean, gs.FactorP75, gs.FactorMax, gs.FactorStd =
+				f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
+		}
+		gs.Observations = accObs[g]
+		gs.Dates = dayCnts[g]
+		if totalObs > 0 {
+			gs.CountPct = float64(accObs[g]) / float64(totalObs)
+		}
+		if dayCnts[g] > 0 {
+			gs.ForwardReturn = f64p(dayRets[g] / float64(dayCnts[g]))
+		}
+		groups[g] = gs
+	}
+
+	// 摘要两种模式同口径：基于五组 ForwardReturn，任一组无收益即 insufficient。
+	summaryQs := make([]float64, 0, 5)
+	complete := true
+	for _, g := range groups {
+		if g.ForwardReturn == nil {
+			complete = false
+			break
+		}
+		summaryQs = append(summaryQs, *g.ForwardReturn)
+	}
+	if !complete {
+		summaryQs = nil
+	}
+	return groups, summaryQs, summarizeQuintiles(summaryQs)
 }
 
 // runAnalysis 因子分析主循环：逐日横截面 因子值名次 vs 未来收益名次 → Spearman IC。
@@ -251,7 +579,9 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	// OnCodeDone 串行上报（mu 保护），直接汇总无需额外锁
 	coverage := researchrun.Coverage{Requested: len(codes)}
 
-	if err := researchrun.ForEachCodeData(ctx, researchrun.Config{
+	// 逐“股票×年份”加载：单年缺失只记录该代码年份，不抹掉同一股票的其他年份
+	// （回测仍走 ForEachCodeData 的整票一致性语义，不受影响）。
+	yearCoverage, err := researchrun.ForEachCodeYearData(ctx, researchrun.Config{
 		Codes:        codes,
 		Years:        years,
 		Workers:      common.DefaultGoroutines * 2,
@@ -268,36 +598,35 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 				coverage.Failures = append(coverage.Failures, *progress.Failure)
 			}
 		},
-	}, func(code string, datas []researchrun.YearData) {
+	}, func(code string, _ int, d researchrun.YearData) {
 		lv := map[time.Time]map[string]float64{}
 		lr := map[time.Time]map[string]float64{}
-		for _, d := range datas {
-			series := make(extend.Klines, 0, len(d.His)+len(d.Dks))
-			series = append(series, d.His...)
-			series = append(series, d.Dks...)
-			base := len(d.His)
-			for i := 0; i+cfg.Window < len(d.Dks); i++ {
-				v := fct.Value(code, series[:base+i+1])
-				ret := d.Dks[i+cfg.Window].Close.Float64()/d.Dks[i].Close.Float64() - 1
-				// NaN/±Inf 值与该票该日一并剔除：spearmanIC/quintileMeans 契约要求入参无 NaN，
-				// 且 Inf 会传入 Quintiles 使 report.json 序列化失败（退化数据如收盘价 0）
-				if math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ret) || math.IsInf(ret, 0) {
-					continue
-				}
-				day := core.DayOf(d.Dks[i].Time)
-				if lv[day] == nil {
-					lv[day] = map[string]float64{}
-					lr[day] = map[string]float64{}
-				}
-				lv[day][code] = v
-				lr[day][code] = ret
+		series := make(extend.Klines, 0, len(d.His)+len(d.Dks))
+		series = append(series, d.His...)
+		series = append(series, d.Dks...)
+		base := len(d.His)
+		for i := 0; i+cfg.Window < len(d.Dks); i++ {
+			v := fct.Value(code, series[:base+i+1])
+			ret := d.Dks[i+cfg.Window].Close.Float64()/d.Dks[i].Close.Float64() - 1
+			// NaN/±Inf 值与该票该日一并剔除：spearmanIC/quantileAssign 契约要求入参无 NaN，
+			// 且 Inf 会传入 Quintiles 使 report.json 序列化失败（退化数据如收盘价 0）
+			if math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ret) || math.IsInf(ret, 0) {
+				continue
 			}
+			day := core.DayOf(d.Dks[i].Time)
+			if lv[day] == nil {
+				lv[day] = map[string]float64{}
+				lr[day] = map[string]float64{}
+			}
+			lv[day][code] = v
+			lr[day][code] = ret
 		}
 		mu.Lock()
 		mergedV = append(mergedV, lv)
 		mergedR = append(mergedR, lr)
 		mu.Unlock()
-	}); err != nil {
+	})
+	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, errStopped
 		}
@@ -311,16 +640,8 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	}
 
 	// Failure 按 code/year/stage 排序，保证报告与测试稳定
-	sort.Slice(coverage.Failures, func(i, j int) bool {
-		fi, fj := coverage.Failures[i], coverage.Failures[j]
-		if fi.Code != fj.Code {
-			return fi.Code < fj.Code
-		}
-		if fi.Year != fj.Year {
-			return fi.Year < fj.Year
-		}
-		return fi.Stage < fj.Stage
-	})
+	sortFailures(coverage.Failures)
+	sortFailures(yearCoverage.Failures)
 
 	// 合并各票数据（单协程，无竞争）
 	vals := map[time.Time]map[string]float64{}
@@ -345,50 +666,76 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
 
-	daily := make([]DailyIC, 0, len(days))
-	ics := make([]float64, 0, len(days))
-	qSums, qCnts := make([]float64, 5), make([]int, 5)
-	for _, day := range days {
-		vs := make([]float64, 0, len(vals[day]))
-		rs := make([]float64, 0, len(vals[day]))
-		for c, v := range vals[day] {
-			vs = append(vs, v)
-			rs = append(rs, rets[day][c])
-		}
-		di := DailyIC{Date: day.Format("2006-01-02")}
-		ic := spearmanIC(vs, rs)
-		if !math.IsNaN(ic) {
-			ics = append(ics, ic)
-			v := ic
-			di.IC = &v
-			// 逐日五分位均值再平均（每日等权，与 IC 口径一致）
-			if qs := quintileMeans(vs, rs); qs != nil {
-				for q := range qs {
-					qSums[q] += qs[q]
-					qCnts[q]++
-				}
-			}
-		}
-		daily = append(daily, di)
+	// 全区间：逐日 IC 与五组统计均按交易日等权。禁止先算年度均值再加权——
+	// 那样交易日较少的年份会获得过高权重。
+	overall := aggregateIC(days, vals, rets)
+	groups, summaryQs, summary := aggregateGroups(days, vals, rets, cfg.Grouping)
+	isBins := cfg.Grouping.Mode == "bins"
+
+	// 年度拆分：同一批逐日观测按自然年切段、以与全区间相同的口径重算，
+	// 使跨周期汇总无法掩盖某些年份失效或反向。
+	yearly := make([]YearAnalysis, 0, len(years))
+	for _, gd := range groupDaysByYear(days) {
+		yic := aggregateIC(gd, vals, rets)
+		_, yqs, ysum := aggregateGroups(gd, vals, rets, cfg.Grouping)
+		yearly = append(yearly, YearAnalysis{
+			Year:        gd[0].Year(),
+			Stats:       yic.Stats,
+			Quintiles:   yqs,
+			Summary:     ysum,
+			TradingDays: len(gd),
+		})
+	}
+
+	// 实际有效日期：成功生成标签的首末交易日，数据不足时短于配置区间
+	first, last := "", ""
+	if len(days) > 0 {
+		first = days[0].Format("2006-01-02")
+		last = days[len(days)-1].Format("2006-01-02")
+	}
+
+	// 因子快照：Days 解析为生效窗口（≤0 时用因子目录默认值）。
+	entry, _ := f.Catalog(cfg.Kind)
+	effDays := cfg.Days
+	if effDays <= 0 {
+		effDays = entry.DefaultDays
 	}
 
 	rep := &AnalysisReport{
 		FactorName: fct.Name(),
 		Kind:       cfg.Kind,
 		Window:     cfg.Window,
-		Stats:      icStats(ics),
-		Daily:      daily,
-		Coverage:   coverage,
-		StartedAt:  started.Format(time.RFC3339),
-		FinishedAt: time.Now().Format(time.RFC3339),
+		Range: AnalysisRange{
+			StartYear:  cfg.RunConfig.StartYear,
+			EndYear:    cfg.RunConfig.EndYear,
+			SampleMode: cfg.RunConfig.SampleMode,
+			SampleSize: len(codes),
+		},
+		AnalysisVersion: 2,
+		Factor: FactorSnapshot{
+			Kind:           cfg.Kind,
+			Name:           fct.Name(),
+			Description:    entry.Description,
+			ParameterLabel: entry.ParameterLabel,
+			Days:           effDays,
+			Unit:           entry.Unit,
+		},
+		Grouping:      cfg.Grouping,
+		Groups:        groups,
+		Years:         yearly,
+		Stats:         overall.Stats,
+		Summary:       summary,
+		Coverage:      coverage,
+		YearCoverage:  yearCoverage,
+		FirstDataDate: first,
+		LastDataDate:  last,
+		Daily:         overall.Daily,
+		StartedAt:     started.Format(time.RFC3339),
+		FinishedAt:    time.Now().Format(time.RFC3339),
 	}
-	if qCnts[0] > 0 { // 至少有一天票数 ≥5 才有意义（防 0 除 NaN 炸 JSON）
-		rep.Quintiles = make([]float64, 5)
-		for q := range qSums {
-			rep.Quintiles[q] = qSums[q] / float64(qCnts[q])
-		}
+	if !isBins && summaryQs != nil { // 旧页面兼容：分位模式组完整时镜像组收益
+		rep.Quintiles = summaryQs
 	}
-	rep.Summary = summarizeQuintiles(rep.Quintiles)
 	if err := exportAnalysis(rep); err != nil {
 		return nil, fmt.Errorf("分析报告落盘失败: %w", err)
 	}

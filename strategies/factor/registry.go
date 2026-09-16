@@ -190,3 +190,23 @@ func Build(kind string, days int) core.Factor {
 	}
 	return nil
 }
+
+// Catalog 返回单个因子目录元数据：kind 未知返回 false
+// （分析主流程先经 Validate 拒绝未知 kind，此分支不应触发）。
+func Catalog(kind string) (CatalogEntry, bool) {
+	for _, e := range registry {
+		if e.Kind == kind {
+			return CatalogEntry{
+				Kind:           e.Kind,
+				Name:           e.New(e.Default).Name(),
+				Description:    e.Description,
+				Category:       e.Category,
+				ParameterLabel: e.ParameterLabel,
+				DefaultDays:    e.Default,
+				Unit:           e.Unit,
+				Example:        e.Example,
+			}, true
+		}
+	}
+	return CatalogEntry{}, false
+}

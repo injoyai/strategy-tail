@@ -62,6 +62,19 @@ type Coverage struct {
 	Failures  []Failure `json:"failures"`
 }
 
+// YearCoverage披露逐“股票×年份”的加载结果。回测按整票判定，任一请求年份
+// 缺失即排除该票；因子分析要保留同一股票其他可用年份，因此需要这一层计数：
+// CompletedCodes 为至少有一个成功年份的股票数，SkippedCodeYears 为逐年缺失
+// 的代码年份数，Failures 携带每一次代码年份失败（Code/Year/Stage/Message）。
+type YearCoverage struct {
+	RequestedCodes     int       `json:"requestedCodes"`
+	CompletedCodes     int       `json:"completedCodes"`
+	RequestedCodeYears int       `json:"requestedCodeYears"`
+	CompletedCodeYears int       `json:"completedCodeYears"`
+	SkippedCodeYears   int       `json:"skippedCodeYears"`
+	Failures           []Failure `json:"failures"`
+}
+
 // Progress is emitted serially after each requested code finishes or is skipped.
 type Progress struct {
 	Done    int
@@ -208,17 +221,8 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if len(cfg.Years) == 0 {
-		return fmt.Errorf("researchrun: years is empty")
-	}
-	if cfg.GetDayKlines == nil {
-		return fmt.Errorf("researchrun: day K-line provider is nil")
-	}
-	if cfg.DataMode != DailyClose && cfg.DataMode != Intraday {
-		return fmt.Errorf("researchrun: unsupported data mode %d", cfg.DataMode)
-	}
-	if cfg.DataMode == Intraday && cfg.GetMinKlines == nil {
-		return fmt.Errorf("researchrun: minute K-line provider is nil")
+	if err := validateLoading(cfg); err != nil {
+		return err
 	}
 	if len(cfg.Codes) == 0 {
 		return nil
@@ -290,6 +294,128 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 	wg.Wait()
 
 	return ctx.Err()
+}
+
+// ForEachCodeYearData 逐“股票×年份”加载数据，与 ForEachCodeData 的整票
+// 全有或全无语义不同：某年加载失败只记录该代码年份，继续处理同一股票的
+// 其他年份，因此 2018 年后上市的股票不会因为早期年份无数据而整体退出分析。
+// 回测继续使用 ForEachCodeData（整票一致性），不受本入口影响。
+//
+// fn 在 worker 协程并发执行，调用方须自行同步共享状态；His/Dks 与 provider
+// 返回的切片同源，fn 内修改可能污染 provider 缓存。取消任务时立即停止，
+// 未访问的代码年份不计入 SkippedCodeYears，以返回的 ctx.Err() 为准。
+// cfg.OnCodeDone 每只股票上报一次，Failure 仅在整票没有任何成功年份时非空。
+func ForEachCodeYearData(ctx context.Context, cfg Config, fn func(code string, year int, data YearData)) (YearCoverage, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := validateLoading(cfg); err != nil {
+		return YearCoverage{}, err
+	}
+	coverage := YearCoverage{
+		RequestedCodes:     len(cfg.Codes),
+		RequestedCodeYears: len(cfg.Codes) * len(cfg.Years),
+	}
+	if len(cfg.Codes) == 0 {
+		return coverage, nil
+	}
+
+	workers := cfg.Workers
+	if workers <= 0 {
+		workers = 10
+	}
+	if workers > len(cfg.Codes) {
+		workers = len(cfg.Codes)
+	}
+
+	jobs := make(chan string)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case code, ok := <-jobs:
+					if !ok {
+						return
+					}
+					okYears, fails, cancelled := 0, []Failure(nil), false
+					for _, year := range cfg.Years {
+						if ctx.Err() != nil {
+							cancelled = true
+							break
+						}
+						data, failure := loadYear(cfg, code, year)
+						if failure != nil {
+							fails = append(fails, *failure)
+							continue
+						}
+						fn(code, year, data)
+						okYears++
+					}
+					if cancelled {
+						return // 取消：覆盖率与进度不再变更，由 ctx.Err() 表达
+					}
+					mu.Lock()
+					coverage.CompletedCodeYears += okYears
+					coverage.SkippedCodeYears += len(fails)
+					if okYears > 0 {
+						coverage.CompletedCodes++
+					}
+					coverage.Failures = append(coverage.Failures, fails...)
+					done++
+					if cfg.OnCodeDone != nil {
+						var progressFailure *Failure
+						if okYears == 0 && len(fails) > 0 {
+							f := fails[0]
+							progressFailure = &f
+						}
+						cfg.OnCodeDone(Progress{
+							Done: done, Total: len(cfg.Codes), Code: code, Failure: progressFailure,
+						})
+					}
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+
+	go func() {
+		defer close(jobs)
+		for _, code := range cfg.Codes {
+			select {
+			case <-ctx.Done():
+				return
+			case jobs <- code:
+			}
+		}
+	}()
+	wg.Wait()
+
+	return coverage, ctx.Err()
+}
+
+// validateLoading 校验加载类入口（ForEachCodeData/ForEachCodeYearData）的
+// 公共入参：年份、日线 provider 与数据模式；不涉及变体与卖出规则。
+func validateLoading(cfg Config) error {
+	if len(cfg.Years) == 0 {
+		return fmt.Errorf("researchrun: years is empty")
+	}
+	if cfg.GetDayKlines == nil {
+		return fmt.Errorf("researchrun: day K-line provider is nil")
+	}
+	if cfg.DataMode != DailyClose && cfg.DataMode != Intraday {
+		return fmt.Errorf("researchrun: unsupported data mode %d", cfg.DataMode)
+	}
+	if cfg.DataMode == Intraday && cfg.GetMinKlines == nil {
+		return fmt.Errorf("researchrun: minute K-line provider is nil")
+	}
+	return nil
 }
 
 func validate(cfg Config) error {
