@@ -94,6 +94,58 @@ func quintileMeans(vals, rets []float64) []float64 {
 	return out
 }
 
+// QuintileSummary 五分位收益摘要：方向与 spread 由后端计算，前端不做二次推断。
+type QuintileSummary struct {
+	Direction string   `json:"direction"` // ascending|descending|mixed|flat|insufficient
+	Spread    *float64 `json:"spread"`    // Q5−Q1；五组不完整为 null
+	Monotonic bool     `json:"monotonic"`
+}
+
+// summarizeQuintiles 五组收益摘要（纯函数）：不足五组或含 NaN 视为
+// insufficient（spread null）；严格单调给方向；全相等为 flat。
+func summarizeQuintiles(qs []float64) QuintileSummary {
+	if len(qs) < 5 {
+		return QuintileSummary{Direction: "insufficient"}
+	}
+	for _, v := range qs {
+		if math.IsNaN(v) {
+			return QuintileSummary{Direction: "insufficient"}
+		}
+	}
+	asc, desc := true, true
+	for i := 1; i < len(qs); i++ {
+		if qs[i] <= qs[i-1] {
+			asc = false
+		}
+		if qs[i] >= qs[i-1] {
+			desc = false
+		}
+	}
+	s := QuintileSummary{}
+	switch {
+	case asc:
+		s.Direction, s.Monotonic = "ascending", true
+	case desc:
+		s.Direction, s.Monotonic = "descending", true
+	default:
+		flat := true
+		for _, v := range qs {
+			if v != qs[0] {
+				flat = false
+				break
+			}
+		}
+		if flat {
+			s.Direction = "flat"
+		} else {
+			s.Direction = "mixed"
+		}
+	}
+	spread := qs[4] - qs[0]
+	s.Spread = &spread
+	return s
+}
+
 // icStats 汇总逐期 IC：剔除 NaN，有效样本 < minPairs 时全 0。
 func icStats(ics []float64) ICStats {
 	valid := make([]float64, 0, len(ics))
@@ -152,14 +204,16 @@ func (c AnalyzeConfig) Validate() error {
 
 // AnalysisReport 因子分析报告。
 type AnalysisReport struct {
-	FactorName string    `json:"factorName"` // 因子中文名（如 N日动量(2)）
-	Kind       string    `json:"kind"`
-	Window     int       `json:"window"`
-	Stats      ICStats   `json:"stats"`
-	Quintiles  []float64 `json:"quintiles"` // 逐日五分位收益均值的再平均；无有效日为 nil
-	Daily      []DailyIC `json:"daily"`
-	StartedAt  string    `json:"startedAt"`
-	FinishedAt string    `json:"finishedAt"`
+	FactorName string               `json:"factorName"` // 因子中文名（如 N日动量(2)）
+	Kind       string               `json:"kind"`
+	Window     int                  `json:"window"`
+	Stats      ICStats              `json:"stats"`
+	Quintiles  []float64            `json:"quintiles"` // 逐日五分位收益均值的再平均；无有效日为 nil
+	Summary    QuintileSummary      `json:"summary"`
+	Coverage   researchrun.Coverage `json:"coverage"`
+	Daily      []DailyIC            `json:"daily"`
+	StartedAt  string               `json:"startedAt"`
+	FinishedAt string               `json:"finishedAt"`
 }
 
 // DailyIC 单日横截面 IC；IC=nil 表示当日无效（NaN，JSON 序列化为 null）。
@@ -194,6 +248,8 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 
 	var mu sync.Mutex
 	var mergedV, mergedR []map[time.Time]map[string]float64 // day → code → 值/收益
+	// OnCodeDone 串行上报（mu 保护），直接汇总无需额外锁
+	coverage := researchrun.Coverage{Requested: len(codes)}
 
 	if err := researchrun.ForEachCodeData(ctx, researchrun.Config{
 		Codes:        codes,
@@ -205,6 +261,12 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 			r.doneCodes.Store(int64(progress.Done))
 			current := progress.Code
 			r.currentCode.Store(&current)
+			if progress.Failure == nil {
+				coverage.Completed++
+			} else {
+				coverage.Skipped++
+				coverage.Failures = append(coverage.Failures, *progress.Failure)
+			}
 		},
 	}, func(code string, datas []researchrun.YearData) {
 		lv := map[time.Time]map[string]float64{}
@@ -247,6 +309,18 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 		return nil, errStopped
 	default:
 	}
+
+	// Failure 按 code/year/stage 排序，保证报告与测试稳定
+	sort.Slice(coverage.Failures, func(i, j int) bool {
+		fi, fj := coverage.Failures[i], coverage.Failures[j]
+		if fi.Code != fj.Code {
+			return fi.Code < fj.Code
+		}
+		if fi.Year != fj.Year {
+			return fi.Year < fj.Year
+		}
+		return fi.Stage < fj.Stage
+	})
 
 	// 合并各票数据（单协程，无竞争）
 	vals := map[time.Time]map[string]float64{}
@@ -304,6 +378,7 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 		Window:     cfg.Window,
 		Stats:      icStats(ics),
 		Daily:      daily,
+		Coverage:   coverage,
 		StartedAt:  started.Format(time.RFC3339),
 		FinishedAt: time.Now().Format(time.RFC3339),
 	}
@@ -313,6 +388,7 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 			rep.Quintiles[q] = qSums[q] / float64(qCnts[q])
 		}
 	}
+	rep.Summary = summarizeQuintiles(rep.Quintiles)
 	if err := exportAnalysis(rep); err != nil {
 		return nil, fmt.Errorf("分析报告落盘失败: %w", err)
 	}

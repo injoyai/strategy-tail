@@ -32,6 +32,8 @@ import (
 //	GET      /api/factors       因子目录
 //	POST     /api/analyze       启动因子分析（与回测共用任务互斥）
 //	GET      /api/analysis/latest 最新分析报告
+//	GET      /api/strategy-presets 简单模式预设策略目录
+//	POST     /api/strategy/run  启动简单模式回测（声明式 StrategySpec；请求问题 400，任务互斥 409）
 
 // ScriptPath 策略脚本路径（页面编辑器直接读写该文件）。
 const ScriptPath = "strategies/script/matrix.go"
@@ -58,6 +60,8 @@ func NewServer() *Server {
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
 	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
 	s.mux.HandleFunc("GET /api/analysis/latest", s.handleLatestAnalysis)
+	s.mux.HandleFunc("GET /api/strategy-presets", s.handleStrategyPresets)
+	s.mux.HandleFunc("POST /api/strategy/run", s.handleStrategyRun)
 	s.mux.HandleFunc("GET /", s.handleIndex)
 	return s
 }
@@ -229,6 +233,42 @@ func (s *Server) handleLatestAnalysis(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, rep)
+}
+
+// handleStrategyPresets 简单模式预设策略目录（声明展示，不含 Go 类型）。
+func (s *Server) handleStrategyPresets(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, PresetInfos())
+}
+
+// handleStrategyRun 简单模式运行：decode → spec 校验 → 构建变体 → 运行范围
+// 校验，全部通过后才进入 Runner；请求问题一律 400，仅任务互斥为 409。
+// 不读取脚本文件：预设 Buyer 由 presets.go 直接构建。
+func (s *Server) handleStrategyRun(w http.ResponseWriter, r *http.Request) {
+	var spec StrategySpec
+	if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
+		return
+	}
+	if err := spec.Validate(); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	variants, err := spec.Variants()
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cfg := spec.RunConfig()
+	if err := cfg.Validate(); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.runner.StartStrategy(cfg, variants, spec); err != nil {
+		// 走到这里说明请求已全部校验通过，剩余错误只有任务互斥
+		writeErr(w, http.StatusConflict, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true, "variants": len(variants), "source": sourceSimple})
 }
 
 // handleReports 历史报告列表（扫描 output/trades/*/report.json）。

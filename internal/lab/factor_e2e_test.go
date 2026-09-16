@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,6 +120,105 @@ func TestServerTopNRun(t *testing.T) {
 	key := core.TopNKey("N日动量(2)", false)
 	if got := core.CrossSectionRank(day, key, "sh600001"); got != 0 {
 		t.Fatalf("快照未清理: 名次 = %d", got)
+	}
+}
+
+// TestServerStrategyRunLifecycle 简单模式端到端：/api/strategy/run 合法请求 →
+// 4 个稳定顺序变体 → 最新报告含 source/strategySpec/comparison；
+// 全程不读取、不写入 ScriptPath（脚本文件不存在也能运行）。
+func TestServerStrategyRunLifecycle(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	old := common.Pull
+	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	t.Cleanup(func() { common.Pull = old })
+	writePresetDayDB(t, dir, "sh600000", 600, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
+
+	h := NewServer().Handler()
+
+	res := doReq(t, h, http.MethodPost, "/api/strategy/run", simpleRunBody(), http.StatusOK)
+	for _, want := range []string{`"ok":true`, `"variants":4`, `"source":"simple"`} {
+		if !bytes.Contains(res, []byte(want)) {
+			t.Fatalf("run 响应缺少 %s: %s", want, res)
+		}
+	}
+
+	// 轮询至完成（模板同 TestServerRunLifecycle）
+	deadline := time.Now().Add(30 * time.Second)
+	var st map[string]any
+	for {
+		res = doReq(t, h, http.MethodGet, "/api/status", nil, http.StatusOK)
+		st = nil
+		if err := json.Unmarshal(res, &st); err != nil {
+			t.Fatal(err)
+		}
+		if st["state"] == "done" || st["state"] == "error" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("简单模式回测超时未完成: %v", st)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if st["state"] != "done" {
+		t.Fatalf("简单模式回测失败: %v", st)
+	}
+
+	// 最新报告：source/strategySpec/comparison 与 N+2 顺序
+	res = doReq(t, h, http.MethodGet, "/api/report/latest", nil, http.StatusOK)
+	var rep Report
+	if err := json.Unmarshal(res, &rep); err != nil {
+		t.Fatal(err)
+	}
+	if rep.Source != "simple" || rep.StrategySpec == nil || rep.Comparison == nil {
+		t.Fatalf("报告缺少简单模式元数据: source=%q spec=%v cmp=%v",
+			rep.Source, rep.StrategySpec, rep.Comparison)
+	}
+	if len(rep.Variants) != 4 {
+		t.Fatalf("变体数 = %d, want 4", len(rep.Variants))
+	}
+	prefixes := []string{"基准 · ", "单条件 1 · ", "单条件 2 · ", "组合增强 · "}
+	for i, pre := range prefixes {
+		if !strings.HasPrefix(rep.Variants[i].Name, pre) {
+			t.Fatalf("变体[%d] = %q, want 前缀 %q", i, rep.Variants[i].Name, pre)
+		}
+	}
+	if rep.Comparison.BaselineVariant != rep.Variants[0].Name ||
+		rep.Comparison.CombinedVariant != rep.Variants[3].Name {
+		t.Fatalf("Comparison 基准/组合指向异常: %+v", rep.Comparison)
+	}
+	if len(rep.Comparison.FactorVariants) != 2 {
+		t.Fatalf("单条件摘要数 = %d, want 2", len(rep.Comparison.FactorVariants))
+	}
+
+	// 简单模式不读写脚本：ScriptPath 自始至终不存在
+	if _, err := os.Stat(ScriptPath); !os.IsNotExist(err) {
+		t.Fatalf("简单模式不应读写脚本文件: %v", err)
+	}
+}
+
+// TestServerFactorsAPI 端到端：/api/factors 直出目录，新字段与既有字段并存。
+func TestServerFactorsAPI(t *testing.T) {
+	h := NewServer().Handler()
+	res := doReq(t, h, http.MethodGet, "/api/factors", nil, http.StatusOK)
+	var catalog []map[string]any
+	if err := json.Unmarshal(res, &catalog); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog) != 14 {
+		t.Fatalf("因子目录项数 = %d", len(catalog))
+	}
+	for _, e := range catalog {
+		for _, k := range []string{"kind", "name", "description",
+			"category", "parameterLabel", "defaultDays", "unit", "example"} {
+			if _, ok := e[k]; !ok {
+				t.Fatalf("目录项缺字段 %s: %v", k, e)
+			}
+		}
+		if v, ok := e["defaultDays"].(float64); !ok || v <= 0 {
+			t.Fatalf("defaultDays 非法: %v", e["defaultDays"])
+		}
 	}
 }
 

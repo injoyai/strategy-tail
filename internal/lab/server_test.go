@@ -282,6 +282,107 @@ func TestRunConfigValidate(t *testing.T) {
 	}
 }
 
+// TestServerStrategyPresets 简单模式预设目录：四项、顺序稳定、展示字段完整。
+func TestServerStrategyPresets(t *testing.T) {
+	h := NewServer().Handler()
+	res := doReq(t, h, http.MethodGet, "/api/strategy-presets", nil, http.StatusOK)
+	var items []PresetInfo
+	if err := json.Unmarshal(res, &items); err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 4 {
+		t.Fatalf("预设数 = %d, want 4", len(items))
+	}
+	wantIDs := []string{"pullback_ma5_up", "pullback_ma10_up", "pullback_ma5_bull", "pullback_ma5_plain"}
+	for i, it := range items {
+		if it.ID != wantIDs[i] {
+			t.Fatalf("预设[%d].id = %q, want %q", i, it.ID, wantIDs[i])
+		}
+		if it.Name == "" || it.Description == "" || len(it.Rules) == 0 {
+			t.Fatalf("预设[%d] 展示字段不完整: %+v", i, it)
+		}
+	}
+}
+
+// simpleRunBody 合法简单模式请求体（2 个条件），供校验/忙碌/生命周期测试变异。
+func simpleRunBody() map[string]any {
+	return map[string]any{
+		"version":      1,
+		"basePresetId": "pullback_ma5_plain",
+		"factorFilters": []map[string]any{
+			{"kind": "kvalue", "days": 9, "operator": "between", "min": 0, "max": 100},
+			{"kind": "position", "days": 60, "operator": "between", "min": 0, "max": 100},
+		},
+		"exit": map[string]any{"holdingDays": 1},
+		"run": map[string]any{
+			"startYear": 2025, "endYear": 2025,
+			"sampleMode": "codes", "sampleCodes": []string{"sh600000"},
+		},
+	}
+}
+
+// TestServerStrategyRunValidation 请求问题一律 400：非法 JSON、版本/预设/
+// 条件数/重复/操作符/区间错误；错误体含 error 字段。
+func TestServerStrategyRunValidation(t *testing.T) {
+	h := NewServer().Handler()
+
+	// 非法 JSON → 400（body 无法经 json.Marshal 构造，直接发原始字节）
+	req := httptest.NewRequest(http.MethodPost, "/api/strategy/run", strings.NewReader("{bad"))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("非法 JSON 状态码 = %d, want 400，响应: %s", rec.Code, rec.Body.String())
+	}
+
+	cases := map[string]func(map[string]any){
+		"版本无效": func(b map[string]any) { b["version"] = 2 },
+		"未知预设": func(b map[string]any) { b["basePresetId"] = "nope" },
+		"条件不足": func(b map[string]any) { b["factorFilters"] = []map[string]any{} },
+		"条件超限": func(b map[string]any) {
+			gte0 := func(kind string, days int) map[string]any {
+				return map[string]any{"kind": kind, "days": days, "operator": "gte", "min": 0}
+			}
+			b["factorFilters"] = []map[string]any{
+				gte0("momentum", 5), gte0("momentum", 10),
+				gte0("volatility", 5), gte0("volatility", 10), gte0("position", 60),
+			}
+		},
+		"重复条件": func(b map[string]any) {
+			fs := b["factorFilters"].([]map[string]any)
+			b["factorFilters"] = []map[string]any{fs[0], fs[0]}
+		},
+		"操作符无效": func(b map[string]any) { b["factorFilters"].([]map[string]any)[0]["operator"] = "gt" },
+		"区间反向": func(b map[string]any) {
+			fs := b["factorFilters"].([]map[string]any)
+			fs[0]["min"], fs[0]["max"] = 100, 0
+		},
+		"运行年份缺失": func(b map[string]any) {
+			run := b["run"].(map[string]any)
+			delete(run, "startYear")
+		},
+	}
+	for name, mutate := range cases {
+		body := simpleRunBody()
+		mutate(body)
+		res := doReq(t, h, http.MethodPost, "/api/strategy/run", body, http.StatusBadRequest)
+		if !strings.Contains(string(res), "error") {
+			t.Fatalf("%s 响应缺少 error 字段: %s", name, res)
+		}
+	}
+}
+
+// TestServerStrategyRunBusy 任务互斥期间请求返回 409，且不覆盖正在运行的任务。
+func TestServerStrategyRunBusy(t *testing.T) {
+	s := NewServer()
+	s.runner.mu.Lock() // 模拟已有任务占用（同 TestRunnerMutualExclusion）
+	defer s.runner.mu.Unlock()
+	doReq(t, s.Handler(), http.MethodPost, "/api/strategy/run", simpleRunBody(), http.StatusConflict)
+	if s.runner.LatestReport() != nil {
+		t.Fatal("忙碌时不应产生新报告")
+	}
+}
+
 // writeFakeDayDB 写入伪造日K sqlite（与 updateDayKline 相同的表结构）。
 // 每天开10收10.5（+5%，不触发涨停过滤），恒价保证买入条件每日为真。
 func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {

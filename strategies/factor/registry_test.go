@@ -1,6 +1,18 @@
 package factor
 
-import "testing"
+import (
+	"strconv"
+	"strings"
+	"testing"
+)
+
+// wantKinds 目录的固定顺序（顺序是 API 合同，不得漂移）。
+var wantKinds = [...]string{
+	"momentum", "ma_bias", "slope", "volatility", "amplitude",
+	"volume_ratio", "volume_pct", "volume_surge",
+	"body", "upper_shadow", "lower_shadow",
+	"position", "kvalue", "vp_corr",
+}
 
 func TestAll(t *testing.T) {
 	all := All()
@@ -25,6 +37,65 @@ func TestAll(t *testing.T) {
 		seen[e.Kind] = true
 		if f := Build(e.Kind, 0); f == nil || f.Name() != e.Name {
 			t.Fatalf("%s: Build 默认名 %v 与目录名 %q 不一致", e.Kind, f, e.Name)
+		}
+	}
+	// 顺序稳定
+	for i, e := range all {
+		if e.Kind != wantKinds[i] {
+			t.Fatalf("第 %d 项 kind = %s, want %s", i, e.Kind, wantKinds[i])
+		}
+	}
+}
+
+// TestRegistryMetadata 人类可读元数据合同：
+// category/parameterLabel/defaultDays/unit/example 全部就位，
+// 且 defaultDays 与 Build(kind, 0) 实际使用的默认窗口一致。
+func TestRegistryMetadata(t *testing.T) {
+	wantCategory := map[string]bool{
+		"趋势与动量": true, "波动": true, "量能": true,
+		"K线形态": true, "位置": true, "相关性": true,
+	}
+	wantUnit := map[string]bool{
+		"ratio": true, "multiple": true, "score": true, "correlation": true,
+	}
+	for _, e := range All() {
+		if !wantCategory[e.Category] {
+			t.Fatalf("%s: category %q 不在约定分组内", e.Kind, e.Category)
+		}
+		if e.ParameterLabel == "" {
+			t.Fatalf("%s: parameterLabel 为空", e.Kind)
+		}
+		if e.DefaultDays <= 0 {
+			t.Fatalf("%s: defaultDays = %d, 应为正", e.Kind, e.DefaultDays)
+		}
+		if !wantUnit[e.Unit] {
+			t.Fatalf("%s: unit %q 非法（ratio|multiple|score|correlation）", e.Kind, e.Unit)
+		}
+		if e.Example == "" || !strings.ContainsAny(e.Example, "0123456789") {
+			t.Fatalf("%s: example 未解释原始值: %q", e.Kind, e.Example)
+		}
+		// 目录不提供阈值推荐、评级或经验收益
+		for _, s := range []string{e.Example, e.Description, e.ParameterLabel} {
+			if strings.Contains(s, "推荐") || strings.Contains(s, "建议") || strings.Contains(s, "评级") {
+				t.Fatalf("%s: 目录出现推荐性措辞: %q", e.Kind, s)
+			}
+		}
+		// defaultDays 与 Build(kind, 0) 一致：窗口因子名以 (N) 结尾，N 应等于 defaultDays
+		f := Build(e.Kind, 0)
+		if f == nil {
+			t.Fatalf("%s: Build 失败", e.Kind)
+		}
+		if name := f.Name(); strings.HasSuffix(name, ")") {
+			if i := strings.LastIndex(name, "("); i >= 0 {
+				n, err := strconv.Atoi(name[i+1 : len(name)-1])
+				if err != nil || n != e.DefaultDays {
+					t.Fatalf("%s: 默认名 %q 与 defaultDays %d 不一致", e.Kind, name, e.DefaultDays)
+				}
+			}
+		}
+		// 显式传入 defaultDays 应与默认构造同名（单根K线因子 days 被忽略，亦成立）
+		if g := Build(e.Kind, e.DefaultDays); g == nil || g.Name() != f.Name() {
+			t.Fatalf("%s: Build(kind, defaultDays) 与 Build(kind, 0) 名称不一致", e.Kind)
 		}
 	}
 }

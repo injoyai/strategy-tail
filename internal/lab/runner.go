@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -111,11 +112,54 @@ func (c RunConfig) seller() core.Seller {
 	return ss.Or(sellers)
 }
 
+// 报告来源：script=高级脚本模式，simple=声明式简单模式。
+const (
+	sourceScript = "script"
+	sourceSimple = "simple"
+)
+
 // VariantReport 单变体结果（report.json 与 API 直出共用结构）。
 type VariantReport struct {
-	Name   string          `json:"name"`
-	Stats  core.TradeStats `json:"stats"`
-	Trades []TradeJSON     `json:"trades"`
+	Name   string         `json:"name"`
+	Stats  TradeStatsJSON `json:"stats"`
+	Trades []TradeJSON    `json:"trades"`
+}
+
+// TradeStatsJSON core.TradeStats 的可序列化形态（camelCase tag）。
+// ProfitFactor 用指针：无亏损且有盈利时为 +Inf，JSON 不支持 Inf，输出 null；
+// 旧报告中的大写键（Total/WinRate/...）依赖 encoding/json 大小写不敏感
+// 匹配仍可反序列化读取。
+type TradeStatsJSON struct {
+	Total        int      `json:"total"`
+	Win          int      `json:"win"`
+	Loss         int      `json:"loss"`
+	WinRate      float64  `json:"winRate"`
+	WinSum       float64  `json:"winSum"`
+	LossSum      float64  `json:"lossSum"`
+	ProfitFactor *float64 `json:"profitFactor"`
+	AvgProfit    float64  `json:"avgProfit"`
+	MaxProfit    float64  `json:"maxProfit"`
+	MaxLoss      float64  `json:"maxLoss"`
+}
+
+// newTradeStatsJSON core.TradeStats → TradeStatsJSON。
+func newTradeStatsJSON(s core.TradeStats) TradeStatsJSON {
+	out := TradeStatsJSON{
+		Total:     s.Total,
+		Win:       s.Win,
+		Loss:      s.Loss,
+		WinRate:   s.WinRate,
+		WinSum:    s.WinSum,
+		LossSum:   s.LossSum,
+		AvgProfit: s.AvgProfit,
+		MaxProfit: s.MaxProfit,
+		MaxLoss:   s.MaxLoss,
+	}
+	if !math.IsInf(s.ProfitFactor, 1) && !math.IsNaN(s.ProfitFactor) {
+		pf := s.ProfitFactor
+		out.ProfitFactor = &pf
+	}
+	return out
 }
 
 // TradeJSON 交易明细的可序列化形态（time.Time 不直接 JSON）。
@@ -133,12 +177,81 @@ type TradeJSON struct {
 }
 
 // Report 完整报告（落盘 + API）。
+// Source 区分高级脚本（script）与声明式简单（simple）模式；
+// 简单模式额外携带原始 StrategySpec 与后端生成的 Comparison 摘要。
 type Report struct {
-	Config     RunConfig            `json:"config"`
-	StartedAt  string               `json:"startedAt"`
-	FinishedAt string               `json:"finishedAt"`
-	Variants   []VariantReport      `json:"variants"`
-	Coverage   researchrun.Coverage `json:"coverage"`
+	Config       RunConfig            `json:"config"`
+	StartedAt    string               `json:"startedAt"`
+	FinishedAt   string               `json:"finishedAt"`
+	Variants     []VariantReport      `json:"variants"`
+	Coverage     researchrun.Coverage `json:"coverage"`
+	Source       string               `json:"source"`
+	StrategySpec *StrategySpec        `json:"strategySpec,omitempty"`
+	Comparison   *ComparisonSummary   `json:"comparison,omitempty"`
+}
+
+// ComparisonSummary 简单模式对比摘要（实施文档 §4.4）：
+// 基准/组合增强对照 + 逐个单条件摘要，全部由后端在保存报告前生成，
+// 页面不按数组位置临时计算。
+type ComparisonSummary struct {
+	BaselineVariant string                 `json:"baselineVariant"`
+	CombinedVariant string                 `json:"combinedVariant"`
+	BaselineTrades  int                    `json:"baselineTrades"`
+	CombinedTrades  int                    `json:"combinedTrades"`
+	RetentionRate   *float64               `json:"retentionRate"` // 基准交易为 0 时为 null
+	FactorVariants  []FactorVariantSummary `json:"factorVariants"`
+}
+
+// FactorVariantSummary 单条件变体摘要（与 StrategySpec.FactorFilters 顺序对应）。
+type FactorVariantSummary struct {
+	Index         int      `json:"index"`
+	Kind          string   `json:"kind"`
+	Days          int      `json:"days"`
+	Variant       string   `json:"variant"`
+	Trades        int      `json:"trades"`
+	RetentionRate *float64 `json:"retentionRate"` // 基准交易为 0 时为 null
+}
+
+// buildComparison 由变体结果生成简单模式对比摘要。
+// 变体数与 Variants() 合同不符时返回 nil，防止高级多变体脚本被误当作
+// 多条件对照：N≥2 时为 N+2（N 个条件 + 基准 + 组合增强）；N=1 时
+// 组合增强与单条件等价未重复生成，为 N+1=2，组合字段指向单条件变体。
+func buildComparison(spec StrategySpec, variants []VariantReport) *ComparisonSummary {
+	want := len(spec.FactorFilters) + 2
+	if len(spec.FactorFilters) == 1 {
+		want = 2
+	}
+	if len(variants) != want {
+		return nil
+	}
+	base, combined := variants[0], variants[len(variants)-1]
+	cmp := &ComparisonSummary{
+		BaselineVariant: base.Name,
+		CombinedVariant: combined.Name,
+		BaselineTrades:  base.Stats.Total,
+		CombinedTrades:  combined.Stats.Total,
+		FactorVariants:  make([]FactorVariantSummary, 0, len(spec.FactorFilters)),
+	}
+	if base.Stats.Total > 0 {
+		r := float64(combined.Stats.Total) / float64(base.Stats.Total)
+		cmp.RetentionRate = &r
+	}
+	for i := range spec.FactorFilters {
+		vr := variants[i+1]
+		fs := FactorVariantSummary{
+			Index:   i + 1,
+			Kind:    spec.FactorFilters[i].Kind,
+			Days:    spec.FactorFilters[i].Days,
+			Variant: vr.Name,
+			Trades:  vr.Stats.Total,
+		}
+		if base.Stats.Total > 0 {
+			r := float64(vr.Stats.Total) / float64(base.Stats.Total)
+			fs.RetentionRate = &r
+		}
+		cmp.FactorVariants = append(cmp.FactorVariants, fs)
+	}
+	return cmp
 }
 
 // Runner 单任务回测执行器。
@@ -169,8 +282,23 @@ func NewRunner() *Runner {
 	return r
 }
 
-// Start 启动回测（已在运行则报错）。variants 由调用方经 Yaegi 加载并校验通过。
+// Start 启动高级模式回测（已在运行则报错）。variants 由调用方经 Yaegi 加载并校验通过。
 func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
+	return r.startBacktest(cfg, variants, nil)
+}
+
+// StartStrategy 启动简单模式回测：spec 为声明式配置快照，随报告保存
+// 并生成 Comparison 摘要。variants 由 spec.Variants() 构建（N≥2 为
+// N+2 顺序，N=1 为 基准+单条件 2 个）。
+func (r *Runner) StartStrategy(cfg RunConfig, variants []core.Variant, spec StrategySpec) error {
+	if err := spec.Validate(); err != nil {
+		return err
+	}
+	return r.startBacktest(cfg, variants, &spec)
+}
+
+// startBacktest 内部启动路径：spec 为 nil 时按高级模式（source=script）处理。
+func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *StrategySpec) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -197,7 +325,7 @@ func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
 
-		report, err := r.run(cfg, variants, stop)
+		report, err := r.run(cfg, variants, spec, stop)
 		if err != nil {
 			if err == errStopped {
 				st := "idle"
@@ -336,7 +464,8 @@ func (rep *Report) RunID() string {
 }
 
 // run 执行回测主循环（复用 backtest_tail 模式）。
-func (r *Runner) run(cfg RunConfig, variants []core.Variant, stop chan struct{}) (*Report, error) {
+// spec 非 nil 时按简单模式填充 Source/StrategySpec/Comparison。
+func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec, stop chan struct{}) (*Report, error) {
 	started := time.Now()
 
 	codes, err := r.resolveCodes(cfg, stop)
@@ -413,11 +542,18 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, stop chan struct{})
 		FinishedAt: time.Now().Format(time.RFC3339),
 		Variants:   make([]VariantReport, 0, len(variants)),
 		Coverage:   run.Coverage,
+		Source:     sourceScript,
 	}
 	for _, result := range run.Results {
-		vr := VariantReport{Name: result.Variant.Name, Stats: core.Stats(result.Trades)}
+		vr := VariantReport{Name: result.Variant.Name, Stats: newTradeStatsJSON(core.Stats(result.Trades))}
 		vr.Trades = toTradeJSON(result.Trades)
 		report.Variants = append(report.Variants, vr)
+	}
+	if spec != nil {
+		sp := *spec
+		report.Source = sourceSimple
+		report.StrategySpec = &sp
+		report.Comparison = buildComparison(sp, report.Variants)
 	}
 
 	if err := saveReport(report); err != nil {

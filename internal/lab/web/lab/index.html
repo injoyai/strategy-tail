@@ -13,17 +13,19 @@ header{background:linear-gradient(135deg,#1e293b,#334155);color:#fff;padding:14p
 header h1{font-size:18px;font-weight:700}
 header .sub{opacity:.7;font-size:12px}
 .tabs{display:flex;gap:4px;padding:10px 24px 0;background:var(--bg2);border-bottom:1px solid var(--rule)}
-.tabs button{border:none;background:none;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent}
-.tabs button.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tabs [role=tab]{border:none;background:none;padding:10px 20px;font-size:14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-family:inherit}
+.tabs [role=tab][aria-selected=true]{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.tabs [role=tab]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 main{padding:20px 24px;max-width:1400px;margin:0 auto}
-.tab-panel{display:none}.tab-panel.active{display:block}
+.tab-panel[hidden]{display:none}
+.tab-panel:focus{outline:none}
 /* Tab1 */
 .grid2{display:grid;grid-template-columns:1fr 340px;gap:16px}
 .card{background:var(--bg2);border:1px solid var(--rule);border-radius:10px;padding:16px}
 .card h3{font-size:14px;margin-bottom:10px;color:var(--accent2);border-bottom:2px solid var(--accent);padding-bottom:6px}
 textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;border:1px solid var(--rule);border-radius:6px;padding:10px;resize:vertical;background:#fafafa}
 textarea:focus{outline:2px solid var(--accent);border-color:transparent}
-.editor-actions{display:flex;gap:8px;margin-top:10px;align-items:center}
+.editor-actions{display:flex;gap:8px;margin-top:10px;align-items:center;flex-wrap:wrap}
 button.primary{background:var(--accent);color:#fff;border:none;padding:8px 20px;border-radius:6px;font-size:14px;cursor:pointer}
 button.primary:disabled{opacity:.5;cursor:not-allowed}
 button.secondary{background:#fff;color:var(--accent);border:1px solid var(--accent);padding:8px 16px;border-radius:6px;font-size:14px;cursor:pointer}
@@ -57,6 +59,59 @@ tbody tr.selected{background:#e0eaff}
 .detail-wrap{max-height:520px;overflow:auto}
 #klineChart{width:100%;height:480px;margin-top:16px;display:none}
 .empty{color:var(--muted);text-align:center;padding:40px}
+/* Tab4 因子研究 */
+.concept{border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin:10px 0;background:#fafbfd}
+.concept-head{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+#fcName{font-weight:600;font-size:15px}
+.badge{background:#e0eaff;color:#1d4ed8;border-radius:10px;padding:1px 10px;font-size:12px}
+.concept-line{font-size:13px;color:#374151;margin:2px 0}
+.summary-line{font-size:14px;font-weight:600;margin:12px 0 4px;color:var(--accent2)}
+#quintileChart{width:100%;height:300px;margin-top:4px}
+#icChart{width:100%;height:320px;margin-top:8px}
+.coverage{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:14px 0 0;font-size:13px;color:var(--muted)}
+.coverage b{color:var(--ink)}
+.warnbar{background:#fef3c7;border:1px solid var(--warn);color:#92400e;border-radius:6px;padding:6px 12px;font-size:12px;margin:8px 0 0}
+details.stat{border:1px solid var(--rule);border-radius:8px;padding:10px 14px;margin-top:14px;background:#fafbfd}
+details.stat>summary{cursor:pointer;font-weight:600;color:var(--accent2);font-size:13px}
+details.stat>summary:focus-visible{outline:2px solid var(--accent)}
+#failList{margin:6px 0 0 18px;font-size:12px;color:var(--red);max-height:160px;overflow:auto}
+#icStats{font-size:13px;color:var(--muted);margin-top:8px}
+/* Tab1 简单配置 / 高级脚本 */
+.mode-switch{display:inline-flex;border:1px solid var(--rule);border-radius:8px;overflow:hidden;margin-bottom:12px}
+.mode-switch button{border:none;background:#fff;padding:8px 18px;font-size:13px;cursor:pointer;color:var(--muted);font-family:inherit}
+.mode-switch button+button{border-left:1px solid var(--rule)}
+.mode-switch button[aria-pressed=true]{background:var(--accent);color:#fff;font-weight:600}
+.mode-switch button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.cond-card{border:1px solid var(--rule);border-radius:8px;padding:10px 12px;background:#fafbfd}
+.cond-card.highlight{border-color:var(--accent);box-shadow:0 0 0 2px #bfdbfe}
+.cond-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.cond-no{font-weight:600;font-size:13px;color:var(--accent2)}
+.cond-del{border:none;background:none;color:var(--red);cursor:pointer;font-size:12px;padding:2px 6px}
+.cond-del:focus-visible{outline:2px solid var(--accent)}
+.cond-grid{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cond-grid .lbl{font-size:12px;color:var(--muted)}
+.cond-grid select,.cond-grid input{height:30px;border:1px solid var(--rule);border-radius:6px;padding:0 6px;font-size:13px;font-family:inherit}
+.cond-grid input[type=number]{width:84px}
+.cond-grid select:focus-visible,.cond-grid input:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+.cond-grid .invalid{border-color:var(--red)}
+.and-sep{text-align:center;font-size:12px;color:var(--muted);margin:6px 0;font-weight:600}
+.cond-err{color:var(--red);font-size:12px;margin-top:4px}
+.cond-err:empty{display:none}
+.preset-rules{font-size:12px;color:var(--muted);margin:4px 0 8px;padding-left:20px}
+.subhead{font-size:13px;font-weight:600;color:var(--accent2);margin:12px 0 6px}
+.group-sep{font-size:13px;font-weight:600;color:var(--accent2);margin:12px 0 6px;border-top:1px dashed var(--rule);padding-top:10px}
+#editor{resize:none}
+#editor.expanded{height:720px}
+/* Tab2 多条件对照摘要 */
+.cmp-hero{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0}
+.cmp-box{border:1px solid var(--rule);border-radius:8px;padding:10px 14px}
+.cmp-box.base{background:#f8fafc}
+.cmp-box.combo{background:#f0f4ff;border-color:#c7d7ff}
+.cmp-box .t{font-weight:600;font-size:13px;color:var(--accent2);word-break:break-all;white-space:normal}
+.cmp-box .big{font-size:20px;font-weight:700;margin:2px 0}
+.cmp-box .sub{font-size:12px;color:var(--muted);white-space:normal}
+.cmp-contrib h4{font-size:13px;color:var(--accent2);margin:12px 0 4px}
+#cmpSection .coverage{margin-top:10px}
 </style>
 </head>
 <body>
@@ -65,28 +120,61 @@ tbody tr.selected{background:#e0eaff}
   <span class="sub">Yaegi 脚本策略 · 本地回测 · 仅 127.0.0.1</span>
 </header>
 
-<div class="tabs">
-  <button class="active" data-tab="1">① 策略与运行</button>
-  <button data-tab="2">② 组合对比</button>
-  <button data-tab="3">③ 交易明细</button>
-  <button data-tab="4">④ 因子研究</button>
+<div class="tabs" role="tablist" aria-label="功能区">
+  <button role="tab" id="tabbtn1" data-tab="1" aria-controls="tab1" aria-selected="true" tabindex="0">① 策略与运行</button>
+  <button role="tab" id="tabbtn2" data-tab="2" aria-controls="tab2" aria-selected="false" tabindex="-1">② 组合对比</button>
+  <button role="tab" id="tabbtn3" data-tab="3" aria-controls="tab3" aria-selected="false" tabindex="-1">③ 交易明细</button>
+  <button role="tab" id="tabbtn4" data-tab="4" aria-controls="tab4" aria-selected="false" tabindex="-1">④ 因子研究</button>
 </div>
 
 <main>
 <!-- Tab1 -->
-<div class="tab-panel active" id="tab1">
+<div class="tab-panel" id="tab1" role="tabpanel" aria-labelledby="tabbtn1" tabindex="0">
   <div class="grid2">
     <div class="card">
-      <h3>策略脚本（strategies/script/matrix.go）</h3>
-      <textarea id="editor" spellcheck="false"></textarea>
-      <div class="editor-actions">
-        <button class="secondary" onclick="checkScript()">语法检查</button>
-        <button class="secondary" onclick="saveScript()">保存脚本</button>
+      <div class="mode-switch" role="group" aria-label="配置模式">
+        <button id="modeBtnSimple" aria-pressed="true" onclick="setMode('simple')">简单配置</button>
+        <button id="modeBtnAdv" aria-pressed="false" onclick="setMode('adv')">高级脚本</button>
+      </div>
+
+      <!-- 简单模式：声明式多条件策略 -->
+      <div id="modeSimple">
+        <h3>简单配置</h3>
+        <div class="form-row"><label>预设策略</label>
+          <select id="presetSel" style="min-width:200px" aria-describedby="presetDesc"></select>
+        </div>
+        <div class="hint" id="presetDesc"></div>
+        <ul class="preset-rules" id="presetRules"></ul>
+        <div class="form-row"><label>策略名称</label>
+          <input type="text" id="specName" maxlength="80" placeholder="可选，留空自动生成">
+        </div>
+
+        <div class="subhead">因子条件（1～4 个，全部并且 AND）</div>
+        <div id="condCards"></div>
+        <div class="editor-actions">
+          <button class="secondary" id="btnAddCond2" onclick="addCond()">添加条件</button>
+          <span class="hint" id="condLimitHint"></span>
+        </div>
+        <div class="hint" style="margin-top:8px">口径说明：信号和成交使用当前回测模型（次日开盘成交等）；因子页的未来收益只用于因子评价，不代表可实现的组合收益。</div>
+      </div>
+
+      <!-- 高级模式：脚本编辑 -->
+      <div id="modeAdv" hidden>
+        <h3>策略脚本（strategies/script/matrix.go）</h3>
+        <textarea id="editor" spellcheck="false"></textarea>
+        <div class="editor-actions">
+          <button class="secondary" onclick="checkScript()">语法检查</button>
+          <button class="secondary" onclick="saveScript()">保存脚本</button>
+          <button class="secondary" id="btnExpand" onclick="toggleEditor()" aria-expanded="false">展开</button>
+        </div>
+        <div class="hint">脚本契约：package main + func Strategy() []core.Variant。可 import strategies/buy、strategies/sell、core。重逻辑请组合现有组件，内联循环会被解释执行变慢。</div>
+      </div>
+
+      <div class="editor-actions" style="margin-top:12px">
         <button class="primary" id="btnRun" onclick="runBacktest()">运行回测</button>
         <button class="danger" id="btnStop" onclick="stopBacktest()" style="display:none">停止</button>
       </div>
-      <div class="msg" id="scriptMsg"></div>
-      <div class="hint">脚本契约：package main + func Strategy() []core.Variant。可 import strategies/buy、strategies/sell、core。重逻辑请组合现有组件，内联循环会被解释执行变慢。</div>
+      <div class="msg" id="scriptMsg" role="status" aria-live="polite"></div>
     </div>
     <div>
       <div class="card">
@@ -109,6 +197,7 @@ tbody tr.selected{background:#e0eaff}
         <div class="form-row" id="sampleCodesRow" style="display:none"><label>代码列表</label>
           <input type="text" id="sampleCodes" placeholder="sh600000,sz000001" style="width:100%">
         </div>
+        <div class="group-sep">卖出规则（至少启用一项）</div>
         <div class="form-row"><label>持仓N天</label>
           <input type="checkbox" id="holdingOn" checked>
           <input type="number" id="holdingDays" value="1" min="1" style="width:80px">
@@ -137,9 +226,31 @@ tbody tr.selected{background:#e0eaff}
 </div>
 
 <!-- Tab2 -->
-<div class="tab-panel" id="tab2">
+<div class="tab-panel" id="tab2" role="tabpanel" aria-labelledby="tabbtn2" tabindex="0" hidden>
   <div class="card">
     <h3>变体汇总 <span class="hint" id="reportMeta"></span></h3>
+    <div id="cmpSection" style="display:none">
+      <div class="cmp-hero">
+        <div class="cmp-box base">
+          <div class="t" id="cmpBaseName"></div>
+          <div class="big"><span id="cmpBaseTrades"></span> 笔</div>
+          <div class="sub" id="cmpBaseStats"></div>
+        </div>
+        <div class="cmp-box combo">
+          <div class="t" id="cmpComboName"></div>
+          <div class="big"><span id="cmpComboTrades"></span> 笔 · 信号保留率 <span id="cmpRetention"></span></div>
+          <div class="sub" id="cmpComboStats"></div>
+        </div>
+      </div>
+      <div class="cmp-contrib">
+        <h4>条件贡献（单条件 = 基准 + 单独追加该条件）</h4>
+        <table>
+          <thead><tr><th>#</th><th>条件</th><th>交易数</th><th>信号保留率</th><th>胜率%</th><th>平均%</th><th>盈亏比</th></tr></thead>
+          <tbody id="cmpRows"></tbody>
+        </table>
+      </div>
+      <div class="coverage"><span id="cmpCoverage"></span></div>
+    </div>
     <div class="detail-wrap">
       <table>
         <thead><tr><th>#</th><th>变体</th><th>笔数</th><th>胜率%</th><th>平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
@@ -154,7 +265,7 @@ tbody tr.selected{background:#e0eaff}
 </div>
 
 <!-- Tab3 -->
-<div class="tab-panel" id="tab3">
+<div class="tab-panel" id="tab3" role="tabpanel" aria-labelledby="tabbtn3" tabindex="0" hidden>
   <div class="card">
     <h3>交易明细与K线</h3>
     <div class="filters">
@@ -175,15 +286,15 @@ tbody tr.selected{background:#e0eaff}
   </div>
 </div>
 
-<!-- Tab4 -->
-<div class="tab-panel" id="tab4">
+<!-- Tab4 因子研究（概念优先） -->
+<div class="tab-panel" id="tab4" role="tabpanel" aria-labelledby="tabbtn4" tabindex="0" hidden>
   <div class="card">
-    <h3>因子研究（横截面 IC）</h3>
+    <h3>因子研究</h3>
     <div class="form-row"><label>因子</label>
       <select id="factorKind" style="min-width:220px"></select>
-      <label style="margin-left:16px">参数 Days</label>
+      <label style="margin-left:16px;width:auto">参数 Days</label>
       <input type="number" id="factorDays" value="20" min="1" style="width:80px">
-      <label style="margin-left:16px">收益窗口(日)</label>
+      <label style="margin-left:16px;width:auto">收益窗口(日)</label>
       <select id="factorWindow">
         <option value="1" selected>1</option>
         <option value="5">5</option>
@@ -193,10 +304,44 @@ tbody tr.selected{background:#e0eaff}
     <div class="editor-actions">
       <button class="primary" id="btnAnalyze" onclick="runAnalysis()">开始分析</button>
     </div>
-    <div class="msg" id="factorMsg"></div>
-    <div class="hint">每日计算全样本因子值与未来 Window 日收益的 Spearman 秩相关（IC）：均值显著为正 → 因子值越大未来收益越高，为负则反之。运行配置复用 Tab① 的年份与样本池。</div>
-    <div class="hint" id="factorSummary"></div>
-    <div id="icChart" style="height:360px"></div>
+    <div class="msg" id="factorMsg" role="status" aria-live="polite"></div>
+
+    <div class="concept" id="factorConcept">
+      <div class="concept-head"><span id="fcName"></span><span class="badge" id="fcCat"></span></div>
+      <div class="concept-line" id="fcDesc"></div>
+      <div class="concept-line" id="fcParam"></div>
+      <div class="concept-line" id="fcExample"></div>
+      <div class="hint">因子不存在普遍有效的阈值：同一参数在不同市场、样本与周期下表现不同，请以本次样本的五组分布与统计显著性为准。</div>
+    </div>
+
+    <div id="factorResult">
+      <div class="empty" id="factorEmpty" role="status">暂无分析结果，选择因子后点击“开始分析”。</div>
+      <div id="factorBody" style="display:none">
+        <div class="summary-line" id="quintileSummary"></div>
+        <div id="quintileChart"></div>
+        <div class="empty" id="quintileNA" style="display:none">结果不足：有效样本过少，无法把样本分成五组并计算分组收益。</div>
+
+        <div class="coverage">
+          <span id="covText"></span>
+          <details class="stat" id="failDetails" style="margin-top:0;display:none">
+            <summary id="failSummary">失败明细</summary>
+            <ul id="failList"></ul>
+          </details>
+        </div>
+        <div class="warnbar" id="skipWarn" style="display:none">部分样本因数据缺失或无效被跳过，统计结论仅基于完成计算的样本。</div>
+
+        <div class="editor-actions" style="margin-top:14px">
+          <button class="secondary" id="btnAddCond" onclick="addFactorToStrategy()">添加到策略条件</button>
+          <span class="hint">把该因子与参数（不含阈值）加入 ① 的简单配置，阈值由你在那里填写。</span>
+        </div>
+
+        <details class="stat" id="statDetails">
+          <summary>统计详情（IC、显著性、逐日 IC）</summary>
+          <div id="icStats"></div>
+          <div id="icChart"></div>
+        </details>
+      </div>
+    </div>
   </div>
 </div>
 </main>
@@ -204,19 +349,40 @@ tbody tr.selected{background:#e0eaff}
 <script>
 // ============ 通用 ============
 const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let currentReport = null;   // Tab2/3 共享的报告数据
 let selectedVariant = null; // Tab2 行点击 → Tab3 筛选
+const charts = [];          // 全部 ECharts 实例：窗口 resize 时统一 resize()
+window.addEventListener('resize', () => charts.forEach(c => c.resize()));
 
-document.querySelectorAll('.tabs button').forEach(btn => {
-  btn.onclick = () => {
-    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    $('tab' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === '2') renderTab2();
-    if (btn.dataset.tab === '3') renderTab3();
-    if (btn.dataset.tab === '4') renderAnalysis();
-  };
+// ============ Tabs（WAI-ARIA + URL 持久化） ============
+const TAB_SLUG = {1: 'strategy', 2: 'compare', 3: 'trades', 4: 'factor'};
+const TAB_NUM = {strategy: 1, compare: 2, trades: 3, factor: 4};
+
+function switchTab(n) {
+  document.querySelectorAll('[role="tab"]').forEach(b => {
+    const on = b.dataset.tab === String(n);
+    b.setAttribute('aria-selected', on);
+    b.tabIndex = on ? 0 : -1;
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => { p.hidden = p.id !== 'tab' + n; });
+  history.replaceState(null, '', n === 1 ? location.pathname : '?tab=' + TAB_SLUG[n]);
+  if (n === 2) renderTab2();
+  if (n === 3) renderTab3();
+  if (n === 4) renderAnalysis();
+}
+document.querySelectorAll('[role="tab"]').forEach(btn => {
+  btn.onclick = () => switchTab(btn.dataset.tab);
+});
+document.querySelector('[role="tablist"]').addEventListener('keydown', e => {
+  const tabs = [...document.querySelectorAll('[role="tab"]')];
+  const i = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+  let target = null;
+  if (e.key === 'ArrowRight') target = tabs[(i + 1) % tabs.length];
+  else if (e.key === 'ArrowLeft') target = tabs[(i - 1 + tabs.length) % tabs.length];
+  else if (e.key === 'Home') target = tabs[0];
+  else if (e.key === 'End') target = tabs[tabs.length - 1];
+  if (target) { e.preventDefault(); switchTab(target.dataset.tab); target.focus(); }
 });
 
 async function api(method, url, body) {
@@ -226,6 +392,23 @@ async function api(method, url, body) {
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(data.error || resp.statusText);
   return data;
+}
+
+// ============ Tab1 简单配置 / 高级脚本 ============
+let runMode = 'simple';       // simple | adv
+function setMode(m) {
+  runMode = m;
+  $('modeSimple').hidden = m !== 'simple';
+  $('modeAdv').hidden = m !== 'adv';
+  $('modeBtnSimple').setAttribute('aria-pressed', String(m === 'simple'));
+  $('modeBtnAdv').setAttribute('aria-pressed', String(m === 'adv'));
+}
+function toggleEditor() {
+  const ta = $('editor');
+  ta.classList.toggle('expanded');
+  const big = ta.classList.contains('expanded');
+  $('btnExpand').textContent = big ? '收起' : '展开';
+  $('btnExpand').setAttribute('aria-expanded', String(big));
 }
 
 // ============ Tab1 脚本编辑 ============
@@ -274,6 +457,7 @@ function buildConfig() {
 }
 async function runBacktest() {
   showScriptMsg('', true);
+  if (runMode === 'simple') return runSimple();
   try {
     await api('PUT', '/api/script', {content: $('editor').value}); // 运行前先保存
     const d = await api('POST', '/api/run', buildConfig());
@@ -281,9 +465,300 @@ async function runBacktest() {
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
 }
+// 简单模式：声明式 StrategySpec → /api/strategy/run（不触碰脚本文件）
+async function runSimple() {
+  const spec = buildSpec();
+  if (!spec) return;
+  try {
+    const d = await api('POST', '/api/strategy/run', spec);
+    showScriptMsg(`已启动：${d.variants} 个变体（基准 + ${d.variants - 2} 个单条件 + 组合增强）`, true);
+    pollStatus();
+  } catch (e) { showScriptMsg(e.message, false); }
+}
 async function stopBacktest() { try { await api('POST', '/api/stop'); } catch (e) {} }
 
+// ============ 简单配置：预设 + 条件卡 + 校验 ============
+let presetInfos = [];
+let simpleConds = [];         // 条件卡数据源 {kind, days, operator, min, max}；min/max 为显示值（ratio 因子按百分比），提交时转原始比例
+let condsInitialized = false;
+
+async function loadPresets() {
+  try {
+    presetInfos = await api('GET', '/api/strategy-presets');
+    const sel = $('presetSel');
+    presetInfos.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.name;
+      sel.appendChild(o);
+    });
+    renderPresetInfo();
+  } catch (e) { showScriptMsg('预设策略加载失败: ' + e.message, false); }
+}
+function renderPresetInfo() {
+  const p = presetInfos.find(x => x.id === $('presetSel').value);
+  $('presetDesc').textContent = p ? p.description : '';
+  const ul = $('presetRules');
+  ul.innerHTML = '';
+  (p && p.rules ? p.rules : []).forEach(r => {
+    const li = document.createElement('li');
+    li.textContent = r;
+    ul.appendChild(li);
+  });
+}
+
+// 默认两张条件卡（因子目录就绪后调用一次）
+function ensureDefaultConds() {
+  if (condsInitialized || !factorCatalog.length) return;
+  simpleConds = [defaultCond(), defaultCond()];
+  condsInitialized = true;
+  renderConds();
+}
+function defaultCond() {
+  const e = factorCatalog[0];
+  return {kind: e.kind, days: e.defaultDays, operator: 'between', min: null, max: null};
+}
+function addCond() {
+  if (simpleConds.length >= 4) return;
+  simpleConds.push(defaultCond());
+  renderConds(simpleConds.length - 1);
+}
+function delCond(i) {
+  simpleConds.splice(i, 1);
+  // 删除后把焦点移到相邻条件；没有条件时由 renderConds 聚焦“添加条件”
+  renderConds(Math.min(i, simpleConds.length - 1));
+}
+function renderConds(focusIdx) {
+  const box = $('condCards');
+  box.innerHTML = '';
+  if (!simpleConds.length) {
+    const d = document.createElement('div');
+    d.className = 'empty';
+    d.style.padding = '12px';
+    d.textContent = '暂无条件：至少需要 1 个因子条件。';
+    box.appendChild(d);
+  }
+  simpleConds.forEach((c, i) => {
+    if (i > 0) {
+      const sep = document.createElement('div');
+      sep.className = 'and-sep';
+      sep.textContent = '并且（AND）';
+      box.appendChild(sep);
+    }
+    box.appendChild(buildCondCard(c, i));
+  });
+  const full = simpleConds.length >= 4;
+  $('btnAddCond2').disabled = full;
+  $('condLimitHint').textContent = full
+    ? '已达 4 个条件上限（1～4 个），如需更换请先删除某个条件。'
+    : `当前 ${simpleConds.length}/4 个条件`;
+  if (focusIdx != null) {
+    const card = box.querySelectorAll('.cond-card')[focusIdx];
+    if (card) {
+      card.classList.add('highlight');
+      const ctl = card.querySelector('select,input');
+      if (ctl) ctl.focus();
+      card.scrollIntoView({block: 'nearest'});
+    } else {
+      $('btnAddCond2').focus();
+    }
+  }
+}
+function buildCondCard(c, i) {
+  const ent = factorCatalog.find(e => e.kind === c.kind);
+  const isRatio = !!(ent && ent.unit === 'ratio');
+  const card = document.createElement('div');
+  card.className = 'cond-card';
+
+  const head = document.createElement('div');
+  head.className = 'cond-head';
+  const no = document.createElement('span');
+  no.className = 'cond-no';
+  no.textContent = `条件 ${i + 1} · ${ent ? ent.name : c.kind}`;
+  const del = document.createElement('button');
+  del.className = 'cond-del';
+  del.textContent = '删除';
+  del.setAttribute('aria-label', `删除条件 ${i + 1}`);
+  del.onclick = () => delCond(i);
+  head.append(no, del);
+
+  const grid = document.createElement('div');
+  grid.className = 'cond-grid';
+  const lbl = t => { const s = document.createElement('span'); s.className = 'lbl'; s.textContent = t; return s; };
+
+  const selKind = document.createElement('select');
+  selKind.id = `cond${i}_kind`;
+  selKind.setAttribute('aria-label', `条件 ${i + 1} 因子`);
+  factorCatalog.forEach(e2 => {
+    const o = document.createElement('option');
+    o.value = e2.kind;
+    o.textContent = e2.name;
+    if (e2.kind === c.kind) o.selected = true;
+    selKind.appendChild(o);
+  });
+  selKind.onchange = () => {
+    const ne = factorCatalog.find(x => x.kind === selKind.value);
+    c.kind = selKind.value;
+    c.days = ne ? ne.defaultDays : c.days;
+    renderConds();
+  };
+
+  const inDays = document.createElement('input');
+  inDays.id = `cond${i}_days`;
+  inDays.type = 'number';
+  inDays.min = '1';
+  inDays.value = c.days;
+  inDays.style.width = '64px';
+  inDays.setAttribute('aria-label', `条件 ${i + 1} 回看天数`);
+  inDays.oninput = () => { c.days = Math.floor(+inDays.value) || 0; };
+
+  const selOp = document.createElement('select');
+  selOp.id = `cond${i}_op`;
+  selOp.setAttribute('aria-label', `条件 ${i + 1} 比较方式`);
+  [['between', '介于'], ['gte', '≥ 至少'], ['lte', '≤ 至多']].forEach(([v, t]) => {
+    const o = document.createElement('option');
+    o.value = v;
+    o.textContent = t;
+    if (v === c.operator) o.selected = true;
+    selOp.appendChild(o);
+  });
+  selOp.onchange = () => { c.operator = selOp.value; renderConds(); };
+
+  grid.append(lbl('因子'), selKind, lbl('天数'), inDays, selOp);
+
+  const mkBound = key => {
+    const inp = document.createElement('input');
+    inp.id = `cond${i}_${key}`;
+    inp.type = 'number';
+    inp.step = 'any';
+    inp.value = c[key] == null ? '' : c[key];
+    inp.placeholder = isRatio ? '如 5 (=5%)' : '数值';
+    inp.setAttribute('aria-label', `条件 ${i + 1} ${key === 'min' ? '下限' : '上限'}${isRatio ? '（百分比）' : ''}`);
+    inp.oninput = () => { const v = inp.value.trim(); c[key] = v === '' ? null : +v; };
+    return inp;
+  };
+  if (c.operator !== 'lte') {
+    grid.append(lbl('下限'), mkBound('min'));
+    if (isRatio) grid.append(lbl('%'));
+  }
+  if (c.operator !== 'gte') {
+    grid.append(lbl('上限'), mkBound('max'));
+    if (isRatio) grid.append(lbl('%'));
+  }
+  card.append(head, grid);
+
+  // 原始值含义：ratio 按百分比填写并说明换算，其余展示因子原始值示例
+  if (ent) {
+    const hint = document.createElement('div');
+    hint.className = 'hint';
+    hint.textContent = isRatio
+      ? `按百分比填写（输入 5 表示 5%），提交时转换为原始比例 0.05。原始值示例：${ent.example}`
+      : `原始值示例：${ent.example}`;
+    card.appendChild(hint);
+  }
+  const errEl = document.createElement('div');
+  errEl.className = 'cond-err';
+  card.appendChild(errEl);
+  return card;
+}
+
+// 收集并校验 StrategySpec；校验失败返回 null（错误贴近字段展示并聚焦第一个错误）
+function buildSpec() {
+  document.querySelectorAll('.cond-err').forEach(e => { e.textContent = ''; });
+  document.querySelectorAll('.cond-card .invalid').forEach(e => e.classList.remove('invalid'));
+  let firstErr = null;
+  const focusErr = el => { if (el && !firstErr) firstErr = el; };
+  const errs = [];
+  const cardErr = (i, el, msg) => {
+    const card = document.querySelectorAll('.cond-card')[i];
+    if (card) {
+      card.querySelector('.cond-err').textContent = msg;
+      if (el) el.classList.add('invalid');
+    }
+    focusErr(el || (card ? card.querySelector('select,input') : null));
+  };
+
+  const cfg = buildConfig(); // 复用年份/样本（holding/tp/sl 另由下方 exit 读取）
+  const spec = {
+    version: 1,
+    name: $('specName').value.trim(),
+    basePresetId: $('presetSel').value,
+    factorFilters: [],
+    exit: {
+      holdingDays: $('holdingOn').checked ? Math.floor(+$('holdingDays').value) : 0,
+      takeProfit: $('tpOn').checked ? +$('takeProfit').value / 100 : 0,
+      stopLoss: $('slOn').checked ? +$('stopLoss').value / 100 : 0,
+    },
+    run: {
+      startYear: cfg.startYear,
+      endYear: cfg.endYear,
+      sampleMode: cfg.sampleMode,
+    },
+  };
+  if (cfg.sampleMode === 'random') spec.run.sampleSize = cfg.sampleSize;
+  if (cfg.sampleMode === 'codes') spec.run.sampleCodes = cfg.sampleCodes;
+
+  if (simpleConds.length < 1 || simpleConds.length > 4) {
+    errs.push(`因子条件需要 1～4 个，当前 ${simpleConds.length} 个`);
+    focusErr($('btnAddCond2'));
+  }
+  const seen = new Set();
+  simpleConds.forEach((c, i) => {
+    const ent = factorCatalog.find(e => e.kind === c.kind);
+    const isRatio = !!(ent && ent.unit === 'ratio');
+    const conv = v => (isRatio ? +(v / 100).toFixed(6) : v); // 显示百分比 → 原始比例
+    if (!(c.days >= 1)) {
+      cardErr(i, $(`cond${i}_days`), '回看天数需为正整数');
+    } else if (seen.has(c.kind + ':' + c.days)) {
+      cardErr(i, $(`cond${i}_days`), '与其他条件重复：相同因子+天数只能出现一次');
+    } else if (c.operator === 'between' && (c.min == null || c.max == null)) {
+      cardErr(i, c.min == null ? $(`cond${i}_min`) : $(`cond${i}_max`), '区间条件需同时填写下限和上限');
+    } else if (c.operator === 'gte' && c.min == null) {
+      cardErr(i, $(`cond${i}_min`), '需填写下限');
+    } else if (c.operator === 'lte' && c.max == null) {
+      cardErr(i, $(`cond${i}_max`), '需填写上限');
+    } else if (c.operator === 'between' && c.min > c.max) {
+      cardErr(i, $(`cond${i}_min`), '下限不能大于上限');
+    } else {
+      seen.add(c.kind + ':' + c.days);
+      const ft = {kind: c.kind, days: c.days, operator: c.operator};
+      if (c.operator !== 'lte') ft.min = conv(c.min);
+      if (c.operator !== 'gte') ft.max = conv(c.max);
+      spec.factorFilters.push(ft);
+    }
+  });
+  if (!spec.exit.holdingDays && !spec.exit.takeProfit && !spec.exit.stopLoss) {
+    errs.push('卖出规则至少启用一项（持仓天数 / 止盈 / 止损）');
+    focusErr($('holdingOn'));
+  }
+  if (spec.run.startYear > spec.run.endYear) {
+    errs.push('时间范围无效：开始年份不能大于结束年份');
+    focusErr($('startYear'));
+  }
+  if (spec.run.sampleMode === 'random' && !(spec.run.sampleSize > 0)) {
+    errs.push('随机样本数需大于 0');
+    focusErr($('sampleSize'));
+  }
+  if (spec.run.sampleMode === 'codes' && !(spec.run.sampleCodes || []).length) {
+    errs.push('指定代码样本为空');
+    focusErr($('sampleCodes'));
+  }
+  if (errs.length) showScriptMsg(errs.join('\n'), false);
+  if (firstErr) { firstErr.focus(); return null; }
+  return spec;
+}
+
+// 从因子页跳回：聚焦对应条件卡（kind+days 匹配；无匹配则聚焦“添加条件”）
+function focusSimpleCondition(kind, days) {
+  setMode('simple');
+  const idx = simpleConds.findIndex(c => c.kind === kind && c.days === days);
+  renderConds(idx >= 0 ? idx : null);
+  if (idx < 0) $('btnAddCond2').focus();
+}
+
 let pollTimer = null;
+let prevRunning = false;  // 用于识别“任务被停止”（running → idle）
+let lastTask = '';        // 最近一次启动的任务类型：backtest | analysis
 function pollStatus() {
   if (pollTimer) clearInterval(pollTimer);
   pollStatusOnce();
@@ -292,74 +767,192 @@ function pollStatus() {
 async function pollStatusOnce() {
   try {
     const s = await api('GET', '/api/status');
+    const running = s.state === 'running';
+    if (running) lastTask = s.task || lastTask;
     const bar = $('statusbar');
     bar.classList.toggle('show', s.state === 'running' || s.state === 'done' || s.state === 'error');
-    $('btnRun').disabled = s.state === 'running';
-    $('btnAnalyze').disabled = s.state === 'running';
-    $('btnStop').style.display = s.state === 'running' ? '' : 'none';
+    $('btnRun').disabled = running;
+    $('btnAnalyze').disabled = running;
+    $('btnStop').style.display = running ? '' : 'none';
     $('statusState').textContent = {idle: '空闲', running: s.task === 'analysis' ? '因子分析中' : '回测中', done: '已完成', error: '出错'}[s.state] || s.state;
-    $('statusDetail').textContent = s.state === 'running' ? `${s.doneCodes}/${s.totalCodes} 只` : '';
+    $('statusDetail').textContent = running ? `${s.doneCodes}/${s.totalCodes} 只` : '';
     $('progressBar').style.width = (s.progress || 0) + '%';
     $('statusCurrent').textContent = s.currentCode ? ('当前: ' + s.currentCode) : '';
     $('statusErr').textContent = s.error || '';
     $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
+    if (running && s.task === 'analysis') setFactorMsg(`分析中：${s.doneCodes}/${s.totalCodes} 只…`, true);
     if (s.state === 'done') {
       clearInterval(pollTimer); pollTimer = null;
       if (s.task === 'analysis') {
         currentAnalysis = await api('GET', '/api/analysis/latest');
+        setFactorMsg('分析完成', true);
         switchTab(4);
       } else {
         currentReport = await api('GET', '/api/report/latest');
         switchTab(2);
+        // 根据 source 恢复正确的结果说明，不把高级多变体脚本误当成多条件组合
+        if (currentReport.source === 'simple' && currentReport.comparison) {
+          const c = currentReport.comparison;
+          showScriptMsg(`多条件组合对照已生成：基准 ${c.baselineTrades} 笔 → 组合 ${c.combinedTrades} 笔` +
+            (c.retentionRate == null ? '' : `（保留 ${(c.retentionRate * 100).toFixed(1)}%）`) +
+            '，详见“组合对比”摘要。', true);
+        } else {
+          showScriptMsg('已载入高级脚本多变体报告。', true);
+        }
       }
+    } else if (s.state === 'idle' && prevRunning && lastTask === 'analysis') {
+      setFactorMsg('任务已停止', false);
+    } else if (s.state === 'error' && lastTask === 'analysis') {
+      setFactorMsg(s.error || '分析失败', false);
     } else if (s.state === 'idle' || s.state === 'error') {
       clearInterval(pollTimer); pollTimer = null;
     }
-  } catch (e) { clearInterval(pollTimer); pollTimer = null; }
-}
-function switchTab(n) {
-  document.querySelector(`.tabs button[data-tab="${n}"]`).click();
+    prevRunning = running;
+  } catch (e) { clearInterval(pollTimer); pollTimer = null; prevRunning = false; }
 }
 
 // ============ Tab4 因子研究 ============
 let factorCatalog = [];
-let currentAnalysis = null; // Tab4 共享的分析报告
-let icC = null;             // IC 图表实例（惰性初始化）
+let currentAnalysis = null;   // Tab4 共享的分析报告
+let quintileC = null;         // 五组柱状图实例（可见后惰性初始化）
+let icC = null;               // 逐日 IC 图实例（统计详情展开后惰性初始化）
 
 async function loadFactors() {
   try {
     factorCatalog = await api('GET', '/api/factors');
-    $('factorKind').innerHTML = factorCatalog.map(e => `<option value="${e.kind}">${e.name}</option>`).join('');
-  } catch (e) { showFactorMsg(e.message, false); }
+    const sel = $('factorKind');
+    factorCatalog.forEach(e => {
+      const o = document.createElement('option');
+      o.value = e.kind;
+      o.textContent = e.name;
+      sel.appendChild(o);
+    });
+    renderConcept();
+    ensureDefaultConds(); // 因子目录就绪后创建默认条件卡
+  } catch (e) { setFactorMsg(e.message, false); }
 }
-function showFactorMsg(msg, ok) {
+function currentFactor() {
+  return factorCatalog.find(e => e.kind === $('factorKind').value);
+}
+// 概念卡：中文名/类别/一句话定义/参数含义与默认窗口/原始值示例（全部 textContent）
+function renderConcept() {
+  const e = currentFactor();
+  if (!e) return;
+  $('fcName').textContent = e.name;
+  $('fcCat').textContent = e.category;
+  $('fcDesc').textContent = '定义：' + e.description;
+  $('fcParam').textContent = `参数（${e.parameterLabel}）：默认 ${e.defaultDays}`;
+  $('fcExample').textContent = '原始值示例：' + e.example;
+  $('factorDays').value = e.defaultDays; // 切换因子时回到默认窗口，用户可改
+}
+function setFactorMsg(msg, ok) {
   const el = $('factorMsg');
   el.textContent = msg;
   el.className = 'msg ' + (ok ? 'ok' : 'err');
 }
 async function runAnalysis() {
-  showFactorMsg('', true);
+  setFactorMsg('', true);
+  $('factorEmpty').textContent = '正在准备分析结果…';
   try {
     const cfg = buildConfig(); // 复用 Tab1 年份/样本配置
     cfg.kind = $('factorKind').value;
     cfg.days = +$('factorDays').value;
     cfg.window = +$('factorWindow').value;
     await api('POST', '/api/analyze', cfg);
-    showFactorMsg('分析已启动', true);
+    setFactorMsg('分析已启动', true);
+    lastTask = 'analysis';
+    prevRunning = true;
     pollStatus();
-  } catch (e) { showFactorMsg(e.message, false); }
+  } catch (e) { setFactorMsg(e.message, false); }
+}
+// “添加到策略条件”：只传 kind/days，不猜 min/max；重复添加聚焦原条件
+function addFactorToStrategy() {
+  const e = currentFactor();
+  if (!e) return;
+  const days = +$('factorDays').value || e.defaultDays;
+  const dup = simpleConds.some(c => c.kind === e.kind && c.days === days);
+  if (!dup) simpleConds.push({kind: e.kind, days});
+  switchTab(1);
+  if (typeof focusSimpleCondition === 'function') focusSimpleCondition(e.kind, days);
+  setFactorMsg(`已${dup ? '定位到已有条件' : '添加条件'}：${e.name}（${days} 日），请在“简单配置”中填写阈值。`, true);
 }
 function renderAnalysis() {
   if (!currentAnalysis) return;
+  $('factorEmpty').style.display = 'none';
+  $('factorBody').style.display = '';
   const s = currentAnalysis.stats;
-  $('factorSummary').textContent =
-    `${currentAnalysis.factorName} · 窗口${currentAnalysis.window}日 · 有效日 ${s.pairs} · IC均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · t值 ${s.tStat.toFixed(2)}`;
+  // 1) 后端 Summary 文案优先
+  const DIR = {
+    ascending: '因子值越大，未来收益越高',
+    descending: '因子值越大，未来收益越低',
+    mixed: '五组收益方向不一致',
+    flat: '五组收益接近，因子区分度弱',
+    insufficient: '结果不足：五组数据不完整，无方向结论',
+  };
+  const sum = currentAnalysis.summary || {};
+  let txt = DIR[sum.direction] || sum.direction || '';
+  if (sum.monotonic && (sum.direction === 'ascending' || sum.direction === 'descending')) txt += '（单调）';
+  if (sum.spread != null && isFinite(sum.spread)) txt += `；最高组−最低组收益差 ${(sum.spread * 100).toFixed(2)}%`;
+  $('quintileSummary').textContent = txt;
+  // 2) 五组柱状图（无 quintiles 不画空柱）
+  const qs = currentAnalysis.quintiles;
+  const hasQ = Array.isArray(qs) && qs.length === 5 && qs.every(v => typeof v === 'number' && isFinite(v));
+  if (hasQ) {
+    $('quintileChart').style.display = '';
+    $('quintileNA').style.display = 'none';
+    renderQuintiles(qs);
+  } else {
+    $('quintileChart').style.display = 'none';
+    $('quintileNA').style.display = '';
+  }
+  // 3) Coverage：请求/完成/跳过 + 失败明细可展开
+  renderCoverage(currentAnalysis.coverage);
+  // 4) 统计详情：仅在 <details> 展开时初始化 IC 图（容器可见）
+  $('icStats').textContent = `有效日 ${s.pairs} · IC 均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · t 值 ${s.tStat.toFixed(2)}`;
+  if ($('statDetails').open) renderICChart();
+}
+function renderQuintiles(qs) {
+  const el = $('quintileChart');
+  if (!quintileC) { quintileC = echarts.init(el); charts.push(quintileC); }
+  quintileC.setOption({
+    title: {text: '五组平均收益%（按因子值升序等频分组）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    tooltip: {trigger: 'axis', valueFormatter: v => v + '%'},
+    grid: {left: 60, right: 20, top: 50, bottom: 40},
+    xAxis: {type: 'category', data: ['最低组', '第2组', '第3组', '第4组', '最高组']},
+    yAxis: {type: 'value', axisLabel: {formatter: '{value}%'}},
+    series: [{
+      type: 'bar',
+      data: qs.map(v => +(v * 100).toFixed(3)), // 显示乘 100；本页不提交该值
+      itemStyle: {color: p => p.value >= 0 ? '#ef4444' : '#22c55e'},
+      label: {show: true, position: 'top', fontSize: 11, formatter: p => p.value + '%'}
+    }]
+  }, true);
+}
+function renderCoverage(cov) {
+  if (!cov) { $('covText').textContent = ''; return; }
+  $('covText').textContent = `样本覆盖：请求 ${cov.requested} · 完成 ${cov.completed} · 跳过 ${cov.skipped}`;
+  $('skipWarn').style.display = cov.skipped > 0 ? '' : 'none';
+  const fs = Array.isArray(cov.failures) ? cov.failures : [];
+  $('failDetails').style.display = fs.length ? '' : 'none';
+  $('failSummary').textContent = `失败明细（${fs.length}）`;
+  const ul = $('failList');
+  ul.innerHTML = '';
+  fs.forEach(f => {
+    const li = document.createElement('li');
+    li.textContent = `${f.code} · ${f.year} · ${f.stage} · ${f.message}`;
+    ul.appendChild(li);
+  });
+}
+function renderICChart() {
+  if (!currentAnalysis) return;
+  const el = $('icChart');
+  if (!icC) { icC = echarts.init(el); charts.push(icC); }
   const days = currentAnalysis.daily.map(d => d.date);
   const ics = currentAnalysis.daily.map(d => d.ic);
-  if (!icC) icC = echarts.init($('icChart'));
   icC.setOption({
+    title: {text: '逐日 IC（Spearman 秩相关）', left: 10, top: 6, textStyle: {fontSize: 13}},
     tooltip: {trigger: 'axis'},
-    grid: {left: 60, right: 20, top: 20, bottom: 60},
+    grid: {left: 60, right: 20, top: 50, bottom: 60},
     xAxis: {type: 'category', data: days},
     yAxis: {type: 'value', min: -1, max: 1},
     series: [{
@@ -367,20 +960,64 @@ function renderAnalysis() {
       connectNulls: true, // 无效日（null）跨过补线，与导出 report.html 口径一致
       markLine: {silent: true, symbol: 'none', lineStyle: {type: 'dashed'}, data: [{yAxis: 0}]}
     }]
-  });
+  }, true);
 }
+$('factorKind').addEventListener('change', renderConcept);
+$('statDetails').addEventListener('toggle', () => {
+  if ($('statDetails').open && currentAnalysis) renderICChart(); // 展开后容器可见才 init
+});
 
 // ============ Tab2 组合对比 ============
+// 对照摘要：仅简单模式报告（source==='simple' 且带 comparison）显示
+function renderCmp(rep) {
+  const sec = $('cmpSection');
+  const cmp = rep && rep.comparison;
+  if (!cmp || rep.source !== 'simple') { sec.style.display = 'none'; return; }
+  sec.style.display = '';
+  const byName = {};
+  rep.variants.forEach(v => { byName[v.name] = v; });
+  const statLine = v => {
+    if (!v || !v.stats || !v.stats.total) return '无交易';
+    const s = v.stats;
+    return `胜率 ${s.winRate.toFixed(1)}% · 平均 ${s.avgProfit.toFixed(2)}% · 盈亏比 ${s.profitFactor == null ? '+Inf' : s.profitFactor.toFixed(2)}`;
+  };
+  const base = byName[cmp.baselineVariant], combo = byName[cmp.combinedVariant];
+  $('cmpBaseName').textContent = cmp.baselineVariant;
+  $('cmpBaseTrades').textContent = cmp.baselineTrades;
+  $('cmpBaseStats').textContent = statLine(base);
+  $('cmpComboName').textContent = cmp.combinedVariant;
+  $('cmpComboTrades').textContent = cmp.combinedTrades;
+  $('cmpRetention').textContent = cmp.retentionRate == null ? '-' : (cmp.retentionRate * 100).toFixed(1) + '%';
+  $('cmpComboStats').textContent = statLine(combo);
+  // 条件贡献表：factorVariants 只带 kind/days，名称从因子目录映射
+  $('cmpRows').innerHTML = (cmp.factorVariants || []).map((f, i) => {
+    const cat = factorCatalog.find(e => e.kind === f.kind);
+    const label = `${cat ? cat.name : f.kind}（${f.days} 日）`;
+    const v = byName[f.variant], s = v && v.stats && v.stats.total ? v.stats : null;
+    const fmt = (x, d) => x == null || !isFinite(x) ? String(x == null ? '-' : x) : x.toFixed(d);
+    return `<tr>
+      <td>${i + 1}</td><td>${esc(label)}</td>
+      <td>${f.trades}</td>
+      <td>${f.retentionRate == null ? '-' : (f.retentionRate * 100).toFixed(1) + '%'}</td>
+      <td class="${s ? (s.winRate >= 50 ? 'pos' : 'neg') : ''}">${s ? fmt(s.winRate, 1) : '-'}</td>
+      <td class="${s ? (s.avgProfit >= 0 ? 'pos' : 'neg') : ''}">${s ? fmt(s.avgProfit, 2) : '-'}</td>
+      <td>${s ? (s.profitFactor == null ? '+Inf' : s.profitFactor.toFixed(2)) : '-'}</td>
+    </tr>`;
+  }).join('');
+  const cov = rep.coverage;
+  $('cmpCoverage').textContent = cov ? `样本覆盖：请求 ${cov.requested} · 完成 ${cov.completed} · 跳过 ${cov.skipped}` : '';
+}
 function renderTab2() {
   if (!currentReport) return;
+  renderCmp(currentReport);
   $('reportMeta').textContent = `${currentReport.config.startYear}-${currentReport.config.endYear} · ${new Date(currentReport.finishedAt).toLocaleString()}`;
   const vs = [...currentReport.variants].sort((a, b) => (b.stats.total ? b.stats.avgProfit : -1e9) - (a.stats.total ? a.stats.avgProfit : -1e9));
   $('variantRows').innerHTML = vs.map((v, i) => {
     const s = v.stats;
     const profitWan = v.trades.reduce((sum, t) => sum + t.profit, 0) / 1e4;
-    if (!s.total) return `<tr data-name="${v.name}"><td>${i + 1}</td><td>${v.name}</td><td>0</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>`;
-    return `<tr data-name="${v.name}">
-      <td>${i + 1}</td><td>${v.name}</td><td>${s.total}</td>
+    if (!s.total) return `<tr data-name="${esc(v.name)}"><td>${i + 1}</td><td>${esc(v.name)}</td><td>0</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>`;
+    return `<tr data-name="${esc(v.name)}">
+      <td>${i + 1}</td><td>${esc(v.name)}</td><td>${s.total}</td>
       <td class="${s.winRate >= 50 ? 'pos' : 'neg'}">${s.winRate.toFixed(1)}</td>
       <td class="${s.avgProfit >= 0 ? 'pos' : 'neg'}">${s.avgProfit.toFixed(2)}</td>
       <td>${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '+Inf'}</td>
@@ -416,9 +1053,9 @@ function renderCharts(vs) {
     return {name: v.name, type: 'line', showSymbol: false, lineStyle: {width: 1.5},
       data: ts.map(t => { acc += t.rate; return [t.buyTime, Number(acc.toFixed(2))]; })};
   });
-  if (!trendC) trendC = echarts.init($('trendChart'));
+  if (!trendC) { trendC = echarts.init($('trendChart')); charts.push(trendC); }
   trendC.setOption({
-    title: {text: '累计收益率%（按买入时间）', left: 10, top: 6, textStyle: {fontSize: 13}},
+    title: {text: '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13}},
     tooltip: {trigger: 'axis'},
     legend: {top: 6, right: 10, type: 'scroll'},
     grid: {left: 50, right: 20, top: 60, bottom: 40},
@@ -426,7 +1063,7 @@ function renderCharts(vs) {
     yAxis: {scale: true},
     series
   }, true);
-  if (!winC) winC = echarts.init($('winChart'));
+  if (!winC) { winC = echarts.init($('winChart')); charts.push(winC); }
   winC.setOption({
     title: {text: '胜率%', left: 10, top: 6, textStyle: {fontSize: 13}},
     tooltip: {},
@@ -443,7 +1080,7 @@ function renderTab3() {
   // 变体筛选下拉
   const sel = $('fVariant');
   const cur = sel.value;
-  sel.innerHTML = '<option value="">全部变体</option>' + currentReport.variants.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+  sel.innerHTML = '<option value="">全部变体</option>' + currentReport.variants.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
   if (selectedVariant) { sel.value = selectedVariant; }
   else if (cur) { sel.value = cur; }
   renderTrades();
@@ -469,7 +1106,7 @@ function filteredTrades() {
 function renderTrades() {
   const rows = filteredTrades();
   $('tradeRows').innerHTML = rows.length ? rows.slice(0, 2000).map((t, i) => `<tr data-idx="${i}">
-    <td>${t.variant}</td><td>${t.code}</td><td>${t.buyTime}</td><td>${t.buyPrice.toFixed(2)}</td>
+    <td>${esc(t.variant)}</td><td>${esc(t.code)}</td><td>${t.buyTime}</td><td>${t.buyPrice.toFixed(2)}</td>
     <td>${t.sellTime}</td><td>${t.sellPrice.toFixed(2)}</td><td>${t.quantity}</td>
     <td class="${t.profit >= 0 ? 'pos' : 'neg'}">${t.profit.toFixed(0)}</td>
     <td class="${t.rate >= 0 ? 'pos' : 'neg'}">${t.rate.toFixed(2)}</td><td>${t.holdingDays}</td></tr>`).join('')
@@ -489,10 +1126,10 @@ async function showKline(t) {
   const fmt = d => d.toISOString().slice(0, 10);
   let ks;
   try {
-    ks = await api('GET', `/api/kline/${t.code}?from=${fmt(from)}&to=${fmt(to)}`);
-  } catch (e) { box.innerHTML = `<div class="empty">K线加载失败: ${e.message}</div>`; return; }
+    ks = await api('GET', `/api/kline/${encodeURIComponent(t.code)}?from=${fmt(from)}&to=${fmt(to)}`);
+  } catch (e) { box.innerHTML = `<div class="empty">K线加载失败: ${esc(e.message)}</div>`; return; }
   box.innerHTML = '';
-  if (!klineC) klineC = echarts.init(box);
+  if (!klineC) { klineC = echarts.init(box); charts.push(klineC); }
   const dates = ks.map(k => k.date);
   const values = ks.map(k => [k.open, k.close, k.low, k.high]);
   const closes = ks.map(k => k.close);
@@ -537,8 +1174,11 @@ async function showKline(t) {
 
 // ============ 初始化 ============
 loadScript();
+loadPresets();
 loadFactors();
 pollStatusOnce(); // 页面刷新后恢复运行状态显示
+// Tab 状态从 URL 恢复（刷新后保留当前 Tab，但不自动重跑任务）
+switchTab(TAB_NUM[new URLSearchParams(location.search).get('tab')] || 1);
 </script>
 </body>
 </html>
