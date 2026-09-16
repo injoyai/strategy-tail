@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/traefik/yaegi/interp"
 )
@@ -35,6 +36,9 @@ func ProjectSymbols() interp.Exports {
 			"A价格":   reflect.ValueOf((*sb.A价格)(nil)),
 			"A流通市值": reflect.ValueOf((*sb.A流通市值)(nil)),
 			"A过滤涨停": reflect.ValueOf((*sb.A过滤涨停)(nil)),
+			// 因子策略（Task 6/7）
+			"A因子过滤":   reflect.ValueOf((*sb.A因子过滤)(nil)),
+			"A因子TopN": reflect.ValueOf((*sb.A因子TopN)(nil)),
 			// 趋势
 			"MAUp":    reflect.ValueOf((*sb.MAUp)(nil)),
 			"A均线多头排列": reflect.ValueOf((*sb.A均线多头排列)(nil)),
@@ -46,6 +50,21 @@ func ProjectSymbols() interp.Exports {
 			// 规则
 			"A持仓N天": reflect.ValueOf((*ss.A持仓N天)(nil)),
 			"A止盈止损": reflect.ValueOf((*ss.A止盈止损)(nil)),
+		},
+		"github.com/injoyai/strategy-tail/strategies/factor/factor": {
+			// 因子：值接收者方法集，脚本内值字面量即可实现 core.Factor。
+			// 仅拉丁大写开头类型可跨包注册；其余 8 个因子（均线偏离/量比/量分位/
+			// 放量占比/实体幅度/上影占比/下影占比/量价相关）以汉字开头未导出，
+			// 包外不可见（Go 导出规则：首字符须属 Unicode Lu 类别），
+			// 脚本侧经下方 Build(kind) 使用。
+			"N日动量":  reflect.ValueOf((*f.N日动量)(nil)),
+			"N日斜率":  reflect.ValueOf((*f.N日斜率)(nil)),
+			"N日波动":  reflect.ValueOf((*f.N日波动)(nil)),
+			"N日振幅":  reflect.ValueOf((*f.N日振幅)(nil)),
+			"N日高低位": reflect.ValueOf((*f.N日高低位)(nil)),
+			"K值":    reflect.ValueOf((*f.K值)(nil)),
+			// 工厂：未知 kind 返回 nil；days<=0 用默认参数（全部 14 类因子的脚本入口）
+			"Build": reflect.ValueOf(f.Build),
 		},
 	}
 }
