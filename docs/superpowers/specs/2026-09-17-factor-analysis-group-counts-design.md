@@ -201,3 +201,41 @@ insufficient——现有语义的自然泛化，不为凑满柱子伪造区分�
 | 值域展示 | 图表+明细表 / 仅表 / 仅图表 | 图表轴标签 + 明细表（用户确认） |
 | `AnalysisVersion` | 升 3 / 保持 2 | 保持 2（纯长度泛化，无字段增删） |
 | bins 前端 UI | 本期一并做 / 不做 | 不做（范围控制，仅保证渲染兼容） |
+| 分析后切组 | 后端预算全部组数 / 前端本地重算 / 只预算固定四档 | 后端预算全部组数 2-20（用户 2026-09-17 确认），参数区下拉保留为默认档 |
+
+## 9. 分析后切组（同日增量，已实施并验证）
+
+目标：分析完成后在结果区切换分组数，即时生效，不重新分析。
+
+### 9.1 后端
+
+- 报告新增 `allGroupings`（`GroupingSet{Groups,Quintiles,Stats,Summary}`），
+  `YearAnalysis` 新增 `AllGroupings`：
+  - 仅 quantile 模式预算 2-20 全部组数；bins 固定断点不参与（`nil`）；
+  - 全区间 `Stats` 含每组因子值分布/计数；年度 `AllGroupings` 只含
+    Quintiles/Summary（控制报告体积）；
+- 新函数 `aggregateQuantileSets(days, vals, rets, fullStats)`：
+  - **分位排序与组数无关**——每日横截面按 value/code 只排序一次并缓存，
+    各档按中点公式 `(i+j)*g/(2n)` 线性扫描归组，避免 19 档重复排序；
+  - 全市场 × 多年场景增量约几秒，报告体积增加几百 KB 以内；
+- 抽 `summarizeFromStats`（从组统计提取收益并求摘要），`aggregateGroups`
+  尾部复用，行为不变。
+
+### 9.2 前端
+
+- 结果区新增 `#groupSwitch` 分组数切换器（2-20），`#resultGroups` 下拉；
+- 状态 `currentGroupingN` + `currentGrouping(rep, n)` 查表：
+  - 有 `allGroupings` → 按 n 取该档（groups/quintiles/summary）；
+  - 无（旧报告/bins）→ 回退顶层 groups/quintiles/summary；
+- 切换器 change → 更新 `currentGroupingN` → `renderAnalysis()` 整体重跑，
+  柱状图/明细表/年度表/rangeMeta 摘要全部随档；
+- 新分析提交时重置 `currentGroupingN` 为请求档；
+- 旧报告/bins：切换器隐藏，行为与上一版一致。
+
+### 9.3 测试
+
+- `TestRunAnalysisAllGroupings`：`allGroupings` 覆盖 2-20、组数升序、
+  `allGroupings[7]` 与单档 7 组请求逐组收益/中位数相等、年度
+  `AllGroupings` 只含收益/摘要（Stats 为空）；
+- `TestRunAnalysisBinsNoAllGroupings`：bins 模式全区间与年度
+  `AllGroupings` 均为 nil。
