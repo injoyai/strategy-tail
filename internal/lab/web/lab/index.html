@@ -419,7 +419,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
       <div class="concept-line" id="fcDesc"></div>
       <div class="concept-line" id="fcParam"></div>
       <div class="concept-line" id="fcExample"></div>
-      <div class="hint">因子不存在普遍有效的阈值：同一参数在不同市场、样本与周期下表现不同，请以本次样本的五组分布与统计显著性为准。</div>
+      <div class="hint">因子不存在普遍有效的阈值：同一参数在不同市场、样本与周期下表现不同，请以本次样本的分组分布与统计显著性为准。</div>
     </div>
 
     <div id="factorResult">
@@ -459,7 +459,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
           <table id="yearStability">
             <thead><tr>
               <th>年份</th><th>有效日</th><th>IC 均值</th><th>IC 标准差</th><th>t 值</th>
-              <th id="q1Head">Q1</th><th id="q5Head">Q5</th><th>Q5-Q1</th><th>方向</th>
+              <th id="q1Head">Q1</th><th id="q5Head">Q5</th><th id="qSpreadHead">Q5-Q1</th><th>方向</th>
             </tr></thead>
             <tbody id="yearBody"></tbody>
           </table>
@@ -1091,7 +1091,7 @@ async function pollStatusOnce() {
 // ============ Tab4 因子研究 ============
 let factorCatalog = [];
 let currentAnalysis = null;   // Tab4 共享的分析报告
-let quintileC = null;         // 五组柱状图实例（可见后惰性初始化）
+let quintileC = null;         // 分组柱状图实例（可见后惰性初始化）
 let icC = null;               // 逐日 IC 图实例（统计详情展开后惰性初始化）
 
 async function loadFactors() {
@@ -1278,6 +1278,9 @@ function renderRangeMeta(rep) {
     el.appendChild(metaItem('实际有效日期：历史报告未记录'));
   }
   if (rep.window > 0) el.appendChild(metaItem('未来收益窗口：', `${rep.window} 个交易日`));
+  const gp = rep.grouping || {};
+  const gn = Array.isArray(rep.groups) && rep.groups.length ? rep.groups.length : (gp.groups || 5);
+  el.appendChild(metaItem('分组：', gp.mode === 'bins' ? '固定区间' : `${gn} 组等频`));
   const MODE = {all: '全部股票', random: '随机抽样', codes: '指定代码'};
   if (r.sampleMode) {
     el.appendChild(metaItem('样本：', (MODE[r.sampleMode] || r.sampleMode) + (r.sampleSize > 0 ? ` · ${r.sampleSize} 只` : '')));
@@ -1296,15 +1299,20 @@ function renderYearStability(rep) {
     ? '本次分析没有可用的年度观测（有效交易日不足或全部年份数据缺失）。'
     : '历史报告未记录年度拆分，仅展示全区间结果。';
   if (!show) return;
-  const isBins = !!(rep.grouping && rep.grouping.mode === 'bins');
-  $('q1Head').textContent = isBins ? 'B1' : 'Q1';
-  $('q5Head').textContent = isBins ? 'B5' : 'Q5';
+  const gs = Array.isArray(rep.groups) && rep.groups.length ? rep.groups : null;
+  const nG = gs ? gs.length : ((rep.grouping && rep.grouping.groups) || 5);
+  const firstL = gs ? gs[0].label : (rep.grouping && rep.grouping.mode === 'bins' ? 'B1' : 'Q1');
+  const lastL = gs ? gs[gs.length - 1].label
+    : (rep.grouping && rep.grouping.mode === 'bins' ? 'B' + nG : 'Q' + nG);
+  $('q1Head').textContent = firstL;
+  $('q5Head').textContent = lastL;
+  $('qSpreadHead').textContent = `${lastL}-${firstL}`;
   const tb = $('yearBody');
   tb.innerHTML = '';
   years.forEach(y => {
     const st = y.stats || {};
     const ok = st.pairs >= 10; // 与后端 minPairs 同口径
-    const qs = Array.isArray(y.quintiles) && y.quintiles.length === 5 ? y.quintiles : null;
+    const qs = Array.isArray(y.quintiles) && y.quintiles.length >= 2 ? y.quintiles : null;
     const tr = document.createElement('tr');
     const cell = (txt, cls) => {
       const td = document.createElement('td');
@@ -1322,8 +1330,8 @@ function renderYearStability(rep) {
       cell(st.mean.toFixed(4));
       cell(st.std.toFixed(4));
       cell(st.tStat.toFixed(2));
-      const q1 = pct(qs && qs[0]), q5 = pct(qs && qs[4]);
-      const sp = pct(qs && qs[4] - qs[0]);
+      const q1 = pct(qs && qs[0]), q5 = pct(qs && qs[qs.length - 1]);
+      const sp = pct(qs && qs[qs.length - 1] - qs[0]);
       cell(q1.txt, q1.cls);
       cell(q5.txt, q5.cls);
       cell(sp.txt, sp.cls);
