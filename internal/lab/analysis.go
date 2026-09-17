@@ -365,6 +365,34 @@ type FactorGroupStats struct {
 // f64p 数值指针（null 语义：不存在为 nil，不以 0 冒充）。
 func f64p(v float64) *float64 { return &v }
 
+// GroupingSet 某一组数下的完整分组结果：Quintiles 镜像组收益（组不完整为
+// null），Stats 为每组因子值分布与计数（仅全区间填充；年度只填
+// Quintiles/Summary 以控制报告体积），Summary 为方向摘要。
+type GroupingSet struct {
+	Groups    int                `json:"groups"`
+	Quintiles []float64          `json:"quintiles"`
+	Stats     []FactorGroupStats `json:"stats,omitempty"`
+	Summary   QuintileSummary    `json:"summary"`
+}
+
+// summarizeFromStats 从组统计提取组收益并求摘要：任一组无收益即 insufficient。
+// 全区间与年度共用，保证两种口径一致。
+func summarizeFromStats(stats []FactorGroupStats, g int) ([]float64, QuintileSummary) {
+	qs := make([]float64, 0, g)
+	complete := true
+	for _, gs := range stats {
+		if gs.ForwardReturn == nil {
+			complete = false
+			break
+		}
+		qs = append(qs, *gs.ForwardReturn)
+	}
+	if !complete {
+		qs = nil
+	}
+	return qs, summarizeQuintiles(qs, g)
+}
+
 // AnalysisRange 本次分析实际使用的配置区间与样本口径。报告必须能自证区间，
 // 因为“配置区间”与“实际有效日期”（见 AnalysisReport.FirstDataDate）可能不同：
 // 早期年份无数据、后上市股票不参与早期统计、未来收益窗口尾部被剔除等都会缩短
@@ -385,6 +413,9 @@ type YearAnalysis struct {
 	Quintiles   []float64       `json:"quintiles"` // 该年分组收益（长度=组数）；组不完整为 null
 	Summary     QuintileSummary `json:"summary"`
 	TradingDays int             `json:"tradingDays"` // 该年有横截面观测的交易日数
+	// AllGroupings 该年全部组数（2-20）的等频预算（仅 quantile 模式；只含
+	// Quintiles/Summary，无组内统计，控制体积）；bins 或历史报告为 nil。
+	AllGroupings []GroupingSet `json:"allGroupings"`
 }
 
 // AnalysisReport 因子分析报告。
@@ -399,6 +430,9 @@ type AnalysisReport struct {
 	Factor          FactorSnapshot     `json:"factor"`
 	Grouping        GroupingConfig     `json:"grouping"`
 	Groups          []FactorGroupStats `json:"groups"`
+	// AllGroupings 全部组数（2-20）的等频预算结果，前端切组零重算（即时切换
+	// 无需重新分析）。仅 quantile 模式填充；bins 模式或历史报告为 nil。
+	AllGroupings []GroupingSet `json:"allGroupings"`
 	// Years 为年度拆分（升序）：跨周期汇总不得掩盖某些年份失效或反向。
 	// 历史报告无此字段时为空切片，前端显示“历史报告未记录”。
 	Years     []YearAnalysis       `json:"years"`
@@ -556,19 +590,122 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 	}
 
 	// 摘要两种模式同口径：基于全部组 ForwardReturn，任一组无收益即 insufficient。
-	summaryQs := make([]float64, 0, g)
-	complete := true
-	for _, gr := range groups {
-		if gr.ForwardReturn == nil {
-			complete = false
-			break
+	summaryQs, summary := summarizeFromStats(groups, g)
+	return groups, summaryQs, summary
+}
+
+// aggregateQuantileSets 对一组交易日预算全部组数（minGroups..maxGroups）的
+// 等频分组结果。分位排序与组数无关，每日横截面只排序一次并缓存，各档用
+// 中点公式 (i+j)*g/(2n) 线性扫描归组（tie block 整块不拆分），避免 19 档
+// 重复排序。返回组数升序的 19 个 GroupingSet；fullStats=true 时填充每组
+// 因子值分布（全区间用），否则只填 Quintiles/Summary（年度用，控制体积）。
+// 仅 quantile 模式调用（bins 断点随组数变化，不参与切组预算）。
+func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string]float64,
+	fullStats bool) []GroupingSet {
+	allG := make([]int, 0, maxGroups-minGroups+1)
+	for g := minGroups; g <= maxGroups; g++ {
+		allG = append(allG, g)
+	}
+
+	// 每日横截面按 value/code 升序排序一次并缓存（与 quantileAssign 同序，
+	// 保证切组结果与单档请求完全一致）。
+	sorted := make([][]factorObs, 0, len(days))
+	for _, day := range days {
+		obs := make([]factorObs, 0, len(vals[day]))
+		for c, v := range vals[day] {
+			obs = append(obs, factorObs{Code: c, Value: v})
 		}
-		summaryQs = append(summaryQs, *gr.ForwardReturn)
+		sort.Slice(obs, func(a, b int) bool {
+			if obs[a].Value != obs[b].Value {
+				return obs[a].Value < obs[b].Value
+			}
+			return obs[a].Code < obs[b].Code
+		})
+		sorted = append(sorted, obs)
 	}
-	if !complete {
-		summaryQs = nil
+
+	sets := make([]GroupingSet, len(allG))
+	for si, g := range allG {
+		accVals := make([][]float64, g) // 组内因子值（仅 fullStats 使用）
+		accObs := make([]int, g)
+		dayCnts := make([]int, g)
+		dayRets := make([]float64, g)
+		for ci, obs := range sorted {
+			n := len(obs)
+			if n == 0 {
+				continue
+			}
+			gSums, gCnts := make([]float64, g), make([]int, g)
+			for i := 0; i < n; {
+				j := i
+				for j+1 < n && obs[j+1].Value == obs[i].Value {
+					j++
+				}
+				gr := (i + j) * g / (2 * n) // 中点公式整数形式
+				for k := i; k <= j; k++ {
+					o := obs[k]
+					if fullStats {
+						accVals[gr] = append(accVals[gr], o.Value)
+					}
+					accObs[gr]++
+					gSums[gr] += rets[days[ci]][o.Code]
+					gCnts[gr]++
+				}
+				i = j + 1
+			}
+			for gr := 0; gr < g; gr++ {
+				if gCnts[gr] > 0 {
+					dayCnts[gr]++
+					dayRets[gr] += gSums[gr] / float64(gCnts[gr])
+				}
+			}
+		}
+
+		set := GroupingSet{Groups: g}
+		if fullStats {
+			totalObs := 0
+			for _, n := range accObs {
+				totalObs += n
+			}
+			set.Stats = make([]FactorGroupStats, g)
+			for k := 0; k < g; k++ {
+				gs := FactorGroupStats{Index: k + 1, Label: fmt.Sprintf("Q%d", k+1)}
+				if st := valueStats(accVals[k]); st != nil {
+					gs.FactorMin, gs.FactorP25, gs.FactorMedian = f64p(st.Min), f64p(st.P25), f64p(st.Median)
+					gs.FactorMean, gs.FactorP75, gs.FactorMax, gs.FactorStd =
+						f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
+				}
+				gs.Observations = accObs[k]
+				gs.Dates = dayCnts[k]
+				if totalObs > 0 {
+					gs.CountPct = float64(accObs[k]) / float64(totalObs)
+				}
+				if dayCnts[k] > 0 {
+					gs.ForwardReturn = f64p(dayRets[k] / float64(dayCnts[k]))
+				}
+				set.Stats[k] = gs
+			}
+			set.Quintiles, set.Summary = summarizeFromStats(set.Stats, g)
+		} else {
+			// 年度：不做组内值统计，只算组收益与摘要
+			qs := make([]float64, 0, g)
+			complete := true
+			for k := 0; k < g; k++ {
+				if dayCnts[k] == 0 {
+					complete = false
+					break
+				}
+				qs = append(qs, dayRets[k]/float64(dayCnts[k]))
+			}
+			if !complete {
+				qs = nil
+			}
+			set.Quintiles = qs
+			set.Summary = summarizeQuintiles(qs, g)
+		}
+		sets[si] = set
 	}
-	return groups, summaryQs, summarizeQuintiles(summaryQs, g)
+	return sets
 }
 
 // runAnalysis 因子分析主循环：逐日横截面 因子值名次 vs 未来收益名次 → Spearman IC。
@@ -692,6 +829,11 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	overall := aggregateIC(days, vals, rets)
 	groups, summaryQs, summary := aggregateGroups(days, vals, rets, cfg.Grouping)
 	isBins := cfg.Grouping.Mode == "bins"
+	// 全部组数预算（仅 quantile）：前端切组零重算；bins 断点固定不参与。
+	var allGroupings []GroupingSet
+	if !isBins {
+		allGroupings = aggregateQuantileSets(days, vals, rets, true)
+	}
 
 	// 年度拆分：同一批逐日观测按自然年切段、以与全区间相同的口径重算，
 	// 使跨周期汇总无法掩盖某些年份失效或反向。
@@ -699,12 +841,17 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	for _, gd := range groupDaysByYear(days) {
 		yic := aggregateIC(gd, vals, rets)
 		_, yqs, ysum := aggregateGroups(gd, vals, rets, cfg.Grouping)
+		var yaAll []GroupingSet
+		if !isBins {
+			yaAll = aggregateQuantileSets(gd, vals, rets, false)
+		}
 		yearly = append(yearly, YearAnalysis{
-			Year:        gd[0].Year(),
-			Stats:       yic.Stats,
-			Quintiles:   yqs,
-			Summary:     ysum,
-			TradingDays: len(gd),
+			Year:         gd[0].Year(),
+			Stats:        yic.Stats,
+			Quintiles:    yqs,
+			Summary:      ysum,
+			TradingDays:  len(gd),
+			AllGroupings: yaAll,
 		})
 	}
 
@@ -743,6 +890,7 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 		},
 		Grouping:      cfg.Grouping,
 		Groups:        groups,
+		AllGroupings:  allGroupings,
 		Years:         yearly,
 		Stats:         overall.Stats,
 		Summary:       summary,

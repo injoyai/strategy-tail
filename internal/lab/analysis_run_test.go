@@ -323,6 +323,131 @@ func TestRunAnalysisSevenGroups(t *testing.T) {
 	}
 }
 
+// TestRunAnalysisAllGroupings 全部组数预算：报告 allGroupings 覆盖 2-20 且
+// 与单档请求结果完全一致（排序一次+线性扫描 vs quantileAssign 同序）；
+// 年度 allGroupings 只含收益/摘要（Stats 为空）；bins 模式不预算。
+func TestRunAnalysisAllGroupings(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+
+	base := time.Date(2024, 12, 24, 0, 0, 0, 0, time.Local)
+	mk := func(start, step float64) []float64 {
+		cs := make([]float64, 28)
+		for i := range cs {
+			cs[i] = start + step*float64(i)
+		}
+		return cs
+	}
+	codes := []string{"sh600001", "sh600002", "sh600003", "sh600004", "sh600005", "sh600006", "sh600007"}
+	steps := []float64{0.6, 0.45, 0.3, 0.15, 0, -0.15, -0.3}
+	for i, c := range codes {
+		writeDayDBCloses(t, dir, c, mk(10, steps[i]), base)
+	}
+
+	cfg := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2025, EndYear: 2025,
+			SampleMode: "codes", SampleCodes: codes, ScriptName: "matrix"},
+		Kind: "momentum", Days: 2, Window: 1,
+		Grouping: GroupingConfig{Mode: "quantile", Groups: 7},
+	}
+	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("runAnalysis: %v", err)
+	}
+	// 全区间 allGroupings：覆盖 2..20，组数升序
+	if len(rep.AllGroupings) != 19 {
+		t.Fatalf("len(AllGroupings) = %d, want 19（2-20）", len(rep.AllGroupings))
+	}
+	for i, s := range rep.AllGroupings {
+		if s.Groups != i+2 {
+			t.Fatalf("AllGroupings[%d].Groups = %d, want %d", i, s.Groups, i+2)
+		}
+	}
+	// 与单档请求（7 组）完全一致：收益/摘要逐组相等
+	seven := rep.AllGroupings[7-2]
+	if len(seven.Stats) != 7 || len(seven.Quintiles) != 7 {
+		t.Fatalf("7 档 Stats/Quintiles 长度 = %d/%d, want 7/7", len(seven.Stats), len(seven.Quintiles))
+	}
+	for i, gs := range seven.Stats {
+		if gs.ForwardReturn == nil || rep.Groups[i].ForwardReturn == nil ||
+			!nearlyEq(*gs.ForwardReturn, *rep.Groups[i].ForwardReturn) {
+			t.Fatalf("档 7 组 %d 收益 %v ≠ 单档 %v", i, gs.ForwardReturn, rep.Groups[i].ForwardReturn)
+		}
+		if gs.FactorMedian == nil || rep.Groups[i].FactorMedian == nil ||
+			!nearlyEq(*gs.FactorMedian, *rep.Groups[i].FactorMedian) {
+			t.Fatalf("档 7 组 %d 中位数 %v ≠ 单档 %v", i, gs.FactorMedian, rep.Groups[i].FactorMedian)
+		}
+	}
+	for i := range seven.Quintiles {
+		if !nearlyEq(seven.Quintiles[i], rep.Quintiles[i]) {
+			t.Fatalf("档 7 quintiles[%d] = %v, want %v", i, seven.Quintiles[i], rep.Quintiles[i])
+		}
+	}
+	if seven.Summary.Direction != rep.Summary.Direction {
+		t.Fatalf("档 7 Summary = %+v, want %+v", seven.Summary, rep.Summary)
+	}
+	// 5 档也预算了
+	five := rep.AllGroupings[5-2]
+	if len(five.Stats) != 5 || len(five.Quintiles) != 5 {
+		t.Fatalf("5 档 Stats/Quintiles 长度 = %d/%d, want 5/5", len(five.Stats), len(five.Quintiles))
+	}
+	// 年度 allGroupings：长度 19、Stats 为空（控制体积）、收益与单档年度一致
+	ya := rep.Years[0].AllGroupings
+	if len(ya) != 19 {
+		t.Fatalf("年度 len(AllGroupings) = %d, want 19", len(ya))
+	}
+	ySeven := ya[7-2]
+	if ySeven.Stats != nil {
+		t.Fatalf("年度档应无组内统计: %+v", ySeven.Stats)
+	}
+	for i := range ySeven.Quintiles {
+		if !nearlyEq(ySeven.Quintiles[i], rep.Years[0].Quintiles[i]) {
+			t.Fatalf("年度档 7 quintiles[%d] = %v, want %v", i, ySeven.Quintiles[i], rep.Years[0].Quintiles[i])
+		}
+	}
+	if ySeven.Summary.Direction != rep.Years[0].Summary.Direction {
+		t.Fatalf("年度档 Summary = %+v, want %+v", ySeven.Summary, rep.Years[0].Summary)
+	}
+}
+
+// TestRunAnalysisBinsNoAllGroupings bins 模式不预算全部组数（断点固定）。
+func TestRunAnalysisBinsNoAllGroupings(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+
+	base := time.Date(2024, 12, 24, 0, 0, 0, 0, time.Local)
+	mk := func(start, step float64) []float64 {
+		cs := make([]float64, 28)
+		for i := range cs {
+			cs[i] = start + step*float64(i)
+		}
+		return cs
+	}
+	codes := []string{"sh600001", "sh600002", "sh600003", "sh600004", "sh600005"}
+	for i, step := range []float64{0.6, 0.1, 0, -0.12, -0.35} {
+		writeDayDBCloses(t, dir, codes[i], mk(10, step), base)
+	}
+
+	cfg := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2025, EndYear: 2025,
+			SampleMode: "codes", SampleCodes: codes, ScriptName: "matrix"},
+		Kind: "momentum", Days: 2, Window: 1,
+		Grouping: GroupingConfig{Mode: "bins", Cuts: []float64{-0.05, -0.02, 0, 0.02}},
+	}
+	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("runAnalysis: %v", err)
+	}
+	if rep.AllGroupings != nil {
+		t.Fatalf("bins 模式 AllGroupings = %v, want nil", rep.AllGroupings)
+	}
+	for _, y := range rep.Years {
+		if y.AllGroupings != nil {
+			t.Fatalf("bins 模式年度 AllGroupings = %v, want nil", y.AllGroupings)
+		}
+	}
+}
+
 // TestRunAnalysisAllEqual 全部股票因子值相同 → 整体一个并列块归入中间组，
 // 不强拆成看似有收益差异的五组；摘要 insufficient。
 func TestRunAnalysisAllEqual(t *testing.T) {
