@@ -595,21 +595,22 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 }
 
 // aggregateQuantileSets 对一组交易日预算全部组数（minGroups..maxGroups）的
-// 等频分组结果。分位排序与组数无关，每日横截面只排序一次并缓存，各档用
-// 中点公式 (i+j)*g/(2n) 线性扫描归组（tie block 整块不拆分），避免 19 档
-// 重复排序。返回组数升序的 19 个 GroupingSet；fullStats=true 时填充每组
-// 因子值分布（全区间用），否则只填 Quintiles/Summary（年度用，控制体积）。
-// 仅 quantile 模式调用（bins 断点随组数变化，不参与切组预算）。
+// 等频分组结果。分位排序与组数无关：每日横截面按 value/code 只排序一次并
+// 缓存（值与收益切片对齐），各档按中点公式 (i+j)*g/(2n) 线性扫描归组
+// （tie block 整块不拆分）。按档逐个处理，fullStats 时单档组内值算完即
+// 释放，内存峰值 = 排序缓存 + 单档组桶，避免 19 档同时驻留。返回组数升序
+// 的 19 个 GroupingSet；fullStats=true 时填充每组因子值分布（全区间用），
+// 否则只填 Quintiles/Summary（年度用，控制体积）。仅 quantile 模式调用
+// （bins 断点随组数变化，不参与切组预算）。
 func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string]float64,
 	fullStats bool) []GroupingSet {
-	allG := make([]int, 0, maxGroups-minGroups+1)
-	for g := minGroups; g <= maxGroups; g++ {
-		allG = append(allG, g)
+	// 每日横截面排序一次并预取收益切片：后续各档按索引访问，避免逐观测
+	// map 查找（与 quantileAssign 同序，保证切组结果与单档请求完全一致）。
+	type daySlice struct {
+		vals []float64
+		rets []float64
 	}
-
-	// 每日横截面按 value/code 升序排序一次并缓存（与 quantileAssign 同序，
-	// 保证切组结果与单档请求完全一致）。
-	sorted := make([][]factorObs, 0, len(days))
+	cache := make([]daySlice, 0, len(days))
 	for _, day := range days {
 		obs := make([]factorObs, 0, len(vals[day]))
 		for c, v := range vals[day] {
@@ -621,34 +622,43 @@ func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string
 			}
 			return obs[a].Code < obs[b].Code
 		})
-		sorted = append(sorted, obs)
+		n := len(obs)
+		ds := daySlice{vals: make([]float64, n), rets: make([]float64, n)}
+		for i, o := range obs {
+			ds.vals[i] = o.Value
+			ds.rets[i] = rets[day][o.Code]
+		}
+		cache = append(cache, ds)
 	}
 
+	allG := make([]int, 0, maxGroups-minGroups+1)
+	for g := minGroups; g <= maxGroups; g++ {
+		allG = append(allG, g)
+	}
 	sets := make([]GroupingSet, len(allG))
 	for si, g := range allG {
 		accVals := make([][]float64, g) // 组内因子值（仅 fullStats 使用）
 		accObs := make([]int, g)
 		dayCnts := make([]int, g)
 		dayRets := make([]float64, g)
-		for ci, obs := range sorted {
-			n := len(obs)
+		for _, ds := range cache {
+			n := len(ds.vals)
 			if n == 0 {
 				continue
 			}
 			gSums, gCnts := make([]float64, g), make([]int, g)
 			for i := 0; i < n; {
 				j := i
-				for j+1 < n && obs[j+1].Value == obs[i].Value {
+				for j+1 < n && ds.vals[j+1] == ds.vals[i] {
 					j++
 				}
 				gr := (i + j) * g / (2 * n) // 中点公式整数形式
 				for k := i; k <= j; k++ {
-					o := obs[k]
 					if fullStats {
-						accVals[gr] = append(accVals[gr], o.Value)
+						accVals[gr] = append(accVals[gr], ds.vals[k])
 					}
 					accObs[gr]++
-					gSums[gr] += rets[days[ci]][o.Code]
+					gSums[gr] += ds.rets[k]
 					gCnts[gr]++
 				}
 				i = j + 1
@@ -827,12 +837,19 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	// 全区间：逐日 IC 与分组统计均按交易日等权。禁止先算年度均值再加权——
 	// 那样交易日较少的年份会获得过高权重。
 	overall := aggregateIC(days, vals, rets)
-	groups, summaryQs, summary := aggregateGroups(days, vals, rets, cfg.Grouping)
 	isBins := cfg.Grouping.Mode == "bins"
-	// 全部组数预算（仅 quantile）：前端切组零重算；bins 断点固定不参与。
+	// quantile 预算 2-20 全档（前端切组零重算），请求档直接从对应档位取，
+	// 避免再跑一遍单档聚合（每天只排序一次）；bins 断点固定，只算请求档。
+	var groups []FactorGroupStats
+	var summaryQs []float64
+	var summary QuintileSummary
 	var allGroupings []GroupingSet
-	if !isBins {
+	if isBins {
+		groups, summaryQs, summary = aggregateGroups(days, vals, rets, cfg.Grouping)
+	} else {
 		allGroupings = aggregateQuantileSets(days, vals, rets, true)
+		req := allGroupings[cfg.Grouping.groupCount()-minGroups]
+		groups, summaryQs, summary = req.Stats, req.Quintiles, req.Summary
 	}
 
 	// 年度拆分：同一批逐日观测按自然年切段、以与全区间相同的口径重算，
@@ -840,10 +857,15 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	yearly := make([]YearAnalysis, 0, len(years))
 	for _, gd := range groupDaysByYear(days) {
 		yic := aggregateIC(gd, vals, rets)
-		_, yqs, ysum := aggregateGroups(gd, vals, rets, cfg.Grouping)
+		var yqs []float64
+		var ysum QuintileSummary
 		var yaAll []GroupingSet
-		if !isBins {
+		if isBins {
+			_, yqs, ysum = aggregateGroups(gd, vals, rets, cfg.Grouping)
+		} else {
 			yaAll = aggregateQuantileSets(gd, vals, rets, false)
+			yreq := yaAll[cfg.Grouping.groupCount()-minGroups]
+			yqs, ysum = yreq.Quintiles, yreq.Summary
 		}
 		yearly = append(yearly, YearAnalysis{
 			Year:         gd[0].Year(),
