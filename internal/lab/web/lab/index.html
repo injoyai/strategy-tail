@@ -139,9 +139,9 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 #icStats{font-size:13px;color:var(--muted);margin-top:10px;font-family:var(--font-num)}
 .year-title{font-family:var(--font-disp);font-weight:600;letter-spacing:.05em;color:var(--gold-soft);font-size:13px;margin:18px 0 8px}
 .year-wrap{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
-#yearStability td{font-family:var(--font-num);font-variant-numeric:tabular-nums}
-#yearStability tbody tr{cursor:default}
-#yearStability td.na{color:var(--muted);font-family:inherit}
+#yearStability td,#groupDetail td{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+#yearStability tbody tr,#groupDetail tbody tr{cursor:default}
+#yearStability td.na,#groupDetail td.na{color:var(--muted);font-family:inherit}
 .mode-switch{display:inline-flex;border:1px solid var(--rule2);border-radius:11px;overflow:hidden;margin-bottom:15px;background:rgba(0,0,0,.25);padding:3px}
 .mode-switch button{border:none;background:transparent;padding:7px 17px;border-radius:8px;font-size:12px;cursor:pointer;color:var(--muted);transition:color .16s ease,background-color .16s ease}
 .mode-switch button+button{border-left:0}
@@ -428,7 +428,17 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
         <div class="coverage" id="rangeMeta"></div>
         <div class="summary-line" id="quintileSummary"></div>
         <div id="quintileChart"></div>
-        <div class="empty" id="quintileNA" style="display:none">结果不足：有效样本过少，无法把样本分成五组并计算分组收益。</div>
+        <div class="empty" id="quintileNA" style="display:none">结果不足：有效样本过少，无法完成分组并计算分组收益。</div>
+
+        <div class="year-title" id="groupDetailTitle" style="display:none">分组明细</div>
+        <div class="year-wrap" id="groupDetailWrap" style="display:none">
+          <table id="groupDetail">
+            <thead><tr>
+              <th>组</th><th>因子值范围</th><th>中位数</th><th>均值</th><th>样本占比</th><th>未来收益</th>
+            </tr></thead>
+            <tbody id="groupBody"></tbody>
+          </table>
+        </div>
 
         <div class="coverage">
           <span id="covText"></span>
@@ -1194,25 +1204,41 @@ function renderAnalysis() {
   const DIR = {
     ascending: '因子值越大，未来收益越高',
     descending: '因子值越大，未来收益越低',
-    mixed: '五组收益方向不一致',
-    flat: '五组收益接近，因子区分度弱',
-    insufficient: '结果不足：五组数据不完整，无方向结论',
+    mixed: '各组收益方向不一致',
+    flat: '各组收益接近，因子区分度弱',
+    insufficient: '结果不足：分组数据不完整，无方向结论',
   };
   const sum = currentAnalysis.summary || {};
   let txt = DIR[sum.direction] || sum.direction || '';
   if (sum.monotonic && (sum.direction === 'ascending' || sum.direction === 'descending')) txt += '（单调）';
   if (sum.spread != null && isFinite(sum.spread)) txt += `；最高组−最低组收益差 ${(sum.spread * 100).toFixed(2)}%`;
   $('quintileSummary').textContent = txt;
-  // 2) 五组柱状图（无 quintiles 不画空柱）
-  const qs = currentAnalysis.quintiles;
-  const hasQ = Array.isArray(qs) && qs.length === 5 && qs.every(v => typeof v === 'number' && isFinite(v));
-  if (hasQ) {
+  // 2) 分组柱状图与明细表：v2 groups 优先（含因子值域），旧报告降级 quintiles
+  const unit = currentAnalysis.factor ? currentAnalysis.factor.unit : '';
+  const real = Array.isArray(currentAnalysis.groups) ? currentAnalysis.groups : null;
+  const qsArr = currentAnalysis.quintiles;
+  const legacyGs = Array.isArray(qsArr) && qsArr.length >= 2
+    ? qsArr.map((v, i) => ({label: 'Q' + (i + 1), forwardReturn: v})) : null;
+  const chartGs = real && real.length ? real : legacyGs;
+  const nGroups = chartGs ? chartGs.length : (real ? real.length : 5);
+  const hasAll = !!(chartGs && chartGs.length &&
+    chartGs.every(g => typeof g.forwardReturn === 'number' && isFinite(g.forwardReturn)));
+  if (hasAll) {
     $('quintileChart').style.display = '';
     $('quintileNA').style.display = 'none';
-    renderQuintiles(qs);
+    renderGroupChart(chartGs, unit);
   } else {
     $('quintileChart').style.display = 'none';
     $('quintileNA').style.display = '';
+    $('quintileNA').textContent = `结果不足：有效样本过少，无法把样本分成 ${nGroups} 组并计算分组收益。`;
+  }
+  if (real && real.length) {
+    $('groupDetailTitle').style.display = '';
+    $('groupDetailWrap').style.display = '';
+    renderGroupDetail(real, unit);
+  } else {
+    $('groupDetailTitle').style.display = 'none';
+    $('groupDetailWrap').style.display = 'none';
   }
   // 3) Coverage：请求/完成/跳过 + 失败明细可展开
   renderCoverage(currentAnalysis.coverage);
@@ -1311,23 +1337,81 @@ function renderYearStability(rep) {
     tb.appendChild(tr);
   });
 }
-function renderQuintiles(qs) {
+// sig3 3 位有效数字去尾零（0.123→0.123，1234→1230，1e-7→1e-7）。
+const sig3 = v => String(Number(v.toPrecision(3)));
+// fmtFactorVal 因子值展示（unit 感知）：ratio ×100 加 %、multiple 加 ×、
+// 其余原值；仅影响显示，JSON/提交始终用原始值。unit 见 strategies/factor/registry.go。
+function fmtFactorVal(v, unit) {
+  if (v == null || !isFinite(v)) return '—';
+  if (unit === 'ratio') return sig3(v * 100) + '%';
+  if (unit === 'multiple') return sig3(v) + '×';
+  return sig3(v);
+}
+// groupRangeLabel 组的值域标签：分位模式=全样本累计 min~max（历史分布，
+// 非固定边界）；bins 模式=固定边界 (lower, upper]，开放端 ±∞；旧数据两者皆无。
+function groupRangeLabel(g, unit) {
+  if (g.factorMin != null && g.factorMax != null) {
+    return `[${fmtFactorVal(g.factorMin, unit)} ~ ${fmtFactorVal(g.factorMax, unit)}]`;
+  }
+  if (g.lower != null || g.upper != null) {
+    return `(${g.lower == null ? '-∞' : fmtFactorVal(g.lower, unit)}, ${g.upper == null ? '+∞' : fmtFactorVal(g.upper, unit)}]`;
+  }
+  return '';
+}
+// renderGroupChart 分组收益柱状图：X 轴标签两行（组号 + 值域），N 组全显示。
+function renderGroupChart(gs, unit) {
   const el = $('quintileChart');
   if (!quintileC) { quintileC = echarts.init(el, 'dark'); charts.push(quintileC); }
+  const cats = gs.map((g, i) => {
+    const head = i === 0 ? `${g.label} 最低` : i === gs.length - 1 ? `${g.label} 最高` : g.label;
+    const range = groupRangeLabel(g, unit);
+    return range ? head + '\n' + range : head;
+  });
   quintileC.setOption({
     backgroundColor: 'transparent',
-    title: {text: '五组平均收益%（按因子值升序等频分组）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
+    title: {text: `${gs.length} 组平均收益%（按因子值升序等频分组）`, left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis', valueFormatter: v => v + '%'},
-    grid: {left: 60, right: 20, top: 50, bottom: 40},
-    xAxis: {type: 'category', data: ['最低组', '第2组', '第3组', '第4组', '最高组']},
+    grid: {left: 60, right: 20, top: 50, bottom: 56},
+    xAxis: {type: 'category', data: cats, axisLabel: {interval: 0, fontSize: 10}},
     yAxis: {type: 'value', axisLabel: {formatter: '{value}%'}},
     series: [{
       type: 'bar',
-      data: qs.map(v => +(v * 100).toFixed(3)), // 显示乘 100；本页不提交该值
+      data: gs.map(g => +(g.forwardReturn * 100).toFixed(3)), // 显示乘 100；本页不提交该值
       itemStyle: {color: p => p.value >= 0 ? '#ef4444' : '#22c55e'},
       label: {show: true, position: 'top', fontSize: 11, formatter: p => p.value + '%'}
     }]
   }, true);
+}
+// renderGroupDetail 分组明细表：值域为该组全样本因子值分布（历史累计），
+// 相邻组范围重叠属正常（分位边界每日变化）；空组显示“无有效样本”。
+function renderGroupDetail(gs, unit) {
+  const tb = $('groupBody');
+  tb.innerHTML = '';
+  gs.forEach(g => {
+    const tr = document.createElement('tr');
+    const cell = (txt, cls) => {
+      const td = document.createElement('td');
+      td.textContent = txt;
+      if (cls) td.className = cls;
+      tr.appendChild(td);
+    };
+    cell(g.label);
+    const range = groupRangeLabel(g, unit);
+    if (range) cell(range);
+    else cell('无有效样本', 'na');
+    if (g.factorMedian != null) cell(fmtFactorVal(g.factorMedian, unit));
+    else cell('无有效样本', 'na');
+    if (g.factorMean != null) cell(fmtFactorVal(g.factorMean, unit));
+    else cell('无有效样本', 'na');
+    if (g.countPct > 0) cell((g.countPct * 100).toFixed(1) + '%');
+    else cell('无有效样本', 'na');
+    if (g.forwardReturn == null) cell('无有效样本', 'na');
+    else {
+      const v = g.forwardReturn * 100;
+      cell(v.toFixed(2) + '%', v > 0 ? 'pos' : (v < 0 ? 'neg' : ''));
+    }
+    tb.appendChild(tr);
+  });
 }
 function renderCoverage(cov) {
   if (!cov) { $('covText').textContent = ''; return; }
