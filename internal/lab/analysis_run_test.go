@@ -255,6 +255,74 @@ func TestRunAnalysisBins(t *testing.T) {
 	}
 }
 
+// TestRunAnalysisSevenGroups 七组等频：7 票斜率互异 → 每日 7 个互异因子值，
+// 七组完整；报告 Groups/Quintiles 镜像/年度 Quintiles 长度均为 7，
+// CountPct≈1/7，组收益与斜率同向（ascending）。
+func TestRunAnalysisSevenGroups(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+
+	base := time.Date(2024, 12, 24, 0, 0, 0, 0, time.Local)
+	mk := func(start, step float64) []float64 {
+		cs := make([]float64, 28)
+		for i := range cs {
+			cs[i] = start + step*float64(i)
+		}
+		return cs
+	}
+	// 7 票斜率互异 → 2 日动量互异且与斜率同向：组序 = 斜率升序
+	codes := []string{"sh600001", "sh600002", "sh600003", "sh600004", "sh600005", "sh600006", "sh600007"}
+	steps := []float64{0.6, 0.45, 0.3, 0.15, 0, -0.15, -0.3}
+	for i, c := range codes {
+		writeDayDBCloses(t, dir, c, mk(10, steps[i]), base)
+	}
+
+	cfg := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2025, EndYear: 2025,
+			SampleMode: "codes", SampleCodes: codes, ScriptName: "matrix"},
+		Kind: "momentum", Days: 2, Window: 1,
+		Grouping: GroupingConfig{Mode: "quantile", Groups: 7},
+	}
+	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("runAnalysis: %v", err)
+	}
+	if rep.Grouping.Groups != 7 {
+		t.Fatalf("Grouping.Groups = %d, want 7", rep.Grouping.Groups)
+	}
+	if len(rep.Groups) != 7 {
+		t.Fatalf("len(Groups) = %d, want 7", len(rep.Groups))
+	}
+	for i, g := range rep.Groups {
+		if g.Index != i+1 || g.Label != fmt.Sprintf("Q%d", i+1) {
+			t.Fatalf("Groups[%d] 标识 = %d/%q", i, g.Index, g.Label)
+		}
+		if g.Observations != 19 || g.Dates != 19 {
+			t.Fatalf("Groups[%d] 计数 = %d/%d, want 19/19", i, g.Observations, g.Dates)
+		}
+		if !nearlyEq(g.CountPct, 1.0/7) {
+			t.Fatalf("Groups[%d].CountPct = %v, want 1/7", i, g.CountPct)
+		}
+		if g.ForwardReturn == nil || g.FactorMedian == nil {
+			t.Fatalf("Groups[%d] 统计缺失: %+v", i, g)
+		}
+	}
+	// 组收益与斜率同向：Q7（最大斜率）收益高于 Q1（最小斜率）
+	if *rep.Groups[6].ForwardReturn <= *rep.Groups[0].ForwardReturn {
+		t.Fatalf("Q7 收益应高于 Q1: %v vs %v", *rep.Groups[6].ForwardReturn, *rep.Groups[0].ForwardReturn)
+	}
+	// 兼容镜像与年度拆分同长度
+	if rep.Quintiles == nil || len(rep.Quintiles) != 7 {
+		t.Fatalf("Quintiles = %v, want 7 个收益值", rep.Quintiles)
+	}
+	if len(rep.Years) != 1 || len(rep.Years[0].Quintiles) != 7 {
+		t.Fatalf("Years Quintiles 长度错误: %+v", rep.Years)
+	}
+	if rep.Summary.Direction != "ascending" || !rep.Summary.Monotonic {
+		t.Fatalf("Summary = %+v, want ascending", rep.Summary)
+	}
+}
+
 // TestRunAnalysisAllEqual 全部股票因子值相同 → 整体一个并列块归入中间组，
 // 不强拆成看似有收益差异的五组；摘要 insufficient。
 func TestRunAnalysisAllEqual(t *testing.T) {
@@ -420,6 +488,21 @@ func TestAnalyzeConfigValidate(t *testing.T) {
 	badMode.Grouping = GroupingConfig{Mode: "median"}
 	if err := badMode.Validate(); err == nil {
 		t.Fatal("未知分组模式应报错")
+	}
+	seven := base
+	seven.Grouping = GroupingConfig{Groups: 7}
+	if err := seven.Validate(); err != nil {
+		t.Fatalf("7 组等频应合法: %v", err)
+	}
+	badGroups := base
+	badGroups.Grouping = GroupingConfig{Groups: 1}
+	if err := badGroups.Validate(); err == nil {
+		t.Fatal("分组数 1 应报错")
+	}
+	bins7 := base
+	bins7.Grouping = GroupingConfig{Mode: "bins", Groups: 7, Cuts: []float64{1, 2, 3, 4}}
+	if err := bins7.Validate(); err == nil {
+		t.Fatal("7 组 bins 需 6 个断点，4 个应报错")
 	}
 }
 
