@@ -163,9 +163,9 @@ type AnalyzeConfig struct {
 // 组数由 Groups 决定（缺省 5）；bins 为固定数值区间，cuts 必须恰好 Groups-1
 // 个严格递增断点，形成首末开放、中间左开右闭的分组。
 type GroupingConfig struct {
-	Mode   string    `json:"mode,omitempty"`  // quantile | bins
+	Mode   string    `json:"mode,omitempty"`   // quantile | bins
 	Groups int       `json:"groups,omitempty"` // 分组数；0=缺省 5；有效 2-20
-	Cuts   []float64 `json:"cuts,omitempty"`  // bins 模式必须恰好 Groups-1 个
+	Cuts   []float64 `json:"cuts,omitempty"`   // bins 模式必须恰好 Groups-1 个
 }
 
 // 分组数允许范围（Groups=0 视为缺省 5，不参与该范围校验）。

@@ -242,7 +242,7 @@ func TestGroupingValidate(t *testing.T) {
 	// 分组数：缺省 0、2、20 合法；越界非法；bins 断点数 = 组数-1
 	for _, c := range []GroupingConfig{
 		{Groups: 1}, {Groups: 21}, {Groups: -3},
-		{Mode: "quantile", Groups: 7, Cuts: []float64{1, 2}}, // quantile 不接受断点
+		{Mode: "quantile", Groups: 7, Cuts: []float64{1, 2}},   // quantile 不接受断点
 		{Mode: "bins", Groups: 7, Cuts: []float64{1, 2, 3, 4}}, // 7 组需 6 断点
 	} {
 		if err := c.Validate(); err == nil {
