@@ -67,17 +67,17 @@ func spearmanIC(vals, rets []float64) float64 {
 	return f.Pearson(avgRanks(vals), avgRanks(rets))
 }
 
-// QuintileSummary 五组收益摘要：方向与 spread 由后端计算，前端不做二次推断。
+// QuintileSummary 分组收益摘要：方向与 spread 由后端计算，前端不做二次推断。
 type QuintileSummary struct {
 	Direction string   `json:"direction"` // ascending|descending|mixed|flat|insufficient
-	Spread    *float64 `json:"spread"`    // Q5−Q1；五组不完整为 null
+	Spread    *float64 `json:"spread"`    // 首末组收益差；组不完整为 null
 	Monotonic bool     `json:"monotonic"`
 }
 
-// summarizeQuintiles 五组收益摘要（纯函数）：不足五组或含 NaN 视为
+// summarizeQuintiles n 组收益摘要（纯函数）：组数不足 n 或含 NaN 视为
 // insufficient（spread null）；严格单调给方向；全相等为 flat。
-func summarizeQuintiles(qs []float64) QuintileSummary {
-	if len(qs) < 5 {
+func summarizeQuintiles(qs []float64, n int) QuintileSummary {
+	if len(qs) < n {
 		return QuintileSummary{Direction: "insufficient"}
 	}
 	for _, v := range qs {
@@ -114,7 +114,7 @@ func summarizeQuintiles(qs []float64) QuintileSummary {
 			s.Direction = "mixed"
 		}
 	}
-	spread := qs[4] - qs[0]
+	spread := qs[len(qs)-1] - qs[0]
 	s.Spread = &spread
 	return s
 }
@@ -220,11 +220,11 @@ type factorObs struct {
 	Value float64
 }
 
-// quantileAssign 等数量五组（分位）分组：观测按因子值升序、code 升序排序，
+// quantileAssign 等数量 g 组（分位）分组：观测按因子值升序、code 升序排序，
 // 相同因子值的连续观测为并列块，整块按排序位置中点归组（避免拆块产生
-// 虚假组间差异），公式 floor(((i+j)/2)×5/n) 以整数倍增 (i+j)×5/(2n) 计算。
-// 返回与输入同序的组号 0..4（0=因子值最低组）；相同输入结果恒定。
-func quantileAssign(obs []factorObs) []int {
+// 虚假组间差异），公式 floor(((i+j)/2)×g/n) 以整数倍增 (i+j)×g/(2n) 计算。
+// 返回与输入同序的组号 0..g-1（0=因子值最低组）；相同输入结果恒定。
+func quantileAssign(obs []factorObs, g int) []int {
 	n := len(obs)
 	idx := make([]int, n)
 	for i := range idx {
@@ -242,9 +242,9 @@ func quantileAssign(obs []factorObs) []int {
 		for j+1 < n && obs[idx[j+1]].Value == obs[idx[i]].Value {
 			j++
 		}
-		g := (i + j) * 5 / (2 * n) // 中点公式整数形式；n≥1 时结果天然在 0..4
+		gr := (i + j) * g / (2 * n) // 中点公式整数形式；结果天然在 0..g-1
 		for k := i; k <= j; k++ {
-			out[idx[k]] = g
+			out[idx[k]] = gr
 		}
 		i = j + 1
 	}
@@ -345,8 +345,8 @@ type FactorSnapshot struct {
 // FactorGroupStats 单组统计：因子值分布为全样本累计（原始值），
 // ForwardReturn 为每日组均值再按日期等权；空组数值字段为 null。
 type FactorGroupStats struct {
-	Index         int      `json:"index"` // 1..5
-	Label         string   `json:"label"` // Q1..Q5 或 B1..B5
+	Index         int      `json:"index"` // 1..N
+	Label         string   `json:"label"` // Q1..QN 或 B1..BN
 	Lower         *float64 `json:"lower"` // 固定区间边界；开放端为 null
 	Upper         *float64 `json:"upper"`
 	FactorMin     *float64 `json:"factorMin"`
@@ -382,7 +382,7 @@ type AnalysisRange struct {
 type YearAnalysis struct {
 	Year        int             `json:"year"`
 	Stats       ICStats         `json:"stats"`
-	Quintiles   []float64       `json:"quintiles"` // 该年五组收益；组不完整为 null
+	Quintiles   []float64       `json:"quintiles"` // 该年分组收益（长度=组数）；组不完整为 null
 	Summary     QuintileSummary `json:"summary"`
 	TradingDays int             `json:"tradingDays"` // 该年有横截面观测的交易日数
 }
@@ -403,7 +403,7 @@ type AnalysisReport struct {
 	// 历史报告无此字段时为空切片，前端显示“历史报告未记录”。
 	Years     []YearAnalysis       `json:"years"`
 	Stats     ICStats              `json:"stats"`
-	Quintiles []float64            `json:"quintiles"` // 分位模式五组收益；组不完整或 bins 模式为 nil
+	Quintiles []float64            `json:"quintiles"` // 分位模式分组收益（长度=组数）；组不完整或 bins 模式为 nil
 	Summary   QuintileSummary      `json:"summary"`
 	Coverage  researchrun.Coverage `json:"coverage"`
 	// YearCoverage 逐“股票×年份”覆盖率：回测按整票判定，分析保留同一股票的
@@ -479,18 +479,19 @@ func sortFailures(fs []researchrun.Failure) {
 	})
 }
 
-// aggregateGroups 对一组交易日聚合五组统计：分位模式按并列块整块归组
-// （确定性 tie-break），bins 模式按固定区间；组内因子值为全样本累计（原始值），
-// 组收益先算日内组均值、再对非空交易日等权。返回五组统计、五组收益
-// （任一组无收益即为 nil，不以 0 冒充）与摘要。全区间与年度共用本函数，
-// 保证两者口径一致。
+// aggregateGroups 对一组交易日聚合分组统计：分位模式按并列块整块归组
+// （确定性 tie-break），bins 模式按固定区间；组数由 grouping.groupCount()
+// 决定。组内因子值为全样本累计（原始值），组收益先算日内组均值、再对
+// 非空交易日等权。返回全部组统计、组收益（任一组无收益即为 nil，不以 0
+// 冒充）与摘要。全区间与年度共用本函数，保证两者口径一致。
 func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float64,
 	grouping GroupingConfig) ([]FactorGroupStats, []float64, QuintileSummary) {
 	isBins := grouping.Mode == "bins"
-	accVals := make([][]float64, 5) // 组内因子值（全样本累计）
-	accObs := make([]int, 5)        // 有效观测数
-	dayCnts := make([]int, 5)       // 组非空日期数
-	dayRets := make([]float64, 5)   // 组非空日期的日内组均值之和
+	g := grouping.groupCount()
+	accVals := make([][]float64, g) // 组内因子值（全样本累计）
+	accObs := make([]int, g)        // 有效观测数
+	dayCnts := make([]int, g)       // 组非空日期数
+	dayRets := make([]float64, g)   // 组非空日期的日内组均值之和
 	for _, day := range days {
 		obs := make([]factorObs, 0, len(vals[day]))
 		for c, v := range vals[day] {
@@ -502,20 +503,20 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 				assign[i] = binGroup(o.Value, grouping.Cuts)
 			}
 		} else {
-			assign = quantileAssign(obs)
+			assign = quantileAssign(obs, g)
 		}
-		gSums, gCnts := make([]float64, 5), make([]int, 5)
+		gSums, gCnts := make([]float64, g), make([]int, g)
 		for i, o := range obs {
-			g := assign[i]
-			accVals[g] = append(accVals[g], o.Value)
-			accObs[g]++
-			gSums[g] += rets[day][o.Code]
-			gCnts[g]++
+			k := assign[i]
+			accVals[k] = append(accVals[k], o.Value)
+			accObs[k]++
+			gSums[k] += rets[day][o.Code]
+			gCnts[k]++
 		}
-		for g := 0; g < 5; g++ {
-			if gCnts[g] > 0 {
-				dayCnts[g]++
-				dayRets[g] += gSums[g] / float64(gCnts[g])
+		for k := 0; k < g; k++ {
+			if gCnts[k] > 0 {
+				dayCnts[k]++
+				dayRets[k] += gSums[k] / float64(gCnts[k])
 			}
 		}
 	}
@@ -524,50 +525,50 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 	for _, n := range accObs {
 		totalObs += n
 	}
-	groups := make([]FactorGroupStats, 5)
-	for g := range groups {
-		gs := FactorGroupStats{Index: g + 1}
+	groups := make([]FactorGroupStats, g)
+	for k := range groups {
+		gs := FactorGroupStats{Index: k + 1}
 		if isBins {
-			gs.Label = fmt.Sprintf("B%d", g+1)
-			if g > 0 {
-				gs.Lower = f64p(grouping.Cuts[g-1])
+			gs.Label = fmt.Sprintf("B%d", k+1)
+			if k > 0 {
+				gs.Lower = f64p(grouping.Cuts[k-1])
 			}
-			if g < 4 {
-				gs.Upper = f64p(grouping.Cuts[g])
+			if k < g-1 {
+				gs.Upper = f64p(grouping.Cuts[k])
 			}
 		} else {
-			gs.Label = fmt.Sprintf("Q%d", g+1)
+			gs.Label = fmt.Sprintf("Q%d", k+1)
 		}
-		if st := valueStats(accVals[g]); st != nil {
+		if st := valueStats(accVals[k]); st != nil {
 			gs.FactorMin, gs.FactorP25, gs.FactorMedian = f64p(st.Min), f64p(st.P25), f64p(st.Median)
 			gs.FactorMean, gs.FactorP75, gs.FactorMax, gs.FactorStd =
 				f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
 		}
-		gs.Observations = accObs[g]
-		gs.Dates = dayCnts[g]
+		gs.Observations = accObs[k]
+		gs.Dates = dayCnts[k]
 		if totalObs > 0 {
-			gs.CountPct = float64(accObs[g]) / float64(totalObs)
+			gs.CountPct = float64(accObs[k]) / float64(totalObs)
 		}
-		if dayCnts[g] > 0 {
-			gs.ForwardReturn = f64p(dayRets[g] / float64(dayCnts[g]))
+		if dayCnts[k] > 0 {
+			gs.ForwardReturn = f64p(dayRets[k] / float64(dayCnts[k]))
 		}
-		groups[g] = gs
+		groups[k] = gs
 	}
 
-	// 摘要两种模式同口径：基于五组 ForwardReturn，任一组无收益即 insufficient。
-	summaryQs := make([]float64, 0, 5)
+	// 摘要两种模式同口径：基于全部组 ForwardReturn，任一组无收益即 insufficient。
+	summaryQs := make([]float64, 0, g)
 	complete := true
-	for _, g := range groups {
-		if g.ForwardReturn == nil {
+	for _, gr := range groups {
+		if gr.ForwardReturn == nil {
 			complete = false
 			break
 		}
-		summaryQs = append(summaryQs, *g.ForwardReturn)
+		summaryQs = append(summaryQs, *gr.ForwardReturn)
 	}
 	if !complete {
 		summaryQs = nil
 	}
-	return groups, summaryQs, summarizeQuintiles(summaryQs)
+	return groups, summaryQs, summarizeQuintiles(summaryQs, g)
 }
 
 // runAnalysis 因子分析主循环：逐日横截面 因子值名次 vs 未来收益名次 → Spearman IC。
@@ -686,7 +687,7 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
 
-	// 全区间：逐日 IC 与五组统计均按交易日等权。禁止先算年度均值再加权——
+	// 全区间：逐日 IC 与分组统计均按交易日等权。禁止先算年度均值再加权——
 	// 那样交易日较少的年份会获得过高权重。
 	overall := aggregateIC(days, vals, rets)
 	groups, summaryQs, summary := aggregateGroups(days, vals, rets, cfg.Grouping)

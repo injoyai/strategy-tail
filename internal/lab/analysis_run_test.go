@@ -329,10 +329,10 @@ func TestRunAnalysisStopped(t *testing.T) {
 	}
 }
 
-// TestSummarizeQuintiles 五组摘要纯函数合同：方向枚举、spread 与 null 语义。
+// TestSummarizeQuintiles 分组摘要纯函数合同：方向枚举、spread 与 null 语义。
 func TestSummarizeQuintiles(t *testing.T) {
 	// 严格递增
-	s := summarizeQuintiles([]float64{-0.02, -0.01, 0, 0.01, 0.02})
+	s := summarizeQuintiles([]float64{-0.02, -0.01, 0, 0.01, 0.02}, 5)
 	if s.Direction != "ascending" || !s.Monotonic {
 		t.Fatalf("ascending: %+v", s)
 	}
@@ -340,7 +340,7 @@ func TestSummarizeQuintiles(t *testing.T) {
 		t.Fatalf("ascending spread = %+v", s.Spread)
 	}
 	// 严格递减
-	s = summarizeQuintiles([]float64{0.02, 0.01, 0, -0.01, -0.02})
+	s = summarizeQuintiles([]float64{0.02, 0.01, 0, -0.01, -0.02}, 5)
 	if s.Direction != "descending" || !s.Monotonic {
 		t.Fatalf("descending: %+v", s)
 	}
@@ -348,12 +348,12 @@ func TestSummarizeQuintiles(t *testing.T) {
 		t.Fatalf("descending spread = %+v", s.Spread)
 	}
 	// 混合
-	s = summarizeQuintiles([]float64{0.01, -0.01, 0.02, 0, 0.01})
+	s = summarizeQuintiles([]float64{0.01, -0.01, 0.02, 0, 0.01}, 5)
 	if s.Direction != "mixed" || s.Monotonic {
 		t.Fatalf("mixed: %+v", s)
 	}
 	// 全相等 → flat
-	s = summarizeQuintiles([]float64{0.01, 0.01, 0.01, 0.01, 0.01})
+	s = summarizeQuintiles([]float64{0.01, 0.01, 0.01, 0.01, 0.01}, 5)
 	if s.Direction != "flat" || s.Monotonic {
 		t.Fatalf("flat: %+v", s)
 	}
@@ -362,10 +362,20 @@ func TestSummarizeQuintiles(t *testing.T) {
 	}
 	// 不足五组 / NaN → insufficient，spread 为 null
 	for _, q := range [][]float64{nil, {1, 2, 3}, {1, 2, 3, 4, math.NaN()}} {
-		s = summarizeQuintiles(q)
+		s = summarizeQuintiles(q, 5)
 		if s.Direction != "insufficient" || s.Spread != nil || s.Monotonic {
 			t.Fatalf("insufficient %v: %+v", q, s)
 		}
+	}
+	// 7 组：严格递增，spread 为首末差
+	s = summarizeQuintiles([]float64{-0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03}, 7)
+	if s.Direction != "ascending" || !s.Monotonic || s.Spread == nil || !nearlyEq(*s.Spread, 0.06) {
+		t.Fatalf("7 组 ascending: %+v", s)
+	}
+	// 组数不足 7 → insufficient
+	s = summarizeQuintiles([]float64{1, 2, 3}, 7)
+	if s.Direction != "insufficient" || s.Spread != nil {
+		t.Fatalf("7 组不足: %+v", s)
 	}
 }
 

@@ -273,7 +273,7 @@ func TestQuantileAssign(t *testing.T) {
 	for i := range obs {
 		obs[i] = factorObs{Code: fmt.Sprintf("sh%06d", i+1), Value: float64(i + 1)}
 	}
-	g := quantileAssign(obs)
+	g := quantileAssign(obs, 5)
 	for i, want := range []int{0, 0, 1, 1, 2, 2, 3, 3, 4, 4} {
 		if g[i] != want {
 			t.Fatalf("g[%d] = %d, want %d", i, g[i], want)
@@ -281,7 +281,7 @@ func TestQuantileAssign(t *testing.T) {
 	}
 	// 输入乱序：组号跟随观测（按 code 核对）
 	shuffled := []factorObs{obs[3], obs[9], obs[0], obs[6], obs[1], obs[8], obs[2], obs[5], obs[4], obs[7]}
-	gs := quantileAssign(shuffled)
+	gs := quantileAssign(shuffled, 5)
 	for i, o := range shuffled {
 		want := int(o.Value-1) / 2 // 值 1..10 → 组 0..4
 		if gs[i] != want {
@@ -293,7 +293,7 @@ func TestQuantileAssign(t *testing.T) {
 	for i := range seven {
 		seven[i] = factorObs{Code: fmt.Sprintf("c%d", i), Value: float64(i + 1)}
 	}
-	g = quantileAssign(seven)
+	g = quantileAssign(seven, 5)
 	sizes := make([]int, 5)
 	for _, gi := range g {
 		sizes[gi]++
@@ -312,7 +312,7 @@ func TestQuantileAssign(t *testing.T) {
 		}
 		tie[i] = factorObs{Code: fmt.Sprintf("t%d", i), Value: v}
 	}
-	g = quantileAssign(tie)
+	g = quantileAssign(tie, 5)
 	for i, gi := range g {
 		want := 1
 		if i >= 6 {
@@ -327,17 +327,35 @@ func TestQuantileAssign(t *testing.T) {
 	for i := range same {
 		same[i] = factorObs{Code: fmt.Sprintf("s%d", i), Value: 7}
 	}
-	if g = quantileAssign(same); g[0] != 2 {
+	if g = quantileAssign(same, 5); g[0] != 2 {
 		t.Fatalf("全相等应归 Q3, got %v", g)
 	}
 	// 确定性：相同输入多次运行组成员完全一致
-	first := quantileAssign(tie)
+	first := quantileAssign(tie, 5)
 	for run := 0; run < 50; run++ {
-		again := quantileAssign(tie)
+		again := quantileAssign(tie, 5)
 		for i := range first {
 			if first[i] != again[i] {
 				t.Fatalf("第 %d 次运行结果不一致", run)
 			}
+		}
+	}
+	// g=7：n=10 唯一值 → 组号 floor(i*7/10)：[0,0,1,2,2,3,4,4,5,6]
+	g7 := quantileAssign(obs, 7)
+	for i, want := range []int{0, 0, 1, 2, 2, 3, 4, 4, 5, 6} {
+		if g7[i] != want {
+			t.Fatalf("g7[%d] = %d, want %d", i, g7[i], want)
+		}
+	}
+	// g=7、n=3：票数不足组数 → 只占用位置 0,2,4（floor(i*7/6)：0,2,4）
+	three := make([]factorObs, 3)
+	for i := range three {
+		three[i] = factorObs{Code: fmt.Sprintf("c%d", i), Value: float64(i + 1)}
+	}
+	gt := quantileAssign(three, 7)
+	for i, want := range []int{0, 2, 4} {
+		if gt[i] != want {
+			t.Fatalf("gt[%d] = %d, want %d", i, gt[i], want)
 		}
 	}
 }
