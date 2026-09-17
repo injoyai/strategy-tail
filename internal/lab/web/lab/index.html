@@ -396,6 +396,13 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
         <option value="5">5 日</option>
         <option value="20">20 日</option>
       </select>
+      <label class="factor-inline-label" for="factorGroups">分组数</label>
+      <select id="factorGroups">
+        <option value="5" selected>5 组</option>
+        <option value="7">7 组</option>
+        <option value="10">10 组</option>
+        <option value="11">11 组</option>
+      </select>
       <label class="factor-inline-label" for="factorStartYear">开始年份</label>
       <input type="number" id="factorStartYear" value="2018" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
       <label class="factor-inline-label" for="factorEndYear">结束年份</label>
@@ -1150,6 +1157,7 @@ async function runAnalysis() {
     cfg.kind = $('factorKind').value;
     cfg.days = +$('factorDays').value;
     cfg.window = +$('factorWindow').value;
+    cfg.grouping = {mode: 'quantile', groups: +$('factorGroups').value};
     await api('POST', '/api/analyze', cfg);
     showPendingTask('analysis');
     pollStatus();
