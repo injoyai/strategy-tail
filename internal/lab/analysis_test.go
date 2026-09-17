@@ -239,6 +239,31 @@ func TestGroupingValidate(t *testing.T) {
 	if err := (GroupingConfig{Mode: "bins", Cuts: []float64{-0.05, -0.02, 0, 0.02}}).Validate(); err != nil {
 		t.Fatalf("合法 bins 应通过: %v", err)
 	}
+	// 分组数：缺省 0、2、20 合法；越界非法；bins 断点数 = 组数-1
+	for _, c := range []GroupingConfig{
+		{Groups: 1}, {Groups: 21}, {Groups: -3},
+		{Mode: "quantile", Groups: 7, Cuts: []float64{1, 2}}, // quantile 不接受断点
+		{Mode: "bins", Groups: 7, Cuts: []float64{1, 2, 3, 4}}, // 7 组需 6 断点
+	} {
+		if err := c.Validate(); err == nil {
+			t.Fatalf("应报错: %+v", c)
+		}
+	}
+	for _, c := range []GroupingConfig{
+		{Groups: 0}, {Groups: 2}, {Groups: 20},
+		{Mode: "quantile", Groups: 7},
+		{Mode: "bins", Groups: 7, Cuts: []float64{1, 2, 3, 4, 5, 6}},
+	} {
+		if err := c.Validate(); err != nil {
+			t.Fatalf("应合法: %+v: %v", c, err)
+		}
+	}
+	if got := (GroupingConfig{}).groupCount(); got != 5 {
+		t.Fatalf("缺省 groupCount = %d, want 5", got)
+	}
+	if got := (GroupingConfig{Groups: 7}).groupCount(); got != 7 {
+		t.Fatalf("groupCount = %d, want 7", got)
+	}
 }
 
 // TestQuantileAssign 分位分组纯函数：等频、并列块不拆分、确定性。

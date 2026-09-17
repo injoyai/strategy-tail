@@ -156,28 +156,48 @@ type AnalyzeConfig struct {
 	Kind     string         `json:"kind"`               // 因子类型（registry kind）
 	Days     int            `json:"days"`               // 因子窗口参数（≤0 用各因子默认）
 	Window   int            `json:"window"`             // 未来收益窗口（交易日）
-	Grouping GroupingConfig `json:"grouping,omitempty"` // 分组方式；缺省等数量五组
+	Grouping GroupingConfig `json:"grouping,omitempty"` // 分组方式；缺省等数量 5 组
 }
 
-// GroupingConfig 分组方式配置：mode 缺省（空）或 quantile 为每日等数量五组；
-// bins 为固定数值区间，cuts 必须恰好 4 个严格递增断点，形成
-// B1=(-∞,b1] B2=(b1,b2] B3=(b2,b3] B4=(b3,b4] B5=(b4,+∞)。
+// GroupingConfig 分组方式配置：mode 缺省（空）或 quantile 为每日等数量分组，
+// 组数由 Groups 决定（缺省 5）；bins 为固定数值区间，cuts 必须恰好 Groups-1
+// 个严格递增断点，形成首末开放、中间左开右闭的分组。
 type GroupingConfig struct {
-	Mode string    `json:"mode,omitempty"` // quantile | bins
-	Cuts []float64 `json:"cuts,omitempty"` // bins 模式必须恰好 4 个
+	Mode   string    `json:"mode,omitempty"`  // quantile | bins
+	Groups int       `json:"groups,omitempty"` // 分组数；0=缺省 5；有效 2-20
+	Cuts   []float64 `json:"cuts,omitempty"`  // bins 模式必须恰好 Groups-1 个
 }
 
-// Validate 校验分组配置：未知模式报错；quantile 不接受断点；
-// bins 要求恰好 4 个有限且严格递增的断点（-0 与 0 视为重复）。
+// 分组数允许范围（Groups=0 视为缺省 5，不参与该范围校验）。
+const (
+	minGroups = 2
+	maxGroups = 20
+)
+
+// groupCount 生效分组数：Groups=0 视为默认 5。Validate 与聚合统计共用
+// 同一解析，禁止两处各写一遍缺省逻辑。
+func (c GroupingConfig) groupCount() int {
+	if c.Groups == 0 {
+		return 5
+	}
+	return c.Groups
+}
+
+// Validate 校验分组配置：未知模式报错；分组数缺省（0）或 2-20；
+// quantile 不接受断点；bins 要求恰好 groupCount()-1 个有限且严格递增的
+// 断点（-0 与 0 视为重复）。
 func (c GroupingConfig) Validate() error {
+	if c.Groups != 0 && (c.Groups < minGroups || c.Groups > maxGroups) {
+		return fmt.Errorf("分组数无效: %d（应为 %d-%d 或缺省 5）", c.Groups, minGroups, maxGroups)
+	}
 	switch c.Mode {
 	case "", "quantile":
 		if len(c.Cuts) > 0 {
-			return fmt.Errorf("等数量五组模式不接受断点")
+			return fmt.Errorf("等数量分组模式不接受断点")
 		}
 	case "bins":
-		if len(c.Cuts) != 4 {
-			return fmt.Errorf("固定区间模式需要恰好 4 个断点, 得到 %d 个", len(c.Cuts))
+		if want := c.groupCount() - 1; len(c.Cuts) != want {
+			return fmt.Errorf("固定区间模式需要恰好 %d 个断点, 得到 %d 个", want, len(c.Cuts))
 		}
 		for i, v := range c.Cuts {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
