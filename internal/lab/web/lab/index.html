@@ -426,6 +426,11 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
       <div class="empty" id="factorEmpty" role="status">暂无分析结果，选择因子后点击“开始分析”。</div>
       <div id="factorBody" style="display:none">
         <div class="coverage" id="rangeMeta"></div>
+        <div class="filters" id="groupSwitch" style="display:none;padding:10px 13px;margin-top:12px">
+          <label for="resultGroups" style="align-self:center;margin:0;width:auto">分组数</label>
+          <select id="resultGroups" style="width:96px"></select>
+          <span class="hint" style="margin:0;align-self:center">分析已完成，切换即时生效，无需重新分析。</span>
+        </div>
         <div class="summary-line" id="quintileSummary"></div>
         <div id="quintileChart"></div>
         <div class="empty" id="quintileNA" style="display:none">结果不足：有效样本过少，无法完成分组并计算分组收益。</div>
@@ -1093,6 +1098,7 @@ let factorCatalog = [];
 let currentAnalysis = null;   // Tab4 共享的分析报告
 let quintileC = null;         // 分组柱状图实例（可见后惰性初始化）
 let icC = null;               // 逐日 IC 图实例（统计详情展开后惰性初始化）
+let currentGroupingN = 5;     // 结果区当前展示的分组数（allGroupings 内取值）
 
 async function loadFactors() {
   try {
@@ -1168,6 +1174,7 @@ async function runAnalysis() {
     cfg.days = +$('factorDays').value;
     cfg.window = +$('factorWindow').value;
     cfg.grouping = {mode: 'quantile', groups: +$('factorGroups').value};
+    currentGroupingN = cfg.grouping.groups; // 新分析结果默认展示请求档
     await api('POST', '/api/analyze', cfg);
     showPendingTask('analysis');
     pollStatus();
@@ -1195,11 +1202,59 @@ function addFactorToStrategy() {
   if (typeof focusSimpleCondition === 'function') focusSimpleCondition(e.kind, days);
   setFactorMsg(`已${dup ? '定位到已有条件' : '添加条件'}：${factorInstanceName(e, days)}，请在“简单配置”中填写阈值。`, true);
 }
+// currentGrouping 取当前展示档的分组结果：有 allGroupings（quantile 新报告）
+// 时按 currentGroupingN 查表；否则回退请求档（旧报告/bins）。
+function currentGrouping(rep, n) {
+  const all = Array.isArray(rep.allGroupings) && rep.allGroupings.length ? rep.allGroupings : null;
+  if (all) {
+    const hit = all.find(s => s.groups === n);
+    if (hit) {
+      return {
+        groups: hit.stats && hit.stats.length ? hit.stats : null,
+        quintiles: hit.quintiles,
+        summary: hit.summary || {},
+        n: hit.groups,
+      };
+    }
+    const first = all[0];
+    return {
+      groups: first.stats && first.stats.length ? first.stats : null,
+      quintiles: first.quintiles,
+      summary: first.summary || {},
+      n: first.groups,
+    };
+  }
+  return {
+    groups: Array.isArray(rep.groups) && rep.groups.length ? rep.groups : null,
+    quintiles: rep.quintiles,
+    summary: rep.summary || {},
+    n: (rep.grouping && rep.grouping.groups) || 5,
+  };
+}
 function renderAnalysis() {
   if (!currentAnalysis) return;
   $('factorEmpty').style.display = 'none';
   $('factorBody').style.display = '';
   const s = currentAnalysis.stats;
+  // 0) 结果区分组数切换器：仅 quantile 且含 allGroupings 的新报告
+  const hasAllG = !!(Array.isArray(currentAnalysis.allGroupings) && currentAnalysis.allGroupings.length);
+  const isBins = !!(currentAnalysis.grouping && currentAnalysis.grouping.mode === 'bins');
+  if (hasAllG && !isBins) {
+    $('groupSwitch').style.display = '';
+    const sel = $('resultGroups');
+    if (!sel.options.length) {
+      for (let g = 2; g <= 20; g++) {
+        const o = document.createElement('option');
+        o.value = g; o.textContent = g + ' 组';
+        sel.appendChild(o);
+      }
+    }
+    sel.value = String(currentGroupingN);
+  } else {
+    $('groupSwitch').style.display = 'none';
+  }
+  // 当前档分组结果（柱状图/明细表/摘要/年度共用同一档）
+  const grp = currentGrouping(currentAnalysis, currentGroupingN);
   // 1) 后端 Summary 文案优先
   const DIR = {
     ascending: '因子值越大，未来收益越高',
@@ -1208,22 +1263,22 @@ function renderAnalysis() {
     flat: '各组收益接近，因子区分度弱',
     insufficient: '结果不足：分组数据不完整，无方向结论',
   };
-  const sum = currentAnalysis.summary || {};
+  const sum = grp.summary || {};
   let txt = DIR[sum.direction] || sum.direction || '';
   if (sum.monotonic && (sum.direction === 'ascending' || sum.direction === 'descending')) txt += '（单调）';
   if (sum.spread != null && isFinite(sum.spread)) txt += `；最高组−最低组收益差 ${(sum.spread * 100).toFixed(2)}%`;
   $('quintileSummary').textContent = txt;
-  // 2) 分组柱状图与明细表：v2 groups 优先（含因子值域），旧报告降级 quintiles
+  // 2) 分组柱状图与明细表：groups 优先（含因子值域），旧报告降级 quintiles
   const unit = currentAnalysis.factor ? currentAnalysis.factor.unit : '';
-  const real = Array.isArray(currentAnalysis.groups) ? currentAnalysis.groups : null;
-  const qsArr = currentAnalysis.quintiles;
+  const real = grp.groups;
+  const qsArr = grp.quintiles;
   const legacyGs = Array.isArray(qsArr) && qsArr.length >= 2
     ? qsArr.map((v, i) => ({label: 'Q' + (i + 1), forwardReturn: v})) : null;
   const chartGs = real && real.length ? real : legacyGs;
-  const nGroups = chartGs ? chartGs.length : (real ? real.length : 5);
-  const hasAll = !!(chartGs && chartGs.length &&
+  const nGroups = chartGs ? chartGs.length : (real ? real.length : grp.n);
+  const hasChart = !!(chartGs && chartGs.length &&
     chartGs.every(g => typeof g.forwardReturn === 'number' && isFinite(g.forwardReturn)));
-  if (hasAll) {
+  if (hasChart) {
     $('quintileChart').style.display = '';
     $('quintileNA').style.display = 'none';
     renderGroupChart(chartGs, unit);
@@ -1279,7 +1334,8 @@ function renderRangeMeta(rep) {
   }
   if (rep.window > 0) el.appendChild(metaItem('未来收益窗口：', `${rep.window} 个交易日`));
   const gp = rep.grouping || {};
-  const gn = Array.isArray(rep.groups) && rep.groups.length ? rep.groups.length : (gp.groups || 5);
+  const grp = currentGrouping(rep, currentGroupingN);
+  const gn = (grp.groups && grp.groups.length) ? grp.groups.length : (grp.n || gp.groups || 5);
   el.appendChild(metaItem('分组：', gp.mode === 'bins' ? '固定区间' : `${gn} 组等频`));
   const MODE = {all: '全部股票', random: '随机抽样', codes: '指定代码'};
   if (r.sampleMode) {
@@ -1299,11 +1355,12 @@ function renderYearStability(rep) {
     ? '本次分析没有可用的年度观测（有效交易日不足或全部年份数据缺失）。'
     : '历史报告未记录年度拆分，仅展示全区间结果。';
   if (!show) return;
-  const gs = Array.isArray(rep.groups) && rep.groups.length ? rep.groups : null;
-  const nG = gs ? gs.length : ((rep.grouping && rep.grouping.groups) || 5);
-  const firstL = gs ? gs[0].label : (rep.grouping && rep.grouping.mode === 'bins' ? 'B1' : 'Q1');
-  const lastL = gs ? gs[gs.length - 1].label
-    : (rep.grouping && rep.grouping.mode === 'bins' ? 'B' + nG : 'Q' + nG);
+  const grp = currentGrouping(rep, currentGroupingN);
+  const gs = grp.groups;
+  const nG = gs && gs.length ? gs.length : grp.n;
+  const isBins = !!(rep.grouping && rep.grouping.mode === 'bins');
+  const firstL = gs && gs.length ? gs[0].label : (isBins ? 'B1' : 'Q1');
+  const lastL = gs && gs.length ? gs[gs.length - 1].label : (isBins ? 'B' + nG : 'Q' + nG);
   $('q1Head').textContent = firstL;
   $('q5Head').textContent = lastL;
   $('qSpreadHead').textContent = `${lastL}-${firstL}`;
@@ -1312,7 +1369,8 @@ function renderYearStability(rep) {
   years.forEach(y => {
     const st = y.stats || {};
     const ok = st.pairs >= 10; // 与后端 minPairs 同口径
-    const qs = Array.isArray(y.quintiles) && y.quintiles.length >= 2 ? y.quintiles : null;
+    const yGrp = currentGrouping(y, currentGroupingN);
+    const qs = Array.isArray(yGrp.quintiles) && yGrp.quintiles.length >= 2 ? yGrp.quintiles : null;
     const tr = document.createElement('tr');
     const cell = (txt, cls) => {
       const td = document.createElement('td');
@@ -1340,7 +1398,7 @@ function renderYearStability(rep) {
       ascending: '正向', descending: '反向', mixed: '不一致',
       flat: '无区分', insufficient: '样本不足',
     };
-    const dir = (y.summary || {}).direction;
+    const dir = (yGrp.summary || {}).direction;
     cell(DIR[dir] || dir || '样本不足', DIR[dir] ? '' : 'na');
     tb.appendChild(tr);
   });
@@ -1460,6 +1518,11 @@ $('factorKind').addEventListener('change', renderConcept);
 $('factorDays').addEventListener('input', renderFactorParameter);
 $('statDetails').addEventListener('toggle', () => {
   if ($('statDetails').open && currentAnalysis) renderICChart(); // 展开后容器可见才 init
+});
+// 结果区分组数切换：分析完成后的预计算结果直接换档渲染，无需重新分析
+$('resultGroups').addEventListener('change', () => {
+  currentGroupingN = +$('resultGroups').value;
+  renderAnalysis();
 });
 
 // ============ Tab2 组合对比 ============
