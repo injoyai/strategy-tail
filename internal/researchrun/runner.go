@@ -44,6 +44,10 @@ type Config struct {
 	GetDayKlines  core.GetDayKlines
 	GetMinKlines  core.GetMinKlines
 	OnCodeDone    func(Progress)
+	// ForwardDays 为每个代码年份额外加载的下一年前 N 个交易日，
+	// 只作为研究标签缓冲区写入 YearData.Future；零值（默认）保持
+	// 现有回测行为不变。
+	ForwardDays int
 }
 
 // Failure records why a requested code was excluded from all matrix results.
@@ -97,11 +101,17 @@ type Report struct {
 
 // YearData holds one code-year data slice produced by loadYear: His covers
 // the warm-up window before the requested year, Dks covers the requested
-// year and Mks carries intraday bars when the config requests them.
+// year and Mks carries intraday bars when the config requests them. Future
+// holds the first ForwardDays trading days of the next year as a read-only
+// label buffer for research; it never enters Dks or factor prefixes.
 type YearData struct {
-	His extend.Klines
-	Dks extend.Klines
-	Mks protocol.Klines
+	His    extend.Klines
+	Dks    extend.Klines
+	Future extend.Klines
+	Mks    protocol.Klines
+	// ForwardFailure 仅在 ForwardDays>0 且下一年数据读取失败时非空：
+	// 它不使本代码年份加载失败，Dks 保持完整，由研究层披露。
+	ForwardFailure *Failure
 }
 
 type codeResult struct {
@@ -513,6 +523,21 @@ func loadYear(cfg Config, code string, year int) (YearData, *Failure) {
 		data.Mks, err = cfg.GetMinKlines(code, start, end)
 		if err != nil {
 			return YearData{}, failure(code, year, "minute", err.Error())
+		}
+	}
+	if cfg.ForwardDays > 0 {
+		// 标签缓冲区：下一年真实交易日的前 N 根。读取失败只披露不致命，
+		// 数据集真实尾部不足由标签层记 insufficientHorizon。
+		fwdStart := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.Local)
+		fwdEnd := time.Date(year+1, 12, 31, 23, 0, 0, 0, time.Local)
+		future, ferr := cfg.GetDayKlines(code, fwdStart, fwdEnd)
+		switch {
+		case ferr != nil:
+			data.ForwardFailure = failure(code, year, "forward", ferr.Error())
+		case len(future) > cfg.ForwardDays:
+			data.Future = future[:cfg.ForwardDays]
+		default:
+			data.Future = future
 		}
 	}
 	return data, nil

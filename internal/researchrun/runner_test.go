@@ -462,3 +462,251 @@ func TestForEachCodeYearDataValidatesConfig(t *testing.T) {
 		t.Fatalf("unexpected coverage for empty codes: %+v", coverage)
 	}
 }
+
+// --- Task 2 Step 1：ForwardDays 与 Future 标签缓冲区 ---
+
+// klineOn 构造指定日期与价格的日 K。
+func klineOn(at time.Time, price float64) *extend.Kline {
+	return &extend.Kline{Kline: &protocol.Kline{
+		Time: at, Open: protocol.Yuan(price), High: protocol.Yuan(price),
+		Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+	}}
+}
+
+// dayStore 模拟本地日 K 数据库：返回落在 [start,end] 内的 K 线并记录每次
+// 请求范围；failAt 非空时，start 不早于 failAt 的请求返回 err。
+type dayStore struct {
+	mu     sync.Mutex
+	all    extend.Klines
+	seen   [][2]time.Time
+	failAt time.Time
+	err    error
+}
+
+func (s *dayStore) get(_ string, start, end time.Time) (extend.Klines, error) {
+	s.mu.Lock()
+	s.seen = append(s.seen, [2]time.Time{start, end})
+	fail := !s.failAt.IsZero() && !start.Before(s.failAt)
+	s.mu.Unlock()
+	if fail {
+		return nil, s.err
+	}
+	var out extend.Klines
+	for _, k := range s.all {
+		if !k.Time.Before(start) && !k.Time.After(end) {
+			out = append(out, k)
+		}
+	}
+	return out, nil
+}
+
+func (s *dayStore) requests() [][2]time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([][2]time.Time(nil), s.seen...)
+}
+
+// ForwardDays 零值时不得发起任何跨年请求，Future 保持为空，
+// 现有回测与加载行为完全不变。
+func TestForEachCodeYearDataForwardDaysZeroLeavesFutureNil(t *testing.T) {
+	all := extend.Klines{
+		klineOn(time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local), 10.2),
+	}
+	store := &dayStore{all: all}
+	datas := []YearData(nil)
+	if _, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600000"},
+		Years:        []int{2024},
+		Workers:      1,
+		DataMode:     DailyClose,
+		GetDayKlines: store.get,
+	}, func(_ string, _ int, d YearData) { datas = append(datas, d) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(datas) != 1 {
+		t.Fatalf("expected 1 year data, got %d", len(datas))
+	}
+	if len(datas[0].Future) != 0 {
+		t.Fatalf("ForwardDays=0 must leave Future empty, got %d entries", len(datas[0].Future))
+	}
+	for _, req := range store.requests() {
+		if req[1].Year() != 2024 {
+			t.Fatalf("ForwardDays=0 must not request beyond the year, got [%v, %v]", req[0], req[1])
+		}
+	}
+}
+
+// ForwardDays>0 时从下年真实交易日取得缓冲区：请求范围内只有 2 根则截取 2 根，
+// 足够时也只保留 ForwardDays 根；Future 不得混入 Dks。
+func TestForEachCodeYearDataForwardDaysLoadsNextYearTail(t *testing.T) {
+	all := extend.Klines{
+		klineOn(time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2024, 1, 3, 0, 0, 0, 0, time.Local), 10.2),
+		klineOn(time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local), 10.3),
+		klineOn(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local), 10.4),
+		klineOn(time.Date(2025, 1, 3, 0, 0, 0, 0, time.Local), 10.5),
+	}
+	for _, tc := range []struct {
+		forwardDays int
+		wantFuture  int
+	}{
+		{forwardDays: 2, wantFuture: 2},
+		{forwardDays: 5, wantFuture: 3}, // 下年只有 3 根：数据集真实尾部允许不足
+	} {
+		store := &dayStore{all: all}
+		datas := []YearData(nil)
+		if _, err := ForEachCodeYearData(context.Background(), Config{
+			Codes:        []string{"sh600000"},
+			Years:        []int{2024},
+			Workers:      1,
+			DataMode:     DailyClose,
+			ForwardDays:  tc.forwardDays,
+			GetDayKlines: store.get,
+		}, func(_ string, _ int, d YearData) { datas = append(datas, d) }); err != nil {
+			t.Fatal(err)
+		}
+		if len(datas) != 1 {
+			t.Fatalf("forwardDays=%d: expected 1 year data, got %d", tc.forwardDays, len(datas))
+		}
+		data := datas[0]
+		if len(data.Dks) != 3 {
+			t.Fatalf("forwardDays=%d: Dks must stay 3, got %d", tc.forwardDays, len(data.Dks))
+		}
+		if len(data.Future) != tc.wantFuture {
+			t.Fatalf("forwardDays=%d: expected %d future entries, got %d", tc.forwardDays, tc.wantFuture, len(data.Future))
+		}
+		for i, want := range []time.Time{
+			time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local),
+			time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local),
+			time.Date(2025, 1, 3, 0, 0, 0, 0, time.Local),
+		}[:tc.wantFuture] {
+			if !data.Future[i].Time.Equal(want) {
+				t.Fatalf("forwardDays=%d: Future[%d] = %v, want %v", tc.forwardDays, i, data.Future[i].Time, want)
+			}
+		}
+	}
+}
+
+// 下年读取失败只通过 ForwardFailure 披露，不得抹掉本年 Dks，
+// 该代码年份仍算加载成功。
+func TestForEachCodeYearDataForwardDaysFailureDisclosesButKeepsDks(t *testing.T) {
+	all := extend.Klines{
+		klineOn(time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2024, 1, 3, 0, 0, 0, 0, time.Local), 10.2),
+	}
+	store := &dayStore{
+		all:    all,
+		failAt: time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local),
+		err:    errors.New("next year database missing"),
+	}
+	datas := []YearData(nil)
+	coverage, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600000"},
+		Years:        []int{2024},
+		Workers:      1,
+		DataMode:     DailyClose,
+		ForwardDays:  5,
+		GetDayKlines: store.get,
+	}, func(_ string, _ int, d YearData) { datas = append(datas, d) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(datas) != 1 {
+		t.Fatalf("forward failure must not drop the code-year, got %d visits", len(datas))
+	}
+	data := datas[0]
+	if len(data.Dks) != 3 {
+		t.Fatalf("Dks must survive forward failure, got %d", len(data.Dks))
+	}
+	if len(data.Future) != 0 {
+		t.Fatalf("Future must stay empty on forward failure, got %d", len(data.Future))
+	}
+	if data.ForwardFailure == nil || data.ForwardFailure.Stage != "forward" ||
+		data.ForwardFailure.Message != "next year database missing" {
+		t.Fatalf("unexpected ForwardFailure: %+v", data.ForwardFailure)
+	}
+	if coverage.CompletedCodeYears != 1 || coverage.SkippedCodeYears != 0 {
+		t.Fatalf("forward failure must not count as skipped code-year: %+v", coverage)
+	}
+}
+
+// 加载下一年时不得把下年 Future 重复拼进下年 Dks；两年 Future/Dks
+// 对同一段数据保持一致。
+func TestForEachCodeYearDataForwardDaysAvoidsDuplicationInNextYearLoad(t *testing.T) {
+	all := extend.Klines{
+		klineOn(time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2024, 1, 3, 0, 0, 0, 0, time.Local), 10.2),
+		klineOn(time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local), 10.3),
+		klineOn(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local), 10.4),
+		klineOn(time.Date(2025, 1, 3, 0, 0, 0, 0, time.Local), 10.5),
+	}
+	store := &dayStore{all: all}
+	byYear := map[int]YearData{}
+	if _, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600000"},
+		Years:        []int{2024, 2025},
+		Workers:      1,
+		DataMode:     DailyClose,
+		ForwardDays:  2,
+		GetDayKlines: store.get,
+	}, func(_ string, year int, d YearData) { byYear[year] = d }); err != nil {
+		t.Fatal(err)
+	}
+	y2024, y2025 := byYear[2024], byYear[2025]
+	if len(y2024.Dks) != 3 || len(y2025.Dks) != 3 {
+		t.Fatalf("both years must keep 3 Dks, got 2024=%d 2025=%d", len(y2024.Dks), len(y2025.Dks))
+	}
+	if !y2025.Dks[0].Time.Equal(time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)) {
+		t.Fatalf("2025 Dks must start at 2025-01-01, got %v", y2025.Dks[0].Time)
+	}
+	if len(y2024.Future) != 2 {
+		t.Fatalf("2024 Future must hold 2 entries, got %d", len(y2024.Future))
+	}
+	for i := range y2024.Future {
+		if !y2024.Future[i].Time.Equal(y2025.Dks[i].Time) {
+			t.Fatalf("2024 Future[%d] = %v must match 2025 Dks[%d] = %v",
+				i, y2024.Future[i].Time, i, y2025.Dks[i].Time)
+		}
+	}
+}
+
+// 12 月最后一个信号日能拿到次年 1 月价格：Dks 尾部与 Future 头部衔接。
+func TestForEachCodeYearDataDecemberSignalCanUseNextYearPrice(t *testing.T) {
+	all := extend.Klines{
+		klineOn(time.Date(2024, 12, 30, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 12, 31, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local), 10.2),
+		klineOn(time.Date(2025, 1, 3, 0, 0, 0, 0, time.Local), 10.3),
+	}
+	store := &dayStore{all: all}
+	datas := []YearData(nil)
+	if _, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"sh600000"},
+		Years:        []int{2024},
+		Workers:      1,
+		DataMode:     DailyClose,
+		ForwardDays:  2,
+		GetDayKlines: store.get,
+	}, func(_ string, _ int, d YearData) { datas = append(datas, d) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(datas) != 1 {
+		t.Fatalf("expected 1 year data, got %d", len(datas))
+	}
+	data := datas[0]
+	lastDks := data.Dks[len(data.Dks)-1]
+	if !lastDks.Time.Equal(time.Date(2024, 12, 31, 0, 0, 0, 0, time.Local)) {
+		t.Fatalf("last Dks must be 2024-12-31, got %v", lastDks.Time)
+	}
+	if len(data.Future) != 2 || !data.Future[0].Time.Equal(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local)) {
+		t.Fatalf("December signal must see January prices via Future: %+v", data.Future)
+	}
+	if !lastDks.Time.Before(data.Future[0].Time) {
+		t.Fatalf("Future must follow Dks tail: last=%v future[0]=%v", lastDks.Time, data.Future[0].Time)
+	}
+}
