@@ -94,6 +94,7 @@ type metaJSON struct {
 }
 
 func main() {
+	common.MustInitialize()
 
 	trades := readTrades(csvPath)
 	if len(trades) < 20 {

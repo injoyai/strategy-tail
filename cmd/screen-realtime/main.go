@@ -8,6 +8,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 	codes := common.GetAllCodes()
 
 	bs, err := core.Screen{

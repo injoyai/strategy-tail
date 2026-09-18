@@ -32,6 +32,7 @@ var (
 )
 
 func main() {
+	common.MustInitialize()
 	// 日线数据已就绪，本策略为日线级；分钟线为空时引擎自动退化为日线级卖出。
 	// 如需强制更新数据，运行时设置环境变量 MACD_SMOOTH_UPDATE=1。
 	if os.Getenv("MACD_SMOOTH_UPDATE") == "1" {

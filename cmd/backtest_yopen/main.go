@@ -31,6 +31,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 
 	codes := common.GetNoPriceLimitCodes()
 	cost, pos, _, _, mcIterations := common.LoadBacktestConfig()

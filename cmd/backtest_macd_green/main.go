@@ -21,6 +21,7 @@ import (
 type ReportData = report.ReportData
 
 func main() {
+	common.MustInitialize()
 	// 默认跳过数据更新：全量拉取分钟线（全 A 股）耗时数小时。
 	// 日线数据已就绪，本策略为日线级；分钟线为空时引擎自动退化为日线级卖出。
 	// 如需强制更新数据，运行时设置环境变量 MACD_GREEN_UPDATE=1。

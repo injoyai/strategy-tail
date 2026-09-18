@@ -132,6 +132,8 @@ var (
 	Pull         *extend.PullKline
 	Manage       *tdx.Manage
 	ResearchData = researchdata.NewHub()
+	runtimeOnce  sync.Once
+	runtimeErr   error
 
 	// DefaultUniverse 默认只读股票池：优先加载本地成员文件（路径仅来自本地
 	// 配置 research.universe，HTTP 请求不得指定），文件缺失或加载失败时显式
@@ -164,33 +166,43 @@ func newDefaultUniverse() researchdata.Universe {
 	return u
 }
 
-func init() {
-	logs.SetFormatter(logs.TimeFormatter)
-	err := withRuntimeRoot(func() error {
-		var err error
-		Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
-		if err != nil {
-			return err
-		}
+// Initialize 显式初始化 TDX 管理器、本地行情读取器与默认股票池。
+// 它是并发安全且幂等的；导入 common 包本身不再打开或创建数据库。
+func Initialize() error {
+	runtimeOnce.Do(func() {
+		logs.SetFormatter(logs.TimeFormatter)
+		runtimeErr = withRuntimeRoot(func() error {
+			var err error
+			Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
+			if err != nil {
+				return err
+			}
 
-		databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", tdx.DefaultDatabaseDir))
-		Pull, err = extend.NewPullKline(extend.PullKlineConfig{
-			Types:      cfg.GetStrings("pull.types", []string{extend.Day}),
-			Dir:        databaseDir,
-			Goroutines: cfg.GetInt("pull.goroutines", DefaultGoroutines),
+			databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", tdx.DefaultDatabaseDir))
+			Pull, err = extend.NewPullKline(extend.PullKlineConfig{
+				Types:      cfg.GetStrings("pull.types", []string{extend.Day}),
+				Dir:        databaseDir,
+				Goroutines: cfg.GetInt("pull.goroutines", DefaultGoroutines),
+			})
+			if err != nil {
+				return err
+			}
+			DefaultUniverse = newDefaultUniverse()
+			return nil
 		})
-		if err != nil {
-			return err
-		}
-		DefaultUniverse = newDefaultUniverse()
-		return nil
 	})
-	logs.PanicErr(err)
+	return runtimeErr
+}
 
-	// 数据更新改为显式调用 Update()，避免 import 本包即触发全量数据更新副作用
+// MustInitialize 用于命令入口；初始化失败时沿用项目现有的 fail-fast 行为。
+func MustInitialize() {
+	logs.PanicErr(Initialize())
 }
 
 func Update() error {
+	if err := Initialize(); err != nil {
+		return err
+	}
 	return Pull.Update(Manage, true)
 }
 

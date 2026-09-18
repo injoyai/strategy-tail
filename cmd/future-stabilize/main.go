@@ -20,6 +20,7 @@ type variant struct {
 }
 
 func main() {
+	common.MustInitialize()
 	codes := common.GetNoPriceLimitCodes() // 沪深主板
 	years := []int{2026}
 

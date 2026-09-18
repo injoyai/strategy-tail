@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 
 	common.Update()
 

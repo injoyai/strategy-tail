@@ -125,6 +125,10 @@ type Seller interface {
 `STRATEGY_TAIL_ROOT`；`pull.database` 使用绝对路径时保持不变，可将大型行情库
 放在仓库之外。
 
+导入根包不会打开数据库。所有 `cmd/*` 可执行入口在 `main()` 开始时调用
+`common.MustInitialize()`；把根包作为库使用时，应先调用可返回错误的
+`common.Initialize()`。`common.Update()` 会兜底初始化后再执行显式行情更新。
+
 数据更新已经是显式操作。仅 `common.Update()` 或主动调用它的命令会更新行情；导入根包不会自动更新。部分历史实验为了复现实验数据截止日会刻意跳过更新。
 
 非 K 线研究数据通过 `researchdata.Provider` 暴露目录和拉取能力，通过

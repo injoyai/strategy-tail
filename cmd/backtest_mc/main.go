@@ -11,6 +11,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 	mcMin := flag.Float64("mcMin", 0, "流通市值下限(亿)")
 	mcMax := flag.Float64("mcMax", 0, "流通市值上限(亿), 0=无上限")
 	flag.Parse()

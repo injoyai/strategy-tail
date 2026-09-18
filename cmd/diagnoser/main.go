@@ -10,6 +10,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 	d := &core.Diagnoser{
 		Buyer:        Buyer,
 		GetDayKlines: common.Pull.DayKlines,

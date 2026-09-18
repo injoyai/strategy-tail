@@ -20,6 +20,7 @@ func init() {
 }
 
 func main() {
+	common.MustInitialize()
 
 	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
 	logs.PanicErr(err)

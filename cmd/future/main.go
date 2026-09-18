@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	common.MustInitialize()
 	codes := common.GetAllCodes()
 	years := []int{2024, 2025, 2026}
 

@@ -34,6 +34,7 @@ type chartKline struct {
 }
 
 func main() {
+	common.MustInitialize()
 	code := "sh601991"
 	var buyer core.Buyer
 	buyer = buy.Strategy("测试", buy.And{

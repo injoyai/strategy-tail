@@ -616,13 +616,17 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	return report, nil
 }
 func (r *Runner) resolveCodes(cfg RunConfig, stop chan struct{}) ([]string, error) {
-	all := common.GetNoPriceLimitCodes()
 	switch cfg.SampleMode {
-	case "all":
-		return all, nil
 	case "codes":
 		return cfg.SampleCodes, nil
-	case "random":
+	case "all", "random":
+		if common.Manage == nil {
+			return nil, fmt.Errorf("运行时未初始化")
+		}
+		all := common.GetNoPriceLimitCodes()
+		if cfg.SampleMode == "all" {
+			return all, nil
+		}
 		// 洗牌取前 N
 		shuffled := make([]string, len(all))
 		copy(shuffled, all)

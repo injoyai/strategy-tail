@@ -20,6 +20,7 @@ var buyer core.Buyer = buy.And{
 }
 
 func main() {
+	common.MustInitialize()
 	port := 18080
 	if len(os.Args) > 1 {
 		fmt.Sscanf(os.Args[1], "%d", &port)

@@ -24,6 +24,7 @@ type variant struct {
 }
 
 func main() {
+	common.MustInitialize()
 	common.Update()
 
 	codes := common.GetNoPriceLimitCodes()

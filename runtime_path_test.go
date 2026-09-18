@@ -3,8 +3,15 @@ package common
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestImportDoesNotInitializeRuntime(t *testing.T) {
+	if Pull != nil || Manage != nil || DefaultUniverse != nil {
+		t.Fatal("导入 common 包不应初始化运行时依赖")
+	}
+}
 
 func TestFindModuleRoot(t *testing.T) {
 	root := t.TempDir()
@@ -55,4 +62,36 @@ func TestSelectRuntimeRoot(t *testing.T) {
 			t.Fatalf("got %q want %q", got, want)
 		}
 	})
+}
+
+func TestCommonCommandEntrypointsInitializeRuntime(t *testing.T) {
+	entries, err := os.ReadDir(filepath.Join(RuntimeRoot(), "cmd"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		files, err := filepath.Glob(filepath.Join(RuntimeRoot(), "cmd", entry.Name(), "*.go"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var source strings.Builder
+		for _, file := range files {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			source.Write(data)
+		}
+		text := source.String()
+		if !strings.Contains(text, "func main(") ||
+			!strings.Contains(text, `"github.com/injoyai/strategy-tail"`) {
+			continue
+		}
+		if !strings.Contains(text, "common.MustInitialize()") {
+			t.Errorf("cmd/%s 使用 common 但未显式初始化运行时", entry.Name())
+		}
+	}
 }

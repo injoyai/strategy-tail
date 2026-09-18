@@ -20,6 +20,7 @@ import (
 // 按多维度分组统计胜率/盈亏比/平均收益，出具 HTML 报告。
 
 func main() {
+	common.MustInitialize()
 	logs.Info("=== 大盘状态分析 ===")
 
 	common.Update()
