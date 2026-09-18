@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/protocol"
@@ -22,6 +23,11 @@ import (
 type yearResult struct {
 	Year    int
 	Metrics core.AnalyzeResult
+}
+
+type yearCoverage struct {
+	Year     int                  `json:"year"`
+	Coverage researchrun.Coverage `json:"coverage"`
 }
 
 type variant struct {
@@ -62,40 +68,50 @@ func main() {
 	outRoot := filepath.Join("output", "backtest-index-filter-5y")
 	os.MkdirAll(outRoot, 0755)
 
-	for _, v := range variants {
-		allTrades := []core.Trade(nil)
-		winYears := 0
-		sumAnnual, sumSharpe := 0.0, 0.0
+	runVariants := make([]researchrun.Variant, len(variants))
+	for i, v := range variants {
+		buyer := core.Buyer(common.MACDBuyer)
+		if v.Filter != nil {
+			buyer = buy.And{v.Filter, common.MACDBuyer}
+		}
+		runVariants[i] = researchrun.Variant{
+			Name: v.Name, Buyer: buyer, Seller: common.MACDSeller,
+		}
+	}
 
-		for _, year := range years {
-			logs.Infof("=== 变体[%s] 年份 %d 开始 ===", v.Name, year)
+	allTrades := make([][]core.Trade, len(variants))
+	winningYears := make([]int, len(variants))
+	sumAnnual := make([]float64, len(variants))
+	sumSharpe := make([]float64, len(variants))
+	coverageByYear := make([]yearCoverage, 0, len(years))
 
-			buyer := core.Buyer(common.MACDBuyer)
-			if v.Filter != nil {
-				buyer = buy.And{v.Filter, common.MACDBuyer}
-			}
+	// 逐年运行可保留旧入口的样本口径：某年缺数只排除该代码当年，
+	// 不会因为另一年缺数而把整只股票从五年结果中移除。
+	for _, year := range years {
+		logs.Infof("=== 年份 %d：统一执行 %d 个指数过滤变体 ===", year, len(runVariants))
+		run, err := researchrun.Run(context.Background(), researchrun.Config{
+			Codes:        codes,
+			Years:        []int{year},
+			Variants:     runVariants,
+			Cost:         cost,
+			Position:     pos,
+			Workers:      common.DefaultGoroutines * 3,
+			DataMode:     researchrun.Intraday,
+			GetDayKlines: common.Pull.DayKlines,
+			GetMinKlines: common.Pull.MinKlines,
+		})
+		logs.PanicErr(err)
+		researchrun.LogCoverage(run.Coverage)
+		coverageByYear = append(coverageByYear, yearCoverage{Year: year, Coverage: run.Coverage})
 
-			bt := core.Backtest{
-				Buyer:        buyer,
-				Seller:       common.MACDSeller,
-				Goroutines:   common.DefaultGoroutines * 3,
-				Codes:        codes,
-				Years:        []int{year},
-				GetDayKlines: common.Pull.DayKlines,
-				GetMinKlines: common.Pull.MinKlines,
-				Benchmark:    benchmark,
-				Cost:         cost,
-				Position:     pos,
-			}
+		benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+		benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
+		benchKlines, _ := common.Pull.DayKlines(benchmark, benchStart, benchEnd)
 
-			trades := runYear(&bt, codes, year)
-			allTrades = append(allTrades, trades...)
-
-			benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-			benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-			benchKlines, _ := bt.GetDayKlines(benchmark, benchStart, benchEnd)
-
-			res := core.Analyze(year, trades, bt.GetDayKlines, benchKlines, cost, pos)
+		for i, result := range run.Results {
+			v := variants[i]
+			allTrades[i] = append(allTrades[i], result.Trades...)
+			res := core.Analyze(year, result.Trades, common.Pull.DayKlines, benchKlines, cost, pos)
 			v.Years = append(v.Years, yearResult{Year: year, Metrics: res})
 
 			// 备份该年 CSV（Analyze 会覆盖 output/backtest/<year>.csv）
@@ -105,20 +121,22 @@ func main() {
 				filepath.Join(vdir, fmt.Sprintf("%d.csv", year)))
 
 			if res.TotalProfit > 0 {
-				winYears++
+				winningYears[i]++
 			}
-			sumAnnual += res.AnnualReturn
-			sumSharpe += res.Sharpe
+			sumAnnual[i] += res.AnnualReturn
+			sumSharpe[i] += res.Sharpe
 
 			logs.Infof("[%s] %d 完成: 交易%d笔 胜率%.2f%% 总盈亏%.2f元 盈亏比%.2f 最大回撤%.2f%% 年化%.2f%% Sharpe%.2f",
 				v.Name, year, res.TotalTrades, res.WinRate, res.TotalProfit, res.ProfitFactor,
 				res.MaxDrawdownPct, res.AnnualReturn, res.Sharpe)
 		}
+	}
 
+	for i, v := range variants {
 		// 多年合并统计
-		stats := core.Stats(allTrades)
+		stats := core.Stats(allTrades[i])
 		var totalProfit float64
-		for _, t := range allTrades {
+		for _, t := range allTrades[i] {
 			totalProfit += (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
 		}
 		v.TotalTrades = stats.Total
@@ -126,73 +144,16 @@ func main() {
 		v.TotalProfit = totalProfit
 		v.AvgProfit = stats.AvgProfit
 		v.ProfitFactor = stats.ProfitFactor
-		v.WinningYears = winYears
-		v.AllProfitYears = winYears == len(years)
-		v.AnnualReturnAvg = sumAnnual / float64(len(years))
-		v.SharpeAvg = sumSharpe / float64(len(years))
+		v.WinningYears = winningYears[i]
+		v.AllProfitYears = winningYears[i] == len(years)
+		v.AnnualReturnAvg = sumAnnual[i] / float64(len(years))
+		v.SharpeAvg = sumSharpe[i] / float64(len(years))
 
 		// 合并资金曲线回撤率（按时间排序后模拟峰值本金）
-		v.MaxDrawdownPct = combinedMaxDrawdownPct(allTrades, pos)
+		v.MaxDrawdownPct = combinedMaxDrawdownPct(allTrades[i], pos)
 	}
 
-	saveResults(outRoot, years, benchmark, variants)
-}
-
-// runYear 对单年度所有股票并行回测，逻辑与 core.Backtest._backtest 一致。
-func runYear(bt *core.Backtest, codes []string, year int) []core.Trade {
-	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
-	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-
-	result := []core.Trade(nil)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	ch := make(chan string)
-
-	workers := bt.Goroutines
-	if workers <= 0 {
-		workers = 10
-	}
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for code := range ch {
-				dks, err := bt.GetDayKlines(code, hisStart, end)
-				if err != nil || len(dks) == 0 {
-					continue
-				}
-				his := []*extend.Kline(nil)
-				for i, v := range dks {
-					if v.Time.Before(start) {
-						his = append(his, v)
-					} else {
-						dks = dks[i:]
-						break
-					}
-				}
-				var mks protocol.Klines
-				if bt.GetMinKlines != nil {
-					mks, err = bt.GetMinKlines(code, start, end)
-					if err != nil {
-						continue
-					}
-				}
-				ts := bt.Do(code, his, dks, mks)
-				if len(ts) > 0 {
-					mu.Lock()
-					result = append(result, ts...)
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	for _, code := range codes {
-		ch <- code
-	}
-	close(ch)
-	wg.Wait()
-	return result
+	saveResults(outRoot, years, benchmark, variants, coverageByYear)
 }
 
 // combinedMaxDrawdownPct 合并多年交易计算最大回撤率（%）。
@@ -256,7 +217,7 @@ func copyFile(src, dst string) {
 }
 
 // saveResults 汇总结果到 JSON，供图表与 PDF 报告使用。
-func saveResults(outRoot string, years []int, benchmark string, variants []*variant) {
+func saveResults(outRoot string, years []int, benchmark string, variants []*variant, coverageByYear []yearCoverage) {
 	type vm struct {
 		Name            string       `json:"name"`
 		TotalTrades     int          `json:"total_trades"`
@@ -273,9 +234,10 @@ func saveResults(outRoot string, years []int, benchmark string, variants []*vari
 	}
 
 	out := map[string]any{
-		"years":     years,
-		"benchmark": benchmark,
-		"variants":  []vm{},
+		"years":            years,
+		"benchmark":        benchmark,
+		"coverage_by_year": coverageByYear,
+		"variants":         []vm{},
 	}
 	list := make([]vm, 0, len(variants))
 	for _, v := range variants {

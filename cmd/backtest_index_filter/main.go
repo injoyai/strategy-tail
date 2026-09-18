@@ -1,16 +1,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/protocol"
@@ -18,8 +19,8 @@ import (
 
 // 变体：在 common.MACDBuyer 基础上叠加不同的上证指数过滤条件
 type variant struct {
-	Name   string          // 变体名
-	Filter core.Buyer      // 指数过滤条件（nil=无过滤基准）
+	Name   string     // 变体名
+	Filter core.Buyer // 指数过滤条件（nil=无过滤基准）
 	Result core.AnalyzeResult
 }
 
@@ -47,35 +48,39 @@ func main() {
 	outRoot := filepath.Join("output", "backtest-index-filter")
 	os.MkdirAll(outRoot, 0755)
 
+	runVariants := make([]researchrun.Variant, len(variants))
 	for i := range variants {
-		v := &variants[i]
-		logs.Infof("=== [%d/%d] 变体: %s ===", i+1, len(variants), v.Name)
-
 		buyer := core.Buyer(common.MACDBuyer)
-		if v.Filter != nil {
-			buyer = buy.And{v.Filter, common.MACDBuyer}
+		if variants[i].Filter != nil {
+			buyer = buy.And{variants[i].Filter, common.MACDBuyer}
 		}
-
-		bt := core.Backtest{
-			Buyer:        buyer,
-			Seller:       common.MACDSeller,
-			Goroutines:   common.DefaultGoroutines * 2,
-			Codes:        codes,
-			Years:        []int{year},
-			GetDayKlines: common.Pull.DayKlines,
-			GetMinKlines: common.Pull.MinKlines,
-			Benchmark:    benchmark,
-			Cost:         cost,
-			Position:     pos,
+		runVariants[i] = researchrun.Variant{
+			Name: variants[i].Name, Buyer: buyer, Seller: common.MACDSeller,
 		}
+	}
 
-		trades := runYear(&bt, codes, year)
+	logs.Infof("=== 统一执行 %d 个指数过滤变体 ===", len(runVariants))
+	run, err := researchrun.Run(context.Background(), researchrun.Config{
+		Codes:        codes,
+		Years:        []int{year},
+		Variants:     runVariants,
+		Cost:         cost,
+		Position:     pos,
+		Workers:      common.DefaultGoroutines * 2,
+		DataMode:     researchrun.Intraday,
+		GetDayKlines: common.Pull.DayKlines,
+		GetMinKlines: common.Pull.MinKlines,
+	})
+	logs.PanicErr(err)
+	researchrun.LogCoverage(run.Coverage)
 
-		benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-		benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-		benchKlines, _ := bt.GetDayKlines(benchmark, benchStart, benchEnd)
+	benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+	benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
+	benchKlines, _ := common.Pull.DayKlines(benchmark, benchStart, benchEnd)
 
-		res := core.Analyze(year, trades, bt.GetDayKlines, benchKlines, cost, pos)
+	for i, result := range run.Results {
+		v := &variants[i]
+		res := core.Analyze(year, result.Trades, common.Pull.DayKlines, benchKlines, cost, pos)
 		v.Result = res
 
 		// 保存该组交易明细副本（Analyze 会覆盖 output/backtest/2026.csv，需立即备份）
@@ -87,64 +92,7 @@ func main() {
 			v.Name, res.TotalTrades, res.WinRate, res.TotalProfit, res.ProfitFactor, res.MaxDrawdownPct, res.AnnualReturn, res.Sharpe)
 	}
 
-	saveResults(outRoot, year, benchmark, variants)
-}
-
-// runYear 对单年度所有股票并行回测，逻辑与 core.Backtest._backtest 一致。
-func runYear(bt *core.Backtest, codes []string, year int) []core.Trade {
-	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
-	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-
-	result := []core.Trade(nil)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	ch := make(chan string)
-
-	workers := bt.Goroutines
-	if workers <= 0 {
-		workers = 10
-	}
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for code := range ch {
-				dks, err := bt.GetDayKlines(code, hisStart, end)
-				if err != nil || len(dks) == 0 {
-					continue
-				}
-				his := []*extend.Kline(nil)
-				for i, v := range dks {
-					if v.Time.Before(start) {
-						his = append(his, v)
-					} else {
-						dks = dks[i:]
-						break
-					}
-				}
-				var mks protocol.Klines
-				if bt.GetMinKlines != nil {
-					mks, err = bt.GetMinKlines(code, start, end)
-					if err != nil {
-						continue
-					}
-				}
-				ts := bt.Do(code, his, dks, mks)
-				if len(ts) > 0 {
-					mu.Lock()
-					result = append(result, ts...)
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	for _, code := range codes {
-		ch <- code
-	}
-	close(ch)
-	wg.Wait()
-	return result
+	saveResults(outRoot, year, benchmark, variants, run.Coverage)
 }
 
 // toProtocolKlines 将 extend.Klines 转为 protocol.Klines（A上证N日均线向上 需要）。
@@ -171,32 +119,32 @@ func copyFile(src, dst string) {
 }
 
 // saveResults 汇总所有变体的指标到 JSON，供图表与 PDF 报告使用。
-func saveResults(outRoot string, year int, benchmark string, variants []variant) {
+func saveResults(outRoot string, year int, benchmark string, variants []variant, coverage researchrun.Coverage) {
 	type metrics struct {
-		TotalTrades     int
-		WinRate         float64
-		TotalProfit     float64
-		AvgProfit       float64
-		MaxProfit       float64
-		MaxLoss         float64
-		ProfitFactor    float64
-		MaxDrawdown     float64
-		MaxDrawdownPct  float64
+		TotalTrades      int
+		WinRate          float64
+		TotalProfit      float64
+		AvgProfit        float64
+		MaxProfit        float64
+		MaxLoss          float64
+		ProfitFactor     float64
+		MaxDrawdown      float64
+		MaxDrawdownPct   float64
 		DrawdownDuration int
-		UnderwaterMax   float64
-		RequiredCapital float64
-		AnnualReturn    float64
-		Sharpe          float64
-		Sortino         float64
-		Calmar          float64
-		BenchReturn     float64
-		Alpha           float64
-		Beta            float64
-		WinStreakMax    int
-		LossStreakMax   int
-		AvgHoldingDays  float64
-		VaR95           float64
-		CVaR95          float64
+		UnderwaterMax    float64
+		RequiredCapital  float64
+		AnnualReturn     float64
+		Sharpe           float64
+		Sortino          float64
+		Calmar           float64
+		BenchReturn      float64
+		Alpha            float64
+		Beta             float64
+		WinStreakMax     int
+		LossStreakMax    int
+		AvgHoldingDays   float64
+		VaR95            float64
+		CVaR95           float64
 	}
 
 	type vm struct {
@@ -207,6 +155,7 @@ func saveResults(outRoot string, year int, benchmark string, variants []variant)
 	out := map[string]any{
 		"year":      year,
 		"benchmark": benchmark,
+		"coverage":  coverage,
 		"variants":  []vm{},
 	}
 	list := make([]vm, 0, len(variants))
