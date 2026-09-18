@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "fc_20260102T030405000Z_cafe1234",
+  "revision": 1,
+  "name": "夹具动量候选",
+  "status": "candidate",
+  "factor": {
+    "kind": "momentum",
+    "days": 20,
+    "name": "20日动量",
+    "unit": "ratio",
+    "implementationVersion": 1
+  },
+  "use": {
+    "mode": "observe"
+  },
+  "evidence": {
+    "analysisId": "an_20260102T030405000Z_deadbeef",
+    "analysisVersion": 3,
+    "reportSha256": "215eae98e3ba24623de55174850e2a3e7941597f35aea1a77032f109eb1d96ef",
+    "window": 5,
+    "range": {
+      "startYear": 2024,
+      "endYear": 2024,
+      "sampleMode": "all"
+    },
+    "grouping": {},
+    "stats": {
+      "pairs": 10,
+      "mean": 0.03,
+      "std": 0.12,
+      "tStat": 0.78
+    },
+    "summary": {
+      "direction": "insufficient",
+      "spread": null,
+      "monotonic": false
+    },
+    "coverage": {
+      "requested": 3,
+      "completed": 3,
+      "skipped": 0,
+      "failures": []
+    },
+    "yearCoverage": {
+      "requestedCodes": 3,
+      "completedCodes": 3,
+      "requestedCodeYears": 3,
+      "completedCodeYears": 3,
+      "skippedCodeYears": 0,
+      "failures": []
+    },
+    "firstDataDate": "2024-01-02",
+    "lastDataDate": "2024-12-31",
+    "finishedAt": "2026-01-02T03:04:06Z"
+  },
+  "notes": "人工最小兼容夹具（Task 0），非真实研究报告",
+  "createdAt": "2026-01-02T03:04:07Z",
+  "updatedAt": "2026-01-02T03:04:07Z",
+  "createRequestId": "3b241101-e2bb-4255-8caf-4136c566a962",
+  "createRequestHash": "0000000000000000000000000000000000000000000000000000000000000000"
+}

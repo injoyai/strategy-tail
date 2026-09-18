@@ -1,0 +1,56 @@
+{
+  "analysisId": "an_20260102T030405000Z_deadbeef",
+  "factorName": "20日动量",
+  "kind": "momentum",
+  "window": 5,
+  "range": {
+    "startYear": 2024,
+    "endYear": 2024,
+    "sampleMode": "all"
+  },
+  "analysisVersion": 3,
+  "factor": {
+    "kind": "momentum",
+    "name": "20日动量",
+    "description": "近N日涨跌幅",
+    "parameterLabel": "回看天数",
+    "days": 20,
+    "unit": "ratio",
+    "implementationVersion": 1
+  },
+  "grouping": {},
+  "groups": [],
+  "allGroupings": null,
+  "years": [],
+  "stats": {
+    "pairs": 10,
+    "mean": 0.03,
+    "std": 0.12,
+    "tStat": 0.78
+  },
+  "quintiles": null,
+  "summary": {
+    "direction": "insufficient",
+    "spread": null,
+    "monotonic": false
+  },
+  "coverage": {
+    "requested": 3,
+    "completed": 3,
+    "skipped": 0,
+    "failures": []
+  },
+  "yearCoverage": {
+    "requestedCodes": 3,
+    "completedCodes": 3,
+    "requestedCodeYears": 3,
+    "completedCodeYears": 3,
+    "skippedCodeYears": 0,
+    "failures": []
+  },
+  "firstDataDate": "2024-01-02",
+  "lastDataDate": "2024-12-31",
+  "daily": [],
+  "startedAt": "2026-01-02T03:04:05Z",
+  "finishedAt": "2026-01-02T03:04:06Z"
+}
