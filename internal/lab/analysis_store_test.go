@@ -2,6 +2,7 @@ package lab
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -302,5 +303,166 @@ func TestAnalysisStoreLatestWriteOrder(t *testing.T) {
 	global, err := s.Latest("")
 	if err != nil || global == nil || global.AnalysisID != id {
 		t.Fatalf("全局指针应独立恢复: %v, %v", global, err)
+	}
+}
+
+// v4ReportForTest 构造带研究协议的最小 v4 报告：版本 4、协议/hash/证据等级/
+// Horizons 齐全，Window 仅镜像主周期。
+func v4ReportForTest(t *testing.T, id, kind, finished string) *AnalysisReport {
+	t.Helper()
+	rep := analysisReportForTest(id, kind, finished)
+	rep.AnalysisVersion = analysisVersionMaxKnown
+	p := validResearchProtocol()
+	h, err := protocolHash(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep.Protocol = &p
+	rep.ProtocolHash = h
+	rep.EvidenceClass = deriveEvidenceClass(p)
+	rep.Horizons = append([]int(nil), p.Labels.Horizons...)
+	rep.Window = p.Labels.Horizons[0]
+	return rep
+}
+
+// TestAnalysisStoreSavesV3AndV4 v3 与 v4 报告都能保存读取；v4 的协议 hash
+// 读取后重算一致，v3 读取后无 v4 字段。
+func TestAnalysisStoreSavesV3AndV4(t *testing.T) {
+	s := NewAnalysisStore(t.TempDir())
+	v3ID := "an_20260917T150001000Z_11111111"
+	v4ID := "an_20260917T150002000Z_22222222"
+	if err := s.Save(analysisReportForTest(v3ID, "momentum", "2026-09-17T15:00:01+08:00")); err != nil {
+		t.Fatal(err)
+	}
+	v4 := v4ReportForTest(t, v4ID, "momentum", "2026-09-17T15:00:02+08:00")
+	if err := s.Save(v4); err != nil {
+		t.Fatal(err)
+	}
+
+	got3, err := s.Get(v3ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got3.AnalysisVersion != 3 || got3.Protocol != nil || got3.ProtocolHash != "" ||
+		got3.EvidenceClass != "" || got3.Horizons != nil {
+		t.Fatalf("v3 报告读取后不得携带 v4 字段: %+v", got3)
+	}
+
+	got4, err := s.Get(v4ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got4.AnalysisVersion != analysisVersionMaxKnown {
+		t.Fatalf("AnalysisVersion = %d, want 4", got4.AnalysisVersion)
+	}
+	if got4.Protocol == nil {
+		t.Fatalf("v4 报告必须保存协议")
+	}
+	// hash 重算一致（协议绑定报告）
+	want, err := protocolHash(*got4.Protocol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got4.ProtocolHash != want {
+		t.Fatalf("协议 hash 不一致: %s vs %s", got4.ProtocolHash, want)
+	}
+	if got4.EvidenceClass != evidenceRetrospective {
+		t.Fatalf("v4 证据等级 = %q, want %q", got4.EvidenceClass, evidenceRetrospective)
+	}
+	if len(got4.Horizons) == 0 || got4.Horizons[0] != got4.Window {
+		t.Fatalf("v4 Window 应镜像主周期: window=%d horizons=%v", got4.Window, got4.Horizons)
+	}
+}
+
+// TestAnalysisStoreRejectsFutureVersion 高于已知版本的报告以明确 unsupported
+// 错误拒绝，不得按旧版本猜测读取。
+func TestAnalysisStoreRejectsFutureVersion(t *testing.T) {
+	dir := t.TempDir()
+	s := NewAnalysisStore(dir)
+	id := "an_20260917T150003000Z_33333333"
+	future := analysisReportForTest(id, "momentum", "2026-09-17T15:00:03+08:00")
+	future.AnalysisVersion = analysisVersionMaxKnown + 1
+	repDir := filepath.Join(dir, "momentum", id)
+	if err := os.MkdirAll(repDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	buf, err := json.Marshal(future)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repDir, "report.json"), buf, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(id); !errors.Is(err, errAnalysisVersionUnsupported) {
+		t.Fatalf("Get 应返回 unsupported 版本错误, got %v", err)
+	}
+	if _, err := s.List("momentum"); !errors.Is(err, errAnalysisVersionUnsupported) {
+		t.Fatalf("List 应返回 unsupported 版本错误, got %v", err)
+	}
+}
+
+// TestAnalysisStoreListSummaryEvidenceClass 列表摘要携带证据等级：无协议旧
+// 报告为 legacy，v4 为协议派生值。
+func TestAnalysisStoreListSummaryEvidenceClass(t *testing.T) {
+	s := NewAnalysisStore(t.TempDir())
+	v3ID := "an_20260917T150004000Z_44444444"
+	v4ID := "an_20260917T150005000Z_55555555"
+	if err := s.Save(analysisReportForTest(v3ID, "momentum", "2026-09-17T15:00:04+08:00")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(v4ReportForTest(t, v4ID, "momentum", "2026-09-17T15:00:05+08:00")); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.List("momentum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, it := range list {
+		got[it.AnalysisID] = it.EvidenceClass
+	}
+	if got[v3ID] != evidenceLegacy {
+		t.Fatalf("v3 摘要 evidenceClass = %q, want %q", got[v3ID], evidenceLegacy)
+	}
+	if got[v4ID] != evidenceRetrospective {
+		t.Fatalf("v4 摘要 evidenceClass = %q, want %q", got[v4ID], evidenceRetrospective)
+	}
+}
+
+// TestAnalyzeConfigProtocolModeValidate v4 配置合同：协议必须合法、Window
+// 必须为 0；Protocol=nil 时 Window 合同不变。
+func TestAnalyzeConfigProtocolModeValidate(t *testing.T) {
+	base := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2024, EndYear: 2024, SampleMode: "codes", SampleCodes: []string{"000001"}},
+		Kind:      "momentum",
+		Days:      2,
+		Grouping:  GroupingConfig{},
+	}
+	// 合法协议 + Window=0 → 通过
+	ok := base
+	p := validResearchProtocol()
+	ok.Protocol = &p
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("合法 v4 配置应通过: %v", err)
+	}
+	// v4 + Window 非 0 → 拒绝（Horizons 优先）
+	bad := ok
+	bad.Window = 5
+	if err := bad.Validate(); err == nil {
+		t.Fatalf("v4 配置携带 legacy window 应被拒绝")
+	}
+	// v4 + 非法协议 → 拒绝
+	bad = ok
+	badP := p
+	badP.SchemaVersion = 99
+	bad.Protocol = &badP
+	if err := bad.Validate(); err == nil {
+		t.Fatalf("v4 配置携带非法协议应被拒绝")
+	}
+	// v3 路径不变：无协议 + Window=0 → 拒绝
+	legacy := base
+	legacy.Window = 0
+	if err := legacy.Validate(); err == nil {
+		t.Fatalf("v3 配置 Window=0 仍应被拒绝")
 	}
 }

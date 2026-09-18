@@ -148,10 +148,16 @@ func icStats(ics []float64) ICStats {
 // 卖出规则与分析无关（不校验）。
 type AnalyzeConfig struct {
 	RunConfig
-	Kind     string         `json:"kind"`               // 因子类型（registry kind）
-	Days     int            `json:"days"`               // 因子窗口参数（≤0 用各因子默认）
-	Window   int            `json:"window"`             // 未来收益窗口（交易日）
+	Kind string `json:"kind"` // 因子类型（registry kind）
+	Days int    `json:"days"` // 因子窗口参数（≤0 用各因子默认）
+	// Window 未来收益窗口（交易日），legacy 字段：仅 Protocol=nil 的 v3 分析
+	// 使用（1-60）。带协议的 v4 分析以 Protocol.Labels.Horizons 为准，
+	// Window 必须为 0，报告中的 Window 只镜像主周期（horizons[0]）。
+	Window   int            `json:"window"`
 	Grouping GroupingConfig `json:"grouping,omitempty"` // 分组方式；缺省等数量 5 组
+	// Protocol 研究协议（可选）：nil 保持 v3 执行与响应；非 nil 输出
+	// AnalysisVersion=4 并保存协议、hash 与证据等级。
+	Protocol *ResearchProtocol `json:"protocol,omitempty"`
 }
 
 // GroupingConfig 分组方式配置：mode 缺省（空）或 quantile 为每日等数量分组，
@@ -308,6 +314,8 @@ func valueStats(vals []float64) *groupValueStats {
 }
 
 // Validate 校验分析配置（复用回测的年份/样本检查）。
+// Protocol 非 nil 时进入 v4 合同：协议本身必须合法，Window 必须为 0
+// （未来收益窗口由 Protocol.Labels.Horizons 承担），其余检查不变。
 func (c AnalyzeConfig) Validate() error {
 	if err := c.validateYears(); err != nil {
 		return err
@@ -315,7 +323,14 @@ func (c AnalyzeConfig) Validate() error {
 	if err := c.validateSample(); err != nil {
 		return err
 	}
-	if c.Window < 1 || c.Window > 60 {
+	if c.Protocol != nil {
+		if err := c.Protocol.Validate(); err != nil {
+			return fmt.Errorf("研究协议非法: %w", err)
+		}
+		if c.Window != 0 {
+			return fmt.Errorf("带协议的 v4 分析不接受 legacy window 字段: %d（请使用 protocol.labels.horizons）", c.Window)
+		}
+	} else if c.Window < 1 || c.Window > 60 {
 		return fmt.Errorf("未来收益窗口无效: %d（应为 1-60 交易日）", c.Window)
 	}
 	if f.BuildContext(c.Kind, c.Days) == nil {
@@ -451,6 +466,20 @@ type AnalysisReport struct {
 	Daily         []DailyIC `json:"daily"`
 	StartedAt     string    `json:"startedAt"`
 	FinishedAt    string    `json:"finishedAt"`
+
+	// —— v4 新增字段（Protocol 非 nil 的分析才填充；均 omitempty，旧报告
+	// 序列化不出现这些键）——
+	// Protocol 冻结的研究协议副本；改变方向、窗口、标签或股票池构成新变体。
+	Protocol *ResearchProtocol `json:"protocol,omitempty"`
+	// ProtocolHash 协议内容 SHA-256（64 hex），绑定协议与报告。
+	ProtocolHash string `json:"protocolHash,omitempty"`
+	// EvidenceClass 证据等级：exploratory | retrospective。旧报告（无协议）
+	// 派生 exploratory + same_close_to_close_legacy；prospective 仅属于验证层。
+	EvidenceClass string `json:"evidenceClass,omitempty"`
+	// Horizons 多周期观察的周期列表（升序），与 Protocol.Labels.Horizons 一致。
+	// v3 镜像字段（Window/Stats/Groups/Years/Daily）在 v4 中只镜像主周期
+	//（horizons[0]），不作为 v4 的 canonical 数据。
+	Horizons []int `json:"horizons,omitempty"`
 }
 
 // DailyIC 单日横截面 IC；IC=nil 表示当日无效（NaN，JSON 序列化为 null）。

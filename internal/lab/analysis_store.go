@@ -41,6 +41,28 @@ var kindDirRe = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // latestFile 每 kind 与全局的指针文件名。
 const latestFile = "latest.json"
 
+// analysisVersionMaxKnown 已知最高分析报告版本（v4：研究协议 + 多周期）。
+const analysisVersionMaxKnown = 4
+
+// evidenceLegacy 无协议旧报告的证据等级摘要值：真实等级为 exploratory +
+// same_close_to_close_legacy（设计 §14），由展示层按该值提示。
+const evidenceLegacy = "legacy"
+
+// errAnalysisVersionUnsupported 报告版本高于已知最高版本，拒绝读取。
+var errAnalysisVersionUnsupported = errors.New("不支持的分析报告版本")
+
+// analysisEvidenceClass 报告证据等级摘要：v4 取协议派生值；旧报告返回
+// evidenceLegacy。
+func analysisEvidenceClass(rep *AnalysisReport) string {
+	if rep.Protocol == nil {
+		return evidenceLegacy
+	}
+	if rep.EvidenceClass != "" {
+		return rep.EvidenceClass
+	}
+	return deriveEvidenceClass(*rep.Protocol)
+}
+
 // errAnalysisNotFound 指定分析报告不存在。
 var errAnalysisNotFound = errors.New("分析报告不存在")
 
@@ -110,6 +132,10 @@ type AnalysisSummary struct {
 	FinishedAt      string `json:"finishedAt"`
 	FirstDataDate   string `json:"firstDataDate"`
 	LastDataDate    string `json:"lastDataDate"`
+	// EvidenceClass 证据等级摘要：v4 报告取协议派生值（exploratory |
+	// retrospective）；无协议的旧报告为 "legacy"（展示层按旧标签提示
+	// exploratory + same_close_to_close_legacy）。
+	EvidenceClass string `json:"evidenceClass"`
 }
 
 // AnalysisStore 不可变分析历史存储。
@@ -184,6 +210,7 @@ func (s *AnalysisStore) Save(rep *AnalysisReport) error {
 }
 
 // readReportFile 读取并解析指定 report.json；损坏返回错误（fail closed）。
+// 高于已知版本的报告以明确 unsupported 错误拒绝，不按旧版本猜测读取。
 func readReportFile(path string) (*AnalysisReport, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -192,6 +219,10 @@ func readReportFile(path string) (*AnalysisReport, error) {
 	var rep AnalysisReport
 	if err := json.Unmarshal(data, &rep); err != nil {
 		return nil, err
+	}
+	if rep.AnalysisVersion > analysisVersionMaxKnown {
+		return nil, fmt.Errorf("报告版本 %d 高于已知最高版本 %d: %w",
+			rep.AnalysisVersion, analysisVersionMaxKnown, errAnalysisVersionUnsupported)
 	}
 	return &rep, nil
 }
@@ -331,6 +362,7 @@ func (s *AnalysisStore) List(kind string) ([]AnalysisSummary, error) {
 			FinishedAt:      rep.FinishedAt,
 			FirstDataDate:   rep.FirstDataDate,
 			LastDataDate:    rep.LastDataDate,
+			EvidenceClass:   analysisEvidenceClass(rep),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FinishedAt > out[j].FinishedAt })
