@@ -30,8 +30,9 @@ func validSpec() StrategySpec {
 	}
 }
 
-// TestStrategySpecValidate 声明式合同：version/preset/名称长度/1～4 项数量/
-// 重复 kind+days/factor kind/days>0/operator/有限数/区间边界。
+// TestStrategySpecValidate 声明式合同：version/preset/名称长度/数量不限
+// （0 与 >4 合法，另见 TestStrategySpecVariants）/重复 kind+days/factor
+// kind/days>0/operator/有限数/区间边界。
 // Run 的最终合法性留给 RunConfig.Validate。
 func TestStrategySpecValidate(t *testing.T) {
 	if err := validSpec().Validate(); err != nil {
@@ -61,14 +62,6 @@ func TestStrategySpecValidate(t *testing.T) {
 		{"version=2", func(s *StrategySpec) { s.Version = 2 }},
 		{"未知 preset", func(s *StrategySpec) { s.BasePresetID = "nope" }},
 		{"名称超 80 字符", func(s *StrategySpec) { s.Name = strings.Repeat("策", 81) }},
-		{"条件数量 0", func(s *StrategySpec) { s.FactorFilters = nil }},
-		{"条件数量 0（空切片）", func(s *StrategySpec) { s.FactorFilters = []FactorFilterSpec{} }},
-		{"条件数量 5", func(s *StrategySpec) {
-			s.FactorFilters = append(s.FactorFilters,
-				FactorFilterSpec{Kind: "kvalue", Days: 9, Operator: "gte", Min: fptr(0)},
-				FactorFilterSpec{Kind: "position", Days: 60, Operator: "lte", Max: fptr(1)},
-				FactorFilterSpec{Kind: "body", Days: 1, Operator: "lte", Max: fptr(1)})
-		}},
 		{"第 1 项未知因子", func(s *StrategySpec) { s.FactorFilters[0].Kind = "nope" }},
 		{"第 2 项未知因子", func(s *StrategySpec) { s.FactorFilters[1].Kind = "nope" }},
 		{"days=0", func(s *StrategySpec) { s.FactorFilters[0].Days = 0 }},
@@ -107,7 +100,8 @@ func TestStrategySpecValidate(t *testing.T) {
 
 // TestStrategySpecVariants N≥2 时生成 N+2 个变体，顺序为
 // 基准、N 个单条件（与 factorFilters 顺序一一对应，名称稳定）、组合增强；
-// N=1 时组合增强与单条件 1 等价，只生成 基准+单条件 共 2 个。
+// N=1 时组合增强与单条件 1 等价，只生成 基准+单条件 共 2 个；
+// N=0 只生成基准 1 个（条件数量不限合同，另见 0/5 条件用例）。
 // 所有变体共用同一基础 Buyer，组合增强只追加 N 个 A因子过滤且固定 AND。
 func TestStrategySpecVariants(t *testing.T) {
 	base, err := BuildPresetBuyer("pullback_ma5_up")
@@ -213,6 +207,37 @@ func TestStrategySpecVariants(t *testing.T) {
 	}
 	if _, ok := and[1].(sb.A因子过滤); !ok {
 		t.Fatalf("单条件 1 And[1] 应为 A因子过滤, got %T", and[1])
+	}
+
+	// 0 条件 → 仅基准 1 个变体（数量不限合同：可为 0）
+	zero := validSpec()
+	zero.FactorFilters = nil
+	if err := zero.Validate(); err != nil {
+		t.Fatalf("0 条件应通过 Validate: %v", err)
+	}
+	vs, err = zero.Variants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) != 1 || vs[0].Name != "基准 · MA5 向上 · 收回 MA5" {
+		t.Fatalf("0 条件应只生成基准变体, got %d/%q", len(vs), vs[0].Name)
+	}
+
+	// 5 条件 → 7 个变体（数量不限合同：>4 合法）
+	five := validSpec()
+	five.FactorFilters = append(five.FactorFilters,
+		FactorFilterSpec{Kind: "kvalue", Days: 9, Operator: "gte", Min: fptr(0)},
+		FactorFilterSpec{Kind: "position", Days: 60, Operator: "lte", Max: fptr(1)},
+		FactorFilterSpec{Kind: "body", Days: 1, Operator: "lte", Max: fptr(1)})
+	if err := five.Validate(); err != nil {
+		t.Fatalf("5 条件应通过 Validate: %v", err)
+	}
+	vs, err = five.Variants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) != 7 {
+		t.Fatalf("5 条件应生成 7 个变体, got %d", len(vs))
 	}
 
 	// 不使用预设 → A全部 作为透明对照基准，因子条件独立决定买入。

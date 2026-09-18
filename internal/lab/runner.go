@@ -216,11 +216,12 @@ type FactorVariantSummary struct {
 // buildComparison 由变体结果生成简单模式对比摘要。
 // 变体数与 Variants() 合同不符时返回 nil，防止高级多变体脚本被误当作
 // 多条件对照：N≥2 时为 N+2（N 个条件 + 基准 + 组合增强）；N=1 时
-// 组合增强与单条件等价未重复生成，为 N+1=2，组合字段指向单条件变体。
+// 组合增强与单条件等价、N=0 时无单条件，均为 N+1（N=0 即只有基准，
+// 组合字段与基准指向同一变体），组合字段指向最后一个变体。
 func buildComparison(spec StrategySpec, variants []VariantReport) *ComparisonSummary {
 	want := len(spec.FactorFilters) + 2
-	if len(spec.FactorFilters) == 1 {
-		want = 2
+	if len(spec.FactorFilters) <= 1 {
+		want = len(spec.FactorFilters) + 1
 	}
 	if len(variants) != want {
 		return nil
@@ -335,7 +336,7 @@ func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
 
 // StartStrategy 启动简单模式回测：spec 为声明式配置快照，随报告保存
 // 并生成 Comparison 摘要。variants 由 spec.Variants() 构建（N≥2 为
-// N+2 顺序，N=1 为 基准+单条件 2 个）。
+// N+2 顺序，N=1 为 基准+单条件 2 个，N=0 仅基准 1 个）。
 func (r *Runner) StartStrategy(cfg RunConfig, variants []core.Variant, spec StrategySpec) error {
 	if err := spec.Validate(); err != nil {
 		return err

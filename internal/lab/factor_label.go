@@ -22,13 +22,13 @@ const (
 // LabelCoverage 单 Horizon 的标签覆盖统计。
 // 不变式：LabeledSignals 与各跳过桶之和等于 EligibleSignals。
 type LabelCoverage struct {
-	EligibleSignals     int
-	LabeledSignals      int
-	MissingEntryPrice   int
-	MissingExitPrice    int
-	UntradableEntry     int
-	InsufficientHorizon int
-	NonFiniteReturn     int
+	EligibleSignals     int `json:"eligibleSignals"`
+	LabeledSignals      int `json:"labeledSignals"`
+	MissingEntryPrice   int `json:"missingEntryPrice"`
+	MissingExitPrice    int `json:"missingExitPrice"`
+	UntradableEntry     int `json:"untradableEntry"`
+	InsufficientHorizon int `json:"insufficientHorizon"`
+	NonFiniteReturn     int `json:"nonFiniteReturn"`
 }
 
 // Record 记一次标签尝试；reason==LabelOK 计入成功，其余计入对应跳过桶。
@@ -48,6 +48,17 @@ func (c *LabelCoverage) Record(reason LabelSkipReason) {
 	case LabelSkipNonFiniteReturn:
 		c.NonFiniteReturn++
 	}
+}
+
+// merge 累加另一份覆盖统计（多票多年并行加载后合并），保持桶和不变式。
+func (c *LabelCoverage) merge(o LabelCoverage) {
+	c.EligibleSignals += o.EligibleSignals
+	c.LabeledSignals += o.LabeledSignals
+	c.MissingEntryPrice += o.MissingEntryPrice
+	c.MissingExitPrice += o.MissingExitPrice
+	c.UntradableEntry += o.UntradableEntry
+	c.InsufficientHorizon += o.InsufficientHorizon
+	c.NonFiniteReturn += o.NonFiniteReturn
 }
 
 // labelReturn 对信号日 signalIdx 计算单一 Horizon 收益标签。

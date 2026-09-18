@@ -355,8 +355,9 @@ type FactorSnapshot struct {
 	ImplementationVersion int `json:"implementationVersion"`
 }
 
-// FactorGroupStats 单组统计：因子值分布为全样本累计（原始值），
-// ForwardReturn 为每日组均值再按日期等权；空组数值字段为 null。
+// FactorGroupStats 单组统计：因子值分布为所在统计区间累计（原始值），
+// ForwardReturn 为每日组均值再按日期等权；空组数值字段为 null。年度等频
+// AllGroupings 为控制体积只填 min/mean/max，完整区间填全部分布字段。
 type FactorGroupStats struct {
 	Index         int      `json:"index"` // 1..N
 	Label         string   `json:"label"` // Q1..QN 或 B1..BN
@@ -379,8 +380,8 @@ type FactorGroupStats struct {
 func f64p(v float64) *float64 { return &v }
 
 // GroupingSet 某一组数下的完整分组结果：Quintiles 镜像组收益（组不完整为
-// null），Stats 为每组因子值分布与计数（仅全区间填充；年度只填
-// Quintiles/Summary 以控制报告体积），Summary 为方向摘要。
+// null）。全区间 Stats 含完整分布；年度 Stats 为轻量轴统计，只含 min/mean/max、
+// 计数与收益，供年度图使用真实因子值横轴而不是退化为 Q1/Q2 编号。
 type GroupingSet struct {
 	Groups    int                `json:"groups"`
 	Quintiles []float64          `json:"quintiles"`
@@ -421,13 +422,14 @@ type AnalysisRange struct {
 // 等权）。有效日不足 minPairs 时 Stats.Pairs 保留样本数、其余字段为 0，
 // Quintiles 为 nil、Summary 为 insufficient：零值不得被解释为“真实 IC 为零”。
 type YearAnalysis struct {
-	Year        int             `json:"year"`
-	Stats       ICStats         `json:"stats"`
-	Quintiles   []float64       `json:"quintiles"` // 该年分组收益（长度=组数）；组不完整为 null
-	Summary     QuintileSummary `json:"summary"`
-	TradingDays int             `json:"tradingDays"` // 该年有横截面观测的交易日数
-	// AllGroupings 该年全部组数（2-20）的等频预算（仅 quantile 模式；只含
-	// Quintiles/Summary，无组内统计，控制体积）；bins 或历史报告为 nil。
+	Year        int                `json:"year"`
+	Stats       ICStats            `json:"stats"`
+	Groups      []FactorGroupStats `json:"groups,omitempty"` // bins 年度组统计；quantile 使用 AllGroupings[].Stats
+	Quintiles   []float64          `json:"quintiles"`        // 该年分组收益（长度=组数）；组不完整为 null
+	Summary     QuintileSummary    `json:"summary"`
+	TradingDays int                `json:"tradingDays"` // 该年有横截面观测的交易日数
+	// AllGroupings 该年全部组数（2-20）的等频预算（仅 quantile 模式）；
+	// Stats 只含数值轴所需的轻量 min/mean/max、计数与收益，bins 或历史报告为 nil。
 	AllGroupings []GroupingSet `json:"allGroupings"`
 }
 
@@ -625,27 +627,25 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 	return groups, summaryQs, summary
 }
 
-// aggregateQuantileSets 对一组交易日预算全部组数（minGroups..maxGroups）的
-// 等频分组结果。分位排序与组数无关：每日横截面按 value/code 只排序一次并
-// 缓存（值与收益切片对齐），各档按中点公式 (i+j)*g/(2n) 线性扫描归组
-// （tie block 整块不拆分）。按档逐个处理，fullStats 时单档组内值算完即
-// 释放，内存峰值 = 排序缓存 + 单档组桶，避免 19 档同时驻留。返回组数升序
-// 的 19 个 GroupingSet；fullStats=true 时填充每组因子值分布（全区间用），
-// 否则只填 Quintiles/Summary（年度用，控制体积）。仅 quantile 模式调用
-// （bins 断点随组数变化，不参与切组预算）。
-func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string]float64,
-	fullStats bool) []GroupingSet {
-	// 每日横截面排序一次并预取收益切片：后续各档按索引访问，避免逐观测
-	// map 查找（与 quantileAssign 同序，保证切组结果与单档请求完全一致）。
-	type daySlice struct {
-		vals []float64
-		rets []float64
-	}
-	cache := make([]daySlice, 0, len(days))
+// quantileCache 每日横截面排序缓存：值/收益/代码切片按同一顺序对齐
+// （与 quantileAssign 同序，保证切组结果与单档请求完全一致）。排序与组数
+// 无关，构建一次即可服务任意档位；v3 全档预算与 v4 单档请求共用。
+type quantileCache struct {
+	days  []time.Time
+	codes [][]string
+	vals  [][]float64
+	rets  [][]float64
+}
+
+// buildQuantileCache 对一组交易日各排序一次并预取收益切片：后续各档按索引
+// 访问，避免逐观测 map 查找。
+func buildQuantileCache(days []time.Time, vals, rets map[time.Time]map[string]float64) *quantileCache {
+	c := &quantileCache{days: days, codes: make([][]string, 0, len(days)),
+		vals: make([][]float64, 0, len(days)), rets: make([][]float64, 0, len(days))}
 	for _, day := range days {
 		obs := make([]factorObs, 0, len(vals[day]))
-		for c, v := range vals[day] {
-			obs = append(obs, factorObs{Code: c, Value: v})
+		for code, v := range vals[day] {
+			obs = append(obs, factorObs{Code: code, Value: v})
 		}
 		sort.Slice(obs, func(a, b int) bool {
 			if obs[a].Value != obs[b].Value {
@@ -654,97 +654,121 @@ func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string
 			return obs[a].Code < obs[b].Code
 		})
 		n := len(obs)
-		ds := daySlice{vals: make([]float64, n), rets: make([]float64, n)}
+		dc := make([]string, n)
+		dv := make([]float64, n)
+		dr := make([]float64, n)
 		for i, o := range obs {
-			ds.vals[i] = o.Value
-			ds.rets[i] = rets[day][o.Code]
+			dc[i], dv[i], dr[i] = o.Code, o.Value, rets[day][o.Code]
 		}
-		cache = append(cache, ds)
+		c.codes = append(c.codes, dc)
+		c.vals = append(c.vals, dv)
+		c.rets = append(c.rets, dr)
+	}
+	return c
+}
+
+// aggregateSet 单档等频分组：按中点公式 (i+j)*g/(2n) 线性扫描归组（tie block
+// 整块不拆分）。fullStats 时填充每组完整因子值分布（单档组桶算完即释放，
+// 内存峰值 = 排序缓存 + 单档组桶）；false 时只填 min/mean/max 轻量轴统计。
+// membersOut 非 nil（长度须为 g）时同步输出每日各组代码集合，供换手序列
+// 与聚合严格同口径（一次扫描，无重复排序）。
+func (c *quantileCache) aggregateSet(g int, fullStats bool, membersOut []map[string]struct{}) GroupingSet {
+	if membersOut != nil && len(membersOut) != g {
+		membersOut = nil // 契约违反时降级为不输出，聚合结果不受影响
+	}
+	var accVals [][]float64 // 组内完整因子值（仅 fullStats 使用）
+	if fullStats {
+		accVals = make([][]float64, g)
+	}
+	accMin, accMax, accSums := make([]float64, g), make([]float64, g), make([]float64, g)
+	accObs := make([]int, g)
+	dayCnts := make([]int, g)
+	dayRets := make([]float64, g)
+	for di, ds := range c.vals {
+		n := len(ds)
+		if n == 0 {
+			continue
+		}
+		gSums, gCnts := make([]float64, g), make([]int, g)
+		for i := 0; i < n; {
+			j := i
+			for j+1 < n && ds[j+1] == ds[i] {
+				j++
+			}
+			gr := (i + j) * g / (2 * n) // 中点公式整数形式
+			for k := i; k <= j; k++ {
+				if membersOut != nil {
+					membersOut[gr][c.codes[di][k]] = struct{}{}
+				}
+				if fullStats {
+					accVals[gr] = append(accVals[gr], ds[k])
+				}
+				if accObs[gr] == 0 {
+					accMin[gr], accMax[gr] = ds[k], ds[k]
+				} else {
+					accMin[gr] = min(accMin[gr], ds[k])
+					accMax[gr] = max(accMax[gr], ds[k])
+				}
+				accSums[gr] += ds[k]
+				accObs[gr]++
+				gSums[gr] += c.rets[di][k]
+				gCnts[gr]++
+			}
+			i = j + 1
+		}
+		for gr := 0; gr < g; gr++ {
+			if gCnts[gr] > 0 {
+				dayCnts[gr]++
+				dayRets[gr] += gSums[gr] / float64(gCnts[gr])
+			}
+		}
 	}
 
-	allG := make([]int, 0, maxGroups-minGroups+1)
-	for g := minGroups; g <= maxGroups; g++ {
-		allG = append(allG, g)
+	set := GroupingSet{Groups: g}
+	totalObs := 0
+	for _, n := range accObs {
+		totalObs += n
 	}
-	sets := make([]GroupingSet, len(allG))
-	for si, g := range allG {
-		accVals := make([][]float64, g) // 组内因子值（仅 fullStats 使用）
-		accObs := make([]int, g)
-		dayCnts := make([]int, g)
-		dayRets := make([]float64, g)
-		for _, ds := range cache {
-			n := len(ds.vals)
-			if n == 0 {
-				continue
-			}
-			gSums, gCnts := make([]float64, g), make([]int, g)
-			for i := 0; i < n; {
-				j := i
-				for j+1 < n && ds.vals[j+1] == ds.vals[i] {
-					j++
-				}
-				gr := (i + j) * g / (2 * n) // 中点公式整数形式
-				for k := i; k <= j; k++ {
-					if fullStats {
-						accVals[gr] = append(accVals[gr], ds.vals[k])
-					}
-					accObs[gr]++
-					gSums[gr] += ds.rets[k]
-					gCnts[gr]++
-				}
-				i = j + 1
-			}
-			for gr := 0; gr < g; gr++ {
-				if gCnts[gr] > 0 {
-					dayCnts[gr]++
-					dayRets[gr] += gSums[gr] / float64(gCnts[gr])
-				}
-			}
-		}
-
-		set := GroupingSet{Groups: g}
+	set.Stats = make([]FactorGroupStats, g)
+	for k := 0; k < g; k++ {
+		gs := FactorGroupStats{Index: k + 1, Label: fmt.Sprintf("Q%d", k+1)}
 		if fullStats {
-			totalObs := 0
-			for _, n := range accObs {
-				totalObs += n
+			if st := valueStats(accVals[k]); st != nil {
+				gs.FactorMin, gs.FactorP25, gs.FactorMedian = f64p(st.Min), f64p(st.P25), f64p(st.Median)
+				gs.FactorMean, gs.FactorP75, gs.FactorMax, gs.FactorStd =
+					f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
 			}
-			set.Stats = make([]FactorGroupStats, g)
-			for k := 0; k < g; k++ {
-				gs := FactorGroupStats{Index: k + 1, Label: fmt.Sprintf("Q%d", k+1)}
-				if st := valueStats(accVals[k]); st != nil {
-					gs.FactorMin, gs.FactorP25, gs.FactorMedian = f64p(st.Min), f64p(st.P25), f64p(st.Median)
-					gs.FactorMean, gs.FactorP75, gs.FactorMax, gs.FactorStd =
-						f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
-				}
-				gs.Observations = accObs[k]
-				gs.Dates = dayCnts[k]
-				if totalObs > 0 {
-					gs.CountPct = float64(accObs[k]) / float64(totalObs)
-				}
-				if dayCnts[k] > 0 {
-					gs.ForwardReturn = f64p(dayRets[k] / float64(dayCnts[k]))
-				}
-				set.Stats[k] = gs
-			}
-			set.Quintiles, set.Summary = summarizeFromStats(set.Stats, g)
-		} else {
-			// 年度：不做组内值统计，只算组收益与摘要
-			qs := make([]float64, 0, g)
-			complete := true
-			for k := 0; k < g; k++ {
-				if dayCnts[k] == 0 {
-					complete = false
-					break
-				}
-				qs = append(qs, dayRets[k]/float64(dayCnts[k]))
-			}
-			if !complete {
-				qs = nil
-			}
-			set.Quintiles = qs
-			set.Summary = summarizeQuintiles(qs, g)
+		} else if accObs[k] > 0 {
+			// 年度图只需真实数值轴和值域；流式统计避免为 2-20 档同时保存
+			// 全量因子值并重复排序。
+			gs.FactorMin, gs.FactorMean, gs.FactorMax =
+				f64p(accMin[k]), f64p(accSums[k]/float64(accObs[k])), f64p(accMax[k])
 		}
-		sets[si] = set
+		gs.Observations = accObs[k]
+		gs.Dates = dayCnts[k]
+		if totalObs > 0 {
+			gs.CountPct = float64(accObs[k]) / float64(totalObs)
+		}
+		if dayCnts[k] > 0 {
+			gs.ForwardReturn = f64p(dayRets[k] / float64(dayCnts[k]))
+		}
+		set.Stats[k] = gs
+	}
+	set.Quintiles, set.Summary = summarizeFromStats(set.Stats, g)
+	return set
+}
+
+// aggregateQuantileSets 对一组交易日预算全部组数（minGroups..maxGroups）的
+// 等频分组结果：分位排序每日只做一次（缓存复用），各档线性扫描。返回组数
+// 升序的 19 个 GroupingSet；fullStats=true 时填充每组完整因子值分布（全区间
+// 用），false 时填充 min/mean/max 轻量轴统计（年度用）。仅 quantile 模式调用
+// （bins 断点随组数变化，不参与切组预算）。
+func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string]float64,
+	fullStats bool) []GroupingSet {
+	cache := buildQuantileCache(days, vals, rets)
+	sets := make([]GroupingSet, 0, maxGroups-minGroups+1)
+	for g := minGroups; g <= maxGroups; g++ {
+		sets = append(sets, cache.aggregateSet(g, fullStats, nil))
 	}
 	return sets
 }
@@ -904,9 +928,10 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 		yic := aggregateIC(gd, vals, rets)
 		var yqs []float64
 		var ysum QuintileSummary
+		var ygroups []FactorGroupStats
 		var yaAll []GroupingSet
 		if isBins {
-			_, yqs, ysum = aggregateGroups(gd, vals, rets, cfg.Grouping)
+			ygroups, yqs, ysum = aggregateGroups(gd, vals, rets, cfg.Grouping)
 		} else {
 			yaAll = aggregateQuantileSets(gd, vals, rets, false)
 			yreq := yaAll[cfg.Grouping.groupCount()-minGroups]
@@ -915,6 +940,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 		yearly = append(yearly, YearAnalysis{
 			Year:         gd[0].Year(),
 			Stats:        yic.Stats,
+			Groups:       ygroups,
 			Quintiles:    yqs,
 			Summary:      ysum,
 			TradingDays:  len(gd),

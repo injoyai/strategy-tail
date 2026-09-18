@@ -398,7 +398,8 @@ func simpleRunBody() map[string]any {
 }
 
 // TestServerStrategyRunValidation 请求问题一律 400：非法 JSON、版本/未知预设/
-// 条件数/重复/操作符/区间错误；错误体含 error 字段。
+// 重复/操作符/区间错误；错误体含 error 字段。条件数量不限（0 与 >4 合法），
+// 不再是校验项。
 func TestServerStrategyRunValidation(t *testing.T) {
 	h := NewServer().Handler()
 
@@ -414,16 +415,6 @@ func TestServerStrategyRunValidation(t *testing.T) {
 	cases := map[string]func(map[string]any){
 		"版本无效": func(b map[string]any) { b["version"] = 2 },
 		"未知预设": func(b map[string]any) { b["basePresetId"] = "nope" },
-		"条件不足": func(b map[string]any) { b["factorFilters"] = []map[string]any{} },
-		"条件超限": func(b map[string]any) {
-			gte0 := func(kind string, days int) map[string]any {
-				return map[string]any{"kind": kind, "days": days, "operator": "gte", "min": 0}
-			}
-			b["factorFilters"] = []map[string]any{
-				gte0("momentum", 5), gte0("momentum", 10),
-				gte0("volatility", 5), gte0("volatility", 10), gte0("position", 60),
-			}
-		},
 		"重复条件": func(b map[string]any) {
 			fs := b["factorFilters"].([]map[string]any)
 			b["factorFilters"] = []map[string]any{fs[0], fs[0]}

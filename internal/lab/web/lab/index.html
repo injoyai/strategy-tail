@@ -63,7 +63,8 @@ main{padding:26px;max-width:1448px;margin:0 auto}
 .card:before{content:"";position:absolute;left:0;top:22px;width:2px;height:26px;border-radius:0 4px 4px 0;background:linear-gradient(180deg,var(--gold-soft),var(--gold-deep))}
 .card:after{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(216,180,90,.35),transparent);pointer-events:none}
 .card h3{font-family:var(--font-disp);font-size:14px;font-weight:600;line-height:1.4;margin:-1px 0 18px;color:var(--ink);padding:0 0 12px 4px;border-bottom:1px solid var(--rule);letter-spacing:.08em}
-textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;line-height:1.65;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:14px;resize:vertical;background:#080e18;color:#cfe0f7;caret-color:var(--gold)}
+textarea{width:100%;height:420px;font-family:Consolas,"Courier New",monospace;font-size:13px;line-height:1.65;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:14px;resize:none;background:#080e18;color:#cfe0f7;caret-color:var(--gold)}
+.resize-none{resize:none}
 .editor-actions{display:flex;gap:9px;margin-top:12px;align-items:center;flex-wrap:wrap}
 button.primary,button.secondary,button.danger{min-height:36px;padding:8px 18px;border-radius:var(--control-radius);font-size:13px;font-weight:600;letter-spacing:.03em;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,background-color .16s ease,border-color .16s ease,color .16s ease}
 button.primary{background:linear-gradient(160deg,#4a86ff,#2450c0);color:#fff;border:1px solid rgba(140,180,255,.42);box-shadow:0 10px 24px rgba(35,85,190,.35),inset 0 1px 0 rgba(255,255,255,.20)}
@@ -81,12 +82,18 @@ button.danger:hover{background:rgba(239,68,68,.18);border-color:rgba(239,68,68,.
 .form-row input:hover,.form-row select:hover,.filters input:hover,.filters select:hover{border-color:rgba(255,255,255,.24)}
 .form-row input,.form-row select{flex:1}
 .form-row input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--gold);box-shadow:none}
-.statusbar{margin:0 0 18px;padding:16px 18px;background:linear-gradient(135deg,rgba(76,141,255,.14),rgba(216,180,90,.06) 68%,rgba(255,255,255,.025));border:1px solid rgba(76,141,255,.32);border-radius:14px;display:none;overflow:hidden;box-shadow:0 16px 36px rgba(0,0,0,.24)}
+/* 任务坞：固定右下角浮层，出现/消失不挤占内容流（所有 Tab 共用） */
+.statusbar{position:fixed;right:22px;bottom:22px;z-index:60;width:min(430px,calc(100vw - 44px));padding:13px 16px 12px;background:linear-gradient(150deg,rgba(15,25,41,.94),rgba(9,15,27,.97));border:1px solid rgba(76,141,255,.32);border-radius:14px;display:none;overflow:hidden;box-shadow:0 26px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(16px) saturate(140%)}
+.statusbar:before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(216,180,90,.4),transparent);pointer-events:none}
 .statusbar.show{display:block}
 .statusbar[data-state=done]{border-color:rgba(52,211,153,.34);background:linear-gradient(135deg,rgba(52,211,153,.10),rgba(216,180,90,.05))}
 .statusbar[data-state=error],.statusbar[data-state=stopped]{border-color:rgba(239,68,68,.34);background:linear-gradient(135deg,rgba(239,68,68,.09),rgba(255,255,255,.025))}
 .status-head,.status-foot{display:flex;justify-content:space-between;align-items:center;gap:14px}
 .status-title-wrap{display:flex;align-items:baseline;gap:11px;min-width:0}
+.status-dot{width:7px;height:7px;border-radius:50%;flex:none;align-self:center;background:var(--accent);box-shadow:0 0 0 4px rgba(76,141,255,.16);animation:status-pulse 1.6s ease-in-out infinite}
+.statusbar[data-state=done] .status-dot{background:var(--ok);box-shadow:0 0 0 4px rgba(52,211,153,.16);animation:none}
+.statusbar[data-state=error] .status-dot,.statusbar[data-state=stopped] .status-dot{background:var(--red);box-shadow:0 0 0 4px rgba(239,68,68,.15);animation:none}
+@keyframes status-pulse{50%{opacity:.35}}
 .status-kicker{font-family:var(--font-num);font-size:9px;font-weight:600;letter-spacing:.18em;color:var(--gold);white-space:nowrap}
 #statusState{font-family:var(--font-disp);font-weight:600;letter-spacing:.06em}
 #statusPercent{font-family:var(--font-num);font-size:18px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -180,7 +187,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 .candidate-form input,.candidate-form select{height:34px}
 .candidate-form input[type=text]{flex:1;min-width:140px}
 .candidate-form input[type=number]{width:96px}
-.candidate-form textarea{width:100%;height:64px;padding:8px 10px;resize:vertical}
+.candidate-form textarea{width:100%;height:64px;padding:8px 10px;resize:none}
 .candidate-form .cf-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
 .cand-toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0 8px}
 .cand-toolbar button{min-height:30px;padding:4px 13px;font-size:12px}
@@ -198,8 +205,8 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 .st-chip.stale{border-color:rgba(224,168,60,.42);color:#f0cd86;background:rgba(224,168,60,.10)}
 .st-chip.missing{border-color:rgba(239,68,68,.4);color:#ff9a9a;background:rgba(239,68,68,.10)}
 .compat-note{font-size:11px;color:var(--muted);line-height:1.6}
-/* 编辑对话框 */
-dialog{color:var(--ink);border:1px solid var(--rule2);border-radius:14px;background:#0d1626;box-shadow:var(--shadow);padding:20px 22px;max-width:520px;width:92%}
+/* 编辑对话框：margin:auto 恢复被 *{margin:0} 重置掉的 UA 居中，否则弹窗贴左上角 */
+dialog{color:var(--ink);border:1px solid var(--rule2);border-radius:14px;background:#0d1626;box-shadow:var(--shadow);padding:20px 22px;max-width:520px;width:92%;margin:auto}
 dialog::backdrop{background:rgba(4,8,14,.66)}
 dialog .dlg-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 dialog .dlg-head h3{font-family:var(--font-disp);font-size:14px;font-weight:600;letter-spacing:.06em;margin:0;border:0;padding:0}
@@ -221,7 +228,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
   #quintileChart{height:280px}.filters>*{flex:1 1 120px;width:auto!important}.detail-wrap{border-radius:10px}.cmp-box .big{font-size:18px}
   .summary-line{font-size:14px}
   .candidate-form .cf-row{align-items:flex-start}.candidate-form .cf-row>label{width:100%;margin-bottom:-3px}.candidate-form input[type=text],.candidate-form textarea{flex-basis:100%}
-  .statusbar{padding:14px;margin-bottom:12px}.status-head,.status-foot{align-items:flex-start}.status-title-wrap{display:block}.status-kicker{display:block;margin-bottom:2px}.status-meta{display:block;min-width:0}#statusDetail,#statusCurrent{display:block}.status-actions{margin-left:auto}#statusPercent{font-size:16px}
+  .statusbar{left:12px;right:12px;bottom:12px;width:auto;padding:12px 14px}.status-head,.status-foot{align-items:flex-start}.status-title-wrap{display:block}.status-kicker{display:block;margin-bottom:2px}.status-dot{display:none}.status-meta{display:block;min-width:0}#statusDetail,#statusCurrent{display:block}.status-actions{margin-left:auto}#statusPercent{font-size:16px}
 }
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.001ms!important;animation-duration:.001ms!important;animation-iteration-count:1!important}.progress-inner.indeterminate{animation:none;background-position:50% 0}}
 </style>
@@ -237,7 +244,6 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
   </div>
   <div class="header-meta" aria-label="运行环境">
     <span class="local-badge"><span class="live-dot" aria-hidden="true"></span>本地研究会话</span>
-    <span>127.0.0.1:8765</span>
   </div>
 </header>
 
@@ -253,6 +259,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 <section class="statusbar" id="statusbar" data-state="idle" aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
   <div class="status-head">
     <div class="status-title-wrap">
+      <span class="status-dot" aria-hidden="true"></span>
       <span class="status-kicker">BATCH JOB</span>
       <span id="statusState">批量任务</span>
     </div>
@@ -266,6 +273,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
     <div class="status-actions">
       <button type="button" class="secondary" id="btnStatusRetry" onclick="pollStatus()" hidden>重试读取</button>
       <button type="button" class="danger" id="btnStop" onclick="stopBatchTask()" hidden>停止任务</button>
+      <button type="button" class="secondary" id="btnStatusClose" onclick="dismissTaskDock()" hidden>关闭</button>
     </div>
   </div>
   <div class="msg" id="statusErr" role="alert"></div>
@@ -293,7 +301,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
           <input type="text" id="specName" maxlength="80" placeholder="可选，留空自动生成">
         </div>
 
-        <div class="subhead">因子条件（1～4 个，全部并且 AND）</div>
+        <div class="subhead">因子条件（数量不限，可为 0，全部并且 AND）</div>
         <div id="condCards"></div>
         <div class="editor-actions">
           <button class="secondary" id="btnAddCond2" onclick="addCond()">添加条件</button>
@@ -429,11 +437,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
       <label class="factor-inline-label" id="factorDaysLabel" for="factorDays">回看天数</label>
       <input type="number" id="factorDays" value="20" min="1" style="width:80px" aria-describedby="factorParamHelp">
       <label class="factor-inline-label" for="factorWindow">未来收益窗口</label>
-      <select id="factorWindow" aria-describedby="factorParamHelp">
-        <option value="1" selected>1 日</option>
-        <option value="5">5 日</option>
-        <option value="20">20 日</option>
-      </select>
+      <input type="number" id="factorWindow" value="1" min="1" max="60" step="1" style="width:80px" aria-describedby="factorParamHelp">
       <label class="factor-inline-label" for="factorStartYear">开始年份</label>
       <input type="number" id="factorStartYear" value="2018" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
       <label class="factor-inline-label" for="factorEndYear">结束年份</label>
@@ -458,9 +462,13 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
       <div id="factorBody" style="display:none">
         <div class="coverage" id="rangeMeta"></div>
         <div class="filters" id="groupSwitch" style="display:none;padding:10px 13px;margin-top:12px">
-          <label for="resultGroups" style="align-self:center;margin:0;width:auto">分组数</label>
-          <select id="resultGroups" style="width:96px"></select>
-          <span class="hint" style="margin:0;align-self:center">分析已完成，切换即时生效，无需重新分析。</span>
+          <span id="groupCountControl" style="display:contents">
+            <label for="resultGroups" style="align-self:center;margin:0;width:auto">分组数</label>
+            <select id="resultGroups" style="width:96px"></select>
+          </span>
+          <label for="resultScope" style="align-self:center;margin:0;width:auto">图表视角</label>
+          <select id="resultScope" style="width:136px"></select>
+          <span class="hint" id="groupSwitchHint" style="margin:0;align-self:center">分析已完成，切换即时生效，无需重新分析。</span>
         </div>
         <div class="summary-line" id="quintileSummary"></div>
         <div id="quintileChart"></div>
@@ -488,45 +496,10 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
         <div class="editor-actions" style="margin-top:14px">
           <button class="secondary" id="btnAddCond" onclick="addFactorToStrategy()">添加到策略条件</button>
           <span class="hint">把该因子与参数（不含阈值）加入 ② 的简单配置，阈值由你在那里填写。</span>
-          <button class="secondary" id="btnSaveCandidate" onclick="toggleCandidateForm()">保存为候选</button>
+          <button class="secondary" id="btnSaveCandidate" onclick="openCandidateDlg()">保存为候选</button>
           <span class="hint" id="saveCandidateHint"></span>
         </div>
 
-        <!-- 保存为候选：等频不自动填阈值；保存不代表样本外验证通过 -->
-        <div class="candidate-form" id="candidateForm" style="display:none" aria-hidden="true">
-          <div class="cf-row"><label for="candName">候选名称</label>
-            <input type="text" id="candName" maxlength="80" placeholder="如 20日动量观察候选" aria-describedby="candFormNote">
-          </div>
-          <div class="cf-row"><label for="candUseMode">使用方式</label>
-            <select id="candUseMode" aria-describedby="candFormNote">
-              <option value="observe" selected>仅保存观察结果</option>
-              <option value="range">配置固定区间后保存</option>
-            </select>
-            <span class="hint" style="margin:0" id="candUseHint"></span>
-          </div>
-          <div class="cf-row" id="candRangeRow" style="display:none">
-            <label for="candRangeOp">区间条件</label>
-            <select id="candRangeOp" style="width:104px">
-              <option value="gte">≥ 至少</option>
-              <option value="lte">≤ 至多</option>
-              <option value="between">介于</option>
-            </select>
-            <input type="number" id="candRangeMin" step="any" placeholder="下限" aria-label="区间下限">
-            <input type="number" id="candRangeMax" step="any" placeholder="上限" aria-label="区间上限">
-            <span class="hint" style="margin:0" id="candRangeUnit"></span>
-          </div>
-          <div class="cf-row"><label for="candNotes">备注</label>
-            <textarea id="candNotes" maxlength="2000" placeholder="可选：记录观察理由、待验证假设等"></textarea>
-          </div>
-          <div class="cf-row">
-            <div class="cf-actions">
-              <button class="primary" id="btnCandidateSave" onclick="saveCandidate()">保存候选</button>
-              <button class="secondary" id="btnCandidateCancel" onclick="toggleCandidateForm(true)">取消</button>
-              <span class="hint" style="margin:0" id="candFormNote"></span>
-            </div>
-          </div>
-          <div class="msg" id="candidateMsg" role="status" aria-live="polite"></div>
-        </div>
         <button type="button" class="secondary" id="btnViewCandidates" onclick="switchTab(5)" hidden>查看候选 →</button>
 
         <div class="year-title" id="yearTitle">年度稳定性</div>
@@ -601,7 +574,7 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
       <span class="hint" style="margin:0" id="candEditUnit"></span>
     </div>
     <div class="cf-row"><label for="candEditNotes">备注</label>
-      <textarea id="candEditNotes" maxlength="2000"></textarea></div>
+      <textarea class="resize-none" id="candEditNotes" maxlength="2000"></textarea></div>
     <div class="cf-row">
       <div class="cf-actions">
         <button class="primary" id="btnCandEditSave" onclick="saveCandidateEdit()">保存修订</button>
@@ -610,6 +583,48 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
       </div>
     </div>
     <div class="msg" id="candEditMsg" role="status" aria-live="polite"></div>
+  </div>
+</dialog>
+
+<!-- 保存为候选对话框：等频不自动填阈值；保存不代表样本外验证通过 -->
+<dialog id="candidateDlg" aria-labelledby="candidateDlgTitle">
+  <div class="dlg-head">
+    <h3 id="candidateDlgTitle">保存为候选</h3>
+    <button class="dlg-close" onclick="closeCandidateDlg()" aria-label="关闭">×</button>
+  </div>
+  <div class="candidate-form" style="margin-top:0">
+    <div class="cf-row"><label for="candName">候选名称</label>
+      <input type="text" id="candName" maxlength="80" placeholder="如 20日动量观察候选" aria-describedby="candFormNote">
+    </div>
+    <div class="cf-row"><label for="candUseMode">使用方式</label>
+      <select id="candUseMode" aria-describedby="candFormNote">
+        <option value="observe" selected>仅保存观察结果</option>
+        <option value="range">配置固定区间后保存</option>
+      </select>
+      <span class="hint" style="margin:0" id="candUseHint"></span>
+    </div>
+    <div class="cf-row" id="candRangeRow" style="display:none">
+      <label for="candRangeOp">区间条件</label>
+      <select id="candRangeOp" style="width:104px">
+        <option value="gte">≥ 至少</option>
+        <option value="lte">≤ 至多</option>
+        <option value="between">介于</option>
+      </select>
+      <input type="number" id="candRangeMin" step="any" placeholder="下限" aria-label="区间下限">
+      <input type="number" id="candRangeMax" step="any" placeholder="上限" aria-label="区间上限">
+      <span class="hint" style="margin:0" id="candRangeUnit"></span>
+    </div>
+    <div class="cf-row"><label for="candNotes">备注</label>
+      <textarea class="resize-none" id="candNotes" maxlength="2000" placeholder="可选：记录观察理由、待验证假设等"></textarea>
+    </div>
+    <div class="cf-row">
+      <div class="cf-actions">
+        <button class="primary" id="btnCandidateSave" onclick="saveCandidate()">保存候选</button>
+        <button class="secondary" onclick="closeCandidateDlg()">取消</button>
+        <span class="hint" style="margin:0" id="candFormNote"></span>
+      </div>
+    </div>
+    <div class="msg" id="candidateMsg" role="status" aria-live="polite"></div>
   </div>
 </dialog>
 
@@ -647,7 +662,7 @@ function animatePanel(panel) {
 }
 function animateStatus(bar) {
   if (!motionReady || typeof gsap === 'undefined') return;
-  gsap.fromTo(bar, {autoAlpha: 0, y: -7}, {
+  gsap.fromTo(bar, {autoAlpha: 0, y: 10}, {
     autoAlpha: 1, y: 0, duration: .3, ease: 'power2.out', overwrite: 'auto',
     clearProps: 'opacity,visibility,transform'
   });
@@ -787,7 +802,7 @@ async function runBacktest() {
   try {
     await api('PUT', '/api/script', {content: $('editor').value}); // 运行前先保存
     const d = await api('POST', '/api/run', buildConfig());
-    showScriptMsg(`已提交 ${d.variants} 个变体，运行进度见上方任务条。`, true);
+    showScriptMsg(`已提交 ${d.variants} 个变体，运行进度见右下角任务卡。`, true);
     showPendingTask('backtest');
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
@@ -799,8 +814,9 @@ async function runSimple() {
   try {
     const d = await api('POST', '/api/strategy/run', spec);
     const n = spec.factorFilters.length;
-    const detail = n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
-    showScriptMsg(`已提交 ${d.variants} 个变体（${detail}），运行进度见上方任务条。`, true);
+    const detail = n === 0 ? '仅基准（无因子条件）'
+      : n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
+    showScriptMsg(`已提交 ${d.variants} 个变体（${detail}），运行进度见右下角任务卡。`, true);
     showPendingTask('backtest');
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
@@ -855,8 +871,8 @@ function renderPresetInfo() {
 }
 $('presetSel').addEventListener('change', renderPresetInfo);
 
-// 默认一张条件卡（合同允许 1～4 条）；避免初始生成两条相同因子+天数，
-// 让尚未编辑的表单天然触发“重复条件”校验。
+// 默认一张条件卡（合同不限制数量、可为 0，此处默认 1 条便于上手）；避免初始生成
+// 两条相同因子+天数，让尚未编辑的表单天然触发“重复条件”校验。
 function ensureDefaultConds() {
   if (condsInitialized || !factorCatalog.length) return;
   simpleConds = [defaultCond()];
@@ -869,7 +885,6 @@ function defaultCond() {
     factorVersion: e.implementationVersion || 0};
 }
 function addCond() {
-  if (simpleConds.length >= 4) return;
   simpleConds.push(defaultCond());
   renderConds(simpleConds.length - 1);
 }
@@ -885,7 +900,7 @@ function renderConds(focusIdx) {
     const d = document.createElement('div');
     d.className = 'empty';
     d.style.padding = '12px';
-    d.textContent = '暂无条件：至少需要 1 个因子条件。';
+    d.textContent = '暂无条件：将只回测基础策略（未选预设时为全部样本基准）。';
     box.appendChild(d);
   }
   simpleConds.forEach((c, i) => {
@@ -897,11 +912,7 @@ function renderConds(focusIdx) {
     }
     box.appendChild(buildCondCard(c, i));
   });
-  const full = simpleConds.length >= 4;
-  $('btnAddCond2').disabled = full;
-  $('condLimitHint').textContent = full
-    ? '已达 4 个条件上限（1～4 个），如需更换请先删除某个条件。'
-    : `当前 ${simpleConds.length}/4 个条件`;
+  $('condLimitHint').textContent = `当前 ${simpleConds.length} 个条件`;
   if (focusIdx != null) {
     const card = box.querySelectorAll('.cond-card')[focusIdx];
     if (card) {
@@ -924,7 +935,7 @@ function buildCondCard(c, i) {
   head.className = 'cond-head';
   const no = document.createElement('span');
   no.className = 'cond-no';
-  no.textContent = `条件 ${i + 1} · ${ent ? ent.name : c.kind}`;
+  no.textContent = `条件 ${i + 1} · ${ent ? factorTypeName(ent) : c.kind}`;
   const del = document.createElement('button');
   del.className = 'cond-del';
   del.textContent = '删除';
@@ -942,7 +953,7 @@ function buildCondCard(c, i) {
   factorCatalog.forEach(e2 => {
     const o = document.createElement('option');
     o.value = e2.kind;
-    o.textContent = e2.name;
+    o.textContent = factorTypeName(e2);
     if (e2.kind === c.kind) o.selected = true;
     selKind.appendChild(o);
   });
@@ -1049,10 +1060,6 @@ function buildSpec() {
   if (cfg.sampleMode === 'random') spec.run.sampleSize = cfg.sampleSize;
   if (cfg.sampleMode === 'codes') spec.run.sampleCodes = cfg.sampleCodes;
 
-  if (simpleConds.length < 1 || simpleConds.length > 4) {
-    errs.push(`因子条件需要 1～4 个，当前 ${simpleConds.length} 个`);
-    focusErr($('btnAddCond2'));
-  }
   const seen = new Set();
   simpleConds.forEach((c, i) => {
     const ent = factorCatalog.find(e => e.kind === c.kind);
@@ -1177,6 +1184,13 @@ function renderTaskProgress(s) {
   $('statusErr').className = 'msg ' + (s.error ? 'err' : '');
   $('btnStop').hidden = state !== 'running';
   $('btnStatusRetry').hidden = !connectionError;
+  $('btnStatusClose').hidden = state === 'running';
+}
+
+function dismissTaskDock() {
+  const bar = $('statusbar');
+  bar.classList.remove('show');
+  bar.dataset.state = 'idle';
 }
 
 function showPendingTask(task) {
@@ -1250,6 +1264,7 @@ let currentAnalysis = null;   // Tab4 共享的分析报告
 let quintileC = null;         // 分组柱状图实例（可见后惰性初始化）
 let icC = null;               // 逐日 IC 图实例（统计详情展开后惰性初始化）
 let currentGroupingN = 5;     // 结果区当前展示的分组数（allGroupings 内取值；跨分析保留上次切换档）
+let currentChartScope = 'overall'; // overall | annual | year:YYYY；跨分组切换保留当前图表视角
 
 async function loadFactors() {
   try {
@@ -1316,6 +1331,11 @@ async function runAnalysis() {
   // 因子研究页独立的年份控件；后端 AnalyzeConfig.RunConfig 校验为最终约束
   const yr = analysisYears();
   if (yr.err) { (yr.el || $('factorStartYear')).focus(); setFactorMsg(yr.err, false); return; }
+  // 与后端 Validate 同口径：未来收益窗口 1-60 交易日
+  const win = +$('factorWindow').value;
+  if (!Number.isInteger(win) || win < 1 || win > 60) {
+    $('factorWindow').focus(); setFactorMsg('未来收益窗口无效：应为 1-60 交易日', false); return;
+  }
   $('factorEmpty').textContent = '分析完成后将在这里显示结果。';
   try {
     const cfg = buildConfig(); // 复用 Tab1 样本配置
@@ -1383,6 +1403,51 @@ function currentGrouping(rep, n) {
     n: (rep.grouping && rep.grouping.groups) || 5,
   };
 }
+// analysisYearsForChart 返回升序且年份有效的年度结果；旧报告无 years 时为空。
+function analysisYearsForChart(rep) {
+  if (!Array.isArray(rep.years)) return [];
+  return rep.years.filter(y => Number.isInteger(y.year)).slice().sort((a, b) => a.year - b.year);
+}
+// syncGroupResultControls 同步“分组数 / 图表视角”两个结果控件。年度结果来自报告，
+// 只切换本地视图，不重新分析；新报告不含上次所选年份时安全回退到全区间。
+function syncGroupResultControls(rep, canSwitchGroups, isBins) {
+  const years = analysisYearsForChart(rep);
+  $('groupCountControl').style.display = canSwitchGroups && !isBins ? 'contents' : 'none';
+
+  const scope = $('resultScope');
+  scope.innerHTML = '';
+  const add = (value, label) => {
+    const o = document.createElement('option');
+    o.value = value; o.textContent = label; scope.appendChild(o);
+  };
+  add('overall', '全区间汇总');
+  if (years.length) {
+    add('annual', '年度对比');
+    years.forEach(y => add('year:' + y.year, y.year + ' 年'));
+  }
+  if (![...scope.options].some(o => o.value === currentChartScope)) currentChartScope = 'overall';
+  scope.value = currentChartScope;
+
+  $('groupSwitch').style.display = (canSwitchGroups && !isBins) || years.length ? '' : 'none';
+  $('groupSwitchHint').textContent = years.length
+    ? '全区间、年度对比和单年结果均使用同一批逐日观测，切换无需重新分析。'
+    : '分析已完成，切换即时生效，无需重新分析。';
+  return years;
+}
+function groupingSummaryText(summary) {
+  const DIR = {
+    ascending: '因子值越大，未来收益越高',
+    descending: '因子值越大，未来收益越低',
+    mixed: '各组收益方向不一致',
+    flat: '各组收益接近，因子区分度弱',
+    insufficient: '结果不足：分组数据不完整，无方向结论',
+  };
+  const sum = summary || {};
+  let txt = DIR[sum.direction] || sum.direction || '';
+  if (sum.monotonic && (sum.direction === 'ascending' || sum.direction === 'descending')) txt += '（单调）';
+  if (sum.spread != null && isFinite(sum.spread)) txt += `；最高组−最低组收益差 ${(sum.spread * 100).toFixed(2)}%`;
+  return txt;
+}
 function renderAnalysis() {
   if (!currentAnalysis) return;
   $('factorEmpty').style.display = 'none';
@@ -1393,7 +1458,6 @@ function renderAnalysis() {
   const hasAllG = !!(Array.isArray(currentAnalysis.allGroupings) && currentAnalysis.allGroupings.length);
   const isBins = !!(currentAnalysis.grouping && currentAnalysis.grouping.mode === 'bins');
   if (hasAllG && !isBins) {
-    $('groupSwitch').style.display = '';
     const sel = $('resultGroups');
     if (!sel.options.length) {
       for (let g = 2; g <= 20; g++) {
@@ -1403,44 +1467,69 @@ function renderAnalysis() {
       }
     }
     sel.value = String(currentGroupingN);
-  } else {
-    $('groupSwitch').style.display = 'none';
   }
+  const chartYears = syncGroupResultControls(currentAnalysis, hasAllG, isBins);
   // 当前档分组结果（柱状图/明细表/摘要/年度共用同一档）
   const grp = currentGrouping(currentAnalysis, currentGroupingN);
-  // 1) 后端 Summary 文案优先
-  const DIR = {
-    ascending: '因子值越大，未来收益越高',
-    descending: '因子值越大，未来收益越低',
-    mixed: '各组收益方向不一致',
-    flat: '各组收益接近，因子区分度弱',
-    insufficient: '结果不足：分组数据不完整，无方向结论',
-  };
-  const sum = grp.summary || {};
-  let txt = DIR[sum.direction] || sum.direction || '';
-  if (sum.monotonic && (sum.direction === 'ascending' || sum.direction === 'descending')) txt += '（单调）';
-  if (sum.spread != null && isFinite(sum.spread)) txt += `；最高组−最低组收益差 ${(sum.spread * 100).toFixed(2)}%`;
-  $('quintileSummary').textContent = txt;
-  // 2) 分组柱状图与明细表：groups 优先（含因子值域），旧报告降级 quintiles
+  // 1) 分组图：全区间柱状、年度多折线或单年柱状。年度分组由后端按自然年
+  // 以同口径重算；前端只选择已有结果，不从全区间数据二次拆分。
   const unit = currentAnalysis.factor ? currentAnalysis.factor.unit : '';
   const real = grp.groups;
   const qsArr = grp.quintiles;
   const legacyGs = Array.isArray(qsArr) && qsArr.length >= 2
     ? qsArr.map((v, i) => ({label: 'Q' + (i + 1), forwardReturn: v})) : null;
-  const chartGs = real && real.length ? real : legacyGs;
-  const nGroups = chartGs ? chartGs.length : (real ? real.length : grp.n);
-  const hasChart = !!(chartGs && chartGs.length &&
-    chartGs.every(g => typeof g.forwardReturn === 'number' && isFinite(g.forwardReturn)));
+  const overallGs = real && real.length ? real : legacyGs;
+  const nGroups = overallGs ? overallGs.length : (real ? real.length : grp.n);
+  let chartGs = overallGs;
+  let chartTitle = '全区间';
+  let chartSummary = groupingSummaryText(grp.summary);
+  let annualSeries = null;
+  if (currentChartScope === 'annual') {
+    annualSeries = chartYears.map(y => {
+      const yg = currentGrouping(y, currentGroupingN);
+      const ygs = Array.isArray(yg.groups) && yg.groups.length === nGroups ? yg.groups : null;
+      const complete = ygs && ygs.every(g =>
+        typeof g.factorMean === 'number' && isFinite(g.factorMean) &&
+        typeof g.forwardReturn === 'number' && isFinite(g.forwardReturn));
+      return complete ? {year: y.year, groups: ygs} : null;
+    }).filter(Boolean);
+    chartSummary = annualSeries.length
+      ? `年度对比：${annualSeries.length} 个年份具备完整分组收益；横轴为各年每组的真实因子均值。`
+      : '年度对比：当前报告未保存年度因子值，或年度有效样本不足；请重新运行分析。';
+  } else if (currentChartScope.startsWith('year:')) {
+    const year = +currentChartScope.slice(5);
+    const yr = chartYears.find(y => y.year === year);
+    const yg = yr ? currentGrouping(yr, currentGroupingN) : null;
+    chartGs = yg && Array.isArray(yg.groups) && yg.groups.length === nGroups ? yg.groups : null;
+    chartTitle = year + ' 年';
+    chartSummary = chartGs
+      ? `${year} 年：${groupingSummaryText(yg.summary)}`
+      : `${year} 年：当前报告未保存年度因子值，请重新运行分析。`;
+  }
+  $('quintileSummary').textContent = chartSummary;
+  const hasChart = currentChartScope === 'annual'
+    ? !!(annualSeries && annualSeries.length && overallGs && overallGs.length)
+    : !!(chartGs && chartGs.length && chartGs.every(g => typeof g.forwardReturn === 'number' && isFinite(g.forwardReturn)));
   if (hasChart) {
     $('quintileChart').style.display = '';
     $('quintileNA').style.display = 'none';
-    renderGroupChart(chartGs, unit);
+    if (currentChartScope === 'annual') {
+      renderAnnualGroupChart(unit, annualSeries, isBins);
+    } else {
+      renderGroupChart(chartGs, unit, chartTitle, true, isBins);
+    }
   } else {
     $('quintileChart').style.display = 'none';
     $('quintileNA').style.display = '';
-    $('quintileNA').textContent = `结果不足：有效样本过少，无法把样本分成 ${nGroups} 组并计算分组收益。`;
+    $('quintileNA').textContent = currentChartScope === 'annual'
+      ? '结果不足：当前报告没有可用于数值横轴的年度分组统计，请重新运行分析。'
+      : (currentChartScope.startsWith('year:')
+        ? '结果不足：当前报告没有该年的因子值范围，请重新运行分析。'
+        : `结果不足：有效样本过少，无法把样本分成 ${nGroups} 组并计算分组收益。`);
   }
-  if (real && real.length) {
+  // 组内值域/中位数/样本占比仅在全区间报告中保存，单年和年度对比不借用
+  // 全区间统计冒充年度明细。
+  if (currentChartScope === 'overall' && real && real.length) {
     $('groupDetailTitle').style.display = '';
     $('groupDetailWrap').style.display = '';
     renderGroupDetail(real, unit);
@@ -1577,18 +1666,27 @@ function groupRangeLabel(g, unit) {
   }
   return '';
 }
-// renderGroupChart 分组收益柱状图：X 轴标签两行（组号 + 值域），N 组全显示。
-function renderGroupChart(gs, unit) {
+// groupChartCategories 优先把真实因子值范围作为横轴主标签；只有旧报告缺少
+// 数值统计时才回退 Q1/Q2。边缘组补“低值组/高值组”，不要求用户理解 Q 编号。
+function groupChartCategories(gs, unit, showRange) {
+  return gs.map((g, i) => {
+    const head = i === 0 ? `${g.label} 最低` : i === gs.length - 1 ? `${g.label} 最高` : g.label;
+    const range = showRange ? groupRangeLabel(g, unit) : '';
+    if (!range) return head;
+    const edge = i === 0 ? '低值组' : i === gs.length - 1 ? '高值组' : '';
+    return edge ? range + '\n' + edge : range;
+  });
+}
+// renderGroupChart 单个统计区间的分组收益柱状图。
+function renderGroupChart(gs, unit, scopeLabel, showRange, isBins) {
   const el = $('quintileChart');
   if (!quintileC) { quintileC = echarts.init(el, 'dark'); charts.push(quintileC); }
-  const cats = gs.map((g, i) => {
-    const head = i === 0 ? `${g.label} 最低` : i === gs.length - 1 ? `${g.label} 最高` : g.label;
-    const range = groupRangeLabel(g, unit);
-    return range ? head + '\n' + range : head;
-  });
+  else quintileC.resize();
+  const cats = groupChartCategories(gs, unit, showRange);
   quintileC.setOption({
     backgroundColor: 'transparent',
-    title: {text: `${gs.length} 组平均收益%（按因子值升序等频分组）`, left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
+    aria: {enabled: true},
+    title: {text: `${gs.length} 组平均收益%（${scopeLabel} · ${isBins ? '固定区间' : '等频分组'}）`, left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
     tooltip: {trigger: 'axis', valueFormatter: v => v + '%'},
     grid: {left: 60, right: 20, top: 50, bottom: 56},
     xAxis: {type: 'category', data: cats, axisLabel: {interval: 0, fontSize: 10}},
@@ -1599,6 +1697,56 @@ function renderGroupChart(gs, unit) {
       itemStyle: {color: p => p.value >= 0 ? '#ef4444' : '#22c55e'},
       label: {show: true, position: 'top', fontSize: 11, formatter: p => p.value + '%'}
     }]
+  }, true);
+}
+// factorAxisNumber / factorAxisLabel 只改变展示单位：ratio 用百分比横轴，报告和
+// 策略条件仍保留原始小数；multiple 显示 ×，其他因子保持原值。
+function factorAxisNumber(v, unit) {
+  return unit === 'ratio' ? v * 100 : v;
+}
+function factorAxisLabel(v, unit) {
+  if (v == null || !isFinite(v)) return '—';
+  if (unit === 'ratio') return sig3(+v) + '%';
+  if (unit === 'multiple') return sig3(+v) + '×';
+  return sig3(+v);
+}
+// renderAnnualGroupChart 使用连续数值横轴：每个点的 x 是该年该组真实因子均值，
+// y 是未来收益；Q 编号只保留在 tooltip 里作为组内定位，不再充当横轴含义。
+function renderAnnualGroupChart(unit, annualSeries, isBins) {
+  const el = $('quintileChart');
+  if (!quintileC) { quintileC = echarts.init(el, 'dark'); charts.push(quintileC); }
+  else quintileC.resize();
+  const nGroups = annualSeries[0].groups.length;
+  // 年份是类别，不借用 A 股红涨绿跌语义；同时以实/虚/点线辅助辨认。
+  const palette = ['#d8b45a','#4c8dff','#a78bfa','#38bdf8','#f59e0b','#f472b6','#94a3b8','#2dd4bf','#818cf8','#c084fc','#67e8f9'];
+  quintileC.setOption({
+    backgroundColor: 'transparent',
+    aria: {enabled: true},
+    title: {text: `${nGroups} 组平均收益%（年度对比 · ${isBins ? '固定区间' : '等频分组'}）`, left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
+    legend: {type: 'scroll', top: 32, left: 10, right: 10, textStyle: {color: '#c2ccdd', fontSize: 11}, pageTextStyle: {color: '#c2ccdd'}},
+    tooltip: {trigger: 'item', formatter: p => {
+      const d = p.data;
+      return `${p.marker}${p.seriesName} · ${d.groupLabel}<br>` +
+        `因子范围 ${d.range}<br>组均值 ${d.mean}<br>未来收益 ${d.value[1]}%`;
+    }},
+    grid: {left: 66, right: 24, top: 78, bottom: 58},
+    xAxis: {
+      type: 'value', name: unit === 'ratio' ? '因子值（%）' : (unit === 'multiple' ? '因子值（×）' : '因子值'),
+      nameLocation: 'middle', nameGap: 34,
+      axisLabel: {fontSize: 10, formatter: v => factorAxisLabel(v, unit)}
+    },
+    yAxis: {type: 'value', axisLabel: {formatter: '{value}%'}},
+    series: annualSeries.map((s, i) => ({
+      name: String(s.year), type: 'line', symbol: 'circle', symbolSize: 6,
+      data: s.groups.map(g => ({
+        value: [factorAxisNumber(g.factorMean, unit), +(g.forwardReturn * 100).toFixed(3)],
+        groupLabel: g.label, range: groupRangeLabel(g, unit), mean: fmtFactorVal(g.factorMean, unit)
+      })),
+      lineStyle: {width: 2, type: i % 3 === 1 ? 'dashed' : (i % 3 === 2 ? 'dotted' : 'solid')},
+      itemStyle: {color: palette[i % palette.length]},
+      emphasis: {focus: 'series'},
+      markLine: i === 0 ? {silent: true, symbol: 'none', lineStyle: {color: 'rgba(255,255,255,.22)', type: 'dashed'}, data: [{yAxis: 0}]} : undefined,
+    }))
   }, true);
 }
 // renderGroupDetail 分组明细表：值域为该组全样本因子值分布（历史累计），
@@ -1677,6 +1825,10 @@ $('resultGroups').addEventListener('change', () => {
   currentGroupingN = +$('resultGroups').value;
   renderAnalysis();
 });
+$('resultScope').addEventListener('change', () => {
+  currentChartScope = $('resultScope').value;
+  renderAnalysis();
+});
 
 // ============ Tab2 组合对比 ============
 // 对照摘要：仅简单模式报告（source==='simple' 且带 comparison）显示
@@ -1703,7 +1855,7 @@ function renderCmp(rep) {
   // 条件贡献表：factorVariants 只带 kind/days，名称从因子目录映射
   $('cmpRows').innerHTML = (cmp.factorVariants || []).map((f, i) => {
     const cat = factorCatalog.find(e => e.kind === f.kind);
-    const label = `${cat ? cat.name : f.kind}（${f.days} 日）`;
+    const label = `${cat ? factorTypeName(cat) : f.kind}（${f.days} 日）`;
     const v = byName[f.variant], s = v && v.stats && v.stats.total ? v.stats : null;
     const fmt = (x, d) => x == null || !isFinite(x) ? String(x == null ? '-' : x) : x.toFixed(d);
     return `<tr>
@@ -1926,17 +2078,9 @@ function candidateFactorUnit() {
   return rep && rep.factor ? rep.factor.unit : '';
 }
 
-// toggleCandidateForm 打开/关闭保存表单：等频默认“仅保存观察结果”且阈值为空，
+// openCandidateDlg 打开“保存为候选”对话框：等频默认“仅保存观察结果”且阈值为空，
 // 不自动读取 groups[].factorMin/factorMax；bins 只展示断点建议不自动填入。
-function toggleCandidateForm(forceClose) {
-  const f = $('candidateForm');
-  if (forceClose || f.style.display !== 'none') {
-    f.style.display = 'none';
-    f.setAttribute('aria-hidden', 'true');
-    candidateRequestId = null;
-    setCandidateMsg('', true);
-    return;
-  }
+function openCandidateDlg() {
   const rep = currentAnalysis;
   if (!rep || rep.analysisVersion < 3 || !rep.analysisId || !(rep.factor && rep.factor.implementationVersion > 0)) {
     setFactorMsg('该分析为旧版本报告，请重新运行分析后再保存', false);
@@ -1959,11 +2103,21 @@ function toggleCandidateForm(forceClose) {
     $('candUseHint').textContent = '';
   }
   $('candFormNote').textContent = '等频分组边界是跨日累计分布，不会自动转成固定阈值；保存为候选不代表样本外验证通过。';
-  f.style.display = '';
-  f.setAttribute('aria-hidden', 'false');
+  setCandidateMsg('', true);
   candidateRequestId = null; // 新保存动作
+  $('candidateDlg').showModal();
   $('candName').focus();
 }
+
+// closeCandidateDlg 关闭“保存为候选”对话框；状态清理统一由 close 事件处理
+//（覆盖取消按钮、右上角 × 与 Esc 键三种关闭路径）。
+function closeCandidateDlg() {
+  $('candidateDlg').close();
+}
+$('candidateDlg').addEventListener('close', () => {
+  candidateRequestId = null;
+  setCandidateMsg('', true);
+});
 
 // candidateUseModeChange 切换使用方式：observe 隐藏区间，range 显示。
 function candidateUseModeChange() {
@@ -2026,11 +2180,9 @@ async function saveCandidate() {
   try {
     const d = await api('POST', '/api/factor-candidates', body);
     candidateRequestId = null;
-    setCandidateMsg(d.created ? '已保存为候选（证据已锁定）' : '已存在相同候选（幂等命中，未重复创建）', true);
     candidateSavedFor = rep.analysisId;
     renderCandidateSaveState();
-    $('candidateForm').style.display = 'none';
-    $('candidateForm').setAttribute('aria-hidden', 'true');
+    closeCandidateDlg(); // 保存成功即关闭弹窗，“查看候选”按钮按 analysisId 显示
     await loadCandidates();
   } catch (e) {
     // 保留输入与 requestId（同一次网络重试复用）；内容冲突/旧报告等服务端拒绝同样保留
@@ -2068,7 +2220,9 @@ function filterText(f) {
   if (!f) return '';
   const unit = factorUnitOf(f.kind);
   const fmt = v => v == null ? '—' : (unit === 'ratio' ? sig3(v * 100) + '%' : sig3(v));
-  const nm = `${f.kind}(${f.days})`;
+  const fent = factorCatalog.find(x => x.kind === f.kind);
+  // 因子名显示类型名 + 实际参数（days 是真实分析参数），不用目录默认实例名
+  const nm = fent ? factorInstanceName(fent, f.days) : `${f.kind}(${f.days})`;
   if (f.operator === 'gte') return nm + '≥' + fmt(f.min);
   if (f.operator === 'lte') return nm + '≤' + fmt(f.max);
   if (f.operator === 'between') return nm + '∈[' + fmt(f.min) + ',' + fmt(f.max) + ']';
@@ -2093,7 +2247,10 @@ function renderCandidates() {
     const tr = document.createElement('tr');
     const textTd = txt => { const td = document.createElement('td'); td.textContent = txt; tr.appendChild(td); return td; };
     textTd(c.name || '（未命名）');
-    textTd(`${c.factor.name} · ${c.factor.days} 日 · 实现 v${c.factor.implementationVersion}`);
+    // c.factor.name 是保存时的默认参数实例名（如 N日动量(20)），展示时剥掉默认参数后缀
+    const fent = factorCatalog.find(x => x.kind === c.factor.kind);
+    const fname = fent ? factorTypeName(fent) : c.factor.name;
+    textTd(`${fname} · ${c.factor.days} 日 · 实现 v${c.factor.implementationVersion}`);
     textTd(c.use && c.use.mode === 'range' ? filterText(c.use.filter) : '仅观察');
     const ev = c.evidence || {};
     textTd(ev.firstDataDate && ev.lastDataDate ? `${ev.firstDataDate} ~ ${ev.lastDataDate}` : '—');
@@ -2260,7 +2417,7 @@ async function changeCandidateStatus(c, status) {
 
 // joinCandidateToStrategy 把 range+ready+candidate 映射进 simpleConds 并写
 // factorVersion；相同 kind+days 不静默重复，聚焦原条件并明确要求替换；
-// 4 条上限不变；加入后切到策略 Tab、聚焦并标注“尚未回测”，不自动运行回测。
+// 加入后切到策略 Tab、聚焦并标注“尚未回测”，不自动运行回测。
 function joinCandidateToStrategy(c) {
   const f = c.use.filter;
   const unit = factorUnitOf(f.kind);
@@ -2285,12 +2442,6 @@ function joinCandidateToStrategy(c) {
     renderConds(dupIdx);
     markCondNotBacktested(dupIdx);
     showScriptMsg('候选阈值已替换原条件（尚未回测），请运行回测。', true);
-    return;
-  }
-  if (simpleConds.length >= 4) {
-    switchTab(1);
-    showScriptMsg('已达 4 个条件上限（1～4 个），请先删除一个条件再加入。', false);
-    $('btnAddCond2').focus();
     return;
   }
   simpleConds.push(cond);

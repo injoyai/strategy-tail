@@ -211,6 +211,29 @@ func TestBuildComparisonSummary(t *testing.T) {
 	if buildComparison(one, oneVariants[:1]) != nil {
 		t.Fatal("N=1 变体数不符不应生成 Comparison")
 	}
+
+	// N=0：仅基准 1 个变体，组合字段与基准指向同一变体，无单条件摘要
+	none := StrategySpec{Version: 1, BasePresetID: "pullback_ma5_plain"}
+	noneVariants := []VariantReport{
+		{Name: "基准 · 无趋势 · 收回 MA5", Stats: TradeStatsJSON{Total: 10}},
+	}
+	cmp = buildComparison(none, noneVariants)
+	if cmp == nil {
+		t.Fatal("N=0 应生成 Comparison")
+	}
+	if cmp.BaselineVariant != noneVariants[0].Name || cmp.CombinedVariant != noneVariants[0].Name {
+		t.Fatalf("N=0 基准/组合应指向同一变体: %+v", cmp)
+	}
+	if cmp.RetentionRate == nil || math.Abs(*cmp.RetentionRate-1) > 1e-9 {
+		t.Fatalf("N=0 组合保留率 = %v, want 1", cmp.RetentionRate)
+	}
+	if len(cmp.FactorVariants) != 0 {
+		t.Fatalf("N=0 单条件摘要数 = %d, want 0", len(cmp.FactorVariants))
+	}
+	// N=0 但变体数不符 → 不生成
+	if buildComparison(none, append(noneVariants, VariantReport{Name: "多余", Stats: TradeStatsJSON{Total: 1}})) != nil {
+		t.Fatal("N=0 变体数不符不应生成 Comparison")
+	}
 }
 
 // TestRunnerAdvancedReportSourceScript 高级模式报告 source=script，

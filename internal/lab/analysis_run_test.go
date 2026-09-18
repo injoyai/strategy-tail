@@ -332,7 +332,7 @@ func TestRunAnalysisSevenGroups(t *testing.T) {
 
 // TestRunAnalysisAllGroupings 全部组数预算：报告 allGroupings 覆盖 2-20 且
 // 与单档请求结果完全一致（排序一次+线性扫描 vs quantileAssign 同序）；
-// 年度 allGroupings 只含收益/摘要（Stats 为空）；bins 模式不预算。
+// 年度 allGroupings 携带绘制真实数值轴所需的轻量统计；bins 模式不预算。
 func TestRunAnalysisAllGroupings(t *testing.T) {
 	dir := t.TempDir()
 	setupAnalysisData(t, dir)
@@ -398,14 +398,26 @@ func TestRunAnalysisAllGroupings(t *testing.T) {
 	if len(five.Stats) != 5 || len(five.Quintiles) != 5 {
 		t.Fatalf("5 档 Stats/Quintiles 长度 = %d/%d, want 5/5", len(five.Stats), len(five.Quintiles))
 	}
-	// 年度 allGroupings：长度 19、Stats 为空（控制体积）、收益与单档年度一致
+	// 年度 allGroupings：长度 19，并携带轻量真实值轴统计（min/mean/max）；
+	// 不保存中位数等完整分布，以控制报告体积。收益与单档年度一致。
 	ya := rep.Years[0].AllGroupings
 	if len(ya) != 19 {
 		t.Fatalf("年度 len(AllGroupings) = %d, want 19", len(ya))
 	}
 	ySeven := ya[7-2]
-	if ySeven.Stats != nil {
-		t.Fatalf("年度档应无组内统计: %+v", ySeven.Stats)
+	if len(ySeven.Stats) != 7 {
+		t.Fatalf("年度档 Stats 长度 = %d, want 7", len(ySeven.Stats))
+	}
+	for i, gs := range ySeven.Stats {
+		if gs.FactorMin == nil || gs.FactorMean == nil || gs.FactorMax == nil || gs.ForwardReturn == nil {
+			t.Fatalf("年度档组 %d 缺少数值轴统计: %+v", i, gs)
+		}
+		if gs.FactorMedian != nil || gs.FactorP25 != nil || gs.FactorP75 != nil || gs.FactorStd != nil {
+			t.Fatalf("年度档组 %d 不应保存完整分布统计: %+v", i, gs)
+		}
+		if !nearlyEq(*gs.ForwardReturn, ySeven.Quintiles[i]) {
+			t.Fatalf("年度档组 %d 收益 %v != quintile %v", i, *gs.ForwardReturn, ySeven.Quintiles[i])
+		}
 	}
 	for i := range ySeven.Quintiles {
 		if !nearlyEq(ySeven.Quintiles[i], rep.Years[0].Quintiles[i]) {
@@ -451,6 +463,14 @@ func TestRunAnalysisBinsNoAllGroupings(t *testing.T) {
 	for _, y := range rep.Years {
 		if y.AllGroupings != nil {
 			t.Fatalf("bins 模式年度 AllGroupings = %v, want nil", y.AllGroupings)
+		}
+		if len(y.Groups) != 5 {
+			t.Fatalf("bins 模式年度 Groups 长度 = %d, want 5", len(y.Groups))
+		}
+		for i, gs := range y.Groups {
+			if gs.Observations > 0 && (gs.FactorMin == nil || gs.FactorMean == nil || gs.FactorMax == nil) {
+				t.Fatalf("bins 模式年度组 %d 缺少数值范围: %+v", i, gs)
+			}
 		}
 	}
 }

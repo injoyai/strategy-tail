@@ -57,7 +57,7 @@ type StrategyRunSpec struct {
 }
 
 // StrategySpec 简单策略配置快照（API 提交与报告保存共用）。
-// FactorFilters 1～4 项，全部以 AND 追加到基础 Buyer。
+// FactorFilters 数量不限（可为 0，仅运行基础策略对照），全部以 AND 追加到基础 Buyer。
 type StrategySpec struct {
 	Version       int                `json:"version"`
 	Name          string             `json:"name"`
@@ -83,15 +83,11 @@ func (s StrategySpec) Validate() error {
 	return s.validateFilters()
 }
 
-// validateFilters 因子过滤声明校验：1～4 项（2026-09-16 由 2～4 放宽，
-// 用户裁决）、kind 可注册、days>0、
+// validateFilters 因子过滤声明校验：数量不限、可为 0（2026-09-19 用户裁决
+// 取消 1～4 项限制）、kind 可注册、days>0、
 // kind+days 不重复、operator 枚举、阈值有限且区间不反向。
 func (s StrategySpec) validateFilters() error {
-	n := len(s.FactorFilters)
-	if n < 1 || n > 4 {
-		return fmt.Errorf("因子过滤条件需要 1～4 项，当前 %d 项", n)
-	}
-	seen := make(map[string]bool, n)
+	seen := make(map[string]bool, len(s.FactorFilters))
 	for i := range s.FactorFilters {
 		ft := &s.FactorFilters[i]
 		if err := ft.validate(); err != nil {
@@ -223,8 +219,8 @@ func (s StrategySpec) baseBuyer() (core.Buyer, error) {
 // 基准 · 预设名/全部样本 → 单条件 1..N（与 FactorFilters 顺序一一对应，
 // 只追加单个过滤用于解释）→ 组合增强 · 预设名 · N 个条件
 // （And{基础, filter1..filterN}）。N≥2 时共 N+2 个；N=1 时组合增强
-// 与单条件 1 完全等价，不再重复生成，共 N+1=2 个（省一次回测），
-// 对照摘要的组合字段由 buildComparison 指向单条件变体。
+// 与单条件 1 完全等价、N=0 时无单条件，均不重复生成组合增强
+// （共 N+1 个，N=0 即只有基准 1 个）。
 // 调用前必须先通过 Validate。
 func (s StrategySpec) Variants() ([]core.Variant, error) {
 	base, err := s.baseBuyer()
@@ -250,8 +246,9 @@ func (s StrategySpec) Variants() ([]core.Variant, error) {
 			Buyer: sb.And{base, filters[i]},
 		})
 	}
-	if len(s.FactorFilters) == 1 {
-		// 单条件 1 = And{基础, filter1}，即组合增强本身，不再重复跑
+	if len(s.FactorFilters) <= 1 {
+		// N=1：单条件 1 = And{基础, filter1}，即组合增强本身；N=0：无单条件。
+		// 两者都不再生成组合增强（N=0 时 vs 只有基准）。
 		return vs, nil
 	}
 	combined := make(sb.And, 0, len(filters)+1)
