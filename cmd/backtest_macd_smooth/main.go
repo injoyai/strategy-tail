@@ -1,6 +1,7 @@
-﻿package main
+package main
 
 import (
+	"context"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -9,12 +10,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/lib/report"
 	"github.com/injoyai/strategy-tail/strategies/buy"
@@ -59,32 +60,32 @@ func main() {
 	logs.Infof("买入策略: %s\n", buyer.Name())
 	logs.Infof("卖出策略: %s\n", seller.Name())
 
-	bt := &core.Backtest{
-		Buyer:        buyer,
-		Seller:       seller,
-		Goroutines:   common.DefaultGoroutines * 2,
-		Codes:        codes,
-		Years:        years,
-		GetDayKlines: common.Pull.DayKlines,
-		GetMinKlines: common.Pull.MinKlines,
-		Benchmark:    benchmark,
-		Cost:         cost,
-		Position:     pos,
-	}
-
-	// core.Backtest.Run() 不返回交易明细，这里复现 _backtest 循环收集 []Trade 供 PDF 报告。
+	// 按年度分别执行，保持某年缺数只影响该年的历史样本口径。
 	allTrades := []core.Trade(nil)
 	results := make([]core.AnalyzeResult, 0, len(years))
 	for _, year := range years {
-		ls := runYear(bt, codes, year)
+		run, err := researchrun.Run(context.Background(), researchrun.Config{
+			Codes:        codes,
+			Years:        []int{year},
+			Variants:     []researchrun.Variant{{Name: buyer.Name(), Buyer: buyer, Seller: seller}},
+			Cost:         cost,
+			Position:     pos,
+			Workers:      common.DefaultGoroutines * 2,
+			DataMode:     researchrun.Intraday,
+			GetDayKlines: common.Pull.DayKlines,
+			GetMinKlines: common.Pull.MinKlines,
+		})
+		logs.PanicErr(err)
+		researchrun.LogCoverage(run.Coverage)
+		ls := run.Results[0].Trades
 		logs.Infof("[%d] 成交 %d 笔", year, len(ls))
 		allTrades = append(allTrades, ls...)
 
 		benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 		benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-		benchKlines, _ := bt.GetDayKlines(benchmark, benchStart, benchEnd)
+		benchKlines, _ := common.Pull.DayKlines(benchmark, benchStart, benchEnd)
 
-		res := core.Analyze(year, ls, bt.GetDayKlines, benchKlines, cost, pos)
+		res := core.Analyze(year, ls, common.Pull.DayKlines, benchKlines, cost, pos)
 		results = append(results, res)
 
 		// Analyze 内部会写 output/backtest/{year}.csv，备份到本模块目录
@@ -104,7 +105,7 @@ func main() {
 
 	// ---- 前视偏差审计 ----
 	audit := core.AuditLookAhead(allTrades, cost, func(code string) (extend.Klines, error) {
-		return bt.GetDayKlines(code, time.Time{}, time.Now())
+		return common.Pull.DayKlines(code, time.Time{}, time.Now())
 	})
 	if audit.Passed {
 		logs.Info("前视偏差审计: 通过 ✓")
@@ -173,64 +174,6 @@ func buildBuyer() core.Buyer {
 //   - 有盈利则在反转的时候卖出（sell.And{sell.A盈利(0.005), sell.MACD反转{Lookback:2}}）
 func buildSeller() core.Seller {
 	return common.MACDSeller
-}
-
-// runYear 对单年度所有股票并行回测，逻辑与 core.Backtest._backtest 一致
-// （core.Backtest.Run 不返回交易明细，这里用导出的 GetDayKlines / GetMinKlines / Do 收集）。
-func runYear(bt *core.Backtest, codes []string, year int) []core.Trade {
-	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
-	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-
-	result := []core.Trade(nil)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	ch := make(chan string)
-
-	workers := bt.Goroutines
-	if workers <= 0 {
-		workers = 10
-	}
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for code := range ch {
-				dks, err := bt.GetDayKlines(code, hisStart, end)
-				if err != nil || len(dks) == 0 {
-					continue
-				}
-				his := []*extend.Kline(nil)
-				for i, v := range dks {
-					if v.Time.Before(start) {
-						his = append(his, v)
-					} else {
-						dks = dks[i:]
-						break
-					}
-				}
-				var mks protocol.Klines
-				if bt.GetMinKlines != nil {
-					mks, err = bt.GetMinKlines(code, start, end)
-					if err != nil {
-						continue
-					}
-				}
-				ts := bt.Do(code, his, dks, mks)
-				if len(ts) > 0 {
-					mu.Lock()
-					result = append(result, ts...)
-					mu.Unlock()
-				}
-			}
-		}()
-	}
-	for _, code := range codes {
-		ch <- code
-	}
-	close(ch)
-	wg.Wait()
-	return result
 }
 
 // backupCSV 将 Analyze 生成的 CSV 备份到本模块输出目录。

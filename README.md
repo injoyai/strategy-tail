@@ -106,7 +106,7 @@ type Seller interface {
 
 新增矩阵实验应将策略差异声明为 `researchrun.Variant`，然后调用 `researchrun.Run()`；调用方继续负责结果排序、业务文案和具体报告。
 
-`cmd/backtest_index_filter` 与 `cmd/backtest_index_filter_5y` 已使用该执行层：同一年度内各指数过滤变体共享一次数据加载，并由执行层深拷贝 K 线隔离变体。五年入口仍按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径。
+`cmd/backtest_index_filter*`、`cmd/backtest_macd_smooth` 与 `cmd/backtest_macd_green` 已使用该执行层：同一年度内的多变体共享一次数据加载，并由执行层深拷贝 K 线隔离变体。跨年入口仍按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径。
 
 执行报告始终包含数据覆盖：
 
