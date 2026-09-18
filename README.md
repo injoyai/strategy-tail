@@ -67,13 +67,25 @@ type Seller interface {
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
 | 更新本地行情 | `go run ./cmd/update` | 可能触发全市场校验或联网更新，耗时较长 |
-| 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `127.0.0.1:8765`，端口占用时自动选择空闲端口 |
+| 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `127.0.0.1:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
 | 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
 | 单次实时筛选 | `go run ./cmd/screen-realtime` | 命令行输出匹配结果 |
 | 数据覆盖诊断 | `go run ./cmd/diagnose_data` | 只读检查本地数据库，不联网 |
 | 单股策略解释 | `go run ./cmd/visualize` | 启动本地可视化页面 |
 | 成交样本图 | `go run ./cmd/kline_export` | 从已有交易 CSV 生成 K 线 HTML |
+
+### Docker 部署策略实验室
+
+策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（`deploy.ps1`，需 Docker Desktop 已安装且 `docker` 在 PATH 中）：
+
+```powershell
+.\deploy.ps1
+```
+
+- 脚本流程：构建 `strategy-lab` 镜像 → 移除旧容器 → 启动新容器 → 容器内自检 `/api/factors`，就绪后输出访问地址（默认 `http://localhost:8765`）。
+- 默认仅绑定 `127.0.0.1`；需要局域网访问时使用 `.\deploy.ps1 -Bind 0.0.0.0`（服务无鉴权，自行评估风险）。
+- `./data`、`./output`、`./strategies/script` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
 以下目录是带固定研究假设的实验入口，不是通用产品命令：
 
