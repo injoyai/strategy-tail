@@ -100,6 +100,39 @@ func TestRegistryMetadata(t *testing.T) {
 	}
 }
 
+// TestRegistryImplementationVersions 实现版本合同：所有版本必须 > 0（禁止
+// 依赖零值）、All() 与 Catalog() 返回同一版本、kind 唯一、顺序合同不变。
+func TestRegistryImplementationVersions(t *testing.T) {
+	all := All()
+	seen := map[string]bool{}
+	for _, e := range all {
+		if e.ImplementationVersion <= 0 {
+			t.Fatalf("%s: ImplementationVersion = %d, want > 0", e.Kind, e.ImplementationVersion)
+		}
+		if seen[e.Kind] {
+			t.Fatalf("kind 重复: %s", e.Kind)
+		}
+		seen[e.Kind] = true
+		c, ok := Catalog(e.Kind)
+		if !ok {
+			t.Fatalf("Catalog(%s) 不存在", e.Kind)
+		}
+		if c.ImplementationVersion != e.ImplementationVersion {
+			t.Fatalf("%s: All() 版本 %d ≠ Catalog() 版本 %d",
+				e.Kind, e.ImplementationVersion, c.ImplementationVersion)
+		}
+	}
+	// 顺序合同与 TestAll 保持一致，不得漂移
+	if len(all) != len(wantKinds) {
+		t.Fatalf("目录项数 = %d, want %d", len(all), len(wantKinds))
+	}
+	for i, e := range all {
+		if e.Kind != wantKinds[i] {
+			t.Fatalf("第 %d 项 kind = %s, want %s", i, e.Kind, wantKinds[i])
+		}
+	}
+}
+
 func TestBuild(t *testing.T) {
 	// days<=0 → 默认参数
 	if f := Build("momentum", 0); f == nil || f.Name() != "N日动量(20)" {

@@ -47,6 +47,11 @@ func TestStrategySpecValidate(t *testing.T) {
 	if err := blank.Validate(); err != nil {
 		t.Fatalf("空白名称应通过（由后端生成名称）: %v", err)
 	}
+	noPreset := validSpec()
+	noPreset.BasePresetID = ""
+	if err := noPreset.Validate(); err != nil {
+		t.Fatalf("不使用基础预设应通过: %v", err)
+	}
 
 	cases := []struct {
 		note string
@@ -55,7 +60,6 @@ func TestStrategySpecValidate(t *testing.T) {
 		{"version=0", func(s *StrategySpec) { s.Version = 0 }},
 		{"version=2", func(s *StrategySpec) { s.Version = 2 }},
 		{"未知 preset", func(s *StrategySpec) { s.BasePresetID = "nope" }},
-		{"空 preset", func(s *StrategySpec) { s.BasePresetID = "" }},
 		{"名称超 80 字符", func(s *StrategySpec) { s.Name = strings.Repeat("策", 81) }},
 		{"条件数量 0", func(s *StrategySpec) { s.FactorFilters = nil }},
 		{"条件数量 0（空切片）", func(s *StrategySpec) { s.FactorFilters = []FactorFilterSpec{} }},
@@ -210,6 +214,33 @@ func TestStrategySpecVariants(t *testing.T) {
 	if _, ok := and[1].(sb.A因子过滤); !ok {
 		t.Fatalf("单条件 1 And[1] 应为 A因子过滤, got %T", and[1])
 	}
+
+	// 不使用预设 → A全部 作为透明对照基准，因子条件独立决定买入。
+	standalone := validSpec()
+	standalone.BasePresetID = ""
+	vs, err = standalone.Variants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) != 4 {
+		t.Fatalf("无预设的 2 条件应生成 4 个变体, got %d", len(vs))
+	}
+	if vs[0].Name != "基准 · 全部样本" {
+		t.Fatalf("无预设基准名称 = %q", vs[0].Name)
+	}
+	if _, ok := vs[0].Buyer.(sb.A全部); !ok {
+		t.Fatalf("无预设基准 Buyer 应为 A全部, got %T", vs[0].Buyer)
+	}
+	if vs[3].Name != "因子组合 · N日动量(20)≥0.05、N日动量(60)≤0.5" {
+		t.Fatalf("无预设组合名称 = %q", vs[3].Name)
+	}
+	standaloneAnd, ok := vs[3].Buyer.(sb.And)
+	if !ok || len(standaloneAnd) != 3 {
+		t.Fatalf("无预设组合应为 And{A全部, 2 个过滤}, got %T/%d", vs[3].Buyer, len(standaloneAnd))
+	}
+	if _, ok := standaloneAnd[0].(sb.A全部); !ok {
+		t.Fatalf("无预设组合首项应为 A全部, got %T", standaloneAnd[0])
+	}
 }
 
 // TestStrategySpecFilterMapping gte/lte/between 正确映射到
@@ -239,6 +270,54 @@ func TestStrategySpecFilterMapping(t *testing.T) {
 			t.Fatalf("%s: Min/Max = %v/%v, want %v/%v",
 				c.note, flt.Min, flt.Max, c.wantMin, c.wantMax)
 		}
+	}
+}
+
+// TestStrategySpecFactorVersion 因子实现版本 fail-closed 合同：
+// 0=旧请求兼容；>0 必须等于注册表当前版本；未来版本、旧版本与负值拒绝。
+func TestStrategySpecFactorVersion(t *testing.T) {
+	cur, _ := f.Catalog("momentum")
+	curVer := cur.ImplementationVersion
+	if curVer <= 0 {
+		t.Fatalf("registry 当前版本应为正: %d", curVer)
+	}
+	// 0=旧配置兼容，正常通过
+	s := validSpec()
+	s.FactorFilters[0].FactorVersion = 0
+	if err := s.Validate(); err != nil {
+		t.Fatalf("factorVersion=0 旧请求应通过: %v", err)
+	}
+	// 当前版本通过
+	s = validSpec()
+	s.FactorFilters[0].FactorVersion = curVer
+	if err := s.Validate(); err != nil {
+		t.Fatalf("factorVersion=%d 当前版本应通过: %v", curVer, err)
+	}
+	// 未来版本拒绝
+	s = validSpec()
+	s.FactorFilters[0].FactorVersion = curVer + 1
+	if err := s.Validate(); err == nil {
+		t.Fatalf("factorVersion=%d 未来版本应拒绝", curVer+1)
+	}
+	// 旧版本拒绝（当前版本 >1 时才有旧版本；版本 1 时 1 即当前版本）
+	if curVer > 1 {
+		s = validSpec()
+		s.FactorFilters[0].FactorVersion = curVer - 1
+		if err := s.Validate(); err == nil {
+			t.Fatalf("factorVersion=%d 旧版本应拒绝", curVer-1)
+		}
+	}
+	// 负值拒绝
+	s = validSpec()
+	s.FactorFilters[0].FactorVersion = -1
+	if err := s.Validate(); err == nil {
+		t.Fatal("factorVersion=-1 应拒绝")
+	}
+	// 只允许从已校验路径进入：直接 build() 也必须校验版本（fail-closed）
+	s = validSpec()
+	s.FactorFilters[0].FactorVersion = curVer + 1
+	if _, err := s.FactorFilters[0].build(); err == nil {
+		t.Fatal("绕过 Validate 直接 build() 也应拒绝版本漂移")
 	}
 }
 
@@ -337,6 +416,11 @@ func TestStrategySpecDisplayName(t *testing.T) {
 	s.Name = "  我的策略  "
 	if got := s.DisplayName(); got != "我的策略" {
 		t.Fatalf("非空 name 应 trim: %q", got)
+	}
+	s.Name = ""
+	s.BasePresetID = ""
+	if got := s.DisplayName(); got != "仅因子条件 · 2 条" {
+		t.Fatalf("无预设自动名称 = %q", got)
 	}
 }
 

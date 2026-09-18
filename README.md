@@ -1,13 +1,16 @@
 # strategy-tail
 
-本项目是面向 A 股的本地策略研究与回测工具。当前主线是组合式 `Buyer` / `Seller` 策略、历史回测、结果分析和策略实验室；因子框架正在分阶段实施，目前只有核心契约、横截面快照和首批动量因子，不是可端到端使用的完整研究层。本项目不是实盘交易系统。
+本项目是面向 A 股的本地策略研究与回测工具。当前主线是组合式 `Buyer` / `Seller` 策略、历史回测、因子研究、结果分析和策略实验室。本项目不是实盘交易系统。
 
 ## 当前架构
 
 ```text
-TDX / SQLite K 线
-        ↓
-lib/extend 数据访问与 K 线扩展
+TDX / SQLite K 线            财务 / 基本面 / 公告 / 其他供应商
+        ↓                                  ↓
+lib/extend K 线适配             researchdata PIT 数据契约与视图
+        └──────────────────────┬───────────┘
+                               ↓
+                   core.Factor / ContextFactor
         ↓
 strategies/factor 数值因子 + strategies/buy + strategies/sell 组合策略
         ↓
@@ -25,9 +28,10 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `core/` | 稳定的回测、交易、统计、绩效和审计契约 |
 | `strategies/buy/` | 实现 `core.Buyer` 的买入条件与组合子 |
 | `strategies/sell/` | 实现 `core.Seller` 的卖出和风控条件 |
-| `strategies/factor/` | 实现 `core.Factor` 的无状态数值因子；尚未接入完整研究工作流 |
+| `strategies/factor/` | 价量 `core.Factor`、多数据 `core.ContextFactor` 与因子目录 |
 | `strategies/util/` | MACD、RSI 等策略共用计算 |
 | `lib/extend/` | TDX K 线读取与本地 SQLite 存储适配 |
+| `researchdata/` | 供应商无关的数据目录、PIT 记录、注册路由和只读视图 |
 | `internal/researchrun/` | 多变体回测的数据加载、并发、取消、隔离和覆盖率 |
 | `internal/lab/` | 本地 Web 策略实验室及 Yaegi 脚本执行 |
 | `cmd/` | 可执行入口；只应定义具体任务和展示，不再复制公共回测循环 |
@@ -105,25 +109,43 @@ type Seller interface {
 
 数据更新已经是显式操作。仅 `common.Update()` 或主动调用它的命令会更新行情；导入根包不会自动更新。部分历史实验为了复现实验数据截止日会刻意跳过更新。
 
+非 K 线研究数据通过 `researchdata.Provider` 暴露目录和拉取能力，通过
+`researchdata.Store`（或其他 `researchdata.View` 实现）提供时点查询。每条记录必须同时记录：
+
+- `EventAt`：财报期末、公告事件或指标所属时间；
+- `AvailableAt`：策略当时最早能够看到该记录的时间；
+- `Key`：跨修订稳定的业务主键；
+- `Source` 与数据集 `Version`：供应商和标准化口径追溯信息。
+
+历史查询同时要求 `EventAt <= AsOf` 与 `AvailableAt <= AsOf`；缺少
+`AvailableAt` 的记录会被拒绝，修订数据按查询时点选择当时最新版本，不能用当前快照回填历史。
+
 所有数据库、构建产物和报告均为本地运行状态，不是源码事实来源。正式判断顺序是：当前代码与测试、配置、正式文档、`MEMORY.md`、历史实验记录。
 
 ## 因子框架状态
 
-当前代码已经具备 `core.Factor`、交易日归一、内存横截面排名快照，以及 `N日动量`、`均线偏离`、`N日斜率` 三个动量族因子。因子注册表、因子过滤/TopN Buyer、Lab 快照注入、Rank IC、分位收益分析和前端研究页仍未实现。
+价量因子继续实现兼容接口 `core.Factor`。需要财务、基本面、公告或替代数据的因子实现
+`core.ContextFactor`，从 `FactorContext.Data` 按 `FactorContext.AsOf` 查询数据。
+`core.Contextual` 把现有价量因子接入新研究链路；`core.BindContextFactor` 把上下文因子接回
+现有 Buyer、TopN 和回测契约。因此新增数据类型不需要修改 `Buyer`、`Seller` 或 `Backtest.Do()`。
 
-因此当前可端到端运行的有效链路仍是：
+通用数据因子位于 `strategies/factor/data.go`：
 
 ```text
-K 线 → Buyer/Seller → Backtest → Stats/Analyze
+最新字段      财务/基本面/估值等最新可见数值
+字段变化率    不同期财务或其他时序字段的变化率
+事件计数      指定时间窗内公告/事件数量，可按属性分类过滤
 ```
 
-后续若实施因子层，应独立交付并验证 `factor value → factor evaluation → signal → portfolio/backtest`，不能把计划文档中的接口当作已经存在的公共契约。
+新增真实供应商时，应先把供应商字段规范化为稳定 Dataset ID/Field，再构造因子；不要让供应商原始字段名进入策略。`researchdata.Store` 是有界研究和测试实现，全市场长期历史可换成数据库实现，只要保持 `researchdata.View` 契约。
+默认 Lab Runner 使用 `common.ResearchData` Hub；供应商适配器注册并加载数据后，无需修改 Runner 即可把同一 PIT 视图交给上下文因子。
 
 ## 已知边界
 
 - `core.Stats()` 当前按 `BuyPrice/SellPrice` 计算收益率，`Trade.Profit()` 按 `BuyCost/SellIncome` 计算实际成本收益率；启用完整费用后两者可能不同。改变该口径会影响历史报告，需要单独决策和迁移验证。
 - `PositionConfig.MaxPositions` 已配置但当前回测只实际约束 `MaxPerCode`，不要把报告解读为已执行账户级全局仓位上限。
 - `AuditLookAhead()` 是成交价与 K 线一致性检查，不等于完整的严格时点可见性证明。
+- 上下文因子的 PIT 正确性依赖供应商提供可信的 `AvailableAt`；只有当前快照、没有发布日期或修订历史的数据不能用于严格历史 IC/回测。
 - 本地 TDX 数据覆盖和更新时间必须随实验结果披露。
 
 ## 开发与验证

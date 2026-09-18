@@ -12,6 +12,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 func setupAnalysisData(t *testing.T, dir string) {
@@ -45,7 +46,7 @@ func TestRunAnalysis(t *testing.T) {
 			ScriptName: "matrix"},
 		Kind: "momentum", Days: 2, Window: 1,
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -67,14 +68,20 @@ func TestRunAnalysis(t *testing.T) {
 	if rep.Quintiles != nil {
 		t.Fatalf("Quintiles = %v, want nil（每日 2 票不足 5 分位）", rep.Quintiles)
 	}
-	// v2 合同：版本号、因子快照与分组回显
-	if rep.AnalysisVersion != 2 {
-		t.Fatalf("AnalysisVersion = %d, want 2", rep.AnalysisVersion)
+	// v3 合同：版本号、因子快照（含实现版本）与分组回显
+	if rep.AnalysisVersion != 3 {
+		t.Fatalf("AnalysisVersion = %d, want 3", rep.AnalysisVersion)
 	}
 	if rep.Factor.Kind != "momentum" || rep.Factor.Name != "N日动量(2)" ||
 		rep.Factor.Description != "近N日涨跌幅" || rep.Factor.ParameterLabel != "回看天数" ||
 		rep.Factor.Days != 2 || rep.Factor.Unit != "ratio" {
 		t.Fatalf("Factor = %+v", rep.Factor)
+	}
+	// 因子实现版本与 registry 当前版本一致
+	if cur, _ := f.Catalog("momentum"); rep.Factor.ImplementationVersion != cur.ImplementationVersion ||
+		rep.Factor.ImplementationVersion <= 0 {
+		t.Fatalf("Factor.ImplementationVersion = %d, want registry %d",
+			rep.Factor.ImplementationVersion, cur.ImplementationVersion)
 	}
 	if rep.Grouping.Mode != "" || len(rep.Grouping.Cuts) != 0 {
 		t.Fatalf("Grouping = %+v, want 缺省等数量五组", rep.Grouping)
@@ -157,7 +164,7 @@ func TestRunAnalysisSkipped(t *testing.T) {
 			ScriptName: "matrix"},
 		Kind: "momentum", Days: 2, Window: 1,
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -210,7 +217,7 @@ func TestRunAnalysisBins(t *testing.T) {
 		Kind: "momentum", Days: 2, Window: 1,
 		Grouping: GroupingConfig{Mode: "bins", Cuts: []float64{-0.05, -0.02, 0, 0.02}},
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -283,7 +290,7 @@ func TestRunAnalysisSevenGroups(t *testing.T) {
 		Kind: "momentum", Days: 2, Window: 1,
 		Grouping: GroupingConfig{Mode: "quantile", Groups: 7},
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -350,7 +357,7 @@ func TestRunAnalysisAllGroupings(t *testing.T) {
 		Kind: "momentum", Days: 2, Window: 1,
 		Grouping: GroupingConfig{Mode: "quantile", Groups: 7},
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -434,7 +441,7 @@ func TestRunAnalysisBinsNoAllGroupings(t *testing.T) {
 		Kind: "momentum", Days: 2, Window: 1,
 		Grouping: GroupingConfig{Mode: "bins", Cuts: []float64{-0.05, -0.02, 0, 0.02}},
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -469,7 +476,7 @@ func TestRunAnalysisAllEqual(t *testing.T) {
 			SampleMode: "codes", SampleCodes: codes, ScriptName: "matrix"},
 		Kind: "momentum", Days: 2, Window: 1,
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}
@@ -516,7 +523,7 @@ func TestRunAnalysisStopped(t *testing.T) {
 	}
 	stop := make(chan struct{})
 	close(stop)
-	_, err := (&Runner{}).runAnalysis(cfg, stop)
+	_, err := (&Runner{}).runAnalysis("", cfg, stop)
 	if !errors.Is(err, errStopped) {
 		t.Fatalf("err = %v, want errStopped", err)
 	}
@@ -658,7 +665,7 @@ func TestRunAnalysisMultiYearCoverage(t *testing.T) {
 			SampleMode: "codes", SampleCodes: codes, ScriptName: "matrix"},
 		Kind: "momentum", Days: 2, Window: 1,
 	}
-	rep, err := (&Runner{}).runAnalysis(cfg, make(chan struct{}))
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
 	if err != nil {
 		t.Fatalf("runAnalysis: %v", err)
 	}

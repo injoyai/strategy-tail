@@ -108,6 +108,25 @@ var strategyPresets = []StrategyPreset{
 			}
 		},
 	},
+	{
+		ID:          "macd_bar_up",
+		Name:        "MACD量柱向上",
+		Description: "MACD 量柱连续上升，多头动能增强",
+		Rules: []string{
+			"流通市值 ≥ 20",
+			"价格 2～120",
+			"过滤涨停",
+			"MACD 量柱连涨 ≥ 2 天",
+		},
+		Build: func() core.Buyer {
+			return sb.And{
+				sb.A流通市值{Min: 20},
+				sb.A价格{Min: 2, Max: 120},
+				sb.A过滤涨停{},
+				sb.MACD连涨{MinDays: 2},
+			}
+		},
+	},
 }
 
 // StrategyPresetIDs 返回目录 ID（顺序稳定）。

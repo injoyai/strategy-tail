@@ -17,6 +17,7 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
+	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/protocol"
@@ -272,11 +273,24 @@ type Runner struct {
 	runID        atomic.Pointer[string] // 本次运行目录名
 	task         atomic.Pointer[string] // 当前任务类型 backtest/analysis
 	lastAnalysis atomic.Pointer[AnalysisReport]
+
+	// store 不可变分析历史存储（生产默认 output/factor；测试注入临时根）。
+	store      *AnalysisStore
+	factorData researchdata.View
 }
 
 // NewRunner 创建执行器。
 func NewRunner() *Runner {
-	r := &Runner{}
+	return NewRunnerWithData(common.ResearchData)
+}
+
+// NewRunnerWithData 创建带 PIT 数据视图的执行器。nil 保持现有纯价量因子行为；
+// 财务、基本面、公告等上下文因子由调用方显式注入视图。
+func NewRunnerWithData(data researchdata.View) *Runner {
+	r := &Runner{
+		store:      NewAnalysisStore(filepath.Join("output", "factor")),
+		factorData: data,
+	}
 	idle := "idle"
 	r.state.Store(&idle)
 	return r
@@ -402,12 +416,19 @@ func (r *Runner) LatestAnalysis() *AnalysisReport {
 }
 
 // StartAnalysis 启动因子分析（与回测共用 mu 互斥）。
+// 分析 ID 在获取互斥锁后由服务端生成（客户端不得注入）；ID 生成失败时
+// 释放锁并返回，不启动 goroutine。
 func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	if !r.mu.TryLock() {
 		return fmt.Errorf("已有任务在运行")
+	}
+	id, err := generateAnalysisID()
+	if err != nil {
+		r.mu.Unlock()
+		return fmt.Errorf("生成分析 ID 失败: %w", err)
 	}
 
 	stop := make(chan struct{})
@@ -426,7 +447,7 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
 
-		rep, err := r.runAnalysis(cfg, stop)
+		rep, err := r.runAnalysis(id, cfg, stop)
 		if err != nil {
 			if err == errStopped {
 				st := "idle"

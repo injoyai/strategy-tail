@@ -3,6 +3,7 @@ package lab
 import (
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -31,9 +32,15 @@ import (
 //	GET      /api/kline/{code}  日K数据
 //	GET      /api/factors       因子目录
 //	POST     /api/analyze       启动因子分析（与回测共用任务互斥）
-//	GET      /api/analysis/latest 最新分析报告
+//	GET      /api/analysis/latest 最新分析报告（内存无报告时从磁盘 latest 指针恢复）
+//	GET      /api/analyses?kind=  分析历史摘要（时间倒序）
+//	GET      /api/analysis/{analysisId} 指定不可变分析报告
 //	GET      /api/strategy-presets 简单模式预设策略目录
 //	POST     /api/strategy/run  启动简单模式回测（声明式 StrategySpec；请求问题 400，任务互斥 409）
+//	POST     /api/factor-candidates 创建候选（201 新建 / 200 幂等命中 / 409 冲突）
+//	GET      /api/factor-candidates?includeArchived=  候选列表（默认隐藏归档）
+//	GET      /api/factor-candidates/{id} 候选详情（含实时兼容状态）
+//	PUT      /api/factor-candidates/{id} 追加候选修订（expectedRevision 冲突 409）
 
 // ScriptPath 策略脚本路径（页面编辑器直接读写该文件）。
 const ScriptPath = "strategies/script/matrix.go"
@@ -42,11 +49,40 @@ const ScriptPath = "strategies/script/matrix.go"
 type Server struct {
 	runner *Runner
 	mux    *http.ServeMux
+	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
+	analysisStore *AnalysisStore
+	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
+	candidateStore *CandidateStore
 }
 
 // NewServer 创建服务并注册路由。
 func NewServer() *Server {
-	s := &Server{runner: NewRunner(), mux: http.NewServeMux()}
+	s := &Server{
+		runner:         NewRunner(),
+		mux:            http.NewServeMux(),
+		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
+		candidateStore: NewCandidateStore(candidateDataDir),
+	}
+	s.registerRoutes()
+	return s
+}
+
+// newServerWithStores 仅供测试的构造函数：注入独立临时根，避免共享全局目录。
+func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *Server {
+	runner := NewRunner()
+	runner.store = analyses // 分析写入与查询同一根
+	s := &Server{
+		runner:         runner,
+		mux:            http.NewServeMux(),
+		analysisStore:  analyses,
+		candidateStore: candidates,
+	}
+	s.registerRoutes()
+	return s
+}
+
+// registerRoutes 注册全部 REST 路由。
+func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
 	s.mux.HandleFunc("PUT /api/script", s.handlePutScript)
 	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)
@@ -60,10 +96,15 @@ func NewServer() *Server {
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
 	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
 	s.mux.HandleFunc("GET /api/analysis/latest", s.handleLatestAnalysis)
+	s.mux.HandleFunc("GET /api/analyses", s.handleAnalyses)
+	s.mux.HandleFunc("GET /api/analysis/{analysisId}", s.handleAnalysis)
 	s.mux.HandleFunc("GET /api/strategy-presets", s.handleStrategyPresets)
 	s.mux.HandleFunc("POST /api/strategy/run", s.handleStrategyRun)
+	s.mux.HandleFunc("POST /api/factor-candidates", s.handleCreateCandidate)
+	s.mux.HandleFunc("GET /api/factor-candidates", s.handleListCandidates)
+	s.mux.HandleFunc("GET /api/factor-candidates/{id}", s.handleGetCandidate)
+	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", s.handleUpdateCandidate)
 	s.mux.HandleFunc("GET /", s.handleIndex)
-	return s
 }
 
 // Handler 返回 http.Handler（测试用 httptest 直连）。
@@ -225,11 +266,50 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"ok": true})
 }
 
-// handleLatestAnalysis 最新完成的分析报告。
+// handleLatestAnalysis 最新完成的分析报告。内存无最近报告时按无参数合同
+// 从全局 latest 指针（含 kind 与 analysisId）确定性恢复，不随机扫描猜测。
 func (s *Server) handleLatestAnalysis(w http.ResponseWriter, r *http.Request) {
 	rep := s.runner.LatestAnalysis()
 	if rep == nil {
+		var err error
+		rep, err = s.analysisStore.Latest("")
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "恢复最新分析失败")
+			return
+		}
+	}
+	if rep == nil {
 		writeErr(w, http.StatusNotFound, "暂无完成的分析报告")
+		return
+	}
+	writeJSON(w, rep)
+}
+
+// handleAnalyses 分析历史摘要（kind 必填，时间倒序）。
+func (s *Server) handleAnalyses(w http.ResponseWriter, r *http.Request) {
+	kind := r.URL.Query().Get("kind")
+	if kind == "" {
+		writeErr(w, http.StatusBadRequest, "缺少 kind 参数")
+		return
+	}
+	list, err := s.analysisStore.List(kind)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取分析历史失败")
+		return
+	}
+	writeJSON(w, list)
+}
+
+// handleAnalysis 指定不可变分析报告。
+func (s *Server) handleAnalysis(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("analysisId")
+	rep, err := s.analysisStore.Get(id)
+	if err != nil {
+		if errors.Is(err, errAnalysisNotFound) {
+			writeErr(w, http.StatusNotFound, "分析报告不存在: "+id)
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "读取分析报告失败")
 		return
 	}
 	writeJSON(w, rep)
@@ -371,6 +451,159 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, rows)
+}
+
+// maxCandidateBody 候选请求体上限（64 KiB）。
+const maxCandidateBody = 64 << 10
+
+// candidateResponse 候选响应：追加实时兼容状态（不回写历史 JSON）。
+type candidateResponse struct {
+	FactorCandidate
+	Compatibility CandidateCompatibility `json:"compatibility"`
+}
+
+// toCandidateResponse 由当前注册表实时计算兼容状态。
+func toCandidateResponse(c FactorCandidate) candidateResponse {
+	return candidateResponse{FactorCandidate: c, Compatibility: compatibilityOf(c)}
+}
+
+// decodeStrict 严格解码请求体：MaxBytesReader 限制大小、拒绝未知字段与多余 JSON。
+// 失败时已写错误响应并返回 false。
+func decodeStrict(r *http.Request, w http.ResponseWriter, dst any, maxBytes int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(dst); err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "请求体过大（上限 64 KiB）")
+		} else {
+			writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
+		}
+		return false
+	}
+	if dec.More() {
+		writeErr(w, http.StatusBadRequest, "请求体包含多余内容")
+		return false
+	}
+	return true
+}
+
+// handleCreateCandidate 创建候选：读 v3 报告 → 校验因子版本一致 → Store.Create。
+// 新建返回 201，幂等命中返回 200；幂等键复用/旧报告/版本漂移返回 409。
+func (s *Server) handleCreateCandidate(w http.ResponseWriter, r *http.Request) {
+	var req CreateCandidateRequest
+	if !decodeStrict(r, w, &req, maxCandidateBody) {
+		return
+	}
+	if !validUUID(req.RequestID) {
+		writeErr(w, http.StatusBadRequest, "requestId 必须是合法 UUID")
+		return
+	}
+	if !validAnalysisID(req.AnalysisID) {
+		writeErr(w, http.StatusBadRequest, "analysisId 非法")
+		return
+	}
+	rep, err := s.analysisStore.Get(req.AnalysisID)
+	if err != nil {
+		if errors.Is(err, errAnalysisNotFound) {
+			writeErr(w, http.StatusNotFound, "分析报告不存在: "+req.AnalysisID)
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "读取分析报告失败")
+		return
+	}
+	// 仅 v3 报告可保存（缺 analysisId/实现版本的旧报告拒绝）
+	if rep.AnalysisVersion < 3 || !validAnalysisID(rep.AnalysisID) || rep.Factor.ImplementationVersion <= 0 {
+		writeErr(w, http.StatusConflict, "该分析为旧版本报告，无法保存为候选，请重新运行分析")
+		return
+	}
+	// 报告因子当前版本仍一致（版本漂移 fail closed）
+	entry, ok := f.Catalog(rep.Kind)
+	if !ok {
+		writeErr(w, http.StatusConflict, "因子类型已从注册表移除")
+		return
+	}
+	if entry.ImplementationVersion != rep.Factor.ImplementationVersion {
+		writeErr(w, http.StatusConflict, "因子实现版本已变化，请重新分析后再保存")
+		return
+	}
+	c, created, err := s.candidateStore.Create(req, rep)
+	if err != nil {
+		if errors.Is(err, errIdempotencyConflict) {
+			writeErr(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	code := http.StatusOK
+	if created {
+		code = http.StatusCreated
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]any{"created": created, "candidate": toCandidateResponse(c)})
+}
+
+// handleListCandidates 候选列表（默认隐藏归档；includeArchived 只接受 true/false）。
+func (s *Server) handleListCandidates(w http.ResponseWriter, r *http.Request) {
+	includeArchived := false
+	switch r.URL.Query().Get("includeArchived") {
+	case "", "false":
+	case "true":
+		includeArchived = true
+	default:
+		writeErr(w, http.StatusBadRequest, "includeArchived 只接受 true/false")
+		return
+	}
+	list, err := s.candidateStore.List(includeArchived)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "读取候选列表失败")
+		return
+	}
+	out := make([]candidateResponse, 0, len(list))
+	for _, c := range list {
+		out = append(out, toCandidateResponse(c))
+	}
+	writeJSON(w, map[string]any{"candidates": out})
+}
+
+// handleGetCandidate 候选详情（含实时兼容状态）。
+func (s *Server) handleGetCandidate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	c, err := s.candidateStore.Get(id)
+	if err != nil {
+		if errors.Is(err, errCandidateNotFound) {
+			writeErr(w, http.StatusNotFound, "候选因子不存在")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"candidate": toCandidateResponse(c)})
+}
+
+// handleUpdateCandidate 追加候选修订：expectedRevision 冲突 → 409。
+func (s *Server) handleUpdateCandidate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req UpdateCandidateRequest
+	if !decodeStrict(r, w, &req, maxCandidateBody) {
+		return
+	}
+	c, err := s.candidateStore.Update(id, req)
+	if err != nil {
+		switch {
+		case errors.Is(err, errRevisionConflict):
+			writeErr(w, http.StatusConflict, err.Error())
+		case errors.Is(err, errCandidateNotFound):
+			writeErr(w, http.StatusNotFound, "候选因子不存在")
+		default:
+			writeErr(w, http.StatusBadRequest, err.Error())
+		}
+		return
+	}
+	writeJSON(w, map[string]any{"candidate": toCandidateResponse(c)})
 }
 
 // writeJSON 统一 JSON 响应。

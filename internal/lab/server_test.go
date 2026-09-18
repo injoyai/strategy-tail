@@ -358,7 +358,7 @@ func TestRunConfigValidate(t *testing.T) {
 	}
 }
 
-// TestServerStrategyPresets 简单模式预设目录：四项、顺序稳定、展示字段完整。
+// TestServerStrategyPresets 简单模式预设目录：五项、顺序稳定、展示字段完整。
 func TestServerStrategyPresets(t *testing.T) {
 	h := NewServer().Handler()
 	res := doReq(t, h, http.MethodGet, "/api/strategy-presets", nil, http.StatusOK)
@@ -366,10 +366,10 @@ func TestServerStrategyPresets(t *testing.T) {
 	if err := json.Unmarshal(res, &items); err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 4 {
-		t.Fatalf("预设数 = %d, want 4", len(items))
+	if len(items) != 5 {
+		t.Fatalf("预设数 = %d, want 5", len(items))
 	}
-	wantIDs := []string{"pullback_ma5_up", "pullback_ma10_up", "pullback_ma5_bull", "pullback_ma5_plain"}
+	wantIDs := []string{"pullback_ma5_up", "pullback_ma10_up", "pullback_ma5_bull", "pullback_ma5_plain", "macd_bar_up"}
 	for i, it := range items {
 		if it.ID != wantIDs[i] {
 			t.Fatalf("预设[%d].id = %q, want %q", i, it.ID, wantIDs[i])
@@ -397,7 +397,7 @@ func simpleRunBody() map[string]any {
 	}
 }
 
-// TestServerStrategyRunValidation 请求问题一律 400：非法 JSON、版本/预设/
+// TestServerStrategyRunValidation 请求问题一律 400：非法 JSON、版本/未知预设/
 // 条件数/重复/操作符/区间错误；错误体含 error 字段。
 func TestServerStrategyRunValidation(t *testing.T) {
 	h := NewServer().Handler()
@@ -454,6 +454,9 @@ func TestServerStrategyRunBusy(t *testing.T) {
 	s.runner.mu.Lock() // 模拟已有任务占用（同 TestRunnerMutualExclusion）
 	defer s.runner.mu.Unlock()
 	doReq(t, s.Handler(), http.MethodPost, "/api/strategy/run", simpleRunBody(), http.StatusConflict)
+	standalone := simpleRunBody()
+	standalone["basePresetId"] = ""
+	doReq(t, s.Handler(), http.MethodPost, "/api/strategy/run", standalone, http.StatusConflict)
 	if s.runner.LatestReport() != nil {
 		t.Fatal("忙碌时不应产生新报告")
 	}

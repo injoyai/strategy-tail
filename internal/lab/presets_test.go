@@ -8,10 +8,10 @@ import (
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 )
 
-// TestStrategyPresetCatalog 目录冻结为四个 ID，唯一且顺序稳定。
+// TestStrategyPresetCatalog 目录冻结为五个 ID，唯一且顺序稳定。
 func TestStrategyPresetCatalog(t *testing.T) {
 	want := []string{"pullback_ma5_up", "pullback_ma10_up",
-		"pullback_ma5_bull", "pullback_ma5_plain"}
+		"pullback_ma5_bull", "pullback_ma5_plain", "macd_bar_up"}
 	got := StrategyPresetIDs()
 	if len(got) != len(want) {
 		t.Fatalf("目录数量 = %d, want %d", len(got), len(want))
@@ -44,7 +44,7 @@ func TestBuildPresetBuyer(t *testing.T) {
 	}
 }
 
-// TestPresetBuildersMatchMatrix 四个 Builder 与 strategies/script/matrix.go
+// TestPresetBuildersMatchMatrix 各 Builder 与 strategies/script/matrix.go
 // 的 Buyer 参数逐项一致。matrix.go 带 //go:build ignore 不能 import，
 // 按其参数复刻期望 Buyer，通过组件 Name()（参数的函数）比较锁定。
 func TestPresetBuildersMatchMatrix(t *testing.T) {
@@ -79,6 +79,12 @@ func TestPresetBuildersMatchMatrix(t *testing.T) {
 			sb.A过滤涨停{},
 			sb.A阴线收回{SupportPeriod: 5, MinBodyRatio: 0.3, MaxRise: 1.0},
 		}},
+		{"macd_bar_up", sb.And{
+			sb.A流通市值{Min: 20},
+			sb.A价格{Min: 2, Max: 120},
+			sb.A过滤涨停{},
+			sb.MACD连涨{MinDays: 2},
+		}},
 	}
 	for _, w := range want {
 		b, err := BuildPresetBuyer(w.id)
@@ -95,8 +101,8 @@ func TestPresetBuildersMatchMatrix(t *testing.T) {
 // Go 类型名、函数名或源码路径。
 func TestPresetInfosDTO(t *testing.T) {
 	infos := PresetInfos()
-	if len(infos) != 4 {
-		t.Fatalf("数量 = %d, want 4", len(infos))
+	if len(infos) != 5 {
+		t.Fatalf("数量 = %d, want 5", len(infos))
 	}
 	for _, p := range infos {
 		if p.ID == "" || p.Name == "" || p.Description == "" || len(p.Rules) == 0 {

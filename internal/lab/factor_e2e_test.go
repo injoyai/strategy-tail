@@ -219,6 +219,9 @@ func TestServerFactorsAPI(t *testing.T) {
 		if v, ok := e["defaultDays"].(float64); !ok || v <= 0 {
 			t.Fatalf("defaultDays 非法: %v", e["defaultDays"])
 		}
+		if v, ok := e["implementationVersion"].(float64); !ok || v <= 0 {
+			t.Fatalf("implementationVersion 非法: %v", e["implementationVersion"])
+		}
 	}
 }
 

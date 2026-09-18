@@ -43,7 +43,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .header-meta{margin-left:auto;display:flex;align-items:center;gap:10px;position:relative;z-index:1;color:#93a3bb;font-family:var(--font-num);font-size:12px;line-height:1.2;letter-spacing:.06em}
 .local-badge{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid rgba(216,180,90,.24);border-radius:10px;background:rgba(216,180,90,.06)}
 .live-dot{width:7px;height:7px;border-radius:50%;background:#4ade80;box-shadow:0 0 0 4px rgba(74,222,128,.12)}
-.tabs{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:0;padding:0 max(24px,calc((100vw - 1400px)/2 + 24px));background:rgba(7,12,21,.82);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(140%)}
+.tabs{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:0;padding:0 max(24px,calc((100vw - 1400px)/2 + 24px));background:rgba(7,12,21,.82);border-bottom:1px solid var(--rule);position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(140%)}
 .tabs [role=tab]{min-height:68px;border:0;border-right:1px solid var(--rule);background:transparent;padding:12px 16px;text-align:left;color:var(--muted);cursor:pointer;position:relative;display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:center;transition:color .18s ease,background-color .18s ease}
 .tabs [role=tab]:first-child{border-left:1px solid var(--rule)}
 .tabs [role=tab]:hover{color:var(--ink2);background:rgba(255,255,255,.025)}
@@ -172,9 +172,43 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 .cmp-box .sub{font-size:12px;color:var(--muted);white-space:normal}
 .cmp-contrib h4{font-family:var(--font-disp);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold-soft);margin:15px 0 6px}
 #cmpSection .coverage{margin-top:10px}
+/* —— 候选因子：保存表单 / 列表 / 编辑 —— */
+.candidate-form{border:1px solid rgba(216,180,90,.3);border-radius:12px;padding:14px 16px;margin-top:12px;background:rgba(216,180,90,.05)}
+.candidate-form .cf-row{display:flex;gap:9px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.candidate-form .cf-row label{width:88px;font-size:12px;color:var(--muted);flex-shrink:0;font-weight:600;letter-spacing:.03em}
+.candidate-form input,.candidate-form select,.candidate-form textarea{border:1px solid var(--rule2);border-radius:var(--control-radius);padding:0 10px;font-size:13px;background:rgba(255,255,255,.045);color:var(--ink)}
+.candidate-form input,.candidate-form select{height:34px}
+.candidate-form input[type=text]{flex:1;min-width:140px}
+.candidate-form input[type=number]{width:96px}
+.candidate-form textarea{width:100%;height:64px;padding:8px 10px;resize:vertical}
+.candidate-form .cf-actions{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.cand-toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0 8px}
+.cand-toolbar button{min-height:30px;padding:4px 13px;font-size:12px}
+.cand-table-wrap{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
+.cand-table-wrap table td{white-space:normal}
+.cand-op{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
+.cand-op button{min-height:26px;padding:2px 10px;font-size:11px;border:1px solid var(--rule2);border-radius:7px;background:rgba(255,255,255,.045);color:var(--ink2);cursor:pointer}
+.cand-op button:hover{border-color:rgba(216,180,90,.5);color:#fff}
+.cand-op button.arch{border-color:rgba(239,68,68,.34);color:#ff9a9a}
+.cand-op button.arch:hover{background:rgba(239,68,68,.16)}
+.st-chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;letter-spacing:.03em;border:1px solid var(--rule2);color:var(--ink2)}
+.st-chip.candidate{border-color:rgba(76,141,255,.4);color:#9cc2ff;background:rgba(76,141,255,.10)}
+.st-chip.archived{border-color:rgba(224,168,60,.4);color:#f0cd86;background:rgba(224,168,60,.10)}
+.st-chip.ready{border-color:rgba(52,211,153,.42);color:#5fe0ad;background:rgba(52,211,153,.10)}
+.st-chip.stale{border-color:rgba(224,168,60,.42);color:#f0cd86;background:rgba(224,168,60,.10)}
+.st-chip.missing{border-color:rgba(239,68,68,.4);color:#ff9a9a;background:rgba(239,68,68,.10)}
+.compat-note{font-size:11px;color:var(--muted);line-height:1.6}
+/* 编辑对话框 */
+dialog{color:var(--ink);border:1px solid var(--rule2);border-radius:14px;background:#0d1626;box-shadow:var(--shadow);padding:20px 22px;max-width:520px;width:92%}
+dialog::backdrop{background:rgba(4,8,14,.66)}
+dialog .dlg-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+dialog .dlg-head h3{font-family:var(--font-disp);font-size:14px;font-weight:600;letter-spacing:.06em;margin:0;border:0;padding:0}
+dialog .dlg-close{border:none;background:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1;padding:4px 8px;border-radius:7px}
+dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
+
 @media (max-width:900px){
   .masthead{min-height:74px;padding:14px 16px}.header-meta{display:none}.brand-mark{width:42px;height:42px}
-  .tabs{padding:0;grid-template-columns:repeat(4,1fr)}.tabs [role=tab]{min-height:58px;padding:9px 8px;grid-template-columns:28px minmax(0,1fr);gap:7px;border-right:0}.tabs [role=tab]:first-child{border-left:0}.tab-desc{display:none}.tab-index{width:28px;height:28px;line-height:26px}
+  .tabs{padding:0;grid-template-columns:repeat(5,1fr)}.tabs [role=tab]{min-height:58px;padding:9px 8px;grid-template-columns:28px minmax(0,1fr);gap:7px;border-right:0}.tabs [role=tab]:first-child{border-left:0}.tab-desc{display:none}.tab-index{width:28px;height:28px;line-height:26px}
   main{padding:14px}.grid2{grid-template-columns:1fr}.charts2,.cmp-hero{grid-template-columns:1fr}.card{padding:16px;border-radius:14px}
   .factor-controls{display:grid;grid-template-columns:88px 1fr}.factor-controls label{width:auto}.factor-controls .factor-inline-label{margin-left:0}.factor-controls input,.factor-controls select{width:100%!important;min-width:0!important}.factor-control-help{margin-left:0}
 }
@@ -186,6 +220,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
   .factor-controls{grid-template-columns:1fr}.editor-actions .hint{flex-basis:100%}.concept{padding:15px}.concept-head{padding-right:0}.concept:before{display:none}
   #quintileChart{height:280px}.filters>*{flex:1 1 120px;width:auto!important}.detail-wrap{border-radius:10px}.cmp-box .big{font-size:18px}
   .summary-line{font-size:14px}
+  .candidate-form .cf-row{align-items:flex-start}.candidate-form .cf-row>label{width:100%;margin-bottom:-3px}.candidate-form input[type=text],.candidate-form textarea{flex-basis:100%}
   .statusbar{padding:14px;margin-bottom:12px}.status-head,.status-foot{align-items:flex-start}.status-title-wrap{display:block}.status-kicker{display:block;margin-bottom:2px}.status-meta{display:block;min-width:0}#statusDetail,#statusCurrent{display:block}.status-actions{margin-left:auto}#statusPercent{font-size:16px}
 }
 @media (prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition-duration:.001ms!important;animation-duration:.001ms!important;animation-iteration-count:1!important}.progress-inner.indeterminate{animation:none;background-position:50% 0}}
@@ -211,6 +246,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
   <button type="button" role="tab" id="tabbtn1" data-tab="1" aria-controls="tab1" aria-selected="false" tabindex="-1" onclick="switchTab(1)"><span class="tab-index">02</span><span class="tab-copy"><span class="tab-title">策略与运行</span><span class="tab-desc">配置假设 · 发起回测</span></span></button>
   <button type="button" role="tab" id="tabbtn2" data-tab="2" aria-controls="tab2" aria-selected="false" tabindex="-1" onclick="switchTab(2)"><span class="tab-index">03</span><span class="tab-copy"><span class="tab-title">组合对比</span><span class="tab-desc">读取差异 · 审视贡献</span></span></button>
   <button type="button" role="tab" id="tabbtn3" data-tab="3" aria-controls="tab3" aria-selected="false" tabindex="-1" onclick="switchTab(3)"><span class="tab-index">04</span><span class="tab-copy"><span class="tab-title">交易明细</span><span class="tab-desc">回到逐笔 · 核对路径</span></span></button>
+  <button type="button" role="tab" id="tabbtn5" data-tab="5" aria-controls="tab5" aria-selected="false" tabindex="-1" onclick="switchTab(5)"><span class="tab-index">05</span><span class="tab-copy"><span class="tab-title">候选因子</span><span class="tab-desc">证据 · 修订 · 复用</span></span></button>
 </div>
 
 <main>
@@ -246,8 +282,10 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
       <!-- 简单模式：声明式多条件策略 -->
       <div id="modeSimple">
         <h3>简单配置</h3>
-        <div class="form-row"><label>预设策略</label>
-          <select id="presetSel" style="min-width:200px" aria-describedby="presetDesc"></select>
+        <div class="form-row"><label for="presetSel">基础策略（可选）</label>
+          <select id="presetSel" style="min-width:200px" aria-describedby="presetDesc">
+            <option value="">不使用预设（仅因子条件）</option>
+          </select>
         </div>
         <div class="hint" id="presetDesc"></div>
         <ul class="preset-rules" id="presetRules"></ul>
@@ -261,7 +299,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
           <button class="secondary" id="btnAddCond2" onclick="addCond()">添加条件</button>
           <span class="hint" id="condLimitHint"></span>
         </div>
-        <div class="hint" style="margin-top:8px">口径说明：信号和成交使用当前回测模型（次日开盘成交等）；因子页的未来收益只用于因子评价，不代表可实现的组合收益。</div>
+        <div class="hint" style="margin-top:8px">口径说明：当前回测仍按当日数据判定并以同日价格成交；因子页的未来收益只用于因子评价，不代表可实现的组合收益。信号与次日成交的解耦将作为后续执行模型改造。</div>
       </div>
 
       <!-- 高级模式：脚本编辑 -->
@@ -396,13 +434,6 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
         <option value="5">5 日</option>
         <option value="20">20 日</option>
       </select>
-      <label class="factor-inline-label" for="factorGroups">分组数</label>
-      <select id="factorGroups">
-        <option value="5" selected>5 组</option>
-        <option value="7">7 组</option>
-        <option value="10">10 组</option>
-        <option value="11">11 组</option>
-      </select>
       <label class="factor-inline-label" for="factorStartYear">开始年份</label>
       <input type="number" id="factorStartYear" value="2018" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
       <label class="factor-inline-label" for="factorEndYear">结束年份</label>
@@ -457,7 +488,46 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
         <div class="editor-actions" style="margin-top:14px">
           <button class="secondary" id="btnAddCond" onclick="addFactorToStrategy()">添加到策略条件</button>
           <span class="hint">把该因子与参数（不含阈值）加入 ② 的简单配置，阈值由你在那里填写。</span>
+          <button class="secondary" id="btnSaveCandidate" onclick="toggleCandidateForm()">保存为候选</button>
+          <span class="hint" id="saveCandidateHint"></span>
         </div>
+
+        <!-- 保存为候选：等频不自动填阈值；保存不代表样本外验证通过 -->
+        <div class="candidate-form" id="candidateForm" style="display:none" aria-hidden="true">
+          <div class="cf-row"><label for="candName">候选名称</label>
+            <input type="text" id="candName" maxlength="80" placeholder="如 20日动量观察候选" aria-describedby="candFormNote">
+          </div>
+          <div class="cf-row"><label for="candUseMode">使用方式</label>
+            <select id="candUseMode" aria-describedby="candFormNote">
+              <option value="observe" selected>仅保存观察结果</option>
+              <option value="range">配置固定区间后保存</option>
+            </select>
+            <span class="hint" style="margin:0" id="candUseHint"></span>
+          </div>
+          <div class="cf-row" id="candRangeRow" style="display:none">
+            <label for="candRangeOp">区间条件</label>
+            <select id="candRangeOp" style="width:104px">
+              <option value="gte">≥ 至少</option>
+              <option value="lte">≤ 至多</option>
+              <option value="between">介于</option>
+            </select>
+            <input type="number" id="candRangeMin" step="any" placeholder="下限" aria-label="区间下限">
+            <input type="number" id="candRangeMax" step="any" placeholder="上限" aria-label="区间上限">
+            <span class="hint" style="margin:0" id="candRangeUnit"></span>
+          </div>
+          <div class="cf-row"><label for="candNotes">备注</label>
+            <textarea id="candNotes" maxlength="2000" placeholder="可选：记录观察理由、待验证假设等"></textarea>
+          </div>
+          <div class="cf-row">
+            <div class="cf-actions">
+              <button class="primary" id="btnCandidateSave" onclick="saveCandidate()">保存候选</button>
+              <button class="secondary" id="btnCandidateCancel" onclick="toggleCandidateForm(true)">取消</button>
+              <span class="hint" style="margin:0" id="candFormNote"></span>
+            </div>
+          </div>
+          <div class="msg" id="candidateMsg" role="status" aria-live="polite"></div>
+        </div>
+        <button type="button" class="secondary" id="btnViewCandidates" onclick="switchTab(5)" hidden>查看候选 →</button>
 
         <div class="year-title" id="yearTitle">年度稳定性</div>
         <div class="year-wrap" id="yearWrap">
@@ -481,6 +551,77 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
     </div>
   </div>
 </div>
+
+<!-- Tab5 候选因子 -->
+<div class="tab-panel" id="tab5" role="tabpanel" aria-labelledby="tabbtn5" tabindex="0" hidden>
+  <!-- 我的候选因子 -->
+  <div class="card" id="candidateSection" style="margin-top:18px">
+    <h3>我的候选因子</h3>
+    <div class="cand-toolbar">
+      <button class="secondary" id="btnCandArchived" onclick="toggleCandidatesArchived()">查看归档</button>
+      <button class="secondary" id="btnCandRefresh" onclick="loadCandidates()">刷新</button>
+      <span class="hint" style="margin:0" id="candListHint">候选保存的是不可变分析证据；保存不代表样本外验证通过。</span>
+    </div>
+    <div class="cand-table-wrap" id="candTableWrap" style="display:none">
+      <table id="candTable">
+        <thead><tr>
+          <th>名称</th><th>因子</th><th>用途</th><th>证据区间</th><th>状态</th><th>兼容</th><th>操作</th>
+        </tr></thead>
+        <tbody id="candBody"></tbody>
+      </table>
+    </div>
+    <div class="empty" id="candEmpty" role="status">暂无候选因子：完成分析后可“保存为候选”。</div>
+    <div class="warnbar" id="candLoadErr" style="display:none"></div>
+  </div>
+</div>
+
+<!-- 候选编辑对话框（乐观并发：携带 expectedRevision，409 不自动覆盖） -->
+<dialog id="candEditDlg" aria-labelledby="candEditTitle">
+  <div class="dlg-head">
+    <h3 id="candEditTitle">编辑候选</h3>
+    <button class="dlg-close" onclick="$('candEditDlg').close()" aria-label="关闭">×</button>
+  </div>
+  <div class="candidate-form" style="margin-top:0">
+    <div class="cf-row"><label for="candEditName">名称</label>
+      <input type="text" id="candEditName" maxlength="80"></div>
+    <div class="cf-row"><label for="candEditUse">使用方式</label>
+      <select id="candEditUse" onchange="renderEditRange()">
+        <option value="observe">仅保存观察结果</option>
+        <option value="range">配置固定区间后保存</option>
+      </select></div>
+    <div class="cf-row" id="candEditRangeRow" style="display:none">
+      <label for="candEditOp">区间条件</label>
+      <select id="candEditOp" style="width:104px">
+        <option value="gte">≥ 至少</option>
+        <option value="lte">≤ 至多</option>
+        <option value="between">介于</option>
+      </select>
+      <input type="number" id="candEditMin" step="any" aria-label="区间下限">
+      <input type="number" id="candEditMax" step="any" aria-label="区间上限">
+      <span class="hint" style="margin:0" id="candEditUnit"></span>
+    </div>
+    <div class="cf-row"><label for="candEditNotes">备注</label>
+      <textarea id="candEditNotes" maxlength="2000"></textarea></div>
+    <div class="cf-row">
+      <div class="cf-actions">
+        <button class="primary" id="btnCandEditSave" onclick="saveCandidateEdit()">保存修订</button>
+        <button class="secondary" onclick="$('candEditDlg').close()">取消</button>
+        <span class="hint" style="margin:0" id="candEditHint"></span>
+      </div>
+    </div>
+    <div class="msg" id="candEditMsg" role="status" aria-live="polite"></div>
+  </div>
+</dialog>
+
+<!-- 证据查看对话框 -->
+<dialog id="candEvDlg" aria-labelledby="candEvTitle">
+  <div class="dlg-head">
+    <h3 id="candEvTitle">候选证据</h3>
+    <button class="dlg-close" onclick="$('candEvDlg').close()" aria-label="关闭">×</button>
+  </div>
+  <div id="candEvBody" style="font-size:12px;line-height:1.9;color:var(--ink2)"></div>
+  <div class="hint" style="margin-top:10px">证据是样本内研究记录，不可变保存；不代表样本外验证通过。</div>
+</dialog>
 </main>
 
 <script>
@@ -540,8 +681,8 @@ function initMotion() {
 }
 
 // ============ Tabs（WAI-ARIA + URL 持久化） ============
-const TAB_SLUG = {1: 'strategy', 2: 'compare', 3: 'trades', 4: 'factor'};
-const TAB_NUM = {strategy: 1, compare: 2, trades: 3, factor: 4};
+const TAB_SLUG = {1: 'strategy', 2: 'compare', 3: 'trades', 4: 'factor', 5: 'candidates'};
+const TAB_NUM = {strategy: 1, compare: 2, trades: 3, factor: 4, candidates: 5};
 
 function switchTab(n) {
   document.querySelectorAll('[role="tab"]').forEach(b => {
@@ -657,7 +798,9 @@ async function runSimple() {
   if (!spec) return;
   try {
     const d = await api('POST', '/api/strategy/run', spec);
-    showScriptMsg(`已提交 ${d.variants} 个变体（基准 + ${d.variants - 2} 个单条件 + 组合增强），运行进度见上方任务条。`, true);
+    const n = spec.factorFilters.length;
+    const detail = n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
+    showScriptMsg(`已提交 ${d.variants} 个变体（${detail}），运行进度见上方任务条。`, true);
     showPendingTask('backtest');
     pollStatus();
   } catch (e) { showScriptMsg(e.message, false); }
@@ -698,26 +841,32 @@ async function loadPresets() {
 }
 function renderPresetInfo() {
   const p = presetInfos.find(x => x.id === $('presetSel').value);
-  $('presetDesc').textContent = p ? p.description : '';
+  $('presetDesc').textContent = p
+    ? `${p.description}。它会作为基础买入条件，并与下方因子条件同时满足。`
+    : '不附加市值、价格、涨停或均线回调等预设条件；买入只由下方因子条件决定，对照基准为全部样本。';
   const ul = $('presetRules');
   ul.innerHTML = '';
+  ul.hidden = !p;
   (p && p.rules ? p.rules : []).forEach(r => {
     const li = document.createElement('li');
     li.textContent = r;
     ul.appendChild(li);
   });
 }
+$('presetSel').addEventListener('change', renderPresetInfo);
 
-// 默认两张条件卡（因子目录就绪后调用一次）
+// 默认一张条件卡（合同允许 1～4 条）；避免初始生成两条相同因子+天数，
+// 让尚未编辑的表单天然触发“重复条件”校验。
 function ensureDefaultConds() {
   if (condsInitialized || !factorCatalog.length) return;
-  simpleConds = [defaultCond(), defaultCond()];
+  simpleConds = [defaultCond()];
   condsInitialized = true;
   renderConds();
 }
 function defaultCond() {
   const e = factorCatalog[0];
-  return {kind: e.kind, days: e.defaultDays, operator: 'between', min: null, max: null};
+  return {kind: e.kind, days: e.defaultDays, operator: 'between', min: null, max: null,
+    factorVersion: e.implementationVersion || 0};
 }
 function addCond() {
   if (simpleConds.length >= 4) return;
@@ -801,6 +950,7 @@ function buildCondCard(c, i) {
     const ne = factorCatalog.find(x => x.kind === selKind.value);
     c.kind = selKind.value;
     c.days = ne ? ne.defaultDays : c.days;
+    c.factorVersion = ne ? (ne.implementationVersion || 0) : (c.factorVersion || 0);
     renderConds();
   };
 
@@ -922,7 +1072,8 @@ function buildSpec() {
       cardErr(i, $(`cond${i}_min`), '下限不能大于上限');
     } else {
       seen.add(c.kind + ':' + c.days);
-      const ft = {kind: c.kind, days: c.days, operator: c.operator};
+      const ft = {kind: c.kind, days: c.days, operator: c.operator,
+        factorVersion: c.factorVersion || (ent ? (ent.implementationVersion || 0) : 0)};
       if (c.operator !== 'lte') ft.min = conv(c.min);
       if (c.operator !== 'gte') ft.max = conv(c.max);
       spec.factorFilters.push(ft);
@@ -1098,7 +1249,7 @@ let factorCatalog = [];
 let currentAnalysis = null;   // Tab4 共享的分析报告
 let quintileC = null;         // 分组柱状图实例（可见后惰性初始化）
 let icC = null;               // 逐日 IC 图实例（统计详情展开后惰性初始化）
-let currentGroupingN = 5;     // 结果区当前展示的分组数（allGroupings 内取值）
+let currentGroupingN = 5;     // 结果区当前展示的分组数（allGroupings 内取值；跨分析保留上次切换档）
 
 async function loadFactors() {
   try {
@@ -1173,8 +1324,9 @@ async function runAnalysis() {
     cfg.kind = $('factorKind').value;
     cfg.days = +$('factorDays').value;
     cfg.window = +$('factorWindow').value;
-    cfg.grouping = {mode: 'quantile', groups: +$('factorGroups').value};
-    currentGroupingN = cfg.grouping.groups; // 新分析结果默认展示请求档
+    // 分组档位由结果区切换器（2-20）决定；请求固定缺省 5 组档，
+    // 后端 quantile 模式始终预算全档 allGroupings，组数选择不影响计算量。
+    cfg.grouping = {mode: 'quantile', groups: 5};
     await api('POST', '/api/analyze', cfg);
     showPendingTask('analysis');
     pollStatus();
@@ -1191,13 +1343,13 @@ function analysisYears() {
   if (ey > now) return {err: `结束年份不能超过当前年份（${now}）`, el: $('factorEndYear')};
   return {startYear: sy, endYear: ey};
 }
-// “添加到策略条件”：只传 kind/days，不猜 min/max；重复添加聚焦原条件
+// “添加到策略条件”：只传 kind/days/版本，不猜 min/max；重复添加聚焦原条件
 function addFactorToStrategy() {
   const e = currentFactor();
   if (!e) return;
   const days = +$('factorDays').value || e.defaultDays;
   const dup = simpleConds.some(c => c.kind === e.kind && c.days === days);
-  if (!dup) simpleConds.push({kind: e.kind, days});
+  if (!dup) simpleConds.push({kind: e.kind, days, factorVersion: e.implementationVersion || 0});
   switchTab(1);
   if (typeof focusSimpleCondition === 'function') focusSimpleCondition(e.kind, days);
   setFactorMsg(`已${dup ? '定位到已有条件' : '添加条件'}：${factorInstanceName(e, days)}，请在“简单配置”中填写阈值。`, true);
@@ -1235,6 +1387,7 @@ function renderAnalysis() {
   if (!currentAnalysis) return;
   $('factorEmpty').style.display = 'none';
   $('factorBody').style.display = '';
+  renderCandidateSaveState();
   const s = currentAnalysis.stats;
   // 0) 结果区分组数切换器：仅 quantile 且含 allGroupings 的新报告
   const hasAllG = !!(Array.isArray(currentAnalysis.allGroupings) && currentAnalysis.allGroupings.length);
@@ -1733,10 +1886,437 @@ async function showKline(t) {
   $(id).addEventListener(id === 'fVariant' ? 'change' : 'input', renderTrades);
 });
 
+// ============ 候选因子（保存=Tab4；列表/编辑/加入策略=Tab5 + 顶层 dialog） ============
+let candidates = [];              // 候选列表（最新修订 + 兼容状态）
+let showCandidatesArchived = false;
+let candidateRequestId = null;    // 一次保存动作的幂等键：重试复用，编辑/成功/取消后重置
+let candidateSavedFor = null;     // 最近成功保存候选的分析 ID："查看候选"按钮仅对该报告显示
+let editCandidate = null;         // 编辑对话框当前候选
+let editExpectedRevision = 0;
+
+// renderCandidateSaveState 仅 v3 报告（analysisVersion>=3 且含 analysisId 与正
+// 实现版本）才启用“保存为候选”；旧报告提示重新分析。
+function renderCandidateSaveState() {
+  const rep = currentAnalysis;
+  const ok = !!(rep && rep.analysisVersion >= 3 && rep.analysisId &&
+    rep.factor && rep.factor.implementationVersion > 0);
+  const btn = $('btnSaveCandidate');
+  btn.disabled = !ok;
+  $('saveCandidateHint').textContent = ok
+    ? ''
+    : '该报告为旧版本（缺少 analysisId/实现版本），无法保存为候选，请重新运行分析。';
+  $('btnViewCandidates').hidden = !(ok && rep.analysisId === candidateSavedFor);
+}
+
+function setCandidateMsg(msg, ok) {
+  const el = $('candidateMsg');
+  el.textContent = msg;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+function setEditMsg(msg, ok) {
+  const el = $('candEditMsg');
+  el.textContent = msg;
+  el.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+function ensureCandidateRequestId() {
+  if (!candidateRequestId) candidateRequestId = crypto.randomUUID();
+}
+function candidateFactorUnit() {
+  const rep = currentAnalysis;
+  return rep && rep.factor ? rep.factor.unit : '';
+}
+
+// toggleCandidateForm 打开/关闭保存表单：等频默认“仅保存观察结果”且阈值为空，
+// 不自动读取 groups[].factorMin/factorMax；bins 只展示断点建议不自动填入。
+function toggleCandidateForm(forceClose) {
+  const f = $('candidateForm');
+  if (forceClose || f.style.display !== 'none') {
+    f.style.display = 'none';
+    f.setAttribute('aria-hidden', 'true');
+    candidateRequestId = null;
+    setCandidateMsg('', true);
+    return;
+  }
+  const rep = currentAnalysis;
+  if (!rep || rep.analysisVersion < 3 || !rep.analysisId || !(rep.factor && rep.factor.implementationVersion > 0)) {
+    setFactorMsg('该分析为旧版本报告，请重新运行分析后再保存', false);
+    return;
+  }
+  $('candUseMode').value = 'observe';
+  $('candRangeRow').style.display = 'none';
+  $('candName').value = '';
+  $('candRangeOp').value = 'gte';
+  $('candRangeMin').value = '';
+  $('candRangeMax').value = '';
+  $('candNotes').value = '';
+  const unit = candidateFactorUnit();
+  $('candRangeUnit').textContent = unit === 'ratio'
+    ? '按百分比填写（5 = 5%），提交转原始比例' : '填写因子原始值';
+  if (rep.grouping && rep.grouping.mode === 'bins' && Array.isArray(rep.grouping.cuts)) {
+    const cuts = rep.grouping.cuts.map(c => unit === 'ratio' ? +(c * 100).toFixed(2) : c).join('、');
+    $('candUseHint').textContent = `固定区间分析的建议断点：${cuts}（需确认后使用，不会自动填入）`;
+  } else {
+    $('candUseHint').textContent = '';
+  }
+  $('candFormNote').textContent = '等频分组边界是跨日累计分布，不会自动转成固定阈值；保存为候选不代表样本外验证通过。';
+  f.style.display = '';
+  f.setAttribute('aria-hidden', 'false');
+  candidateRequestId = null; // 新保存动作
+  $('candName').focus();
+}
+
+// candidateUseModeChange 切换使用方式：observe 隐藏区间，range 显示。
+function candidateUseModeChange() {
+  const mode = $('candUseMode').value;
+  $('candRangeRow').style.display = mode === 'range' ? 'flex' : 'none';
+  const unit = candidateFactorUnit();
+  $('candRangeUnit').textContent = unit === 'ratio'
+    ? '按百分比填写（5 = 5%），提交转原始比例' : '填写因子原始值';
+  const rep = currentAnalysis;
+  if (mode === 'range' && rep && rep.grouping && rep.grouping.mode === 'bins' && Array.isArray(rep.grouping.cuts)) {
+    const cuts = rep.grouping.cuts.map(c => unit === 'ratio' ? +(c * 100).toFixed(2) : c).join('、');
+    $('candUseHint').textContent = `固定区间分析的建议断点：${cuts}（需确认后使用，不会自动填入）`;
+  } else {
+    $('candUseHint').textContent = '';
+  }
+}
+// 表单输入变化即视为“新保存动作”的边界：重新发起保存时生成新 requestId
+['candName', 'candUseMode', 'candRangeOp', 'candRangeMin', 'candRangeMax', 'candNotes'].forEach(id => {
+  $(id).addEventListener('input', () => { candidateRequestId = null; });
+});
+$('candUseMode').addEventListener('change', candidateUseModeChange);
+
+// parseRawThreshold 显示值 → 原始比例（ratio 因子 ×100 显示，提交 ÷100）。
+function parseRawThreshold(str, unit) {
+  const v = parseFloat(str);
+  if (!isFinite(v)) return null;
+  return unit === 'ratio' ? +(v / 100).toFixed(6) : v;
+}
+
+// saveCandidate 保存为候选：一次动作固定 requestId，网络失败重试复用；
+// 服务端拒绝（旧报告/版本漂移/幂等键冲突）时保留输入。
+async function saveCandidate() {
+  const rep = currentAnalysis;
+  if (!rep || rep.analysisVersion < 3 || !rep.analysisId || !(rep.factor && rep.factor.implementationVersion > 0)) {
+    setCandidateMsg('该分析为旧版本报告，请重新运行分析后再保存', false);
+    return;
+  }
+  const name = $('candName').value.trim();
+  if (!name) { setCandidateMsg('请填写候选名称', false); $('candName').focus(); return; }
+  const mode = $('candUseMode').value;
+  const use = {mode};
+  const unit = candidateFactorUnit();
+  if (mode === 'range') {
+    const op = $('candRangeOp').value;
+    const min = parseRawThreshold($('candRangeMin').value, unit);
+    const max = parseRawThreshold($('candRangeMax').value, unit);
+    if (op !== 'lte' && min == null) { setCandidateMsg('请填写下限', false); $('candRangeMin').focus(); return; }
+    if (op !== 'gte' && max == null) { setCandidateMsg('请填写上限', false); $('candRangeMax').focus(); return; }
+    if (op === 'between' && min > max) { setCandidateMsg('下限不能大于上限', false); $('candRangeMin').focus(); return; }
+    use.filter = {kind: rep.kind, days: rep.factor.days,
+      factorVersion: rep.factor.implementationVersion, operator: op};
+    if (op !== 'lte') use.filter.min = min;
+    if (op !== 'gte') use.filter.max = max;
+  }
+  ensureCandidateRequestId();
+  const body = {requestId: candidateRequestId, analysisId: rep.analysisId, name, use,
+    notes: $('candNotes').value.trim()};
+  const btn = $('btnCandidateSave');
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+  try {
+    const d = await api('POST', '/api/factor-candidates', body);
+    candidateRequestId = null;
+    setCandidateMsg(d.created ? '已保存为候选（证据已锁定）' : '已存在相同候选（幂等命中，未重复创建）', true);
+    candidateSavedFor = rep.analysisId;
+    renderCandidateSaveState();
+    $('candidateForm').style.display = 'none';
+    $('candidateForm').setAttribute('aria-hidden', 'true');
+    await loadCandidates();
+  } catch (e) {
+    // 保留输入与 requestId（同一次网络重试复用）；内容冲突/旧报告等服务端拒绝同样保留
+    setCandidateMsg(e.message, false);
+  } finally {
+    btn.disabled = false; btn.removeAttribute('aria-busy');
+  }
+}
+
+// ============ 候选列表 ============
+async function loadCandidates() {
+  const err = $('candLoadErr');
+  err.style.display = 'none';
+  try {
+    const d = await api('GET', '/api/factor-candidates?includeArchived=' + showCandidatesArchived);
+    candidates = d.candidates || [];
+    renderCandidates();
+  } catch (e) {
+    err.style.display = '';
+    err.textContent = '候选列表加载失败：' + e.message + '，可点击“刷新”重试。';
+  }
+}
+function toggleCandidatesArchived() {
+  showCandidatesArchived = !showCandidatesArchived;
+  $('btnCandArchived').textContent = showCandidatesArchived ? '只看活动' : '查看归档';
+  $('btnCandArchived').setAttribute('aria-pressed', String(showCandidatesArchived));
+  loadCandidates();
+}
+function factorUnitOf(kind) {
+  const e = factorCatalog.find(x => x.kind === kind);
+  return e ? e.unit : '';
+}
+// filterText 区间条件的显示文案：API/存储用原始比例，显示层 ×100。
+function filterText(f) {
+  if (!f) return '';
+  const unit = factorUnitOf(f.kind);
+  const fmt = v => v == null ? '—' : (unit === 'ratio' ? sig3(v * 100) + '%' : sig3(v));
+  const nm = `${f.kind}(${f.days})`;
+  if (f.operator === 'gte') return nm + '≥' + fmt(f.min);
+  if (f.operator === 'lte') return nm + '≤' + fmt(f.max);
+  if (f.operator === 'between') return nm + '∈[' + fmt(f.min) + ',' + fmt(f.max) + ']';
+  return nm;
+}
+function renderCandidates() {
+  const wrap = $('candTableWrap');
+  const empty = $('candEmpty');
+  const tb = $('candBody');
+  tb.innerHTML = '';
+  if (!candidates.length) {
+    wrap.style.display = 'none';
+    empty.style.display = '';
+    empty.textContent = showCandidatesArchived
+      ? '暂无候选因子（含归档）。'
+      : '暂无候选因子：完成分析后可“保存为候选”。';
+    return;
+  }
+  wrap.style.display = '';
+  empty.style.display = 'none';
+  candidates.forEach(c => {
+    const tr = document.createElement('tr');
+    const textTd = txt => { const td = document.createElement('td'); td.textContent = txt; tr.appendChild(td); return td; };
+    textTd(c.name || '（未命名）');
+    textTd(`${c.factor.name} · ${c.factor.days} 日 · 实现 v${c.factor.implementationVersion}`);
+    textTd(c.use && c.use.mode === 'range' ? filterText(c.use.filter) : '仅观察');
+    const ev = c.evidence || {};
+    textTd(ev.firstDataDate && ev.lastDataDate ? `${ev.firstDataDate} ~ ${ev.lastDataDate}` : '—');
+    const stTd = document.createElement('td');
+    const stChip = document.createElement('span');
+    stChip.className = 'st-chip ' + (c.status === 'archived' ? 'archived' : 'candidate');
+    stChip.textContent = c.status === 'archived' ? '已归档' : '候选';
+    stTd.appendChild(stChip);
+    tr.appendChild(stTd);
+    // 兼容状态：stale/missing 用琥珀提示文字补充，不单靠颜色
+    const cmp = c.compatibility || {};
+    const cmpTd = document.createElement('td');
+    const cmpChip = document.createElement('span');
+    cmpChip.className = 'st-chip ' + (cmp.state || '');
+    cmpChip.textContent = cmp.state === 'ready' ? '可复用'
+      : cmp.state === 'stale' ? '版本已变' : (cmp.state === 'missing' ? '已移除' : '—');
+    cmpTd.appendChild(cmpChip);
+    if (cmp.state === 'stale' || cmp.state === 'missing') {
+      const note = document.createElement('div');
+      note.className = 'compat-note';
+      note.textContent = cmp.reason || (cmp.state === 'stale' ? '请重新分析后再复用' : '注册表已无此因子');
+      cmpTd.appendChild(note);
+    }
+    tr.appendChild(cmpTd);
+    const opTd = document.createElement('td');
+    opTd.className = 'cand-op';
+    const mkBtn = (txt, cls, fn) => {
+      const b = document.createElement('button');
+      b.textContent = txt;
+      if (cls) b.className = cls;
+      b.onclick = fn;
+      opTd.appendChild(b);
+      return b;
+    };
+    mkBtn('证据', '', () => viewCandidateEvidence(c));
+    mkBtn('编辑', '', () => openCandidateEdit(c));
+    const canJoin = c.status === 'candidate' && c.use && c.use.mode === 'range' && cmp.state === 'ready';
+    if (canJoin) mkBtn('加入策略', '', () => joinCandidateToStrategy(c));
+    if (c.status === 'candidate') mkBtn('归档', 'arch', () => changeCandidateStatus(c, 'archived'));
+    else mkBtn('恢复', '', () => changeCandidateStatus(c, 'candidate'));
+    tr.appendChild(opTd);
+    tb.appendChild(tr);
+  });
+}
+
+// viewCandidateEvidence 只读证据摘要对话框。
+function viewCandidateEvidence(c) {
+  const ev = c.evidence || {};
+  const r = ev.range || {};
+  const lines = [
+    ['分析 ID', ev.analysisId || '—'],
+    ['分析版本', String(ev.analysisVersion || 0)],
+    ['证据 SHA-256', ev.reportSha256 ? ev.reportSha256.slice(0, 16) + '…' : '—'],
+    ['未来收益窗口', ev.window ? ev.window + ' 个交易日' : '—'],
+    ['分析区间', r.startYear ? `${r.startYear}–${r.endYear}` : '—'],
+    ['样本', (r.sampleMode || '—') + (r.sampleSize ? ` · ${r.sampleSize} 只` : '')],
+    ['实际有效日期', ev.firstDataDate && ev.lastDataDate ? `${ev.firstDataDate} ~ ${ev.lastDataDate}` : '—'],
+    ['IC 有效日 / 均值', ev.stats ? `${ev.stats.pairs} 日 / ${ev.stats.mean.toFixed(4)}` : '—'],
+    ['完成时间', ev.finishedAt || '—'],
+  ];
+  const body = $('candEvBody');
+  body.innerHTML = '';
+  lines.forEach(([k, v]) => {
+    const row = document.createElement('div');
+    const kk = document.createElement('b');
+    kk.textContent = k + '：';
+    row.appendChild(kk);
+    row.appendChild(document.createTextNode(v));
+    body.appendChild(row);
+  });
+  $('candEvDlg').showModal();
+}
+
+// ============ 编辑与乐观并发 ============
+function openCandidateEdit(c) {
+  editCandidate = c;
+  editExpectedRevision = c.revision;
+  $('candEditName').value = c.name;
+  const mode = c.use && c.use.mode === 'range' ? 'range' : 'observe';
+  $('candEditUse').value = mode;
+  const unit = c.factor.unit;
+  $('candEditUnit').textContent = unit === 'ratio'
+    ? '按百分比填写（5 = 5%），提交转原始比例' : '填写因子原始值';
+  const f = c.use && c.use.filter;
+  if (mode === 'range' && f) {
+    $('candEditOp').value = f.operator;
+    $('candEditMin').value = f.min == null ? '' : (unit === 'ratio' ? +(f.min * 100).toFixed(4) : f.min);
+    $('candEditMax').value = f.max == null ? '' : (unit === 'ratio' ? +(f.max * 100).toFixed(4) : f.max);
+  } else {
+    $('candEditOp').value = 'gte';
+    $('candEditMin').value = '';
+    $('candEditMax').value = '';
+  }
+  $('candEditNotes').value = c.notes || '';
+  $('candEditHint').textContent = `当前修订 v${c.revision}，历史修订已保留。`;
+  setEditMsg('', true);
+  renderEditRange();
+  $('candEditDlg').showModal();
+  $('candEditName').focus();
+}
+function renderEditRange() {
+  $('candEditRangeRow').style.display = $('candEditUse').value === 'range' ? 'flex' : 'none';
+}
+async function saveCandidateEdit() {
+  const c = editCandidate;
+  if (!c) return;
+  const name = $('candEditName').value.trim();
+  if (!name) { setEditMsg('请填写候选名称', false); $('candEditName').focus(); return; }
+  const mode = $('candEditUse').value;
+  const use = {mode};
+  const unit = c.factor.unit;
+  const parse = v => { const n = parseFloat(v); if (!isFinite(n)) return null; return unit === 'ratio' ? +(n / 100).toFixed(6) : n; };
+  if (mode === 'range') {
+    const op = $('candEditOp').value;
+    const min = parse($('candEditMin').value);
+    const max = parse($('candEditMax').value);
+    if (op !== 'lte' && min == null) { setEditMsg('请填写下限', false); return; }
+    if (op !== 'gte' && max == null) { setEditMsg('请填写上限', false); return; }
+    if (op === 'between' && min > max) { setEditMsg('下限不能大于上限', false); return; }
+    use.filter = {kind: c.factor.kind, days: c.factor.days,
+      factorVersion: c.factor.implementationVersion, operator: op};
+    if (op !== 'lte') use.filter.min = min;
+    if (op !== 'gte') use.filter.max = max;
+  }
+  const body = {expectedRevision: editExpectedRevision, name, use, status: c.status,
+    notes: $('candEditNotes').value.trim()};
+  const btn = $('btnCandEditSave');
+  btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+  try {
+    const d = await api('PUT', '/api/factor-candidates/' + c.id, body);
+    setEditMsg('已保存修订 v' + d.candidate.revision, true);
+    $('candEditDlg').close();
+    await loadCandidates();
+  } catch (e) {
+    // 409：保留输入，重新加载服务端记录并提示比较，不自动覆盖
+    if (e.message && e.message.indexOf('重新加载') >= 0) {
+      setEditMsg('该候选已被其他人更新：保留你的输入，请比较服务端最新版本后重试', false);
+      try {
+        const d = await api('GET', '/api/factor-candidates/' + c.id);
+        editExpectedRevision = d.candidate.revision;
+        $('candEditHint').textContent = `服务端当前修订 v${d.candidate.revision}，请核对后再次保存。`;
+      } catch (_) { /* 重载失败仅保留提示 */ }
+    } else {
+      setEditMsg(e.message, false);
+    }
+  } finally {
+    btn.disabled = false; btn.removeAttribute('aria-busy');
+  }
+}
+
+// changeCandidateStatus 归档/恢复也是追加修订（expectedRevision 冲突时刷新）。
+async function changeCandidateStatus(c, status) {
+  try {
+    const body = {expectedRevision: c.revision, name: c.name, use: c.use, status,
+      notes: c.notes || ''};
+    await api('PUT', '/api/factor-candidates/' + c.id, body);
+    $('candListHint').textContent = status === 'archived' ? '已归档（历史修订保留）' : '已恢复为候选';
+    await loadCandidates();
+  } catch (e) {
+    $('candListHint').textContent = '操作失败：' + e.message + '，已刷新到服务端最新。';
+    await loadCandidates();
+  }
+}
+
+// joinCandidateToStrategy 把 range+ready+candidate 映射进 simpleConds 并写
+// factorVersion；相同 kind+days 不静默重复，聚焦原条件并明确要求替换；
+// 4 条上限不变；加入后切到策略 Tab、聚焦并标注“尚未回测”，不自动运行回测。
+function joinCandidateToStrategy(c) {
+  const f = c.use.filter;
+  const unit = factorUnitOf(f.kind);
+  const toDisp = v => v == null ? null : (unit === 'ratio' ? +(v * 100).toFixed(4) : v);
+  const cond = {
+    kind: f.kind,
+    days: f.days,
+    operator: f.operator,
+    min: toDisp(f.min),
+    max: toDisp(f.max),
+    factorVersion: f.factorVersion || c.factor.implementationVersion,
+  };
+  const dupIdx = simpleConds.findIndex(x => x.kind === f.kind && x.days === f.days);
+  if (dupIdx >= 0) {
+    switchTab(1);
+    if (typeof focusSimpleCondition === 'function') focusSimpleCondition(f.kind, f.days);
+    if (!confirm(`已存在相同因子+天数条件（第 ${dupIdx + 1} 条），是否用候选阈值替换？`)) {
+      showScriptMsg('未替换：已聚焦原条件，请自行确认阈值。', true);
+      return;
+    }
+    simpleConds[dupIdx] = cond;
+    renderConds(dupIdx);
+    markCondNotBacktested(dupIdx);
+    showScriptMsg('候选阈值已替换原条件（尚未回测），请运行回测。', true);
+    return;
+  }
+  if (simpleConds.length >= 4) {
+    switchTab(1);
+    showScriptMsg('已达 4 个条件上限（1～4 个），请先删除一个条件再加入。', false);
+    $('btnAddCond2').focus();
+    return;
+  }
+  simpleConds.push(cond);
+  switchTab(1);
+  const idx = simpleConds.length - 1;
+  renderConds(idx);
+  markCondNotBacktested(idx);
+  showScriptMsg('候选已加入策略条件（尚未回测），填写卖出规则后运行回测。', true);
+}
+// markCondNotBacktested 在条件卡上标注“尚未回测”（文字提示，不单靠颜色）。
+function markCondNotBacktested(idx) {
+  const card = document.querySelectorAll('.cond-card')[idx];
+  if (!card) return;
+  const tag = document.createElement('span');
+  tag.className = 'st-chip stale';
+  tag.textContent = '尚未回测';
+  const no = card.querySelector('.cond-no');
+  if (no) no.parentNode.insertBefore(tag, no.nextSibling);
+}
+
 // ============ 初始化 ============
 loadScript();
 loadPresets();
 loadFactors();
+loadCandidates();
+renderCandidateSaveState(); // 无分析时禁用“保存为候选”并提示
 pollStatusOnce(); // 页面刷新后恢复运行状态显示；运行中由 pollStatusOnce 续上轮询
 // Tab 状态从 URL 恢复；无参数时优先进入因子研究，但不自动重跑任务。
 switchTab(TAB_NUM[new URLSearchParams(location.search).get('tab')] || 4);

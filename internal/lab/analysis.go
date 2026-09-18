@@ -2,18 +2,13 @@ package lab
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/injoyai/goutil/oss"
-	"github.com/injoyai/goutil/oss/csv"
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
@@ -323,7 +318,7 @@ func (c AnalyzeConfig) Validate() error {
 	if c.Window < 1 || c.Window > 60 {
 		return fmt.Errorf("未来收益窗口无效: %d（应为 1-60 交易日）", c.Window)
 	}
-	if f.Build(c.Kind, c.Days) == nil {
+	if f.BuildContext(c.Kind, c.Days) == nil {
 		return fmt.Errorf("未知因子类型: %s", c.Kind)
 	}
 	if err := c.Grouping.Validate(); err != nil {
@@ -340,6 +335,9 @@ type FactorSnapshot struct {
 	ParameterLabel string `json:"parameterLabel"`
 	Days           int    `json:"days"`
 	Unit           string `json:"unit"` // ratio | multiple | score | correlation
+	// ImplementationVersion 因子实现版本快照（来自 registry.Catalog）。候选保存
+	// 与旧报告展示依赖该字段；缺失时反序列化为 0，仅用于展示、不可保存为候选。
+	ImplementationVersion int `json:"implementationVersion"`
 }
 
 // FactorGroupStats 单组统计：因子值分布为全样本累计（原始值），
@@ -420,10 +418,14 @@ type YearAnalysis struct {
 
 // AnalysisReport 因子分析报告。
 type AnalysisReport struct {
+	// AnalysisID 不可变分析标识（v3）：an_<UTC时间>_<8hex>，服务端生成，
+	// 用于不可变历史目录与候选证据追溯；旧报告缺省为空串。
+	AnalysisID string        `json:"analysisId"`
 	FactorName string        `json:"factorName"` // 因子中文名（如 N日动量(2)）
 	Kind       string        `json:"kind"`
 	Window     int           `json:"window"`
 	Range      AnalysisRange `json:"range"`
+	// v3 新增：不可变 analysisId（Task 2）与因子实现版本快照；
 	// v2 新增：固定区间模式以 Groups 为唯一分组结果；分位模式组完整时
 	// Quintiles 镜像 Groups 的 ForwardReturn（旧页面兼容），否则为 null。
 	AnalysisVersion int                `json:"analysisVersion"`
@@ -721,8 +723,17 @@ func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string
 // runAnalysis 因子分析主循环：逐日横截面 因子值名次 vs 未来收益名次 → Spearman IC。
 // 口径与 fillCrossSection 一致：series=his+dks，前缀无前视；未来收益
 // dks[i+Window].Close/dks[i].Close−1，尾部 Window 日无未来收益剔除。
-func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisReport, error) {
+// id 为服务端生成的不可变分析 ID；为空时（直接构造 Runner 的测试路径）
+// 在此生成，AnalysisReport.AnalysisID 导出前完成赋值。
+func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (*AnalysisReport, error) {
 	started := time.Now()
+
+	if id == "" {
+		var err error
+		if id, err = generateAnalysisID(); err != nil {
+			return nil, fmt.Errorf("生成分析 ID 失败: %w", err)
+		}
+	}
 
 	codes, err := r.resolveCodes(cfg.RunConfig, stop)
 	if err != nil {
@@ -730,7 +741,7 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	}
 	r.totalCodes.Store(int64(len(codes)))
 	years := cfg.RunConfig.years()
-	fct := f.Build(cfg.Kind, cfg.Days)
+	fct := f.BuildContext(cfg.Kind, cfg.Days)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -774,7 +785,12 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 		series = append(series, d.Dks...)
 		base := len(d.His)
 		for i := 0; i+cfg.Window < len(d.Dks); i++ {
-			v := fct.Value(code, series[:base+i+1])
+			v := fct.ValueAt(core.FactorContext{
+				Code:   code,
+				AsOf:   d.Dks[i].Time,
+				Klines: series[:base+i+1],
+				Data:   r.factorData,
+			})
 			ret := d.Dks[i+cfg.Window].Close.Float64()/d.Dks[i].Close.Float64() - 1
 			// NaN/±Inf 值与该票该日一并剔除：spearmanIC/quantileAssign 契约要求入参无 NaN，
 			// 且 Inf 会传入 Quintiles 使 report.json 序列化失败（退化数据如收盘价 0）
@@ -901,14 +917,15 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 			SampleMode: cfg.RunConfig.SampleMode,
 			SampleSize: len(codes),
 		},
-		AnalysisVersion: 2,
+		AnalysisVersion: 3,
 		Factor: FactorSnapshot{
-			Kind:           cfg.Kind,
-			Name:           fct.Name(),
-			Description:    entry.Description,
-			ParameterLabel: entry.ParameterLabel,
-			Days:           effDays,
-			Unit:           entry.Unit,
+			Kind:                  cfg.Kind,
+			Name:                  fct.Name(),
+			Description:           entry.Description,
+			ParameterLabel:        entry.ParameterLabel,
+			Days:                  effDays,
+			Unit:                  entry.Unit,
+			ImplementationVersion: entry.ImplementationVersion,
 		},
 		Grouping:      cfg.Grouping,
 		Groups:        groups,
@@ -927,13 +944,23 @@ func (r *Runner) runAnalysis(cfg AnalyzeConfig, stop chan struct{}) (*AnalysisRe
 	if !isBins && summaryQs != nil { // 旧页面兼容：分位模式组完整时镜像组收益
 		rep.Quintiles = summaryQs
 	}
-	if err := exportAnalysis(rep); err != nil {
+	// 分析 ID 在导出前完成赋值：不可变历史与候选证据追溯以此为准。
+	rep.AnalysisID = id
+
+	store := r.store
+	if store == nil {
+		// 直接构造的 Runner（旧测试路径）使用 cwd 相对默认根；
+		// 生产与 Server 路径始终显式注入。
+		store = NewAnalysisStore(filepath.Join("output", "factor"))
+	}
+	if err := store.Save(rep); err != nil {
 		return nil, fmt.Errorf("分析报告落盘失败: %w", err)
 	}
 	return rep, nil
 }
 
 // analysisHTML 分析报告页模板（ECharts 逐日 IC 折线；%% 为 CSS 转义）。
+// 渲染逻辑在 analysis_store.go（不可变版本目录与兼容镜像共用）。
 const analysisHTML = `<!DOCTYPE html>
 <html>
 <head>
@@ -956,52 +983,3 @@ echarts.init(document.getElementById('chart')).setOption({
 </script>
 </body>
 </html>`
-
-// exportAnalysis 落盘分析产物到 output/factor/<清洗后kind>/：
-// report.json（tmp+rename 原子写，镜像 saveReport）+ ic.csv + report.html
-// （后两者 best-effort，不阻塞主产物）。
-func exportAnalysis(rep *AnalysisReport) error {
-	dir := filepath.Join("output", "factor", core.TradesExportName(rep.Kind))
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-
-	buf, err := json.MarshalIndent(rep, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := filepath.Join(dir, ".report.json.tmp")
-	if err := os.WriteFile(tmp, buf, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, "report.json")); err != nil {
-		return err
-	}
-
-	// ic.csv（无效日按 0 写）
-	rows := [][]any{{"date", "ic"}}
-	for _, d := range rep.Daily {
-		v := 0.0
-		if d.IC != nil {
-			v = *d.IC
-		}
-		rows = append(rows, []any{d.Date, v})
-	}
-	if buf, err := csv.Export(rows); err == nil {
-		_ = oss.New(filepath.Join(dir, "ic.csv"), buf)
-	}
-
-	// report.html（无效日为 null，前端 connectNulls 补线）
-	days := make([]string, 0, len(rep.Daily))
-	ics := make([]*float64, 0, len(rep.Daily))
-	for _, d := range rep.Daily {
-		days = append(days, d.Date)
-		ics = append(ics, d.IC)
-	}
-	dayJSON, _ := json.Marshal(days)
-	icJSON, _ := json.Marshal(ics)
-	html := fmt.Sprintf(analysisHTML, rep.FactorName, rep.FactorName, rep.Window,
-		rep.Stats.Mean, rep.Stats.Std, rep.Stats.TStat, rep.Stats.Pairs, dayJSON, icJSON)
-	_ = os.WriteFile(filepath.Join(dir, "report.html"), []byte(html), 0644)
-	return nil
-}

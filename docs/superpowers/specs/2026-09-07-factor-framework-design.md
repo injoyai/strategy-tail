@@ -158,4 +158,43 @@ IC/分位收益引擎、Lab 因子研究 Tab、落盘、测试。
 - `A因子TopN`：3 只票构造因子值，验证排名选择、Asc 方向、数据不足剔除、
   双因子快照按 key 隔离互不覆盖。
 - IC 引擎：完全正相关数据 IC=1、随机数据 IC≈0、分组单调性验证数学正确性。
+
+## 8. 2026-09-17 扩展：多类型研究数据与上下文因子
+
+原设计第 1.1 节基于 TDX 只有当前财务快照的限制，禁止财务因子进入历史 IC。该限制继续适用于没有发布日期、修订历史和可信可得时间的数据，但不再禁止具备严格时点证据的财务、基本面、公告及替代数据。
+
+### 8.1 数据契约
+
+`researchdata.Provider` 声明数据目录并拉取规范化记录。供应商原始字段必须在适配器中转换成稳定的 Dataset ID 与字段定义，因子不得直接依赖供应商字段名。
+
+每条 `researchdata.Record` 必须包含：
+
+- `Key`：同一业务事实跨修订稳定的键；
+- `EventAt`：财报期末、公告事件或指标所属时间；
+- `AvailableAt`：该修订最早可被策略获知的时间；
+- `Source`、`Revision`：来源和修订追溯；
+- `Values`、`Attributes`：数值字段和分类属性。
+
+PIT 查询同时要求 `EventAt <= AsOf` 和 `AvailableAt <= AsOf`。同一 `Key` 多个修订只返回查询时点已可见的最新修订。缺少 `AvailableAt` 的记录 fail closed。
+
+### 8.2 因子兼容层
+
+现有 K 线因子继续实现 `core.Factor`。多类型数据因子实现：
+
+```go
+type ContextFactor interface {
+    Name() string
+    ValueAt(FactorContext) float64
+}
+```
+
+`FactorContext` 提供 `Code`、`AsOf`、K 线前缀和 `researchdata.View`。`core.Contextual` 把旧因子接入上下文研究链；`core.BindContextFactor` 把上下文因子接回现有 Buyer、TopN 和回测契约。数据缺失仍统一返回 `math.NaN()`。
+
+通用实现包括：`最新字段`、`字段变化率`、`事件计数`。大规模全市场历史应实现持久化 `researchdata.View`；内存 Store 仅用于有界研究和测试。
+
+### 8.3 严格边界
+
+- 当前快照、缺少发布日期或修订历史的数据只能用于当前截面，不得用于严格 PIT 历史 IC/回测。
+- 日线 K 线时间作为保守 `AsOf`；盘中公告因子必须由研究任务提供明确决策时间，不能自行假设收盘前可见。
+- 数据源、数据集版本、覆盖率和 PIT 质量必须进入后续研究报告元数据。
 - 端到端：Lab API 触发一次真实分析，验证落盘产物。

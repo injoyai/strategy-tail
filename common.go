@@ -8,6 +8,7 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/researchdata"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx"
@@ -126,8 +127,9 @@ const (
 )
 
 var (
-	Pull   *extend.PullKline
-	Manage *tdx.Manage
+	Pull         *extend.PullKline
+	Manage       *tdx.Manage
+	ResearchData = researchdata.NewHub()
 )
 
 func init() {
