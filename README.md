@@ -119,6 +119,12 @@ type Seller interface {
 
 `common.LoadBacktestConfig()` 从 `config/config.yaml` 读取成本、仓位、默认年份、基准和蒙特卡洛次数。具体实验可以显式覆盖年份或卖出规则，但必须在入口注释和报告中披露。
 
+运行时根目录默认从当前目录向上查找最近的 `go.mod`，因此从
+`internal/lab` 等子目录运行测试时，TDX 配置与数据库仍固定解析到项目根目录，
+不会在源码包内生成 `data/`。构建后的程序若从仓库外启动，可显式设置
+`STRATEGY_TAIL_ROOT`；`pull.database` 使用绝对路径时保持不变，可将大型行情库
+放在仓库之外。
+
 数据更新已经是显式操作。仅 `common.Update()` 或主动调用它的命令会更新行情；导入根包不会自动更新。部分历史实验为了复现实验数据截止日会刻意跳过更新。
 
 非 K 线研究数据通过 `researchdata.Provider` 暴露目录和拉取能力，通过

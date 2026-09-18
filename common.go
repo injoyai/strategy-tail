@@ -1,7 +1,6 @@
 package common
 
 import (
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -22,17 +21,17 @@ import (
 type Market int
 
 const (
-	MarketAll      Market = iota // 全部
+	MarketAll  Market = iota // 全部
 	Market沪深主板               // 沪深主板（sh60/sz00）
-	Market科创板                 // 科创板（sh68）
-	Market创业板                 // 创业板（sz30）
+	Market科创板                // 科创板（sh68）
+	Market创业板                // 创业板（sz30）
 )
 
 var marketNames = map[Market]string{
-	MarketAll:      "全部",
+	MarketAll:  "全部",
 	Market沪深主板: "沪深主板",
-	Market科创板:   "科创板",
-	Market创业板:   "创业板",
+	Market科创板:  "科创板",
+	Market创业板:  "创业板",
 }
 
 // String 返回市场中文名。
@@ -83,7 +82,7 @@ var (
 
 	MACDBuyer = buy.And{
 		buy.A流通市值{Min: 400}, //流通市值大于N亿
-		buy.A现价{Max: 120},     //价格小于120,太贵了买不起
+		buy.A现价{Max: 120},   //价格小于120,太贵了买不起
 		buy.A过滤涨停{},         //过滤涨停,涨停买不进去
 
 		buy.MACD反转{MinLookback: 4}, //MACD
@@ -123,8 +122,8 @@ var (
 )
 
 const (
-	万                = 1e4
-	亿                = 1e8
+	万                 = 1e4
+	亿                 = 1e8
 	DefaultGoroutines = 10
 	DatabaseDir       = tdx.DefaultDatabaseDir
 )
@@ -138,12 +137,12 @@ var (
 	// 配置 research.universe，HTTP 请求不得指定），文件缺失或加载失败时显式
 	// 降级 current_static——静态池存在生存者偏差、PIT 恒为 unverified，只支撑
 	// exploratory 证据等级，不阻塞旧探索流程。
-	DefaultUniverse = newDefaultUniverse()
+	DefaultUniverse researchdata.Universe
 )
 
 // UniverseFile 股票池成员文件路径，仅来自本地配置。
 func UniverseFile() string {
-	return cfg.GetString("research.universe", filepath.Join("config", "universe.csv"))
+	return ResolveRuntimePath(cfg.GetString("research.universe", "config/universe.csv"))
 }
 
 // newDefaultUniverse 构造默认股票池；宽松模式加载（非法行跳过并计数披露），
@@ -167,16 +166,24 @@ func newDefaultUniverse() researchdata.Universe {
 
 func init() {
 	logs.SetFormatter(logs.TimeFormatter)
+	err := withRuntimeRoot(func() error {
+		var err error
+		Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
+		if err != nil {
+			return err
+		}
 
-	var err error
-
-	Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
-	logs.PanicErr(err)
-
-	Pull, err = extend.NewPullKline(extend.PullKlineConfig{
-		Types:      cfg.GetStrings("pull.types", []string{extend.Day}),
-		Dir:        cfg.GetString("pull.database", tdx.DefaultDatabaseDir),
-		Goroutines: cfg.GetInt("pull.goroutines", DefaultGoroutines),
+		databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", tdx.DefaultDatabaseDir))
+		Pull, err = extend.NewPullKline(extend.PullKlineConfig{
+			Types:      cfg.GetStrings("pull.types", []string{extend.Day}),
+			Dir:        databaseDir,
+			Goroutines: cfg.GetInt("pull.goroutines", DefaultGoroutines),
+		})
+		if err != nil {
+			return err
+		}
+		DefaultUniverse = newDefaultUniverse()
+		return nil
 	})
 	logs.PanicErr(err)
 

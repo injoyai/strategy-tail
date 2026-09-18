@@ -1,4 +1,6 @@
 pull:
+  # 相对路径会按项目根目录解析；也可填写绝对路径把大型行情库放到仓库外。
+  database: "./data/database"
   types:
     - day
     - minute

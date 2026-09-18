@@ -4,14 +4,14 @@
 .trae-html-share-packages/*
 data/*
 internal/lab/data/
-docs/*
 output/*
 *.exe
 *.pdf
 *.csv
 *.xlsx
 *.log
-*bin
+bin/
+**/bin/
 *.py
 *_report.html
 *.go.*
