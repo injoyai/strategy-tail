@@ -9,6 +9,7 @@ import (
 // wantKinds 目录的固定顺序（顺序是 API 合同，不得漂移）。
 var wantKinds = [...]string{
 	"momentum", "ma_bias", "slope", "volatility", "amplitude",
+	"macd_hist", "macd_delta", "macd_trough_position", "macd_negative_streak", "ma_min_slope",
 	"volume_ratio", "volume_pct", "volume_surge",
 	"body", "upper_shadow", "lower_shadow",
 	"position", "kvalue", "vp_corr",
@@ -16,8 +17,8 @@ var wantKinds = [...]string{
 
 func TestAll(t *testing.T) {
 	all := All()
-	if len(all) != 14 {
-		t.Fatalf("目录应有 14 项, got %d", len(all))
+	if len(all) != len(wantKinds) {
+		t.Fatalf("目录应有 %d 项, got %d", len(wantKinds), len(all))
 	}
 	if all[0].Kind != "momentum" || all[0].Name != "N日动量(20)" {
 		t.Fatalf("首项异常: %+v", all[0])
