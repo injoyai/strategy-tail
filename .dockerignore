@@ -1,0 +1,10 @@
+# 构建上下文只保留源码，避免把 GB 级数据目录发给 docker daemon
+.git
+data
+output
+bin
+docs
+*.exe
+*.db
+*.pdf
+.trae-html-share-packages

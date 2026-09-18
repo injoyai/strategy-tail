@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
 	"time"
@@ -17,7 +18,12 @@ import (
 )
 
 func main() {
-	addr := "127.0.0.1:8765"
+	// 默认仅监听 127.0.0.1（设计文档 §10 非目标：不做鉴权/远程访问）；
+	// 容器部署时通过 LAB_ADDR=0.0.0.0:8765 覆盖，否则端口映射不可达。
+	addr := os.Getenv("LAB_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:8765"
+	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		// 端口被占用时自动换一个（上次进程未退出的场景）
