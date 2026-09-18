@@ -277,23 +277,55 @@ type Runner struct {
 	// store 不可变分析历史存储（生产默认 output/factor；测试注入临时根）。
 	store      *AnalysisStore
 	factorData researchdata.View
+	universe   researchdata.Universe // 历史成员只读接口；nil 时回退 current_static
 }
 
 // NewRunner 创建执行器。
 func NewRunner() *Runner {
-	return NewRunnerWithData(common.ResearchData)
+	return NewRunnerWithDeps(common.ResearchData, common.DefaultUniverse)
 }
 
 // NewRunnerWithData 创建带 PIT 数据视图的执行器。nil 保持现有纯价量因子行为；
-// 财务、基本面、公告等上下文因子由调用方显式注入视图。
+// 财务、基本面、公告等上下文因子由调用方显式注入视图。股票池回退 current_static。
 func NewRunnerWithData(data researchdata.View) *Runner {
+	return NewRunnerWithDeps(data, nil)
+}
+
+// NewRunnerWithDeps 注入数据视图与股票池。universe 为 nil 时回退 current_static
+// 静态池——它存在生存者偏差、PIT 恒为 unverified，证据等级上限 exploratory。
+func NewRunnerWithDeps(data researchdata.View, universe researchdata.Universe) *Runner {
+	if universe == nil {
+		universe = researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{
+			ID:     "current_static",
+			Source: "tdx_local",
+		})
+	}
 	r := &Runner{
 		store:      NewAnalysisStore(filepath.Join("output", "factor")),
 		factorData: data,
+		universe:   universe,
 	}
 	idle := "idle"
 	r.state.Store(&idle)
 	return r
+}
+
+// dataProvenance 从当前 Runner 依赖生成数据来源快照。价格版本与复权口径当前
+// 不可得，显式写 unknown，不允许前端填写后伪装系统已验证；TDX 本地库只有当前
+// 快照、无发布日期与修订历史，PITState 恒为 unverified（设计 6.2）。
+func (r *Runner) dataProvenance() DataProvenance {
+	view := "none"
+	if r.factorData != nil {
+		view = "injected"
+	}
+	return DataProvenance{
+		PriceSource:      "tdx_local",
+		PriceVersion:     "unknown",
+		Adjustment:       adjustmentUnknown,
+		ResearchDataView: view,
+		PITState:         pitUnverified,
+		SnapshotAt:       time.Now().UTC().Format(time.RFC3339),
+	}
 }
 
 // Start 启动高级模式回测（已在运行则报错）。variants 由调用方经 Yaegi 加载并校验通过。

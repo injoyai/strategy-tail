@@ -13,6 +13,7 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/lib/xorms"
 	"github.com/injoyai/tdx/protocol"
@@ -379,6 +380,48 @@ func TestRunnerSimpleReportComparison(t *testing.T) {
 	htmls, _ := filepath.Glob(filepath.Join("output", "trades", "simple", "*_summary.html"))
 	if len(htmls) == 0 {
 		t.Fatal("汇总 HTML 未落盘")
+	}
+}
+
+// TestRunnerUniverseAndProvenance Task 4：universe 依赖注入回退与 DataProvenance
+// 快照。当前静态股票池必须显式暴露 unverified PIT，数据来源快照不得伪装已验证。
+func TestRunnerUniverseAndProvenance(t *testing.T) {
+	// universe 未显式注入时回退 current_static：PIT 恒为 unverified。
+	r := NewRunnerWithData(nil)
+	snap := r.universe.Snapshot()
+	if snap.Mode != researchdata.UniverseModeCurrentStatic || snap.MembershipPIT != researchdata.UniversePITUnverified {
+		t.Fatalf("回退快照 = %+v", snap)
+	}
+	if err := snap.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 显式注入自定义股票池生效。
+	custom := researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{ID: "my_pool", Source: "test"})
+	r2 := NewRunnerWithDeps(nil, custom)
+	if snap := r2.universe.Snapshot(); snap.ID != "my_pool" {
+		t.Fatalf("注入池快照 = %+v", snap)
+	}
+
+	// 数据来源快照：版本与复权口径不可得时写 unknown，PIT 恒为 unverified。
+	dp := r2.dataProvenance()
+	if dp.PriceSource != "tdx_local" || dp.PriceVersion != "unknown" || dp.Adjustment != "unknown" {
+		t.Fatalf("数据来源快照 = %+v", dp)
+	}
+	if dp.PITState != pitUnverified {
+		t.Fatalf("PITState = %q, want unverified（当前快照无修订历史）", dp.PITState)
+	}
+	if dp.ResearchDataView != "none" {
+		t.Fatalf("未注入 View 时 ResearchDataView = %q, want none", dp.ResearchDataView)
+	}
+	if _, err := time.Parse(time.RFC3339, dp.SnapshotAt); err != nil {
+		t.Fatalf("SnapshotAt 非 RFC3339: %v", err)
+	}
+
+	// 注入 View 后 ResearchDataView 标识相应变化。
+	r3 := NewRunnerWithDeps(researchdata.NewHub(), custom)
+	if dp := r3.dataProvenance(); dp.ResearchDataView != "injected" {
+		t.Fatalf("注入 View 后 ResearchDataView = %q, want injected", dp.ResearchDataView)
 	}
 }
 

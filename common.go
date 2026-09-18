@@ -1,6 +1,7 @@
 package common
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -130,7 +131,37 @@ var (
 	Pull         *extend.PullKline
 	Manage       *tdx.Manage
 	ResearchData = researchdata.NewHub()
+
+	// DefaultUniverse 默认只读股票池：优先加载本地成员文件（路径仅来自本地
+	// 配置 research.universe，HTTP 请求不得指定），文件缺失或加载失败时显式
+	// 降级 current_static——静态池存在生存者偏差、PIT 恒为 unverified，只支撑
+	// exploratory 证据等级，不阻塞旧探索流程。
+	DefaultUniverse = newDefaultUniverse()
 )
+
+// UniverseFile 股票池成员文件路径，仅来自本地配置。
+func UniverseFile() string {
+	return cfg.GetString("research.universe", filepath.Join("config", "universe.csv"))
+}
+
+// newDefaultUniverse 构造默认股票池；宽松模式加载（非法行跳过并计数披露），
+// 失败一律降级 current_static 并告警。
+func newDefaultUniverse() researchdata.Universe {
+	path := UniverseFile()
+	u, fallback, err := researchdata.LoadUniverseOrDefault(path, researchdata.FileUniverseConfig{}, false, GetAllCodes)
+	if err != nil {
+		logs.Warnf("universe 文件加载失败，降级 current_static: path=%s err=%v", path, err)
+		return researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{
+			ID:     "current_static",
+			Source: "tdx_local",
+			Codes:  GetAllCodes,
+		})
+	}
+	if fallback {
+		logs.Warnf("universe 文件不存在，降级 current_static（生存者偏差，仅 exploratory）: %s", path)
+	}
+	return u
+}
 
 func init() {
 	logs.SetFormatter(logs.TimeFormatter)
