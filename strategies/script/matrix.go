@@ -42,5 +42,11 @@ func Strategy() []core.Variant {
 			sb.A过滤涨停{},
 			sb.A阴线收回{SupportPeriod: 5, MinBodyRatio: 0.3, MaxRise: 1.0},
 		}},
+		{Name: "MACD量柱向上", Buyer: sb.And{
+			sb.A流通市值{Min: 20},
+			sb.A价格{Min: 2, Max: 120},
+			sb.A过滤涨停{},
+			sb.MACD连涨{MinDays: 2},
+		}},
 	}
 }
