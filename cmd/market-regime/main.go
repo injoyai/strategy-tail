@@ -21,7 +21,7 @@ func main() {
 	common.MustInitialize()
 	logs.Info("=== 大盘状态分析 ===")
 
-	common.Update()
+	logs.PanicErr(common.Update())
 
 	// 1. 加载配置
 	cost, pos, _, benchmark, _ := common.LoadBacktestConfig()

@@ -1,8 +1,11 @@
 package main
 
-import common "github.com/injoyai/strategy-tail"
+import (
+	"github.com/injoyai/logs"
+	common "github.com/injoyai/strategy-tail"
+)
 
 func main() {
 	common.MustInitialize()
-	common.Update()
+	logs.PanicErr(common.Update())
 }
