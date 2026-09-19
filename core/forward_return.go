@@ -247,7 +247,9 @@ func (this ForwardReturnAnalysis) Run() {
 	if after <= 0 {
 		after = 10
 	}
-	exportForwardReturnHTML(buyerName, summaries, allReturns, days, before, after)
+	output, err := ExportForwardReturnHTML(buyerName, summaries, allReturns, days, before, after)
+	logs.PanicErr(err)
+	logs.Info("HTML报告已生成: " + output)
 }
 
 // Collect 执行全部分析，返回所有买入信号与按N天汇总的统计结果。

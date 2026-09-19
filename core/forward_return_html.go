@@ -3,21 +3,21 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/injoyai/goutil/oss"
-	"github.com/injoyai/logs"
 )
 
 // ============================================================================
 // 未来收益分析 HTML 报告导出（自 forward_return.go 拆分，纯模板与导出逻辑）
 // ============================================================================
 
-// exportForwardReturnHTML 生成HTML报告到 output/future/future_report.html。
+// ExportForwardReturnHTML 生成 HTML 报告到 output/future/future_report.html。
 // 在原有统计图表基础上,新增命中点K线可视化区域。
-func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary, allReturns []ForwardReturn, days []int, klineBefore, klineAfter int) {
+func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary, allReturns []ForwardReturn, days []int, klineBefore, klineAfter int) (string, error) {
 	// 汇总表格数据(包含全部字段)
 	type summaryRow struct {
 		Days         int     `json:"days"`
@@ -40,7 +40,10 @@ func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 			MinReturn:    s.MinReturn,
 		})
 	}
-	summaryJSON, _ := json.Marshal(rows)
+	summaryJSON, err := json.Marshal(rows)
+	if err != nil {
+		return "", fmt.Errorf("序列化汇总统计: %w", err)
+	}
 
 	// 折线图数据(平均收益+胜率随天数变化)
 	type dayPoint struct {
@@ -58,7 +61,10 @@ func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 			Count:     s.Count,
 		})
 	}
-	curveJSON, _ := json.Marshal(curve)
+	curveJSON, err := json.Marshal(curve)
+	if err != nil {
+		return "", fmt.Errorf("序列化收益曲线: %w", err)
+	}
 
 	// 每个N天的收益率分布(分桶)
 	type distData struct {
@@ -98,8 +104,14 @@ func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 			Buckets: buckets,
 		})
 	}
-	distJSON, _ := json.Marshal(dists)
-	labelsJSON, _ := json.Marshal(bucketLabels)
+	distJSON, err := json.Marshal(dists)
+	if err != nil {
+		return "", fmt.Errorf("序列化收益分布: %w", err)
+	}
+	labelsJSON, err := json.Marshal(bucketLabels)
+	if err != nil {
+		return "", fmt.Errorf("序列化分桶标签: %w", err)
+	}
 
 	// 命中点K线可视化数据
 	type hitKline struct {
@@ -179,14 +191,21 @@ func exportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 		}
 		hitCards = append(hitCards, card)
 	}
-	hitsJSON, _ := json.Marshal(hitCards)
+	hitsJSON, err := json.Marshal(hitCards)
+	if err != nil {
+		return "", fmt.Errorf("序列化命中点 K 线: %w", err)
+	}
 
-	html := futureReportHTML(buyerName, string(summaryJSON), string(curveJSON), string(distJSON), string(labelsJSON), string(hitsJSON))
+	reportHTML := futureReportHTML(html.EscapeString(buyerName), string(summaryJSON), string(curveJSON), string(distJSON), string(labelsJSON), string(hitsJSON))
 	dir := filepath.Join("output", "future")
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("创建前向收益输出目录: %w", err)
+	}
 	output := filepath.Join(dir, "future_report.html")
-	oss.New(output, []byte(html))
-	logs.Info("HTML报告已生成: " + output)
+	if err := oss.New(output, []byte(reportHTML)); err != nil {
+		return "", fmt.Errorf("写入前向收益 HTML 报告: %w", err)
+	}
+	return output, nil
 }
 
 // futureReportHTML 生成整合的未来收益分析 + 命中点K线可视化 HTML报告。
