@@ -192,12 +192,17 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 .cand-toolbar{display:flex;gap:9px;align-items:center;flex-wrap:wrap;margin:10px 0 8px}
 .cand-toolbar button{min-height:30px;padding:4px 13px;font-size:12px}
 .cand-table-wrap{max-height:420px;overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
+.cand-table-wrap table th,.cand-table-wrap table td{text-align:left}
 .cand-table-wrap table td{white-space:normal}
-.cand-op{display:flex;gap:6px;justify-content:center;flex-wrap:wrap}
-.cand-op button{min-height:26px;padding:2px 10px;font-size:11px;border:1px solid var(--rule2);border-radius:7px;background:rgba(255,255,255,.045);color:var(--ink2);cursor:pointer}
+.cand-op{display:flex;gap:6px;justify-content:flex-start;flex-wrap:wrap}
+.cand-op button{min-height:26px;padding:3px 11px;font-size:11px;font-weight:600;letter-spacing:.02em;border:1px solid var(--rule2);border-radius:7px;background:rgba(255,255,255,.045);color:var(--ink2);cursor:pointer;transition:background-color .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
 .cand-op button:hover{border-color:rgba(216,180,90,.5);color:#fff}
+.cand-op button.join{background:linear-gradient(160deg,#4a86ff,#2450c0);color:#fff;border-color:rgba(140,180,255,.42);box-shadow:0 4px 12px rgba(35,85,190,.28)}
+.cand-op button.join:hover{background:linear-gradient(160deg,#5b93ff,#2a5ad0);border-color:rgba(170,205,255,.6);transform:translateY(-1px)}
+.cand-op button.restore{border-color:rgba(52,211,153,.4);color:#5fe0ad}
+.cand-op button.restore:hover{background:rgba(52,211,153,.12);border-color:rgba(52,211,153,.6);color:#8ff0c9}
 .cand-op button.arch{border-color:rgba(239,68,68,.34);color:#ff9a9a}
-.cand-op button.arch:hover{background:rgba(239,68,68,.16)}
+.cand-op button.arch:hover{background:rgba(239,68,68,.16);border-color:rgba(239,68,68,.6);color:#ffc0c0}
 .st-chip{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11px;font-weight:600;letter-spacing:.03em;border:1px solid var(--rule2);color:var(--ink2)}
 .st-chip.candidate{border-color:rgba(76,141,255,.4);color:#9cc2ff;background:rgba(76,141,255,.10)}
 .st-chip.archived{border-color:rgba(224,168,60,.4);color:#f0cd86;background:rgba(224,168,60,.10)}
@@ -1842,7 +1847,7 @@ function renderCmp(rep) {
   const statLine = v => {
     if (!v || !v.stats || !v.stats.total) return '无交易';
     const s = v.stats;
-    return `胜率 ${s.winRate.toFixed(1)}% · 平均 ${s.avgProfit.toFixed(2)}% · 盈亏比 ${s.profitFactor == null ? '+Inf' : s.profitFactor.toFixed(2)}`;
+    return `胜率 ${s.winRate.toFixed(2)}% · 平均 ${s.avgProfit.toFixed(2)}% · 盈亏比 ${s.profitFactor == null ? '+Inf' : s.profitFactor.toFixed(2)}`;
   };
   const base = byName[cmp.baselineVariant], combo = byName[cmp.combinedVariant];
   $('cmpBaseName').textContent = cmp.baselineVariant;
@@ -1850,7 +1855,7 @@ function renderCmp(rep) {
   $('cmpBaseStats').textContent = statLine(base);
   $('cmpComboName').textContent = cmp.combinedVariant;
   $('cmpComboTrades').textContent = cmp.combinedTrades;
-  $('cmpRetention').textContent = cmp.retentionRate == null ? '-' : (cmp.retentionRate * 100).toFixed(1) + '%';
+  $('cmpRetention').textContent = cmp.retentionRate == null ? '-' : (cmp.retentionRate * 100).toFixed(2) + '%';
   $('cmpComboStats').textContent = statLine(combo);
   // 条件贡献表：factorVariants 只带 kind/days，名称从因子目录映射
   $('cmpRows').innerHTML = (cmp.factorVariants || []).map((f, i) => {
@@ -1861,8 +1866,8 @@ function renderCmp(rep) {
     return `<tr>
       <td>${i + 1}</td><td>${esc(label)}</td>
       <td>${f.trades}</td>
-      <td>${f.retentionRate == null ? '-' : (f.retentionRate * 100).toFixed(1) + '%'}</td>
-      <td class="${s ? (s.winRate >= 50 ? 'pos' : 'neg') : ''}">${s ? fmt(s.winRate, 1) : '-'}</td>
+      <td>${f.retentionRate == null ? '-' : (f.retentionRate * 100).toFixed(2) + '%'}</td>
+      <td class="${s ? (s.winRate >= 50 ? 'pos' : 'neg') : ''}">${s ? fmt(s.winRate, 2) : '-'}</td>
       <td class="${s ? (s.avgProfit >= 0 ? 'pos' : 'neg') : ''}">${s ? fmt(s.avgProfit, 2) : '-'}</td>
       <td>${s ? (s.profitFactor == null ? '+Inf' : s.profitFactor.toFixed(2)) : '-'}</td>
     </tr>`;
@@ -1881,11 +1886,11 @@ function renderTab2() {
     if (!s.total) return `<tr data-name="${esc(v.name)}"><td>${i + 1}</td><td>${esc(v.name)}</td><td>0</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>`;
     return `<tr data-name="${esc(v.name)}">
       <td>${i + 1}</td><td>${esc(v.name)}</td><td>${s.total}</td>
-      <td class="${s.winRate >= 50 ? 'pos' : 'neg'}">${s.winRate.toFixed(1)}</td>
+      <td class="${s.winRate >= 50 ? 'pos' : 'neg'}">${s.winRate.toFixed(2)}</td>
       <td class="${s.avgProfit >= 0 ? 'pos' : 'neg'}">${s.avgProfit.toFixed(2)}</td>
       <td>${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '+Inf'}</td>
-      <td class="pos">${s.maxProfit.toFixed(1)}</td>
-      <td class="neg">${s.maxLoss.toFixed(1)}</td>
+      <td class="pos">${s.maxProfit.toFixed(2)}</td>
+      <td class="neg">${s.maxLoss.toFixed(2)}</td>
       <td class="${profitWan >= 0 ? 'pos' : 'neg'}">${profitWan.toFixed(1)}</td>
     </tr>`;
   }).join('');
@@ -1931,11 +1936,11 @@ function renderCharts(vs) {
   winC.setOption({
     backgroundColor: 'transparent',
     title: {text: '胜率%', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
-    tooltip: {},
+    tooltip: {formatter: p => `${p.name}：${Number(p.value).toFixed(2)}%`},
     grid: {left: 50, right: 20, top: 60, bottom: 80},
     xAxis: {type: 'category', data: vs.map(v => v.name), axisLabel: {rotate: 30, fontSize: 11}},
     yAxis: {max: 100},
-    series: [{type: 'bar', data: vs.map(v => v.stats.winRate), itemStyle: {color: p => p.value >= 50 ? '#ef4444' : '#22c55e'}, label: {show: true, position: 'top', fontSize: 11}}]
+    series: [{type: 'bar', data: vs.map(v => v.stats.winRate), itemStyle: {color: p => p.value >= 50 ? '#ef4444' : '#22c55e'}, label: {show: true, position: 'top', fontSize: 11, formatter: p => Number(p.value).toFixed(2)}}]
   }, true);
 }
 
@@ -2288,9 +2293,9 @@ function renderCandidates() {
     mkBtn('证据', '', () => viewCandidateEvidence(c));
     mkBtn('编辑', '', () => openCandidateEdit(c));
     const canJoin = c.status === 'candidate' && c.use && c.use.mode === 'range' && cmp.state === 'ready';
-    if (canJoin) mkBtn('加入策略', '', () => joinCandidateToStrategy(c));
+    if (canJoin) mkBtn('加入策略', 'join', () => joinCandidateToStrategy(c));
     if (c.status === 'candidate') mkBtn('归档', 'arch', () => changeCandidateStatus(c, 'archived'));
-    else mkBtn('恢复', '', () => changeCandidateStatus(c, 'candidate'));
+    else mkBtn('恢复', 'restore', () => changeCandidateStatus(c, 'candidate'));
     tr.appendChild(opTd);
     tb.appendChild(tr);
   });
