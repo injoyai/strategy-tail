@@ -9,7 +9,6 @@ require (
 	github.com/injoyai/frame v0.0.20
 	github.com/injoyai/goutil v1.2.31
 	github.com/injoyai/logs v1.0.12
-	github.com/injoyai/lorca v0.0.0-20241219020631-030018723d82
 	github.com/injoyai/tdx v0.0.82
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/signintech/gopdf v0.38.0
