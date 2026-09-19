@@ -42,6 +42,9 @@ var (
 
 // ExportPDF 导出 PDF 报告到 output/market-regime/report.pdf。
 func ExportPDF(r *AnalysisResult) error {
+	if err := validateReportResult(r); err != nil {
+		return err
+	}
 	pdf := &gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{
 		PageSize: gopdf.Rect{W: pdfPageW, H: pdfPageH},

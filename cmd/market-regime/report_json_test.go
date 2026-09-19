@@ -28,3 +28,12 @@ func TestExportHTMLReturnsJSONError(t *testing.T) {
 		t.Fatalf("ExportHTML() error = %v", err)
 	}
 }
+
+func TestReportExportRejectsMissingYears(t *testing.T) {
+	if err := ExportHTML(&AnalysisResult{}); err == nil || !strings.Contains(err.Error(), "报告年份为空") {
+		t.Fatalf("ExportHTML() error = %v", err)
+	}
+	if err := ExportPDF(&AnalysisResult{}); err == nil || !strings.Contains(err.Error(), "报告年份为空") {
+		t.Fatalf("ExportPDF() error = %v", err)
+	}
+}

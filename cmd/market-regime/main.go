@@ -57,6 +57,7 @@ func main() {
 	result := Analyze(tagged)
 	result.StrategyName = common.MACDBuyer.Name()
 	result.Benchmark = benchmark
+	result.Years = append([]int(nil), years...)
 	result.Coverage = coverage
 
 	// 7. 打印控制台汇总

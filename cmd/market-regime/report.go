@@ -18,6 +18,9 @@ import (
 
 // ExportHTML 导出详细 HTML 报告到 output/market-regime/report.html。
 func ExportHTML(r *AnalysisResult) error {
+	if err := validateReportResult(r); err != nil {
+		return err
+	}
 	// 序列化各部分数据
 	dimsJSON, err := json.Marshal(r.DimensionResults)
 	if err != nil {
@@ -129,6 +132,16 @@ func ExportHTML(r *AnalysisResult) error {
 		return fmt.Errorf("写入手机版 HTML 报告: %w", err)
 	}
 	logs.Info("手机版HTML已生成: " + mobileOutput)
+	return nil
+}
+
+func validateReportResult(r *AnalysisResult) error {
+	if r == nil {
+		return fmt.Errorf("报告结果为空")
+	}
+	if len(r.Years) == 0 {
+		return fmt.Errorf("报告年份为空")
+	}
 	return nil
 }
 
