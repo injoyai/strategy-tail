@@ -99,7 +99,7 @@ func ExportPDF(r *AnalysisResult) {
 	y = drawAdvice(pdf, y, best, worst)
 
 	// ===== 写文件 =====
-	dir := filepath.Join("output", "market-regime")
+	dir := reportOutputDir()
 	os.MkdirAll(dir, 0755)
 	output := filepath.Join(dir, "report.pdf")
 	if err := pdf.WritePdf(output); err != nil {

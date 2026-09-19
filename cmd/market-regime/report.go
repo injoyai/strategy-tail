@@ -90,7 +90,7 @@ func ExportHTML(r *AnalysisResult) {
 		string(monthlyJSON), string(barsJSON), string(findingsJSON),
 	)
 
-	dir := filepath.Join("output", "market-regime")
+	dir := reportOutputDir()
 	os.MkdirAll(dir, 0755)
 	output := filepath.Join(dir, "report.html")
 	oss.New(output, []byte(html))
