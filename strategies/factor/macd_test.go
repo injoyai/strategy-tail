@@ -73,6 +73,30 @@ func TestMACD负柱连续天数(t *testing.T) {
 	wantNaN(t, "MACD负柱连续天数数据不足", (MACD负柱连续天数{}).Value("sh600000", ks[:34]))
 }
 
+func TestMACD柱连续增长天数(t *testing.T) {
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
+	ks := closes(base,
+		30, 29, 28, 27, 26, 25, 24, 23, 22, 21,
+		20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+		10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+		2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+	)
+	hist := util.MACDHistogram(ks, 12, 26, 9)
+	want := 0
+	for i := len(hist) - 1; i > 0 && hist[i] > hist[i-1]; i-- {
+		want++
+	}
+	wantVal(t, "MACD柱连续增长天数", (MACD柱连续增长天数{}).Value("sh600000", ks), float64(want), 0)
+
+	falling := append(append([]float64(nil),
+		30, 29, 28, 27, 26, 25, 24, 23, 22, 21,
+		20, 19, 18, 17, 16, 15, 14, 13, 12, 11,
+		10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+		2, 3, 4, 5, 6, 7, 8, 9, 10, 11), 0.1)
+	wantVal(t, "当日未增长", (MACD柱连续增长天数{}).Value("sh600000", closes(base, falling...)), 0, 0)
+	wantNaN(t, "MACD柱连续增长天数数据不足", (MACD柱连续增长天数{}).Value("sh600000", ks[:34]))
+}
+
 func Test均线最弱日斜率(t *testing.T) {
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
 	ks := closes(base, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)

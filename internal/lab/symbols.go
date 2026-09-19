@@ -53,8 +53,8 @@ func ProjectSymbols() interp.Exports {
 		},
 		"github.com/injoyai/strategy-tail/strategies/factor/factor": {
 			// 因子：值接收者方法集，脚本内值字面量即可实现 core.Factor。
-			// 仅拉丁大写开头类型可跨包注册；其余 13 个因子（原 8 个及新增的
-			// 5 个 MACDBuyer 映射因子）以汉字开头未导出，
+			// 仅拉丁大写开头类型可跨包注册；其余 14 个因子（原 8 个及新增的
+			// 6 个 MACDBuyer 映射因子）以汉字开头未导出，
 			// 包外不可见（Go 导出规则：首字符须属 Unicode Lu 类别），
 			// 脚本侧经下方 Build(kind) 使用。
 			"N日动量":  reflect.ValueOf((*f.N日动量)(nil)),
@@ -63,7 +63,7 @@ func ProjectSymbols() interp.Exports {
 			"N日振幅":  reflect.ValueOf((*f.N日振幅)(nil)),
 			"N日高低位": reflect.ValueOf((*f.N日高低位)(nil)),
 			"K值":    reflect.ValueOf((*f.K值)(nil)),
-			// 工厂：未知 kind 返回 nil；days<=0 用默认参数（全部 19 类因子的脚本入口）
+			// 工厂：未知 kind 返回 nil；days<=0 用默认参数（全部 20 类因子的脚本入口）
 			"Build": reflect.ValueOf(f.Build),
 		},
 	}

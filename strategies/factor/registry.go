@@ -129,6 +129,16 @@ var registry = []entry{
 		ImplementationVersion: 1,
 	},
 	{
+		Kind: "macd_rising_streak", Default: 1,
+		New:                   func(int) core.Factor { return &MACD柱连续增长天数{} },
+		Description:           "截至当日MACD柱连续增长的步数",
+		Category:              "趋势与动量",
+		ParameterLabel:        "无参数（连续计数）",
+		Unit:                  "score",
+		Example:               "原始值 3 表示 MACD 柱已连续 3 个交易步增长。",
+		ImplementationVersion: 1,
+	},
+	{
 		Kind: "ma_min_slope", Default: 20,
 		New:                   func(d int) core.Factor { return &均线最弱日斜率{Days: d} },
 		Description:           "最近5步N日均线相对涨速的最小值",

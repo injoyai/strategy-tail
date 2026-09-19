@@ -9,7 +9,7 @@ import (
 // wantKinds 目录的固定顺序（顺序是 API 合同，不得漂移）。
 var wantKinds = [...]string{
 	"momentum", "ma_bias", "slope", "volatility", "amplitude",
-	"macd_hist", "macd_delta", "macd_trough_position", "macd_negative_streak", "ma_min_slope",
+	"macd_hist", "macd_delta", "macd_trough_position", "macd_negative_streak", "macd_rising_streak", "ma_min_slope",
 	"volume_ratio", "volume_pct", "volume_surge",
 	"body", "upper_shadow", "lower_shadow",
 	"position", "kvalue", "vp_corr",
