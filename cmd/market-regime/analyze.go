@@ -50,10 +50,20 @@ type AnalysisResult struct {
 	MatchedTrades   int // 成功匹配到 regime 的交易数
 	TaggedTrades    []TaggedTrade
 	DimensionResults []DimensionResult
+	Coverage        []YearCoverage
 	// 按年份×综合状态的交叉统计
 	YearlyComposite map[int]map[string]GroupStat `json:"-"`
 	// 综合状态下的月度表现
 	MonthlyComposite map[string]map[int]float64 `json:"-"` // label -> month(1-12) -> avgReturn
+}
+
+func coverageTotals(r *AnalysisResult) (requested, completed, skipped int) {
+	for _, item := range r.Coverage {
+		requested += item.Coverage.Requested
+		completed += item.Coverage.Completed
+		skipped += item.Coverage.Skipped
+	}
+	return
 }
 
 // TagTrades 给每笔交易打上买入日的大盘状态标签

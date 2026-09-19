@@ -71,9 +71,9 @@ type Seller interface {
 | 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
 | 单次实时筛选 | `go run ./cmd/screen-realtime` | 命令行输出匹配结果 |
-| 数据覆盖诊断 | `go run ./cmd/diagnose_data` | 只读检查本地数据库，不联网 |
-| 单股策略解释 | `go run ./cmd/visualize` | 启动本地可视化页面 |
-| 成交样本图 | `go run ./cmd/kline_export` | 从已有交易 CSV 生成 K 线 HTML |
+| 单股条件诊断 | `go run ./cmd/diagnoser` | 检查代码中配置的 Buyer 是否命中 |
+| 历史筛选页面 | `go run ./cmd/screen-kline` | 启动指定日期的本地筛选页面 |
+| 前向收益研究 | `go run ./cmd/future` | 运行当前代码中配置的前向收益分析 |
 
 ### Docker 部署策略实验室
 
@@ -89,16 +89,8 @@ type Seller interface {
 
 以下目录是带固定研究假设的实验入口，不是通用产品命令：
 
-- `cmd/backtest_tail`
-- `cmd/backtest_macd_bar`
-- `cmd/backtest_yopen`
-- `cmd/backtest_winrate`
-- `cmd/backtest_index_filter*`
-- `cmd/backtest_macd_green`
-- `cmd/backtest_macd_smooth`
 - `cmd/market-regime`
-- `cmd/meanrevert`
-- `cmd/future*`
+- `cmd/future`
 
 运行这些命令前必须先阅读文件头部，确认年份、数据截止日、是否调用 `common.Update()`、日线/分钟线成交口径和输出目录。不要把某个实验入口的硬编码参数提升为项目默认值。
 
@@ -106,7 +98,7 @@ type Seller interface {
 
 新增矩阵实验应将策略差异声明为 `researchrun.Variant`，然后调用 `researchrun.Run()`；调用方继续负责结果排序、业务文案和具体报告。
 
-`cmd/backtest_index_filter*`、`cmd/backtest_macd_smooth` 与 `cmd/backtest_macd_green` 已使用该执行层：同一年度内的多变体共享一次数据加载，并由执行层深拷贝 K 线隔离变体。跨年入口仍按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径。
+`cmd/market-regime` 与 `internal/lab` 已使用该执行层。跨年入口按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径；大盘状态报告同时披露按股票×年份统计的数据覆盖。
 
 执行报告始终包含数据覆盖：
 

@@ -66,16 +66,20 @@ func ExportHTML(r *AnalysisResult) {
 
 	// 关键发现
 	best, worst := FindBestWorst(r)
+	coverageRequested, coverageCompleted, coverageSkipped := coverageTotals(r)
 	findings := map[string]interface{}{
-		"best":       best,
-		"worst":      worst,
-		"totalTrades": r.TotalTrades,
-		"matchedTrades": r.MatchedTrades,
-		"matchRate":  safeDiv(r.MatchedTrades*100, r.TotalTrades),
-		"strategy":   r.StrategyName,
-		"benchmark":  r.Benchmark,
-		"yearStart":  r.Years[0],
-		"yearEnd":    r.Years[len(r.Years)-1],
+		"best":              best,
+		"worst":             worst,
+		"totalTrades":       r.TotalTrades,
+		"matchedTrades":     r.MatchedTrades,
+		"matchRate":         safeDiv(r.MatchedTrades*100, r.TotalTrades),
+		"strategy":          r.StrategyName,
+		"benchmark":         r.Benchmark,
+		"yearStart":         r.Years[0],
+		"yearEnd":           r.Years[len(r.Years)-1],
+		"coverageRequested": coverageRequested,
+		"coverageCompleted": coverageCompleted,
+		"coverageSkipped":   coverageSkipped,
 	}
 	findingsJSON, _ := json.Marshal(findings)
 
@@ -205,6 +209,7 @@ const findings = ` + findingsJSON + `;
   const f = findings;
   let html = '<div class="section"><div class="section-title">关键发现</div><div class="card-grid">';
   html += '<div class="card neutral"><div class="label">总交易笔数</div><div class="value">'+f.totalTrades+'</div><div class="sub">匹配大盘数据 '+f.matchedTrades+' ('+f.matchRate.toFixed(1)+'%)</div></div>';
+  html += '<div class="card neutral"><div class="label">数据覆盖</div><div class="value">'+f.coverageCompleted+'/'+f.coverageRequested+'</div><div class="sub">按股票×年份统计，跳过 '+f.coverageSkipped+'</div></div>';
   if(f.best && f.best.count>0){
     html += '<div class="card good"><div class="label">最佳环境</div><div class="value" style="color:var(--red)">+'+f.best.avgProfit.toFixed(2)+'%</div><div class="sub">'+f.best.dimension+' / '+f.best.label+' ｜ 胜率'+f.best.winRate.toFixed(1)+'% ｜ '+f.best.count+'笔</div></div>';
   }
@@ -398,6 +403,7 @@ const findings = ` + findingsJSON + `;
 
 func mobileReportHTML(strategyName, benchmark string, yearStart, yearEnd int,
 	r *AnalysisResult, best, worst GroupStat) string {
+	coverageRequested, coverageCompleted, coverageSkipped := coverageTotals(r)
 
 	// 构建各维度表格 HTML
 	dimsHTML := ""
@@ -574,6 +580,7 @@ td.muted { color:#aaa }
 <h2>关键发现</h2>
 <div class="findings">
 <div class="card"><div class="label">总交易笔数</div><div class="val">` + fmt.Sprintf("%d", r.TotalTrades) + `</div><div class="sub">匹配大盘 ` + fmt.Sprintf("%d (%.1f%%)", r.MatchedTrades, safeDiv(r.MatchedTrades*100, r.TotalTrades)) + `</div></div>
+<div class="card"><div class="label">数据覆盖</div><div class="val">` + fmt.Sprintf("%d/%d", coverageCompleted, coverageRequested) + `</div><div class="sub">按股票×年份统计，跳过 ` + fmt.Sprintf("%d", coverageSkipped) + `</div></div>
 <div class="card"><div class="label">策略敏感度</div><div class="val">` + sensitivity + `</div><div class="sub">强势vs弱势收益差 ` + fmt.Sprintf("%.2f%%", diff) + `</div></div>
 <div class="card"><div class="label">最佳环境</div><div class="val pos" style="color:#ef4444">` + fmt.Sprintf("+%.2f%%", best.AvgProfit) + `</div><div class="sub">` + bestStr + `</div></div>
 <div class="card"><div class="label">最差环境</div><div class="val neg" style="color:#22c55e">` + fmt.Sprintf("%.2f%%", worst.AvgProfit) + `</div><div class="sub">` + worstStr + `</div></div>

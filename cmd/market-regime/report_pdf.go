@@ -158,6 +158,7 @@ func drawHeader(pdf *gopdf.GoPdf, r *AnalysisResult, y float64) float64 {
 
 // drawSummaryCards 概要卡片
 func drawSummaryCards(pdf *gopdf.GoPdf, r *AnalysisResult, y float64) float64 {
+	coverageRequested, coverageCompleted, _ := coverageTotals(r)
 	cards := []struct {
 		label string
 		value string
@@ -165,6 +166,7 @@ func drawSummaryCards(pdf *gopdf.GoPdf, r *AnalysisResult, y float64) float64 {
 		{"总交易笔数", fmt.Sprintf("%d", r.TotalTrades)},
 		{"匹配大盘数据", fmt.Sprintf("%d", r.MatchedTrades)},
 		{"匹配率", fmt.Sprintf("%.1f%%", safeDiv(r.MatchedTrades*100, r.TotalTrades))},
+		{"数据覆盖", fmt.Sprintf("%d/%d", coverageCompleted, coverageRequested)},
 		{"分析年份", fmt.Sprintf("%d-%d", r.Years[0], r.Years[len(r.Years)-1])},
 	}
 	cardW := pdfContentW / float64(len(cards))

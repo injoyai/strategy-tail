@@ -1,16 +1,14 @@
 package main
 
 import (
-	"fmt"
-	"sync"
+	"context"
 	"time"
 
-	"github.com/injoyai/bar"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // ============================================================================
@@ -48,7 +46,8 @@ func main() {
 
 	// 4. 跑回测，收集所有交易
 	logs.Info("开始回测...")
-	trades := runBacktest(common.MACDBuyer, common.MACDSeller, codes, years, cost, pos)
+	trades, coverage, err := runBacktest(context.Background(), common.MACDBuyer, common.MACDSeller, codes, years, cost, pos)
+	logs.PanicErr(err)
 	logs.Infof("总交易笔数: %d", len(trades))
 
 	// 5. 给交易打标签
@@ -58,6 +57,7 @@ func main() {
 	result := Analyze(tagged)
 	result.StrategyName = common.MACDBuyer.Name()
 	result.Benchmark = benchmark
+	result.Coverage = coverage
 
 	// 7. 打印控制台汇总
 	PrintSummary(result)
@@ -71,84 +71,44 @@ func main() {
 	logs.Info("完成！")
 }
 
-// runBacktest 遍历 codes×years，调用 Backtest.Do 收集所有交易。
-// 不调用 Backtest.Run() 以避免其打印和导出副作用。
-func runBacktest(buyer core.Buyer, seller core.Seller, codes []string, years []int, cost core.Cost, pos core.PositionConfig) []core.Trade {
-	bt := core.Backtest{
-		Buyer:        buyer,
-		Seller:       seller,
-		Goroutines:   common.DefaultGoroutines * 2,
-		GetDayKlines: common.Pull.DayKlines,
-		GetMinKlines: nil, // 大盘状态分析不需要分钟线精度，跳过以加速
-		Cost:         cost,
-		Position:     pos,
-	}
+// YearCoverage 记录单年度研究样本的加载覆盖，供 HTML/PDF 报告披露。
+type YearCoverage struct {
+	Year     int                  `json:"year"`
+	Coverage researchrun.Coverage `json:"coverage"`
+}
 
+// runBacktest 按年调用共享研究执行器。逐年运行保留历史样本口径：
+// 某年缺数据只排除该代码当年，不影响它在其他年份的交易。
+func runBacktest(ctx context.Context, buyer core.Buyer, seller core.Seller, codes []string, years []int, cost core.Cost, pos core.PositionConfig) ([]core.Trade, []YearCoverage, error) {
 	all := make([]core.Trade, 0, 10000)
+	coverage := make([]YearCoverage, 0, len(years))
 	for _, year := range years {
 		logs.Infof("回测 %d 年...", year)
-		ts := backtestYear(bt, codes, year)
+		run, err := researchrun.Run(ctx, researchrun.Config{
+			Codes:        codes,
+			Years:        []int{year},
+			Variants:     []researchrun.Variant{{Name: buyer.Name(), Buyer: buyer, Seller: seller}},
+			Cost:         cost,
+			Position:     pos,
+			Workers:      common.DefaultGoroutines * 2,
+			DataMode:     researchrun.DailyClose,
+			GetDayKlines: common.Pull.DayKlines,
+			OnCodeDone: func(progress researchrun.Progress) {
+				if progress.Done%500 == 0 || progress.Done == progress.Total {
+					logs.Infof("  %d 年数据进度: %d/%d", year, progress.Done, progress.Total)
+				}
+			},
+		})
+		if err != nil {
+			return nil, coverage, err
+		}
+		researchrun.LogCoverage(run.Coverage)
+		coverage = append(coverage, YearCoverage{Year: year, Coverage: run.Coverage})
+		ts := run.Results[0].Trades
 		all = append(all, ts...)
 		logs.Infof("  %d 年交易笔数: %d", year, len(ts))
 	}
-	return all
-}
-
-// backtestYear 单年回测，复刻 core.Backtest._backtest 的核心逻辑
-// 但只调用导出的 Do 方法，不依赖未导出的 _backtest
-func backtestYear(bt core.Backtest, codes []string, year int) []core.Trade {
-	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
-	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-
-	var mu sync.Mutex
-	result := make([]core.Trade, 0, 2000)
-
-	b := bar.NewCoroutine(len(codes), bt.Goroutines, bar.WithPrefix(fmt.Sprintf("[%d]", year)))
-	defer b.Close()
-
-	for _, code := range codes {
-		code := code
-		b.Go(func() {
-			b.SetPrefix(fmt.Sprintf("[%d][%s]", year, code))
-
-			dks, err := bt.GetDayKlines(code, hisStart, end)
-			if err != nil {
-				b.Logf("[错误] %s %s", code, err)
-				b.Flush()
-				return
-			}
-
-			his := []*extend.Kline(nil)
-			for i, v := range dks {
-				if v.Time.Before(start) {
-					his = append(his, v)
-				} else {
-					dks = dks[i:]
-					break
-				}
-			}
-
-			var mks protocol.Klines
-			if bt.GetMinKlines != nil {
-				mks, err = bt.GetMinKlines(code, start, end)
-				if err != nil {
-					b.Logf("[错误] %s %s", code, err)
-					b.Flush()
-					return
-				}
-			}
-
-			ts := bt.Do(code, his, dks, mks)
-			if len(ts) > 0 {
-				mu.Lock()
-				result = append(result, ts...)
-				mu.Unlock()
-			}
-		})
-	}
-	b.Wait()
-	return result
+	return all, coverage, nil
 }
 
 func safeTimeFormat(ks extend.Klines, i int) string {
