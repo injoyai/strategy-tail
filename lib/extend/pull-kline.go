@@ -224,7 +224,9 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 
 func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string) error {
 
-	_ = os.MkdirAll(this.Config.Dir, os.ModePerm)
+	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
+		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
+	}
 
 	b := bar.NewCoroutine(len(codes), this.Config.Goroutines, bar.WithPrefix("[xx000000]"))
 	defer b.Close()
@@ -321,7 +323,9 @@ func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string) error {
 
 func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string) error {
 
-	_ = os.MkdirAll(this.Config.Dir, os.ModePerm)
+	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
+		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
+	}
 
 	b := bar.NewCoroutine(len(codes), this.Config.Goroutines, bar.WithPrefix("[xx000000]"))
 	defer b.Close()
