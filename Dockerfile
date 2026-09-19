@@ -32,7 +32,7 @@ COPY --from=builder /out/lab ./lab
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# 运行时读写目录（data/output/strategies/script/config 由 deploy.sh 挂载回项目目录）
+# 运行时读写目录（data/output/strategies/script/config 由 deploy.ps1 挂载回项目目录）
 EXPOSE 8765
 
 ENTRYPOINT ["./lab"]
