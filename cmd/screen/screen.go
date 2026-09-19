@@ -211,7 +211,7 @@ func (this *ScreenService) init() error {
 	}
 
 	if this.update == nil {
-		db, err := xorms.NewSqlite(dbPath)
+		db, err := xorms.NewSqlite(screenDBPath())
 		if err != nil {
 			return err
 		}

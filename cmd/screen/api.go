@@ -23,7 +23,7 @@ var diagnoseJS []byte
 // maybeLocal 本地开发模式读取磁盘文件，否则用 embed 内容
 func maybeLocal(useLocal bool, filename string, embedded []byte) []byte {
 	if useLocal {
-		if bs, err := os.ReadFile("./cmd/screen/web/" + filename); err == nil {
+		if bs, err := os.ReadFile(screenWebPath(filename)); err == nil {
 			return bs
 		}
 	}
@@ -32,7 +32,7 @@ func maybeLocal(useLocal bool, filename string, embedded []byte) []byte {
 
 func maybeLocalStr(useLocal bool, filename string, embedded string) string {
 	if useLocal {
-		if bs, err := os.ReadFile("./cmd/screen/web/" + filename); err == nil {
+		if bs, err := os.ReadFile(screenWebPath(filename)); err == nil {
 			return string(bs)
 		}
 	}

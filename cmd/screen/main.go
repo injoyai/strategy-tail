@@ -12,8 +12,6 @@ import (
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
-const dbPath = "./data/database/trade.db"
-
 func init() {
 	logs.Info("版本:", "v1.4.6")
 	logs.Info("详情:", "修复盘后历史数据没有更新的问题")
@@ -48,7 +46,7 @@ func main() {
 		},
 	})
 
-	db, err := xorms.NewSqlite(dbPath)
+	db, err := xorms.NewSqlite(screenDBPath())
 	if err != nil {
 		logs.Panicf("初始化服务失败: %v\n", err)
 	}
