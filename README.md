@@ -119,6 +119,10 @@ type Seller interface {
 `STRATEGY_TAIL_ROOT`；`pull.database` 使用绝对路径时保持不变，可将大型行情库
 放在仓库之外。
 
+命令自身的运行文件也遵循同一边界：`cmd/screen` 的交易数据库和本地 Web
+资源、`cmd/market-regime` 的 HTML/PDF 报告都按运行时根目录解析，从命令子目录
+启动不会在源码目录中生成额外的 `data/` 或 `output/`。
+
 导入根包不会打开数据库。所有 `cmd/*` 可执行入口在 `main()` 开始时调用
 `common.MustInitialize()`；把根包作为库使用时，应先调用可返回错误的
 `common.Initialize()`。`common.Update()` 会兜底初始化后再执行显式行情更新。
