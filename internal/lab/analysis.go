@@ -482,6 +482,19 @@ type AnalysisReport struct {
 	// v3 镜像字段（Window/Stats/Groups/Years/Daily）在 v4 中只镜像主周期
 	//（horizons[0]），不作为 v4 的 canonical 数据。
 	Horizons []int `json:"horizons,omitempty"`
+	// HorizonAnalyses v4 canonical 数据：每周期一份完整分析（Horizons 升序）。
+	// 旧字段 Window/Stats/Groups/Years/Daily/Quintiles 仅镜像主周期（deprecated），
+	// 新消费方必须以本字段为准。
+	HorizonAnalyses []HorizonAnalysis `json:"horizonAnalyses,omitempty"`
+	// HorizonDaily 各 Horizon 的逐日 raw IC（键为 Horizon 值，与 Horizons
+	// 一致；IC=nil 表示当日截面样本不足）。HorizonAnalysis 合同（设计 §8.1
+	// 八字段）不承载逐日序列，而计划 Task 5 Step 2 要求 v4 HTML/CSV 从
+	// Horizons[] 输出、不得只显示主周期镜像，故以此字段保存每周期逐日序列；
+	// 主周期镜像仍见 Daily（deprecated）。
+	HorizonDaily map[int][]DailyIC `json:"horizonDaily,omitempty"`
+	// DecayCurve v4 IC 与 spread 衰减曲线（Horizon 升序，相邻周期之间不做
+	// 任何插值或平滑；设计 §8.4）。
+	DecayCurve []HorizonDecayPoint `json:"decayCurve,omitempty"`
 }
 
 // DailyIC 单日横截面 IC；IC=nil 表示当日无效（NaN，JSON 序列化为 null）。
@@ -779,6 +792,11 @@ func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string
 // id 为服务端生成的不可变分析 ID；为空时（直接构造 Runner 的测试路径）
 // 在此生成，AnalysisReport.AnalysisID 导出前完成赋值。
 func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (*AnalysisReport, error) {
+	// v4：带研究协议的分析走独立编排（多周期、可交易标签、换手与
+	// 证据等级），v3 主循环保持原行为不变。
+	if cfg.Protocol != nil {
+		return r.runAnalysisV4(id, cfg, stop)
+	}
 	started := time.Now()
 
 	if id == "" {

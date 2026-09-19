@@ -258,3 +258,60 @@ func TestCandidateStoreListSort(t *testing.T) {
 		t.Fatalf("排序错误: %s, %s", list[0].ID, list[1].ID)
 	}
 }
+
+// TestCandidateStoreGetRevision 按 revision 读取历史修订（冻结验证依赖）：
+// 历史修订保持可读、非法输入拒绝、单修订损坏只影响该修订。
+func TestCandidateStoreGetRevision(t *testing.T) {
+	store := newTestCandidateStore(t)
+	rep := analysisReportForTest(testAnalysisID, "momentum", "2026-09-17T15:00:00+08:00")
+	c, _, err := store.Create(observeReq(testUUID1, "原名"), rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// revision 1 直接可读
+	got, err := store.GetRevision(c.ID, 1)
+	if err != nil || got.Revision != 1 || got.Name != "原名" {
+		t.Fatalf("GetRevision(1) = %+v, %v", got, err)
+	}
+	if got.Evidence.ReportSHA256 != c.Evidence.ReportSHA256 {
+		t.Fatal("revision 证据哈希应一致")
+	}
+	// 追加修订后：最新修订可读，历史修订保持原样
+	if _, err := store.Update(c.ID, UpdateCandidateRequest{ExpectedRevision: 1,
+		Name: "新名称", Use: CandidateUse{Mode: "observe"}, Status: CandidateStatusCandidate}); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := store.GetRevision(c.ID, 2)
+	if err != nil || latest.Revision != 2 || latest.Name != "新名称" {
+		t.Fatalf("GetRevision(2) = %+v, %v", latest, err)
+	}
+	old, err := store.GetRevision(c.ID, 1)
+	if err != nil || old.Name != "原名" || old.Revision != 1 {
+		t.Fatalf("历史修订应保持原样: %+v, %v", old, err)
+	}
+	// 不存在的 revision 拒绝
+	if _, err := store.GetRevision(c.ID, 3); err == nil {
+		t.Fatal("不存在的 revision 应报错")
+	}
+	// revision < 1 拒绝
+	if _, err := store.GetRevision(c.ID, 0); err == nil {
+		t.Fatal("revision 0 应拒绝")
+	}
+	// 非法/穿越 ID 拒绝
+	for _, id := range []string{"../evil", "..\\evil", "fc_bad"} {
+		if _, err := store.GetRevision(id, 1); err == nil {
+			t.Fatalf("非法 ID %q 应被拒绝", id)
+		}
+	}
+	// 单修订证据损坏只 fail closed 该修订，不波及其它修订
+	evPath := filepath.Join(store.root, c.ID, "revisions", "000002.analysis.json")
+	if err := os.WriteFile(evPath, []byte("tampered"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.GetRevision(c.ID, 2); err == nil {
+		t.Fatal("revision 2 证据损坏应报错")
+	}
+	if _, err := store.GetRevision(c.ID, 1); err != nil {
+		t.Fatalf("revision 1 不应受 revision 2 损坏影响: %v", err)
+	}
+}

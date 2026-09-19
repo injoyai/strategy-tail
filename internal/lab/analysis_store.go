@@ -370,7 +370,16 @@ func (s *AnalysisStore) List(kind string) ([]AnalysisSummary, error) {
 }
 
 // renderAnalysisCSV 逐日 IC CSV（无效日按 0 写），失败返回 nil。
+// v4 报告从 Horizons[] 输出每周期一列（计划 Task 5 Step 2：不能只显示主周期
+// 镜像）；旧报告保持单列格式。
 func renderAnalysisCSV(rep *AnalysisReport) []byte {
+	if len(rep.HorizonDaily) > 0 {
+		rows := renderAnalysisCSVRowsV4(rep)
+		if buf, err := csv.Export(rows); err == nil {
+			return buf.Bytes()
+		}
+		return nil
+	}
 	rows := [][]any{{"date", "ic"}}
 	for _, d := range rep.Daily {
 		v := 0.0
@@ -385,8 +394,51 @@ func renderAnalysisCSV(rep *AnalysisReport) []byte {
 	return nil
 }
 
+// renderAnalysisCSVRowsV4 组装 v4 多周期行：各 Horizon 有标签日期的并集升序
+// 为行，每周期一列（ic_h<周期>）。某周期当日无标签（长周期尾部）或截面样本
+// 不足时按 0 写，与旧单列格式的无效日语义一致。
+func renderAnalysisCSVRowsV4(rep *AnalysisReport) [][]any {
+	hs := sortedHorizonDailyKeys(rep.HorizonDaily)
+	daySet := map[string]struct{}{}
+	perH := make(map[int]map[string]float64, len(hs))
+	for _, h := range hs {
+		m := make(map[string]float64, len(rep.HorizonDaily[h]))
+		for _, d := range rep.HorizonDaily[h] {
+			daySet[d.Date] = struct{}{}
+			v := 0.0
+			if d.IC != nil {
+				v = *d.IC
+			}
+			m[d.Date] = v
+		}
+		perH[h] = m
+	}
+	days := sortedStrings(daySet)
+	header := make([]any, 0, len(hs)+1)
+	header = append(header, "date")
+	for _, h := range hs {
+		header = append(header, fmt.Sprintf("ic_h%d", h))
+	}
+	rows := make([][]any, 0, len(days)+1)
+	rows = append(rows, header)
+	for _, day := range days {
+		row := make([]any, 0, len(hs)+1)
+		row = append(row, day)
+		for _, h := range hs {
+			row = append(row, perH[h][day]) // 缺失日零值
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 // renderAnalysisHTML 逐日 IC 折线页（无效日为 null，前端 connectNulls 补线）。
+// v4 报告输出多周期页（全 Horizon 统计表 + 每周期一条 IC 曲线），旧报告走
+// 单周期模板。
 func renderAnalysisHTML(rep *AnalysisReport) []byte {
+	if len(rep.HorizonDaily) > 0 {
+		return renderAnalysisHTMLV4(rep)
+	}
 	days := make([]string, 0, len(rep.Daily))
 	ics := make([]*float64, 0, len(rep.Daily))
 	for _, d := range rep.Daily {
@@ -398,3 +450,138 @@ func renderAnalysisHTML(rep *AnalysisReport) []byte {
 	return []byte(fmt.Sprintf(analysisHTML, rep.FactorName, rep.FactorName, rep.Window,
 		rep.Stats.Mean, rep.Stats.Std, rep.Stats.TStat, rep.Stats.Pairs, dayJSON, icJSON))
 }
+
+// fcell HTML 统计单元格：null 统计显示 "-"（设计 §8.2 不得用 0 冒充真实为零）。
+func fcell(p *float64) string {
+	if p == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%.4f", *p)
+}
+
+// renderAnalysisHTMLV4 v4 多周期页：全 Horizon 统计表（HorizonAnalyses）+
+// 全日期轴多 series 逐日 IC 曲线（HorizonDaily；各周期有标签日期集合不同，
+// 缺失为 null，connectNulls 补线）。
+func renderAnalysisHTMLV4(rep *AnalysisReport) []byte {
+	hs := sortedHorizonDailyKeys(rep.HorizonDaily)
+	daySet := map[string]struct{}{}
+	perH := make(map[int]map[string]*float64, len(hs))
+	for _, h := range hs {
+		m := make(map[string]*float64, len(rep.HorizonDaily[h]))
+		for _, d := range rep.HorizonDaily[h] {
+			daySet[d.Date] = struct{}{}
+			m[d.Date] = d.IC
+		}
+		perH[h] = m
+	}
+	days := sortedStrings(daySet)
+	dayJSON, _ := json.Marshal(days)
+
+	// 统计行以 HorizonAnalyses 为准（含 Label 与 ExtendedICStats）；正常
+	// 报告两者同键，曲线缺失时该周期仅无 series，统计表仍完整。
+	stats := make([][]string, 0, len(rep.HorizonAnalyses))
+	series := make([]map[string]any, 0, len(rep.HorizonAnalyses))
+	for _, ha := range rep.HorizonAnalyses {
+		stats = append(stats, []string{
+			fmt.Sprintf("%d", ha.Horizon), ha.Label,
+			fcell(ha.IC.Mean), fcell(ha.IC.Std),
+			fcell(ha.IC.NaiveTStat), fcell(ha.IC.HACTStat),
+			fmt.Sprintf("%d", ha.IC.Pairs),
+		})
+		data := make([]*float64, len(days))
+		if m, ok := perH[ha.Horizon]; ok {
+			for i, day := range days {
+				data[i] = m[day] // 缺失日为 nil → JSON null
+			}
+		}
+		s := map[string]any{
+			"name":         fmt.Sprintf("h=%d", ha.Horizon),
+			"type":         "line",
+			"data":         data,
+			"connectNulls": true,
+		}
+		if len(series) == 0 { // 零基准线只画一次
+			s["markLine"] = map[string]any{"data": []any{map[string]any{"yAxis": 0}}}
+		}
+		series = append(series, s)
+	}
+	statsJSON, _ := json.Marshal(stats)
+	seriesJSON, _ := json.Marshal(series)
+
+	hstr := make([]string, len(hs))
+	for i, h := range hs {
+		hstr[i] = fmt.Sprintf("%d", h)
+	}
+	evidence := rep.EvidenceClass
+	if evidence == "" {
+		evidence = "-"
+	}
+	hashShort := rep.ProtocolHash
+	if len(hashShort) > 8 {
+		hashShort = hashShort[:8]
+	}
+	if hashShort == "" {
+		hashShort = "-"
+	}
+	return []byte(fmt.Sprintf(analysisHTMLV4, rep.FactorName, rep.FactorName,
+		strings.Join(hstr, "/"), evidence, hashShort, statsJSON, dayJSON, seriesJSON))
+}
+
+// sortedHorizonDailyKeys 返回 HorizonDaily 键的升序切片。
+func sortedHorizonDailyKeys(m map[int][]DailyIC) []int {
+	hs := make([]int, 0, len(m))
+	for h := range m {
+		hs = append(hs, h)
+	}
+	sort.Ints(hs)
+	return hs
+}
+
+// sortedStrings 返回集合的升序切片。
+func sortedStrings(set map[string]struct{}) []string {
+	out := make([]string, 0, len(set))
+	for s := range set {
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// analysisHTMLV4 v4 多周期分析页模板：全 Horizon 统计表 + 多 series 逐日 IC
+// 折线（ECharts；%% 为 CSS 转义，统计表由前端从 JSON 渲染避免注入）。
+const analysisHTMLV4 = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>%s 多周期 IC 分析</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<h2>%s · 多周期 IC（未来 %s 个交易日）</h2>
+<p>证据等级 %s · 协议 %s</p>
+<table border="1" cellspacing="0" cellpadding="4">
+<thead><tr><th>周期(日)</th><th>标签</th><th>IC 均值</th><th>标准差</th><th>naive t</th><th>HAC t</th><th>有效样本(日)</th></tr></thead>
+<tbody id="stats"></tbody>
+</table>
+<div id="chart" style="width:100%%;height:420px"></div>
+<script>
+const rows = %s, days = %s, series = %s;
+const tb = document.getElementById('stats');
+for (const r of rows) {
+  const tr = document.createElement('tr');
+  for (const v of r) {
+    const td = document.createElement('td');
+    td.textContent = v;
+    tr.appendChild(td);
+  }
+  tb.appendChild(tr);
+}
+echarts.init(document.getElementById('chart')).setOption({
+  tooltip: {trigger: 'axis'},
+  xAxis: {type: 'category', data: days},
+  yAxis: {type: 'value', min: -1, max: 1},
+  series: series
+});
+</script>
+</body>
+</html>`

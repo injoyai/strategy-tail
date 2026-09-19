@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
@@ -755,5 +757,275 @@ func TestRunAnalysisMultiYearCoverage(t *testing.T) {
 		if _, ok := raw[k]; !ok {
 			t.Fatalf("report.json 缺字段 %s", k)
 		}
+	}
+}
+
+// v4TestProtocol 构造可直接驱动 runAnalysisV4 的协议：股票池走 codes 静态
+// 模式（Runner{} 无 universe store 也可运行），Horizons 按测试需要指定。
+func v4TestProtocol(horizons ...int) ResearchProtocol {
+	p := validResearchProtocol()
+	p.Universe.Mode = universeCodes
+	p.Universe.ID = ""
+	p.Labels.Horizons = horizons
+	return p
+}
+
+// writeV4Fixture 一升一降两票：收盘线性（动量名次每日恒定 → Spearman IC
+// 恒 ±1），开盘=昨收×0.99（跳空低开 1%）使 next-open 标签可观测地不同于
+// legacy close 标签。
+func writeV4Fixture(t *testing.T, dir string) {
+	t.Helper()
+	base := time.Date(2024, 12, 24, 0, 0, 0, 0, time.Local)
+	up := append([]float64{9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5, 9.5},
+		10, 10.2, 10.4, 10.6, 10.8, 11, 11.2, 11.4, 11.6, 11.8,
+		12, 12.2, 12.4, 12.6, 12.8, 13, 13.2, 13.4, 13.6, 13.8)
+	down := append([]float64{21, 21, 21, 21, 21, 21, 21, 21},
+		20.8, 20.6, 20.4, 20.2, 20, 19.8, 19.6, 19.4, 19.2, 19,
+		18.8, 18.6, 18.4, 18.2, 18, 17.8, 17.6, 17.4, 17.2, 17)
+	gapOpen := func(cs []float64) []float64 {
+		os := make([]float64, len(cs))
+		os[0] = cs[0]
+		for i := 1; i < len(cs); i++ {
+			os[i] = cs[i-1] * 0.99
+		}
+		return os
+	}
+	writeDayDBOHLC(t, dir, "sh600001", gapOpen(up), up, base)
+	writeDayDBOHLC(t, dir, "sh600002", gapOpen(down), down, base)
+}
+
+// TestRunAnalysisV4 v4 端到端：多 Horizon IC、可交易标签覆盖、年度/全区间
+// 同口径、衰减曲线与兼容镜像，以及默认 store 落盘后跨实例恢复。
+// 数据 20 根 dks 无未来缓冲 → h 的有效信号日 = 20-h（exit=i+h 越界计入
+// insufficientHorizon），h=1/5/10 → Pairs 19/15/10。
+func TestRunAnalysisV4(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+	writeV4Fixture(t, dir)
+
+	p := v4TestProtocol(1, 5, 10)
+	cfg := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2025, EndYear: 2025,
+			SampleMode: "codes", SampleCodes: []string{"sh600001", "sh600002"},
+			ScriptName: "matrix"},
+		Kind: "momentum", Days: 2,
+		Protocol: &p,
+	}
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("runAnalysis: %v", err)
+	}
+
+	// v4 合同头：版本、证据等级与协议绑定
+	if rep.AnalysisVersion != 4 {
+		t.Fatalf("AnalysisVersion = %d, want 4", rep.AnalysisVersion)
+	}
+	if rep.EvidenceClass != "retrospective" {
+		t.Fatalf("EvidenceClass = %q, want retrospective（PIT/复权/标签全部已验证）", rep.EvidenceClass)
+	}
+	if !regexp.MustCompile(`^[0-9a-f]{64}$`).MatchString(rep.ProtocolHash) {
+		t.Fatalf("ProtocolHash = %q, want 64 位十六进制", rep.ProtocolHash)
+	}
+	if rep.Protocol == nil ||
+		!reflect.DeepEqual(rep.Protocol.Labels.Horizons, []int{1, 5, 10}) ||
+		rep.Protocol.Labels.Kind != labelKindNextOpenToClose {
+		t.Fatalf("Protocol 回显异常: %+v", rep.Protocol)
+	}
+
+	// 主周期镜像（deprecated 字段来自 Horizons[0]=1）
+	if rep.Window != 1 {
+		t.Fatalf("Window = %d, want 1（镜像主周期）", rep.Window)
+	}
+	if rep.Stats.Pairs != 19 || !nearlyEq(rep.Stats.Mean, 1) || rep.Stats.Std != 0 {
+		t.Fatalf("主周期 Stats = %+v", rep.Stats)
+	}
+	if rep.Quintiles != nil {
+		t.Fatalf("Quintiles = %v, want nil（每日 2 票组不完整）", rep.Quintiles)
+	}
+	if len(rep.Daily) != 19 {
+		t.Fatalf("len(Daily) = %d, want 19", len(rep.Daily))
+	}
+
+	// 各 Horizon：方向已知（升票收益恒高）→ IC 恒 1；恒定序列无波动与显著性
+	wantPairs := map[int]int{1: 19, 5: 15, 10: 10}
+	if len(rep.HorizonAnalyses) != 3 {
+		t.Fatalf("len(HorizonAnalyses) = %d, want 3", len(rep.HorizonAnalyses))
+	}
+	hs := []int{1, 5, 10}
+	for i, ha := range rep.HorizonAnalyses {
+		h := hs[i]
+		if ha.Horizon != h || ha.Label != labelKindNextOpenToClose {
+			t.Fatalf("HorizonAnalyses[%d] = %d/%q, want %d/%s", i, ha.Horizon, ha.Label, h, labelKindNextOpenToClose)
+		}
+		ic := ha.IC
+		if ic.Pairs != wantPairs[h] {
+			t.Fatalf("h=%d Pairs = %d, want %d", h, ic.Pairs, wantPairs[h])
+		}
+		if ic.Mean == nil || !nearlyEq(*ic.Mean, 1) ||
+			ic.PositiveRate == nil || !nearlyEq(*ic.PositiveRate, 1) ||
+			ic.DirectionConsistentRate == nil || !nearlyEq(*ic.DirectionConsistentRate, 1) {
+			t.Fatalf("h=%d IC 方向统计 = %+v, want 全 1", h, ic)
+		}
+		if ic.Std == nil || *ic.Std != 0 {
+			t.Fatalf("h=%d Std = %v, want 0（每日 IC 恒定）", h, ic.Std)
+		}
+		if ic.ICIR != nil || ic.AnnualizedICIR != nil || ic.NaiveTStat != nil ||
+			ic.HACTStat != nil || ic.PValue != nil {
+			t.Fatalf("h=%d 恒定 IC 不应有波动/显著性统计: %+v", h, ic)
+		}
+		if ic.HACLag != h-1 { // horizon_minus_one → max(h-1,0)，h=1 时为 0
+			t.Fatalf("h=%d HACLag = %d, want %d", h, ic.HACLag, h-1)
+		}
+		// 标签覆盖（按股票池聚合）：2 票 × 20 个合格信号日，尾部 h 日 horizon 不足
+		cov := ha.LabelCoverage
+		if cov.EligibleSignals != 40 || cov.LabeledSignals != 2*(20-h) ||
+			cov.InsufficientHorizon != 2*h || cov.MissingEntryPrice != 0 ||
+			cov.MissingExitPrice != 0 || cov.NonFiniteReturn != 0 {
+			t.Fatalf("h=%d LabelCoverage = %+v", h, cov)
+		}
+		// 年度拆分与全区间同口径
+		if len(ha.Years) != 1 || ha.Years[0].Year != 2025 ||
+			ha.Years[0].IC.Pairs != wantPairs[h] || ha.Years[0].TradingDays != wantPairs[h] {
+			t.Fatalf("h=%d 年度拆分 = %+v", h, ha.Years)
+		}
+	}
+
+	// HorizonDaily：键齐全、逐日 IC 恒 1
+	if len(rep.HorizonDaily) != 3 {
+		t.Fatalf("len(HorizonDaily) = %d, want 3", len(rep.HorizonDaily))
+	}
+	for h, n := range wantPairs {
+		if len(rep.HorizonDaily[h]) != n {
+			t.Fatalf("len(HorizonDaily[%d]) = %d, want %d", h, len(rep.HorizonDaily[h]), n)
+		}
+		for _, pt := range rep.HorizonDaily[h] {
+			if pt.IC == nil || !nearlyEq(*pt.IC, 1) {
+				t.Fatalf("HorizonDaily[%d] 逐日 IC = %+v, want 1", h, pt)
+			}
+		}
+	}
+
+	// 衰减曲线：Horizon 升序、MeanIC 恒 1、无 HAC/Spread（组不完整）
+	if len(rep.DecayCurve) != 3 {
+		t.Fatalf("len(DecayCurve) = %d, want 3", len(rep.DecayCurve))
+	}
+	for i, dp := range rep.DecayCurve {
+		if dp.Horizon != hs[i] || dp.MeanIC == nil || !nearlyEq(*dp.MeanIC, 1) ||
+			dp.HACT != nil || dp.Spread != nil {
+			t.Fatalf("DecayCurve[%d] = %+v", i, dp)
+		}
+	}
+
+	// 年度镜像与分组方向：折价开盘不改变名次 → Q3 正收益、Q1 负收益
+	if len(rep.Years) != 1 || rep.Years[0].Year != 2025 || rep.Years[0].Stats.Pairs != 19 {
+		t.Fatalf("Years = %+v", rep.Years)
+	}
+	if len(rep.Groups) != 5 {
+		t.Fatalf("len(Groups) = %d, want 5", len(rep.Groups))
+	}
+	if g := rep.Groups[2]; g.Observations != 19 || g.ForwardReturn == nil || *g.ForwardReturn <= 0 {
+		t.Fatalf("Q3 = %+v, want 19 观测且 next-open 收益为正", g)
+	}
+	if g := rep.Groups[0]; g.Observations != 19 || g.ForwardReturn == nil || *g.ForwardReturn >= 0 {
+		t.Fatalf("Q1 = %+v, want 19 观测且 next-open 收益为负", g)
+	}
+
+	// 有效日期与覆盖
+	if rep.FirstDataDate != "2025-01-01" || rep.LastDataDate != "2025-01-19" {
+		t.Fatalf("有效日期 = %q–%q", rep.FirstDataDate, rep.LastDataDate)
+	}
+	if rep.Coverage.Requested != 2 || rep.Coverage.Completed != 2 || rep.Coverage.Skipped != 0 {
+		t.Fatalf("Coverage = %+v", rep.Coverage)
+	}
+
+	// 重启恢复：默认 store 落盘于 output/factor，跨实例 Get/Latest 读回
+	s := NewAnalysisStore(filepath.Join("output", "factor"))
+	got, err := s.Get(rep.AnalysisID)
+	if err != nil {
+		t.Fatalf("恢复 v4 报告: %v", err)
+	}
+	if got.AnalysisVersion != 4 || got.ProtocolHash != rep.ProtocolHash ||
+		got.EvidenceClass != "retrospective" || !reflect.DeepEqual(got.Horizons, rep.Horizons) ||
+		len(got.HorizonDaily[5]) != 15 {
+		t.Fatalf("恢复的报告不一致: version=%d hash=%q class=%q horizons=%v hd5=%d",
+			got.AnalysisVersion, got.ProtocolHash, got.EvidenceClass, got.Horizons, len(got.HorizonDaily[5]))
+	}
+	if lat, err := s.Latest("momentum"); err != nil || lat.AnalysisID != rep.AnalysisID {
+		t.Fatalf("Latest = %v (err=%v), want %q", lat, err, rep.AnalysisID)
+	}
+}
+
+// TestRunAnalysisV4NextOpenVsLegacy 同一份数据分别跑 v4（next-open 标签）与
+// v3（legacy close 标签）：跳空低开 1% 使入场成本降低，两组收益按
+// (1+r)/0.99−1 恒等式一致上移，必须可观测地不同。
+func TestRunAnalysisV4NextOpenVsLegacy(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+	writeV4Fixture(t, dir)
+
+	rc := RunConfig{StartYear: 2025, EndYear: 2025,
+		SampleMode: "codes", SampleCodes: []string{"sh600001", "sh600002"},
+		ScriptName: "matrix"}
+	p := v4TestProtocol(1)
+	v4, err := (&Runner{}).runAnalysis("", AnalyzeConfig{
+		RunConfig: rc, Kind: "momentum", Days: 2, Protocol: &p}, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("v4: %v", err)
+	}
+	v3, err := (&Runner{}).runAnalysis("", AnalyzeConfig{
+		RunConfig: rc, Kind: "momentum", Days: 2, Window: 1}, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("v3: %v", err)
+	}
+	if v4.HorizonAnalyses[0].Label != labelKindNextOpenToClose {
+		t.Fatalf("v4 标签 = %q", v4.HorizonAnalyses[0].Label)
+	}
+	q1v4, q3v4 := v4.Groups[0].ForwardReturn, v4.Groups[2].ForwardReturn
+	q1v3, q3v3 := v3.Groups[0].ForwardReturn, v3.Groups[2].ForwardReturn
+	if q1v4 == nil || q3v4 == nil || q1v3 == nil || q3v3 == nil {
+		t.Fatalf("组收益缺失: v4 %v/%v v3 %v/%v", q1v4, q3v4, q1v3, q3v3)
+	}
+	// 折价开盘：每期 v4 收益 = c[i+h]/(0.99·c[i]) − 1 = (1+v3)/0.99 − 1，
+	// 线性聚合下组均值满足同一恒等式 → 两组收益一致上移约 +1.01%。价格按
+	// 毫元量化（Yuan=Price(f*1000)），容差取 1e-3（噪声 ≤6e-5，错标签 ~0.01）。
+	for _, g := range []struct {
+		name   string
+		v4, v3 float64
+	}{
+		{"Q1", *q1v4, *q1v3}, {"Q3", *q3v4, *q3v3},
+	} {
+		want := (g.v3+1)/0.99 - 1
+		if math.Abs(g.v4-want) > 1e-3 {
+			t.Fatalf("%s next-open %v 应等于 (1+legacy)/0.99−1 = %v", g.name, g.v4, want)
+		}
+	}
+}
+
+// TestRunAnalysisV4Exploratory current_static 股票池 → 报告必须标记
+// exploratory；证据等级只影响解释、不改变计算（IC 仍完整）。
+func TestRunAnalysisV4Exploratory(t *testing.T) {
+	dir := t.TempDir()
+	setupAnalysisData(t, dir)
+	writeV4Fixture(t, dir)
+
+	p := v4TestProtocol(1)
+	p.Universe.Mode = universeCurrentStatic
+	p.Universe.ID = "static-all"
+	cfg := AnalyzeConfig{
+		RunConfig: RunConfig{StartYear: 2025, EndYear: 2025,
+			SampleMode: "codes", SampleCodes: []string{"sh600001", "sh600002"},
+			ScriptName: "matrix"},
+		Kind: "momentum", Days: 2,
+		Protocol: &p,
+	}
+	rep, err := (&Runner{}).runAnalysis("", cfg, make(chan struct{}))
+	if err != nil {
+		t.Fatalf("runAnalysis: %v", err)
+	}
+	if rep.EvidenceClass != "exploratory" {
+		t.Fatalf("EvidenceClass = %q, want exploratory（current_static）", rep.EvidenceClass)
+	}
+	if rep.ProtocolHash == "" || rep.Stats.Pairs != 19 || !nearlyEq(rep.Stats.Mean, 1) {
+		t.Fatalf("计算不受证据等级影响: hash=%q stats=%+v", rep.ProtocolHash, rep.Stats)
 	}
 }

@@ -129,6 +129,22 @@ func (s *CandidateStore) Get(id string) (FactorCandidate, error) {
 	return s.readLatest(id)
 }
 
+// GetRevision 返回指定候选的指定修订（计划 Task 7 Step 3：按 revision
+// 安全读取）。路径由 ID/revision 派生，API 不接收文件名；复用 readRevision
+// 的路径越界校验与证据 SHA-256/摘要一致性校验，损坏 fail closed。
+func (s *CandidateStore) GetRevision(id string, revision int) (FactorCandidate, error) {
+	if !validCandidateID(id) {
+		return FactorCandidate{}, fmt.Errorf("非法候选 ID")
+	}
+	if revision < 1 {
+		return FactorCandidate{}, fmt.Errorf("revision 无效: %d（应为 >=1）", revision)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, _, err := s.readRevision(id, revision)
+	return c, err
+}
+
 // List 返回全部候选的最新修订。includeArchived=false 时隐藏归档候选。
 // 排序：活动候选在前，同状态按 updatedAt 倒序，再按 ID 稳定排序。
 func (s *CandidateStore) List(includeArchived bool) ([]FactorCandidate, error) {

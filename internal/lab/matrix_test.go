@@ -42,6 +42,38 @@ func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base tim
 	}
 }
 
+// writeDayDBOHLC 同 writeDayDBCloses，但开盘价可独立指定（High/Low 取二者
+// 极值），用于验证 next-open 标签与 legacy close 标签的差异。
+func writeDayDBOHLC(t *testing.T, dir, code string, opens, closes []float64, base time.Time) {
+	t.Helper()
+	if len(opens) != len(closes) {
+		t.Fatalf("opens/closes 长度不一致: %d/%d", len(opens), len(closes))
+	}
+	db, err := xorms.NewSqlite(filepath.Join(dir, extend.DirDay, code+".db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Sync2(new(extend.Kline)); err != nil {
+		t.Fatal(err)
+	}
+	rows := make([]*extend.Kline, 0, len(closes))
+	for i := range closes {
+		tm := base.AddDate(0, 0, i)
+		hi, lo := math.Max(opens[i], closes[i]), math.Min(opens[i], closes[i])
+		rows = append(rows, &extend.Kline{
+			Unix: tm.Unix(),
+			Kline: &protocol.Kline{
+				Time: tm, Open: protocol.Yuan(opens[i]), Close: protocol.Yuan(closes[i]),
+				High: protocol.Yuan(hi), Low: protocol.Yuan(lo), Volume: 10000,
+			},
+		})
+	}
+	if _, err := db.Insert(rows); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // fnFac 闭包因子：动量 = 末收盘/前第 2 根收盘 − 1，不足 3 根返回 NaN。
 // 注意 protocol.Price 是 int64（厘），须转 float64 再做除法。
 type fnFac struct{ name string }

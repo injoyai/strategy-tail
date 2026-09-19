@@ -272,11 +272,24 @@ type Runner struct {
 	lastRun      atomic.Pointer[RunConfig]
 	lastReport   atomic.Pointer[Report]
 	runID        atomic.Pointer[string] // 本次运行目录名
-	task         atomic.Pointer[string] // 当前任务类型 backtest/analysis
+	task         atomic.Pointer[string] // 当前任务类型 backtest/analysis/portfolio/portfolio_validation
 	lastAnalysis atomic.Pointer[AnalysisReport]
 
+	// 组合任务阶段与当前组合任务 ID（Task 9；/api/status 组合任务进度契约）。
+	// 阶段语义见 portfolio_runner.go portfolioPhase* 常量。
+	phase        atomic.Pointer[string]
+	portfolioRun atomic.Pointer[string] // 当前/最近组合任务 ID（pe_* 或 pv_*）
+
+	// 组合研究依赖（Task 9）：由 Server/ConfigurePortfolio 注入；nil 时组合
+	// 任务直接报错（fail closed）。
+	modelStore      *FactorModelStore
+	experimentStore *PortfolioExperimentStore
+	validationStore *PortfolioValidationStore
+
 	// store 不可变分析历史存储（生产默认 output/factor；测试注入临时根）。
+	// trials 追加式试验账本（生产默认 data/lab/factor-trials；测试注入临时根）。
 	store      *AnalysisStore
+	trials     *TrialStore
 	factorData researchdata.View
 	universe   researchdata.Universe // 历史成员只读接口；nil 时回退 current_static
 }
@@ -303,6 +316,7 @@ func NewRunnerWithDeps(data researchdata.View, universe researchdata.Universe) *
 	}
 	r := &Runner{
 		store:      NewAnalysisStore(filepath.Join("output", "factor")),
+		trials:     NewTrialStore(DefaultTrialRoot()),
 		factorData: data,
 		universe:   universe,
 	}
@@ -426,14 +440,34 @@ func (r *Runner) Status() map[string]any {
 			m["error"] = *e
 		}
 	}
-	if total := r.totalCodes.Load(); total > 0 {
+	task := "backtest"
+	if p := r.task.Load(); p != nil {
+		task = *p
+		m["task"] = task
+	}
+	if task == "portfolio" || task == "portfolio_validation" {
+		// 组合任务进度契约（Task 9）：总量未知时返回不确定进度（done/total=-1），
+		// 已知后报告 done/total 与阶段；精确终态以持久 Store 为准（/api/status
+		// 只表达任务已结束 + 进度语义）。
+		if total := r.totalCodes.Load(); total > 0 {
+			done := r.doneCodes.Load()
+			m["done"] = done
+			m["total"] = total
+			m["progress"] = float64(done) / float64(total) * 100
+		} else {
+			m["done"], m["total"], m["progress"] = -1, -1, -1
+		}
+		if p := r.phase.Load(); p != nil {
+			m["phase"] = *p
+		}
+		if id := r.portfolioRun.Load(); id != nil {
+			m["runId"] = *id
+		}
+	} else if total := r.totalCodes.Load(); total > 0 {
 		m["progress"] = float64(r.doneCodes.Load()) / float64(total) * 100
 	}
 	if cfg := r.lastRun.Load(); cfg != nil {
 		m["config"] = *cfg
-	}
-	if p := r.task.Load(); p != nil {
-		m["task"] = *p
 	}
 	return m
 }

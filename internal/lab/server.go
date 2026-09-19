@@ -53,6 +53,14 @@ type Server struct {
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
 	candidateStore *CandidateStore
+
+	// 多因子组合研究 v2（Task 9）依赖：模型/实验/验证库与组合执行器。
+	// validationInput 为 v1 验证输入适配器（模型装配时重读上游验证）。
+	modelStore      *FactorModelStore
+	experimentStore *PortfolioExperimentStore
+	validationStore *PortfolioValidationStore
+	portfolioRunner *Runner // 与 runner 同一实例（组合任务与回测/分析共享互斥）
+	validationInput ValidationInput
 }
 
 // NewServer 创建服务并注册路由。
@@ -63,8 +71,20 @@ func NewServer() *Server {
 		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
 		candidateStore: NewCandidateStore(candidateDataDir),
 	}
+	s.wirePortfolioStores()
 	s.registerRoutes()
 	return s
+}
+
+// wirePortfolioStores 注入组合研究依赖（Task 9）：模型/实验/验证库、
+// v1 验证输入适配器与组合执行器（与 runner 同一实例）。
+func (s *Server) wirePortfolioStores() {
+	s.modelStore = NewFactorModelStore(DefaultFactorModelRoot())
+	s.experimentStore = NewPortfolioExperimentStore(DefaultPortfolioExperimentRoot(), DefaultPortfolioArtifactRoot())
+	s.validationStore = NewPortfolioValidationStore(DefaultPortfolioValidationRoot())
+	s.validationInput = NewValidationStoreAdapter(NewValidationStore(DefaultValidationRoot()))
+	s.portfolioRunner = s.runner
+	s.runner.ConfigurePortfolio(s.modelStore, s.experimentStore, s.validationStore)
 }
 
 // newServerWithStores 仅供测试的构造函数：注入独立临时根，避免共享全局目录。
@@ -77,6 +97,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		analysisStore:  analyses,
 		candidateStore: candidates,
 	}
+	s.wirePortfolioStores()
 	s.registerRoutes()
 	return s
 }
@@ -104,6 +125,21 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/factor-candidates", s.handleListCandidates)
 	s.mux.HandleFunc("GET /api/factor-candidates/{id}", s.handleGetCandidate)
 	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", s.handleUpdateCandidate)
+
+	// 多因子组合研究 v2（Task 9，设计 §12.2）。
+	s.mux.HandleFunc("POST /api/factor-models", s.handleCreateFactorModel)
+	s.mux.HandleFunc("GET /api/factor-models", s.handleListFactorModels)
+	s.mux.HandleFunc("GET /api/factor-models/{modelId}", s.handleGetFactorModel)
+	s.mux.HandleFunc("POST /api/portfolio-experiments", s.handleCreateExperiment)
+	s.mux.HandleFunc("GET /api/portfolio-experiments", s.handleListExperiments)
+	s.mux.HandleFunc("GET /api/portfolio-experiments/{id}", s.handleGetExperiment)
+	s.mux.HandleFunc("GET /api/portfolio-experiments/{id}/artifacts/{name}", s.handleExperimentArtifact)
+	s.mux.HandleFunc("POST /api/portfolio-validations", s.handleCreateValidation)
+	s.mux.HandleFunc("GET /api/portfolio-validations", s.handleListValidations)
+	s.mux.HandleFunc("GET /api/portfolio-validations/{id}", s.handleGetValidation)
+	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/start", s.handleStartPortfolioRun)
+	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/stop", s.handleStopPortfolioRun)
+	s.mux.HandleFunc("GET /api/portfolio-runs/{id}", s.handleGetPortfolioRun)
 	s.mux.HandleFunc("GET /", s.handleIndex)
 }
 
