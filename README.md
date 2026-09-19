@@ -117,6 +117,10 @@ type Seller interface {
 `(SellIncome-BuyCost)/BuyCost` 计算；只有缺少成本字段的历史记录才兼容回退到
 原始买卖价格收益。胜率、盈亏比、资金曲线、风险指标和报告明细使用同一口径。
 
+`core.Analyze()` 是纯计算入口，不会写入磁盘。标准 `Backtest.Run()` 会显式导出
+`output/backtest/<year>.csv` 和汇总 `trades.html`；GridSearch、Walk-Forward
+等分析流程只消费指标，不再在循环中覆盖回测报告。
+
 运行时根目录默认从当前目录向上查找最近的 `go.mod`，因此从
 `internal/lab` 等子目录运行测试时，TDX 配置与数据库仍固定解析到项目根目录，
 不会在源码包内生成 `data/`。构建后的程序若从仓库外启动，可显式设置

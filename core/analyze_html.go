@@ -17,13 +17,12 @@ import (
 // 交易可视化 HTML 导出（自 analyze.go 拆分，纯模板与导出逻辑）
 // ============================================================================
 
-func visualizeTrades(year int, allTrades []Trade, getDayKlines GetDayKlines) {
-	ExportTradeVisualHTML([]int{year}, map[int][]Trade{year: allTrades}, getDayKlines, nil)
-}
-
-func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlines GetDayKlines, results []AnalyzeResult) {
+func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlines GetDayKlines, results []AnalyzeResult) error {
 	if len(years) == 0 {
-		return
+		return nil
+	}
+	if getDayKlines == nil {
+		return fmt.Errorf("交易可视化缺少日线数据源")
 	}
 
 	codeYears := make(map[string]map[int][]Trade)
@@ -124,17 +123,22 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 	}
 
 	if len(charts) == 0 {
-		return
+		return nil
 	}
 
 	content, err := buildTradeVisualHTML(charts, results, yearlyTrades)
 	if err != nil {
-		return
+		return fmt.Errorf("生成交易可视化: %w", err)
 	}
 	dir := filepath.Join("output", "backtest")
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建回测输出目录: %w", err)
+	}
 	output := filepath.Join(dir, "trades.html")
-	oss.New(output, []byte(content))
+	if err := oss.New(output, []byte(content)); err != nil {
+		return fmt.Errorf("写入交易可视化: %w", err)
+	}
+	return nil
 }
 
 func buildTradeVisualHTML(charts []map[string]any, results []AnalyzeResult, yearlyTrades map[int][]Trade) (string, error) {
@@ -246,10 +250,22 @@ func buildTradeVisualHTML(charts []map[string]any, results []AnalyzeResult, year
 		}
 	}
 
-	statsJSON, _ := json.Marshal(yearStats)
-	equityJSON, _ := json.Marshal(equityData)
-	monthlyJSON, _ := json.Marshal(monthlySummary)
-	distJSON, _ := json.Marshal(distBuckets)
+	statsJSON, err := json.Marshal(yearStats)
+	if err != nil {
+		return "", fmt.Errorf("序列化年度统计: %w", err)
+	}
+	equityJSON, err := json.Marshal(equityData)
+	if err != nil {
+		return "", fmt.Errorf("序列化资金曲线: %w", err)
+	}
+	monthlyJSON, err := json.Marshal(monthlySummary)
+	if err != nil {
+		return "", fmt.Errorf("序列化月度收益: %w", err)
+	}
+	distJSON, err := json.Marshal(distBuckets)
+	if err != nil {
+		return "", fmt.Errorf("序列化收益分布: %w", err)
+	}
 	chartsStr := string(chartsJSON)
 
 	return professionalReportHTML(statsJSON, equityJSON, monthlyJSON, distJSON, chartsStr), nil

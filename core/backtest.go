@@ -78,9 +78,11 @@ func (this Backtest) Run() {
 
 		result := Analyze(year, ls, this.GetDayKlines, benchKlines, this.Cost, this.Position)
 		results = append(results, result)
+		_, err = ExportYearTradesCSV(year, ls)
+		logs.PanicErr(err)
 	}
 	PrintAnalyzeResults(results)
-	ExportTradeVisualHTML(this.Years, tradeResults, this.GetDayKlines, results)
+	logs.PanicErr(ExportTradeVisualHTML(this.Years, tradeResults, this.GetDayKlines, results))
 
 	// ---- 阶段二：蒙特卡洛模拟（跨年度全部交易）----
 	allTrades := make([]Trade, 0)

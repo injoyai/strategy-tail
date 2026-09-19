@@ -306,6 +306,10 @@ type Trade struct {
 
 ### 6.6 绩效分析（[core/analyze.go](core/analyze.go) + [core/performance.go](core/performance.go)）
 
+`Analyze()` 只计算并返回指标，不写文件、不生成报告。需要回测产物时，由命令或
+`Backtest.Run()` 显式调用 `ExportYearTradesCSV()` 与 `ExportTradeVisualHTML()`；
+参数搜索、Walk-Forward 等纯研究路径不得隐式覆盖 `output/backtest/`。
+
 | 类别      | 指标                        | 函数                                                           |
 | ------- | ------------------------- | ------------------------------------------------------------ |
 | 基础      | 胜率/盈亏比/平均收益               | `Stats()`                                                    |

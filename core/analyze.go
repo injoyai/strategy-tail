@@ -3,14 +3,10 @@ package core
 import (
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/injoyai/goutil/g"
-	"github.com/injoyai/goutil/oss"
-	"github.com/injoyai/goutil/oss/csv"
 	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
@@ -111,17 +107,19 @@ func formatPercent(v float64) string {
 	return fmt.Sprintf("%.2f%%", v)
 }
 
-// Analyze 计算单年度回测统计指标。
-// getDayKlines 用于可视化；benchmarkKlines 为基准（指数/ETF）日线，可为 nil。
-// cost 和 pos 用于计算本金和盈亏口径。
-func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKlines extend.Klines, cost Cost, pos PositionConfig) AnalyzeResult {
+// Analyze 计算单年度回测统计指标，不执行文件或报告写入。
+// getDayKlines 与 cost 为兼容既有调用保留；成交成本已固化在 Trade 中，不再
+// 由分析阶段重新计算。benchmarkKlines 为基准（指数/ETF）日线，可为 nil，
+// pos 用于兼容旧记录的所需本金估算。
+func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend.Klines, _ Cost, pos PositionConfig) AnalyzeResult {
 
-	// 按买入时间排序，为了计算资金曲线和回撤
-	sort.Slice(allTrades, func(i, j int) bool {
-		return allTrades[i].BuyTime.Before(allTrades[j].BuyTime)
+	// 按买入时间排序副本，为了计算资金曲线和回撤且不修改调用方切片。
+	trades := append([]Trade(nil), allTrades...)
+	sort.Slice(trades, func(i, j int) bool {
+		return trades[i].BuyTime.Before(trades[j].BuyTime)
 	})
 
-	stats := Stats(allTrades)
+	stats := Stats(trades)
 	totalTrades := stats.Total
 	var totalProfit float64
 
@@ -130,7 +128,7 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 	currentEquity := 0.0
 	equityCurve = append(equityCurve, currentEquity)
 
-	for _, t := range allTrades {
+	for _, t := range trades {
 		profit := tradeProfitAmount(t)
 		totalProfit += profit
 		currentEquity += profit
@@ -157,7 +155,7 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 
 	drawdownDuration := maxDDEndIdx - maxDDStartIdx
 
-	requiredCapital := calculateRequiredCapital(allTrades, pos)
+	requiredCapital := calculateRequiredCapital(trades, pos)
 	annualReturn := 0.0
 	if requiredCapital > 0 {
 		// 年度总收益率(%) = 总利润 / 峰值并发本金 × 100
@@ -186,8 +184,8 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 	}
 
 	// 风险调整指标：用每笔交易收益率（小数）计算，年化系数取交易笔数
-	tradeReturns := make([]float64, 0, len(allTrades))
-	for _, t := range allTrades {
+	tradeReturns := make([]float64, 0, len(trades))
+	for _, t := range trades {
 		r := tradeReturnRate(t) / 100
 		tradeReturns = append(tradeReturns, r)
 	}
@@ -201,15 +199,15 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 
 	// 基准对比
 	benchReturn := BenchmarkReturn(benchmarkKlines)
-	alpha, beta := computeTradeAlphaBeta(allTrades, benchmarkKlines)
+	alpha, beta := computeTradeAlphaBeta(trades, benchmarkKlines)
 
 	// 连胜连亏分析
-	winStreak, lossStreak := calculateStreaks(allTrades)
+	winStreak, lossStreak := calculateStreaks(trades)
 
 	// 持仓天数
 	var totalHoldingDays float64
 	validTrades := 0
-	for _, t := range allTrades {
+	for _, t := range trades {
 		if !t.Virtual {
 			totalHoldingDays += float64(t.HoldingDays())
 			validTrades++
@@ -256,32 +254,6 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 		CVaR95:           cvar95 * 100,
 	}
 
-	data := [][]any{
-		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格", "净盈亏", "净收益率", "持有天数"},
-	}
-
-	for _, v := range allTrades {
-		profitRate := tradeReturnRate(v)
-		profit := tradeProfitAmount(v)
-		data = append(data, []any{
-			v.Code,
-			v.BuyTime.Format(time.DateTime), v.BuyPrice.Float64(),
-			v.SellTime.Format(time.DateTime), v.SellPrice.Float64(),
-			profit,
-			profitRate,
-			v.HoldingDays(),
-		})
-	}
-
-	buf, err := csv.Export(data)
-	if err == nil {
-		dir := filepath.Join("output", "backtest")
-		os.MkdirAll(dir, 0755)
-		output := filepath.Join(dir, fmt.Sprintf("%d.csv", year))
-		oss.New(output, buf)
-	}
-
-	visualizeTrades(year, allTrades, getDayKlines)
 	return result
 }
 
