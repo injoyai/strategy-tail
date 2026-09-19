@@ -3,6 +3,7 @@ package core
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"os"
 	"path/filepath"
 	"sort"
@@ -29,16 +30,41 @@ func TradesExportName(name string) string {
 		"/", "_", "\\", "_", ":", "_", "*", "_",
 		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_", " ", "_",
 	)
-	return repl.Replace(name)
+	name = strings.TrimRight(repl.Replace(name), ".")
+	if name == "" || name == "." || name == ".." {
+		return "unnamed"
+	}
+	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
+	if isWindowsReservedName(base) {
+		return "_" + name
+	}
+	return name
+}
+
+func isWindowsReservedName(name string) bool {
+	switch name {
+	case "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9":
+		return true
+	default:
+		return false
+	}
 }
 
 // ExportTradesCSV 将一组交易明细导出为 CSV。
 // 返回写入的文件路径；trades 为空时不生成文件，返回空字符串。
+// 该函数保留既有签名；需要检查失败原因的新调用应使用 ExportTradesCSVWithError。
 //
 // data 为表头，每行: 代码, 买入时间, 买入价, 卖出时间, 卖出价, 数量, 净盈亏(元), 净收益率(%), 持仓天数, 期末未平仓
 func ExportTradesCSV(strategyName, filename string, trades []Trade) string {
+	output, _ := ExportTradesCSVWithError(strategyName, filename, trades)
+	return output
+}
+
+// ExportTradesCSVWithError 将一组交易明细导出为 CSV，并向调用方返回具体失败原因。
+// trades 为空时不生成文件，返回空路径和 nil 错误。
+func ExportTradesCSVWithError(strategyName, filename string, trades []Trade) (string, error) {
 	if len(trades) == 0 {
-		return ""
+		return "", nil
 	}
 
 	sorted := make([]Trade, len(trades))
@@ -65,24 +91,34 @@ func ExportTradesCSV(strategyName, filename string, trades []Trade) string {
 
 	buf, err := csv.Export(data)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("生成交易 CSV: %w", err)
 	}
 
 	dir := filepath.Join("output", "trades", TradesExportName(strategyName))
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("创建交易导出目录: %w", err)
+	}
 	output := filepath.Join(dir, TradesExportName(filename)+".csv")
 	if err := oss.New(output, buf); err != nil {
-		return ""
+		return "", fmt.Errorf("写入交易 CSV: %w", err)
 	}
-	return output
+	return output, nil
 }
 
 // ExportTradesHTML 生成策略交易可视化 HTML（日K + 买卖点标注 + 交易明细表）。
 // getDayKlines 为nil时跳过K线部分，仅生成交易明细表。
 // 返回写入的文件路径；trades 为空时不生成文件，返回空字符串。
+// 该函数保留既有签名；需要检查失败原因的新调用应使用 ExportTradesHTMLWithError。
 func ExportTradesHTML(strategyName, filename string, trades []Trade, getDayKlines GetDayKlines) string {
+	output, _ := ExportTradesHTMLWithError(strategyName, filename, trades, getDayKlines)
+	return output
+}
+
+// ExportTradesHTMLWithError 生成策略交易可视化 HTML，并向调用方返回具体失败原因。
+// trades 为空时不生成文件，返回空路径和 nil 错误。
+func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, getDayKlines GetDayKlines) (string, error) {
 	if len(trades) == 0 {
-		return ""
+		return "", nil
 	}
 
 	sorted := make([]Trade, len(trades))
@@ -180,16 +216,18 @@ func ExportTradesHTML(strategyName, filename string, trades []Trade, getDayKline
 
 	content, err := buildTradesExportHTML(charts, summary)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("生成交易 HTML: %w", err)
 	}
 
 	dir := filepath.Join("output", "trades", TradesExportName(strategyName))
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("创建交易导出目录: %w", err)
+	}
 	output := filepath.Join(dir, TradesExportName(filename)+".html")
 	if err := oss.New(output, []byte(content)); err != nil {
-		return ""
+		return "", fmt.Errorf("写入交易 HTML: %w", err)
 	}
-	return output
+	return output, nil
 }
 
 // round2 保留两位小数，避免 CSV/HTML 中浮点尾数噪音。
@@ -215,6 +253,7 @@ func buildTradesExportHTML(charts []map[string]any, summary map[string]any) (str
 	if err != nil {
 		return "", err
 	}
+	title := html.EscapeString(fmt.Sprint(summary["strategy"]))
 	return fmt.Sprintf(`<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -375,5 +414,5 @@ select.addEventListener('change', render);
 render();
 </script>
 </body>
-</html>`, summary["strategy"], chartsJSON, summaryJSON), nil
+</html>`, title, chartsJSON, summaryJSON), nil
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,13 @@ func TestExportTradesCSV(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("文件不存在: %v", err)
 	}
+	checkedPath, err := ExportTradesCSVWithError("测试策略", "可检查", trades)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(checkedPath); err != nil {
+		t.Fatalf("带错误返回的导出文件不存在: %v", err)
+	}
 	// 非法字符必须被替换，路径只在 output/trades/<策略名>/ 下
 	wantDir := filepath.Join("output", "trades", "测试策略")
 	if filepath.Dir(path) != wantDir {
@@ -86,6 +94,43 @@ func TestExportTradesHTML(t *testing.T) {
 	}
 	if p := ExportTradesHTML("测试策略", "空", nil, nil); p != "" {
 		t.Fatalf("空交易应返回空路径, got %s", p)
+	}
+}
+
+func TestTradesExportNamePreventsSpecialDirectoryNames(t *testing.T) {
+	for _, name := range []string{"", ".", ".."} {
+		if got := TradesExportName(name); got != "unnamed" {
+			t.Fatalf("TradesExportName(%q) = %q, want unnamed", name, got)
+		}
+	}
+	if got := TradesExportName("CON"); got != "_CON" {
+		t.Fatalf("TradesExportName(CON) = %q, want _CON", got)
+	}
+}
+
+func TestExportTradesHTMLWithErrorEscapesStrategyAndReportsInvalidNumbers(t *testing.T) {
+	chdirTemp(t)
+	trade := makeExportTrade("sh600000", time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local))
+
+	path, err := ExportTradesHTMLWithError(`<script>alert("x")</script>`, "safe", []Trade{trade}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(string(data), `<script>alert("x")</script>`) {
+		t.Fatal("strategy name should be escaped in HTML title")
+	}
+
+	trade.SellIncome = math.NaN()
+	path, err = ExportTradesHTMLWithError("测试策略", "invalid", []Trade{trade}, nil)
+	if err == nil || !contains(err.Error(), "生成交易 HTML") {
+		t.Fatalf("ExportTradesHTMLWithError() path=%q error=%v", path, err)
+	}
+	if path != "" {
+		t.Fatalf("failed export should not return path %q", path)
 	}
 }
 
