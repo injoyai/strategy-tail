@@ -102,3 +102,40 @@ func TestStats空交易的百分比盈亏指标为零(t *testing.T) {
 			stats.AvgProfit, stats.MaxProfit, stats.MaxLoss)
 	}
 }
+
+func TestStats完整成交优先使用净收益(t *testing.T) {
+	// 原始价格上涨 10%，但费用后的实际回款低于买入成本，应按净亏损统计。
+	trades := []Trade{{
+		BuyPrice:   protocol.Yuan(10),
+		SellPrice:  protocol.Yuan(11),
+		BuyCost:    1000,
+		SellIncome: 990,
+		Quantity:   100,
+	}}
+
+	stats := Stats(trades)
+	if stats.Win != 0 || stats.Loss != 1 {
+		t.Fatalf("expected one net loss, got %+v", stats)
+	}
+	if math.Abs(stats.AvgProfit-(-1)) > 1e-6 {
+		t.Fatalf("expected net AvgProfit=-1%%, got %v", stats.AvgProfit)
+	}
+}
+
+func TestTradeProfitAmount完整成交与旧记录回退(t *testing.T) {
+	net := Trade{
+		BuyPrice:   protocol.Yuan(10),
+		SellPrice:  protocol.Yuan(11),
+		BuyCost:    1005,
+		SellIncome: 1085,
+		Quantity:   100,
+	}
+	if got := tradeProfitAmount(net); math.Abs(got-80) > 1e-6 {
+		t.Fatalf("expected net amount=80, got %v", got)
+	}
+
+	legacy := Trade{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), Quantity: 100}
+	if got := tradeProfitAmount(legacy); math.Abs(got-100) > 1e-6 {
+		t.Fatalf("expected legacy gross fallback=100, got %v", got)
+	}
+}

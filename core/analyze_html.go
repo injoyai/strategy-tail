@@ -73,7 +73,7 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 		for _, year := range yearsForCode {
 			for _, t := range tradeYears[year] {
 				buyRate := tradeReturnRate(t)
-				profit := (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
+				profit := tradeProfitAmount(t)
 				marks = append(marks, map[string]any{
 					"date":  t.BuyTime.Format(time.DateOnly),
 					"time":  t.BuyTime.Format(time.TimeOnly),
@@ -183,7 +183,7 @@ func buildTradeVisualHTML(charts []map[string]any, results []AnalyzeResult, year
 		})
 		cumEquity := 0.0
 		for _, t := range trades {
-			profit := (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
+			profit := tradeProfitAmount(t)
 			cumEquity += profit
 			equityData = append(equityData, map[string]any{
 				"date":   t.SellTime.Format("2006-01-02"),
@@ -321,7 +321,7 @@ tbody tr:hover{background:#f0f4ff}
 <div class="section">
 <div class="section-title">资金曲线</div>
 <div class="chart-box">
-<div class="chart-title">累计盈亏走势</div>
+<div class="chart-title">累计净盈亏走势</div>
 <div id="equityChart" class="chart tall"></div>
 </div>
 </div>
@@ -337,7 +337,7 @@ tbody tr:hover{background:#f0f4ff}
 <div class="section">
 <div class="section-title">收益分布</div>
 <div class="chart-box">
-<div class="chart-title">单笔交易收益率分布</div>
+<div class="chart-title">单笔交易净收益率分布</div>
 <div id="distChart" class="chart"></div>
 </div>
 </div>
@@ -345,7 +345,7 @@ tbody tr:hover{background:#f0f4ff}
 <div class="section">
 <div class="section-title">月度收益矩阵</div>
 <div class="chart-box">
-<div class="chart-title">月度收益率热力图</div>
+<div class="chart-title">月度净收益率热力图</div>
 <div id="monthlyChart" class="chart tall"></div>
 </div>
 </div>
@@ -357,7 +357,7 @@ tbody tr:hover{background:#f0f4ff}
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th>年份</th><th>代码</th><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th><th>收益率</th><th>盈亏</th></tr></thead>
+<thead><tr><th>年份</th><th>代码</th><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th><th>净收益率</th><th>净盈亏</th></tr></thead>
 <tbody id="tradeRows"></tbody>
 </table>
 </div>
@@ -383,7 +383,7 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
 
 // 年度统计表格
 (function(){
-  let html = '<div class="table-wrap"><table><thead><tr><th>年份</th><th>交易笔数</th><th>胜率</th><th>盈亏比</th><th>平均收益</th><th>最大盈利</th><th>最大亏损</th><th>年化收益</th><th>夏普比率</th><th>最大回撤</th><th>回撤天数</th><th>最大连胜</th><th>最大连亏</th><th>持仓天数</th><th>VaR95</th></tr></thead><tbody>';
+  let html = '<div class="table-wrap"><table><thead><tr><th>年份</th><th>交易笔数</th><th>净胜率</th><th>净盈亏比</th><th>平均净收益</th><th>最大净盈利</th><th>最大净亏损</th><th>年化收益</th><th>夏普比率</th><th>最大回撤</th><th>回撤天数</th><th>最大连胜</th><th>最大连亏</th><th>持仓天数</th><th>VaR95</th></tr></thead><tbody>';
   yearStats.forEach(r=>{
     html += '<tr><td><b>'+r.year+'</b></td><td>'+r.trades+'</td><td class="'+(parseFloat(r.winRate)>=50?'pos':'neg')+'">'+r.winRate+'%</td><td>'+r.profitFactor+'</td><td class="'+(parseFloat(r.avgProfit)>=0?'pos':'neg')+'">'+r.avgProfit+'%</td><td class="pos">'+r.maxProfit+'%</td><td class="neg">'+r.maxLoss+'%</td><td class="'+(parseFloat(r.annualReturn)>=0?'pos':'neg')+'">'+r.annualReturn+'%</td><td>'+r.sharpe+'</td><td class="neg">'+r.maxDrawdown+'%</td><td>'+r.drawdownDays+'</td><td class="pos">'+r.winStreak+'</td><td class="neg">'+r.lossStreak+'</td><td>'+r.holdingDays+'</td><td class="neg">'+r.var95+'%</td></tr>';
   });
@@ -396,9 +396,9 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
   const r = yearStats[0] || {};
   const cards = [
     {label:'交易笔数',value:r.trades||'0',cls:'neutral',sub:'总交易次数'},
-    {label:'胜率',value:(r.winRate||'0')+'%',cls:parseFloat(r.winRate)>=50?'pos':'neg',sub:'盈利交易占比'},
-    {label:'盈亏比',value:r.profitFactor||'0',cls:'neutral',sub:'盈利总额/亏损总额'},
-    {label:'平均收益率',value:(r.avgProfit||'0')+'%',cls:parseFloat(r.avgProfit)>=0?'pos':'neg',sub:'单笔平均收益'},
+    {label:'净胜率',value:(r.winRate||'0')+'%',cls:parseFloat(r.winRate)>=50?'pos':'neg',sub:'扣除成本后盈利交易占比'},
+    {label:'净盈亏比',value:r.profitFactor||'0',cls:'neutral',sub:'净盈利收益率/净亏损收益率'},
+    {label:'平均净收益率',value:(r.avgProfit||'0')+'%',cls:parseFloat(r.avgProfit)>=0?'pos':'neg',sub:'扣除成本后的单笔平均收益'},
     {label:'年化收益率',value:(r.annualReturn||'0')+'%',cls:parseFloat(r.annualReturn)>=0?'pos':'neg',sub:'按本金计算'},
     {label:'夏普比率',value:r.sharpe||'0',cls:parseFloat(r.sharpe)>=1?'pos':'neg',sub:'风险调整收益'},
     {label:'索提诺比率',value:r.sortino||'0',cls:parseFloat(r.sortino)>=1?'pos':'neg',sub:'下行风险调整'},
@@ -426,10 +426,10 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
     tooltip:{trigger:'axis',appendToBody:true},
     grid:{left:70,right:30,top:40,bottom:60},
     xAxis:{type:'category',data:dates,axisLine:{lineStyle:{color:'#ccc'}}},
-    yAxis:{type:'value',name:'盈亏(元)',axisLine:{lineStyle:{color:'#ccc'}}},
+    yAxis:{type:'value',name:'净盈亏(元)',axisLine:{lineStyle:{color:'#ccc'}}},
     dataZoom:[{type:'inside'},{type:'slider',bottom:10}],
     series:[{
-      name:'累计盈亏',type:'line',data:equity,symbol:'none',
+      name:'累计净盈亏',type:'line',data:equity,symbol:'none',
       areaStyle:{color:{type:'linear',x:0,y:0,x2:0,y2:1,colorStops:[{offset:0,color:'rgba(59,130,246,0.3)'},{offset:1,color:'rgba(59,130,246,0)'}]}},
       lineStyle:{width:2,color:'#3b82f6'},
       markLine:{data:[{yAxis:0,lineStyle:{color:'#999',type:'dashed'}}],symbol:'none',label:{show:false}}

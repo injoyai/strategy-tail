@@ -3,7 +3,7 @@ package core
 import "math"
 
 // TradeStats 是一组交易的统计指标。
-// ProfitFactor 按"收益率"口径计算（百分比盈亏比），适合等手数仓位。
+// ProfitFactor 按"净收益率"口径计算（百分比盈亏比），适合等手数仓位。
 // 公式：Σ盈利单收益率 / |Σ亏损单收益率|，避免高价股亏损让金额盈亏比失真。
 // AvgProfit/MaxProfit/MaxLoss 均为百分比口径（%），与 WinRate/ProfitFactor 一致。
 type TradeStats struct {
@@ -19,10 +19,10 @@ type TradeStats struct {
 	MaxLoss      float64 // 最小单笔收益率（%，负数）
 }
 
-// Stats 按"收益率"口径汇总一组交易的胜率和盈亏比。
+// Stats 按"净收益率"口径汇总一组交易的胜率和盈亏比。
 // 该函数是回测、选股、前端面板共用的统一统计入口。
-// 单笔收益率 = (SellPrice - BuyPrice) / BuyPrice × 100。
-// BuyPrice/SellPrice 为含滑点和手续费的成交价（与原版一致）。
+// 完整成交使用 (SellIncome-BuyCost)/BuyCost；缺少成本字段的旧记录兼容回退
+// (SellPrice-BuyPrice)/BuyPrice。
 func Stats(trades []Trade) TradeStats {
 	s := TradeStats{Total: len(trades)}
 	if s.Total == 0 {
@@ -64,13 +64,24 @@ func Stats(trades []Trade) TradeStats {
 	return s
 }
 
-// tradeReturnRate 计算单笔交易收益率（%）。
-// 与原版一致：用 (SellPrice - BuyPrice) / BuyPrice 口径。
-// BuyPrice/SellPrice 为含滑点和手续费的成交价。
+// tradeReturnRate 计算单笔净收益率（%）。完整成交优先使用含滑点、佣金和
+// 印花税的 BuyCost/SellIncome；缺少成本字段的旧记录回退原始价格收益率。
 func tradeReturnRate(t Trade) float64 {
+	if t.BuyCost > 0 {
+		return t.Profit()
+	}
 	buy := t.BuyPrice.Float64()
 	if buy <= 0 {
 		return 0
 	}
 	return (t.SellPrice.Float64() - buy) / buy * 100
+}
+
+// tradeProfitAmount 计算单笔净盈亏（元）。完整成交使用实际收支；缺少成本
+// 字段的旧记录回退原始价格差乘成交数量。
+func tradeProfitAmount(t Trade) float64 {
+	if t.BuyCost > 0 {
+		return t.ProfitAmount()
+	}
+	return (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
 }

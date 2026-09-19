@@ -88,6 +88,28 @@ func TestAlphaBeta无波动返回0(t *testing.T) {
 	}
 }
 
+func TestComputeTradeAlphaBeta使用净收益(t *testing.T) {
+	d1 := time.Date(2024, 1, 2, 15, 0, 0, 0, time.Local)
+	d2 := d1.AddDate(0, 0, 1)
+	d3 := d1.AddDate(0, 0, 2)
+	d4 := d1.AddDate(0, 0, 3)
+	trades := []Trade{
+		{BuyTime: d1, SellTime: d2, BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1000, SellIncome: 1050},
+		{BuyTime: d3, SellTime: d4, BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1000, SellIncome: 1150},
+	}
+	benchmark := extend.Klines{
+		&extend.Kline{Unix: d1.Unix(), Kline: &protocol.Kline{Time: d1, Close: protocol.Yuan(100)}},
+		&extend.Kline{Unix: d2.Unix(), Kline: &protocol.Kline{Time: d2, Close: protocol.Yuan(110)}},
+		&extend.Kline{Unix: d3.Unix(), Kline: &protocol.Kline{Time: d3, Close: protocol.Yuan(100)}},
+		&extend.Kline{Unix: d4.Unix(), Kline: &protocol.Kline{Time: d4, Close: protocol.Yuan(120)}},
+	}
+
+	alpha, beta := computeTradeAlphaBeta(trades, benchmark)
+	if math.Abs(alpha-(-0.05)) > 1e-6 || math.Abs(beta-1) > 1e-6 {
+		t.Fatalf("expected net alpha=-0.05 beta=1, got alpha=%v beta=%v", alpha, beta)
+	}
+}
+
 func TestAlphaBeta长度不一致返回0(t *testing.T) {
 	alpha, beta := AlphaBeta([]float64{0.01, 0.02}, []float64{0.01})
 	if alpha != 0 || beta != 0 {

@@ -35,7 +35,7 @@ func TradesExportName(name string) string {
 // ExportTradesCSV 将一组交易明细导出为 CSV。
 // 返回写入的文件路径；trades 为空时不生成文件，返回空字符串。
 //
-// data 为表头，每行: 代码, 买入时间, 买入价, 卖出时间, 卖出价, 数量, 盈亏(元), 收益率(%), 持仓天数, 期末未平仓
+// data 为表头，每行: 代码, 买入时间, 买入价, 卖出时间, 卖出价, 数量, 净盈亏(元), 净收益率(%), 持仓天数, 期末未平仓
 func ExportTradesCSV(strategyName, filename string, trades []Trade) string {
 	if len(trades) == 0 {
 		return ""
@@ -46,7 +46,7 @@ func ExportTradesCSV(strategyName, filename string, trades []Trade) string {
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].BuyTime.Before(sorted[j].BuyTime) })
 
 	data := [][]any{
-		{"代码", "买入时间", "买入价", "卖出时间", "卖出价", "数量", "盈亏(元)", "收益率(%)", "持仓天数", "期末未平仓"},
+		{"代码", "买入时间", "买入价", "卖出时间", "卖出价", "数量", "净盈亏(元)", "净收益率(%)", "持仓天数", "期末未平仓"},
 	}
 	for _, t := range sorted {
 		data = append(data, []any{
@@ -56,7 +56,7 @@ func ExportTradesCSV(strategyName, filename string, trades []Trade) string {
 			t.SellTime.Format(time.DateTime),
 			round2(t.SellPrice.Float64()),
 			t.Quantity,
-			round2(t.ProfitAmount()),
+			round2(tradeProfitAmount(t)),
 			round2(tradeReturnRate(t)),
 			t.HoldingDays(),
 			t.Virtual,
@@ -151,7 +151,7 @@ func ExportTradesHTML(strategyName, filename string, trades []Trade, getDayKline
 				"sellDate":  t.SellTime.Format(time.DateTime),
 				"sellPrice": t.SellPrice.Float64(),
 				"quantity":  t.Quantity,
-				"profit":    t.ProfitAmount(),
+				"profit":    tradeProfitAmount(t),
 				"rate":      tradeReturnRate(t),
 				"holding":   t.HoldingDays(),
 				"virtual":   t.Virtual,
@@ -165,7 +165,7 @@ func ExportTradesHTML(strategyName, filename string, trades []Trade, getDayKline
 	var totalProfit float64
 	winCount := 0
 	for _, t := range sorted {
-		totalProfit += t.ProfitAmount()
+		totalProfit += tradeProfitAmount(t)
 		if tradeReturnRate(t) > 0 {
 			winCount++
 		}
@@ -255,7 +255,7 @@ tbody tr:hover{background:#f0f4ff}
 <div class="metrics">
 <div><span>总笔数</span><b id="mTotal"></b></div>
 <div><span>胜率</span><b id="mWinRate"></b></div>
-<div><span>累计盈亏(元)</span><b id="mProfit"></b></div>
+<div><span>累计净盈亏(元)</span><b id="mProfit"></b></div>
 <div><span>生成时间</span><b id="mTime" style="font-size:14px"></b></div>
 </div>
 </div>
@@ -270,7 +270,7 @@ tbody tr:hover{background:#f0f4ff}
 <h2>交易明细（当前选中代码）</h2>
 <div class="table-wrap">
 <table>
-<thead><tr><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>盈亏(元)</th><th>收益率</th><th>持仓天数</th><th>虚拟</th></tr></thead>
+<thead><tr><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>净盈亏(元)</th><th>净收益率</th><th>持仓天数</th><th>虚拟</th></tr></thead>
 <tbody id="rows"></tbody>
 </table>
 </div>

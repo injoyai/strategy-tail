@@ -17,13 +17,13 @@ import (
 type AnalyzeResult struct {
 	Year            int
 	TotalTrades     int
-	WinRate         float64 // 胜率（%）
-	TotalProfit     float64 // 总盈亏（元，每手）
-	AvgProfit       float64 // 平均收益率（%）
-	MaxProfit       float64 // 最大单笔收益率（%）
-	MaxLoss         float64 // 最小单笔收益率（%，负数）
-	ProfitFactor    float64 // 盈亏比
-	MaxDrawdown     float64 // 最大回撤（元，每手）
+	WinRate         float64 // 净收益胜率（%）
+	TotalProfit     float64 // 总净盈亏（元，每手）
+	AvgProfit       float64 // 平均净收益率（%）
+	MaxProfit       float64 // 最大单笔净收益率（%）
+	MaxLoss         float64 // 最小单笔净收益率（%，负数）
+	ProfitFactor    float64 // 净收益率盈亏比
+	MaxDrawdown     float64 // 最大净值回撤（元，每手）
 	RequiredCapital float64 // 最低本金（元）
 	AnnualReturn    float64 // 年化收益率（%）
 	Sharpe          float64 // 夏普比率（年化）
@@ -52,7 +52,7 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	fmt.Printf("\n年度回测结果:\n")
 	// 第一行：基础指标
 	fmt.Printf("%5s \t%4s \t%6s \t%6s \t%10s \t%8s \t%8s \t%7s \t%8s \t%8s \t%8s\n",
-		"年份", "交易", "胜率", "总盈亏", "平均收益", "最大收益", "最大亏损", "盈亏比", "最大回撤", "最低本金", "年化")
+		"年份", "交易", "净胜率", "净盈亏", "平均净收益", "最大净收益", "最大净亏损", "净盈亏比", "最大回撤", "最低本金", "年化")
 	for _, r := range results {
 		profitFactor := fmt.Sprintf("%.2f", r.ProfitFactor)
 		if math.IsInf(r.ProfitFactor, 1) {
@@ -125,14 +125,13 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 	totalTrades := stats.Total
 	var totalProfit float64
 
-	// 资金曲线（按实际成本口径）
+	// 资金曲线（按实际成本口径；旧记录缺成本字段时兼容回退价格差）
 	var equityCurve []float64
 	currentEquity := 0.0
 	equityCurve = append(equityCurve, currentEquity)
 
 	for _, t := range allTrades {
-		// 与原版一致：用 (SellPrice - BuyPrice) * quantity 计算盈亏
-		profit := (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
+		profit := tradeProfitAmount(t)
 		totalProfit += profit
 		currentEquity += profit
 		equityCurve = append(equityCurve, currentEquity)
@@ -258,12 +257,12 @@ func Analyze(year int, allTrades []Trade, getDayKlines GetDayKlines, benchmarkKl
 	}
 
 	data := [][]any{
-		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格", "盈亏", "收益率", "持有天数"},
+		{"代码", "买入时间", "买入价格", "卖出时间", "卖出价格", "净盈亏", "净收益率", "持有天数"},
 	}
 
 	for _, v := range allTrades {
 		profitRate := tradeReturnRate(v)
-		profit := (v.SellPrice.Float64() - v.BuyPrice.Float64()) * float64(v.Quantity)
+		profit := tradeProfitAmount(v)
 		data = append(data, []any{
 			v.Code,
 			v.BuyTime.Format(time.DateTime), v.BuyPrice.Float64(),

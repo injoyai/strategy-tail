@@ -79,11 +79,10 @@ func computeTradeAlphaBeta(trades []Trade, benchmarkKlines extend.Klines) (alpha
 	stratReturns := make([]float64, 0, len(trades))
 	benchReturns := make([]float64, 0, len(trades))
 	for _, t := range trades {
-		buy := t.BuyPrice.Float64()
-		if buy <= 0 {
+		if t.BuyCost <= 0 && t.BuyPrice.Float64() <= 0 {
 			continue
 		}
-		stratR := (t.SellPrice.Float64() - buy) / buy
+		stratR := tradeReturnRate(t) / 100
 		// 基准收益：买入日到卖出日的区间收益
 		buyDate := t.BuyTime.Format(time.DateOnly)
 		sellDate := t.SellTime.Format(time.DateOnly)
