@@ -12,7 +12,7 @@ import (
 //
 // 契约：名次快照由回测任务启动前统一预填（internal/lab fillCrossSection），
 // 本策略只读不写——单股视角看不到其他股票。无快照的日期恒 false
-// （backtest_tail 直接跑本策略、或快照被 ClearCrossSection 清空后）。
+// （调用方未预填横截面快照、或快照被 ClearCrossSection 清空后）。
 type A因子TopN struct {
 	Factor core.Factor
 	N      int
