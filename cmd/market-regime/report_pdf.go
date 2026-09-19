@@ -40,8 +40,8 @@ var (
 	colWhite = [3]uint8{255, 255, 255}
 )
 
-// ExportPDF 导出 PDF 报告到 output/market-regime/report.pdf
-func ExportPDF(r *AnalysisResult) {
+// ExportPDF 导出 PDF 报告到 output/market-regime/report.pdf。
+func ExportPDF(r *AnalysisResult) error {
 	pdf := &gopdf.GoPdf{}
 	pdf.Start(gopdf.Config{
 		PageSize: gopdf.Rect{W: pdfPageW, H: pdfPageH},
@@ -50,8 +50,7 @@ func ExportPDF(r *AnalysisResult) {
 	if err := pdf.AddTTFFontWithOption(pdfFont, pdfFontPath, gopdf.TtfOption{
 		UseKerning: true,
 	}); err != nil {
-		logs.Errorf("加载字体失败: %v", err)
-		return
+		return fmt.Errorf("加载字体 %s: %w", pdfFontPath, err)
 	}
 
 	pdf.AddPage()
@@ -100,13 +99,15 @@ func ExportPDF(r *AnalysisResult) {
 
 	// ===== 写文件 =====
 	dir := reportOutputDir()
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建报告目录: %w", err)
+	}
 	output := filepath.Join(dir, "report.pdf")
 	if err := pdf.WritePdf(output); err != nil {
-		logs.Errorf("写入PDF失败: %v", err)
-		return
+		return fmt.Errorf("写入 PDF 报告: %w", err)
 	}
 	logs.Info("PDF报告已生成: " + output)
+	return nil
 }
 
 // ---------- 绘制辅助 ----------

@@ -16,8 +16,8 @@ import (
 // HTML 报告生成
 // ============================================================================
 
-// ExportHTML 导出详细 HTML 报告到 output/market-regime/report.html
-func ExportHTML(r *AnalysisResult) {
+// ExportHTML 导出详细 HTML 报告到 output/market-regime/report.html。
+func ExportHTML(r *AnalysisResult) error {
 	// 序列化各部分数据
 	dimsJSON, _ := json.Marshal(r.DimensionResults)
 	yearsJSON, _ := json.Marshal(r.Years)
@@ -91,9 +91,13 @@ func ExportHTML(r *AnalysisResult) {
 	)
 
 	dir := reportOutputDir()
-	os.MkdirAll(dir, 0755)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建报告目录: %w", err)
+	}
 	output := filepath.Join(dir, "report.html")
-	oss.New(output, []byte(html))
+	if err := oss.New(output, []byte(html)); err != nil {
+		return fmt.Errorf("写入 HTML 报告: %w", err)
+	}
 	logs.Info("HTML报告已生成: " + output)
 
 	// 同时生成手机版 PDF 专用 HTML（纯 CSS，所有表格展开）
@@ -103,8 +107,11 @@ func ExportHTML(r *AnalysisResult) {
 		r, best, worst,
 	)
 	mobileOutput := filepath.Join(dir, "report_mobile.html")
-	oss.New(mobileOutput, []byte(mobileHTML))
+	if err := oss.New(mobileOutput, []byte(mobileHTML)); err != nil {
+		return fmt.Errorf("写入手机版 HTML 报告: %w", err)
+	}
 	logs.Info("手机版HTML已生成: " + mobileOutput)
+	return nil
 }
 
 func reportHTML(strategyName, benchmark string, yearStart, yearEnd int,

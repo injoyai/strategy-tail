@@ -63,10 +63,10 @@ func main() {
 	PrintSummary(result)
 
 	// 8. 导出 HTML 报告
-	ExportHTML(result)
+	logs.PanicErr(ExportHTML(result))
 
 	// 9. 导出 PDF 报告（手机查看专用）
-	ExportPDF(result)
+	logs.PanicErr(ExportPDF(result))
 
 	logs.Info("完成！")
 }
