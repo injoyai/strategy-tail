@@ -35,7 +35,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - 仓库 Go 源文件为 **LF** 行结尾；Windows PowerShell `Set-Content` 会写 CRLF（PS5.1 还加 BOM），批量改文件后需转 LF 并跑 `gofmt -l` 核对。
 - `gofmt -l` 存在历史遗留未格式化文件（common.go、market-regime/* 等，对齐类问题），按最小改动原则未全仓库格式化。
 - 大量 `gofmt`/测试验证基线：`go build ./...`、`go test ./...` 全绿（strategies/buy、strategies/sell、core）。
-- 根目录 exe 产物已移至 `bin/`（.gitignore 已含 `*bin`、`*.exe`）；.gitignore 移除了 `.*` 通配（避免新点文件被静默忽略），显式忽略 `.trae-html-share-packages/`。
+- **运行产物目录边界（2026-09-19）**：根目录 exe 已归入 `bin/`，PDF/HTML 报告归入 `output/reports|meanrevert/`，日志归入 `output/logs/`，临时数据探针归档到 `output/archive/`。`.gitignore` 只忽略根级 `bin/`、`output/`、`data/` 等明确运行目录，不再全局吞掉 `*.exe/*.pdf/*.csv/*.xlsx/*.log/*.py/*_report.html`；今后错放到源码树或根目录的产物会直接出现在 `git status` 中。
 - `IsTradingTime` 上午边界修正为 11:30（原代码 11:31 与注释不符）。
 - `core/forward_return.go` 的 `DefaultForwardDays` 含 90 天（HEAD 已提交），测试期望已同步。
 - `cmd/backtest/main.go` 保留死代码（TestBuy/TestSell/years 覆盖等），用户故意留作快速改参数的草稿区，勿清理。
