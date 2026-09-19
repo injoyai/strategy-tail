@@ -19,8 +19,14 @@ import (
 // ExportHTML 导出详细 HTML 报告到 output/market-regime/report.html。
 func ExportHTML(r *AnalysisResult) error {
 	// 序列化各部分数据
-	dimsJSON, _ := json.Marshal(r.DimensionResults)
-	yearsJSON, _ := json.Marshal(r.Years)
+	dimsJSON, err := json.Marshal(r.DimensionResults)
+	if err != nil {
+		return fmt.Errorf("序列化维度统计: %w", err)
+	}
+	yearsJSON, err := json.Marshal(r.Years)
+	if err != nil {
+		return fmt.Errorf("序列化年度列表: %w", err)
+	}
 
 	// 年度×综合状态交叉表数据
 	type yearRow struct {
@@ -35,10 +41,16 @@ func ExportHTML(r *AnalysisResult) error {
 		}
 		yearRows = append(yearRows, yearRow{Year: y, Cells: cells})
 	}
-	yearlyJSON, _ := json.Marshal(yearRows)
+	yearlyJSON, err := json.Marshal(yearRows)
+	if err != nil {
+		return fmt.Errorf("序列化年度交叉统计: %w", err)
+	}
 
 	// 月度热力图数据 (综合状态 × 月份)
-	monthlyJSON, _ := json.Marshal(r.MonthlyComposite)
+	monthlyJSON, err := json.Marshal(r.MonthlyComposite)
+	if err != nil {
+		return fmt.Errorf("序列化月度统计: %w", err)
+	}
 
 	// 各维度的柱状图数据（胜率 & 平均收益）
 	type barData struct {
@@ -62,7 +74,10 @@ func ExportHTML(r *AnalysisResult) error {
 		}
 		bars = append(bars, bd)
 	}
-	barsJSON, _ := json.Marshal(bars)
+	barsJSON, err := json.Marshal(bars)
+	if err != nil {
+		return fmt.Errorf("序列化图表统计: %w", err)
+	}
 
 	// 关键发现
 	best, worst := FindBestWorst(r)
@@ -81,7 +96,10 @@ func ExportHTML(r *AnalysisResult) error {
 		"coverageCompleted": coverageCompleted,
 		"coverageSkipped":   coverageSkipped,
 	}
-	findingsJSON, _ := json.Marshal(findings)
+	findingsJSON, err := json.Marshal(findings)
+	if err != nil {
+		return fmt.Errorf("序列化关键发现: %w", err)
+	}
 
 	html := reportHTML(
 		r.StrategyName, r.Benchmark,
@@ -250,7 +268,7 @@ const findings = ` + findingsJSON + `;
   function renderTable(d){
     let html = '<div class="table-wrap"><table><thead><tr><th>标签</th><th>笔数</th><th>胜率</th><th>平均收益</th><th>盈亏比</th><th>最大收益</th><th>最大亏损</th><th>总收益(Σ%)</th></tr></thead><tbody>';
     d.groups.forEach(g=>{
-      const pf = isFinite(g.profitFactor) ? g.profitFactor.toFixed(2) : '∞';
+      const pf = Number.isFinite(g.profitFactor) ? g.profitFactor.toFixed(2) : '∞';
       html += '<tr><td class="dim">'+g.label+'</td><td>'+g.count+'</td>';
       html += '<td class="'+(g.winRate>=50?'pos':'neg')+'">'+g.winRate.toFixed(1)+'%</td>';
       html += '<td class="'+(g.avgProfit>=0?'pos':'neg')+'">'+g.avgProfit.toFixed(2)+'%</td>';

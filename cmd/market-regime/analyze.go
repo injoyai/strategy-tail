@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -33,6 +34,39 @@ type GroupStat struct {
 	MaxProfit    float64 `json:"maxProfit"`
 	MaxLoss      float64 `json:"maxLoss"`
 	TotalProfit  float64 `json:"totalProfit"` // Σ 收益率（%），非金额
+}
+
+// MarshalJSON 将无亏损分组的正无穷盈亏比编码为 null。JSON 不支持 Inf，
+// 报告前端会把 null 作为不可计算值显示为“∞”。
+func (g GroupStat) MarshalJSON() ([]byte, error) {
+	type jsonGroupStat struct {
+		Dimension    string   `json:"dimension"`
+		Label        string   `json:"label"`
+		Count        int      `json:"count"`
+		Win          int      `json:"win"`
+		WinRate      float64  `json:"winRate"`
+		AvgProfit    float64  `json:"avgProfit"`
+		ProfitFactor *float64 `json:"profitFactor"`
+		MaxProfit    float64  `json:"maxProfit"`
+		MaxLoss      float64  `json:"maxLoss"`
+		TotalProfit  float64  `json:"totalProfit"`
+	}
+	var profitFactor *float64
+	if !math.IsInf(g.ProfitFactor, 0) && !math.IsNaN(g.ProfitFactor) {
+		profitFactor = &g.ProfitFactor
+	}
+	return json.Marshal(jsonGroupStat{
+		Dimension:    g.Dimension,
+		Label:        g.Label,
+		Count:        g.Count,
+		Win:          g.Win,
+		WinRate:      g.WinRate,
+		AvgProfit:    g.AvgProfit,
+		ProfitFactor: profitFactor,
+		MaxProfit:    g.MaxProfit,
+		MaxLoss:      g.MaxLoss,
+		TotalProfit:  g.TotalProfit,
+	})
 }
 
 // DimensionResult 一个维度的分组结果
