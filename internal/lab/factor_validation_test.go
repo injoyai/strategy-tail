@@ -158,10 +158,10 @@ func TestFreezeValidationRejectsV3Evidence(t *testing.T) {
 func TestFreezeValidationFactorVersionMismatch(t *testing.T) {
 	cand, rep, trial, req := freezeFixture(t)
 	cases := map[string]func(*FactorCandidate){
-		"kind":    func(c *FactorCandidate) { c.Factor.Kind = "volatility" },
-		"days":    func(c *FactorCandidate) { c.Factor.Days = 5 },
-		"name":    func(c *FactorCandidate) { c.Factor.Name = "别的因子" },
-		"unit":    func(c *FactorCandidate) { c.Factor.Unit = "名次" },
+		"kind":   func(c *FactorCandidate) { c.Factor.Kind = "volatility" },
+		"days":   func(c *FactorCandidate) { c.Factor.Days = 5 },
+		"name":   func(c *FactorCandidate) { c.Factor.Name = "别的因子" },
+		"unit":   func(c *FactorCandidate) { c.Factor.Unit = "名次" },
 		"version": func(c *FactorCandidate) { c.Factor.ImplementationVersion = 2 },
 	}
 	for name, mut := range cases {

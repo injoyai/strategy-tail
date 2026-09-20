@@ -81,7 +81,7 @@ func mirrorICStats(x ExtendedICStats) ICStats {
 }
 
 // dailyGroupMembers 按与 aggregateSet 相同的中点公式 (i+j)*g/(2n) 重建指定组
-// （groupIdx 0 基）的每日成员集合序列，供换手序列与切组严格同口径。
+//（groupIdx 0 基）的每日成员集合序列，供换手序列与切组严格同口径。
 // aggregateSet.membersOut 输出的是全区间按组索引累积的并集（组维度），无法
 // 表达按日维度的成员关系，故基于排序缓存二次线性扫描（无重复排序）。
 func (c *quantileCache) dailyGroupMembers(g, groupIdx int) []map[string]struct{} {
@@ -326,10 +326,10 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	// 已保证声明合法，后续扩展承载字段时在此接入 neutralizeCrossSection。
 
 	type hResult struct {
-		analysis    HorizonAnalysis
-		daily       []DailyIC
-		first, last string
-		quintiles   []float64
+		analysis      HorizonAnalysis
+		daily         []DailyIC
+		first, last   string
+		quintiles     []float64
 	}
 	results := make([]hResult, len(horizons))
 	statsByH := make(map[int]ExtendedICStats, len(horizons))
@@ -488,18 +488,18 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		},
 		AnalysisVersion: 4,
 		Factor:          snapshot,
-		Grouping:        grouping,
-		Groups:          main.analysis.Groups,
-		Years:           yearly,
-		Stats:           mirrorICStats(main.analysis.IC),
-		Summary:         main.analysis.Summary,
-		Coverage:        coverage,
-		YearCoverage:    yearCoverage,
-		FirstDataDate:   main.first,
-		LastDataDate:    main.last,
-		Daily:           main.daily,
-		StartedAt:       started.Format(time.RFC3339),
-		FinishedAt:      time.Now().Format(time.RFC3339),
+		Grouping:      grouping,
+		Groups:        main.analysis.Groups,
+		Years:         yearly,
+		Stats:         mirrorICStats(main.analysis.IC),
+		Summary:       main.analysis.Summary,
+		Coverage:      coverage,
+		YearCoverage:  yearCoverage,
+		FirstDataDate: main.first,
+		LastDataDate:  main.last,
+		Daily:         main.daily,
+		StartedAt:     started.Format(time.RFC3339),
+		FinishedAt:    time.Now().Format(time.RFC3339),
 
 		Protocol:        &proto,
 		ProtocolHash:    hash,

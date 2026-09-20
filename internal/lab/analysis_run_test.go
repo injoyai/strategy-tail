@@ -988,13 +988,10 @@ func TestRunAnalysisV4NextOpenVsLegacy(t *testing.T) {
 	// 折价开盘：每期 v4 收益 = c[i+h]/(0.99·c[i]) − 1 = (1+v3)/0.99 − 1，
 	// 线性聚合下组均值满足同一恒等式 → 两组收益一致上移约 +1.01%。价格按
 	// 毫元量化（Yuan=Price(f*1000)），容差取 1e-3（噪声 ≤6e-5，错标签 ~0.01）。
-	for _, g := range []struct {
-		name   string
-		v4, v3 float64
-	}{
+	for _, g := range []struct{ name string; v4, v3 float64 }{
 		{"Q1", *q1v4, *q1v3}, {"Q3", *q3v4, *q3v3},
 	} {
-		want := (g.v3+1)/0.99 - 1
+		want := (g.v3 + 1) / 0.99 - 1
 		if math.Abs(g.v4-want) > 1e-3 {
 			t.Fatalf("%s next-open %v 应等于 (1+legacy)/0.99−1 = %v", g.name, g.v4, want)
 		}

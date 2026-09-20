@@ -7,7 +7,7 @@
 # 需要：PowerShell 5.1+；Docker Desktop 可用（docker 在 PATH 中）。
 # 注意：本文件必须保存为 UTF-8 with BOM，否则 Windows PowerShell 5.1 会按 GBK 解析中文。
 param(
-    [string]$Bind = $(if ($env:BIND) { $env:BIND } else { '127.0.0.1' })
+    [string]$Bind = $(if ($env:BIND) { $env:BIND } else { '0.0.0.0' })
 )
 
 # 显式 Continue：规避 PS5.1 中 EAP=Stop 与原生命令 stderr 重定向（2>&1）冲突的坑；

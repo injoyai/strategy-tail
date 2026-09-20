@@ -83,6 +83,8 @@
 
 因子研究的字段语义：`GET /api/factors` 目录的 `name` 是**默认参数实例名**（如“`N日动量(20)`”，数字是该条目的默认参数，并非固定值），不是稳定的类型名。页面上展示因子名称时必须经 `factorTypeName()` 剥掉默认参数后缀，只显示类型名（如“`N日动量`”）；需要带参数的场景用 `factorInstanceName()` 以当前真实参数拼接（如“`N日动量(60)`”），禁止把目录 `name` 或候选存储里冻结的实例名直接渲染给用户。曾因直出默认实例名导致界面出现“`N日动量(20)`（20 日）”双重参数、候选列表“`N日动量(20)` · 20 日”等误导显示（2026-09-18 修复）。参数字段使用目录提供的中文名称（如“回看天数”）。未来收益窗口是独立的评价周期，不得与因子历史计算窗口合并或重复显示。无参数的单根 K 线因子隐藏窗口输入。
 
+因子选择器按 `GET /api/factors` 的 `category` 生成浏览器原生 `<optgroup>`；后端目录是分类名称和顺序的唯一事实源，前端不得另建分类映射。缺失分类统一落入“其他”。分组只改善查找，不改变 option 的稳定 `kind`、参数语义或候选/策略存储合同；因子研究与简单策略条件必须共用同一生成函数。
+
 分组收益图的横轴必须优先表达因子原始数值，而不是只显示 `Q1/Q2`：全区间与单年柱状图显示该区间内每组真实的 `min~max`，年度对比折线使用各年各组的真实因子均值作为连续数值横轴；`ratio` 按百分比、`multiple` 按倍数展示。Q/B 编号只用于表格或 tooltip 定位。历史报告缺少年度组内数值时应提示重新分析，不得借用全区间边界冒充年度边界。
 
 ## 4. 异步状态要求（每个异步区域必须覆盖）
@@ -123,3 +125,69 @@
 - `premium-ui.json` 使用当前 Premium UI 审计清单，范围只包含 `internal/lab/web/lab`，控件所有权以上方 Canonical UI Map 为准。
 - 2026-09-16 运行 `audit_project.py --mode strict --config premium-ui.json --no-write`：0 errors / 0 warnings。
 - 静态审计不证明浏览器运行时行为；键盘 Tab、窄屏布局和减少动态效果仍需以实际浏览器检查作为证据。
+
+## 7. 06 组合研究页（2026-09-19，多因子组合 v2 Task 10）
+
+> UI 契约见 `UX-CONTRACT.md`；业务规则与 API 见
+> `docs/superpowers/specs/2026-09-18-multifactor-portfolio-v2-design.md` §5-§12 与
+> `internal/lab/portfolio_handlers.go`。本页只做“把已有验证证据组装成冻结模型，并检查
+> 其样本外组合表现”，不展示脱离证据的“魔法总分”。
+
+### 7.1 页面架构
+
+在第 5 个页签（候选因子）之后新增 `06 组合研究`（内部 `tab6`，slug `portfolio`），
+数据流按设计 §13.2 的信息架构组织：
+
+```text
+证据脊柱（页面中心，§13.3）
+  ├─ 模型列表：ID、状态（最近验证结论）、revision、证据等级、因子数、最近验证
+  ├─ 模型编辑：输入证据 — 变换 — 合成 — 组合 — 执行 — 门禁（分区 details）
+  ├─ 运行列表/详情：目标/实际、毛/净、净值曲线、风险、执行质量、产物下载
+  ├─ 归因详情：相关/覆盖/边际 IC/留一法、股票/行业/成本/偏离
+  └─ 验证列表/详情：窗口、门禁、结论、限制、输入 hash
+```
+
+现有 5 个 tab（01-05）与它们的 `?tab=` URL 行为保持不变；`switchTab` 仅对 `n===6`
+保留并更新 query 参数（`model/revision/run/val/filter/sort/page`），其余分支原样。
+
+### 7.2 组件合同
+
+| Capability | Canonical owner | 来源 |
+|---|---|---|
+| 模型/运行/验证列表 | 服务端分页（实验/验证）+ 本地分页（模型，API 无分页参数，见 UX-CONTRACT §6） | `/api/portfolio-experiments|validations|factor-models` |
+| 排序表头 | `<button class="pf-sortbtn">` + `aria-sort` | 模型列表六列 |
+| 原生 select | 全部下拉（缺失策略/去极值/中性化/标准化/合成/选股/调仓/筛选/状态） | §13.4 |
+| 长任务进度 | 复用全局状态栏 `#statusbar`；组合任务 `done/total=-1` 显示不确定进度，`phase` 显示阶段文案 | `/api/status` Task 9 组合分支 |
+| 取消 | 状态栏“停止任务” + 06 页“取消运行”（`POST /api/portfolio-runs/{id}/stop`） | §14 |
+| 产物下载 | `<a href="/api/portfolio-experiments/{id}/artifacts/{name}">`，仅 completed 可读，白名单五类 | Task 7 产物发布协议 |
+| 正式结论 | verdict/指标/归因只渲染后端返回值（report.json / 验证详情），浏览器不重算 | 完成门槛 |
+
+### 7.3 状态覆盖（每个异步区域）
+
+loading / empty / no-results / running / partial / stale / error / done 均以稳定布局
+呈现：`.empty` 空态、`.warnbar` 错误 + 重试、stale 标签（后台刷新保留旧内容不闪白）、
+运行中按钮 `disabled + aria-busy`。错误显示在所属区域且保留用户输入；表单输入变化
+重置幂等 `requestId`，同一次动作网络失败重试复用（候选页同模式）。
+
+### 7.4 视觉签名：证据脊柱
+
+页面中心一条紧凑节点链（验证因子 → 变换 → 合成分数 → 目标权重 → 实际持仓 →
+样本外结论），每节点显示状态点（ok/degraded/empty）、版本（revision/实现版本）与
+降级原因（如探索性证据、实验 insufficient）；点击节点滚动定位到对应配置或报告。
+只做静态布局与 hover，不做装饰动画；节点不代替详细表格。
+
+### 7.5 响应式与可访问性
+
+- `≤900px`：脊柱节点与双栏区退单栏；表格容器保持横向滚动。
+- 窄屏：模型/运行/验证列表标识列（ID 列）`position:sticky` 保留，不静默隐藏业务字段。
+- 键盘：排序按钮/创建/保存/归档（候选页既有）/运行完成/错误恢复后焦点移动到可解释
+  位置；`prefers-reduced-motion` 沿用全局 reduce 规则。
+- 焦点与 stale：后台轮询不覆盖用户当前编辑/选择；所选模型出现新 revision 时在编辑区
+  顶部标 stale 提示。
+- 无 `alert/confirm/prompt`、无可点击 div 或虚假按钮。
+
+### 7.6 token 所有权
+
+沿用 §2 全部 CSS 变量（`--bg/--ink/--rule/--accent/--gold-*` 等），A 股红涨绿跌
+（`--color-up/--color-down`）只用于收益语义，琥珀（`--warn`）只用于警告与降级；
+未新增第二套颜色、字体、按钮、表格、状态栏或 toast 体系。

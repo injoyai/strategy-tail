@@ -64,8 +64,8 @@ type CompositeIC struct {
 // LeaveOneOut 留一因子编排（本 Task 实现 IC 维度；收益/换手/回撤由 Task 6 接入）。
 type LeaveOneOut struct {
 	RemovedFactor string  `json:"removedFactor"`
-	FullIC        float64 `json:"fullIc"`   // 全因子合成分数 IC（与 LOO 相同有效日）
-	LOOIC         float64 `json:"looIc"`    // 移除后合成分数 IC
+	FullIC        float64 `json:"fullIc"`  // 全因子合成分数 IC（与 LOO 相同有效日）
+	LOOIC         float64 `json:"looIc"`   // 移除后合成分数 IC
 	ICChange      float64 `json:"icChange"` // LOOIC - FullIC（正 = 移除后提升）
 	ValidDays     int     `json:"validDays"`
 }
@@ -107,10 +107,10 @@ func RedundancyDiagnostics(factors []FactorSeries, rets ReturnsView, snapshots [
 	}
 
 	report := RedundancyReport{
-		Pairs:       pairCorrelations(factors),
-		Coverage:    coverageStats(factors),
-		SingleIC:    singleICs(factors, rets),
-		Composite:   compositeIC(factors, rets, cfg.Missing),
+		Pairs:      pairCorrelations(factors),
+		Coverage:   coverageStats(factors),
+		SingleIC:   singleICs(factors, rets),
+		Composite:  compositeIC(factors, rets, cfg.Missing),
 		LeaveOneOut: leaveOneOut(factors, rets, cfg.Missing),
 	}
 	marg, skipped := marginalICs(factors, rets)

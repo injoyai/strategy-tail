@@ -44,18 +44,18 @@ func validModelID(id string) bool { return modelIDRe.MatchString(id) }
 // 新建模型（服务端生成 ID）；非空表示向该模型追加 revision（必须提供
 // BaseRevision 作为乐观并发基数）。
 type CreateFactorModelRequest struct {
-	RequestID         string                              `json:"requestId"`
-	ModelID           string                              `json:"modelId,omitempty"`
-	BaseRevision      int                                 `json:"baseRevision,omitempty"`
-	CreatedBy         string                              `json:"createdBy"`
-	ResearchQuestion  string                              `json:"researchQuestion"`
-	Hypothesis        string                              `json:"hypothesis"`
-	FactorValidations []string                            `json:"factorValidations"`
-	TransformPipeline portfolioresearch.TransformPipeline `json:"transformPipeline"`
-	Combination       portfolioresearch.CombinationSpec   `json:"combination"`
-	PortfolioPolicy   portfolioresearch.PortfolioPolicy   `json:"portfolioPolicy"`
-	Execution         portfolioresearch.ExecutionSpec     `json:"execution"`
-	Benchmark         portfolioresearch.BenchmarkSpec     `json:"benchmark"`
+	RequestID         string                                   `json:"requestId"`
+	ModelID           string                                   `json:"modelId,omitempty"`
+	BaseRevision      int                                      `json:"baseRevision,omitempty"`
+	CreatedBy         string                                   `json:"createdBy"`
+	ResearchQuestion  string                                   `json:"researchQuestion"`
+	Hypothesis        string                                   `json:"hypothesis"`
+	FactorValidations []string                                 `json:"factorValidations"`
+	TransformPipeline portfolioresearch.TransformPipeline      `json:"transformPipeline"`
+	Combination       portfolioresearch.CombinationSpec       `json:"combination"`
+	PortfolioPolicy   portfolioresearch.PortfolioPolicy       `json:"portfolioPolicy"`
+	Execution         portfolioresearch.ExecutionSpec         `json:"execution"`
+	Benchmark         portfolioresearch.BenchmarkSpec         `json:"benchmark"`
 }
 
 // normalizeCreateFactorModelRequest 请求纯校验与规范化：UUID 幂等键、模型

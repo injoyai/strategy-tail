@@ -8,6 +8,11 @@ pull:
   goroutines: 10
   spec: "0 15 15 * * *"
 
+research:
+  valuation:
+    # 日频历史估值（PE/PB/PS/PCF/PEG）的本地持久库。
+    database: "./data/research/valuation.db"
+
 screen:
   port: 9090
   lookback: 60

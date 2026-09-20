@@ -49,6 +49,26 @@ var registry = []entry{
 		ImplementationVersion: 1,
 	},
 	{
+		Kind: "skip_month_momentum", Default: 252,
+		New:                   func(d int) core.Factor { return &跳过近月动量{Days: d} },
+		Description:           "近N日累计收益率，固定跳过最近21个交易日",
+		Category:              "趋势与动量",
+		ParameterLabel:        "总回看天数（跳过近21日）",
+		Unit:                  "ratio",
+		Example:               "原始值 0.30 表示从 N 个交易日前到 21 个交易日前累计上涨约 30%。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "short_reversal", Default: 20,
+		New:                   func(d int) core.Factor { return &N日短期反转{Days: d} },
+		Description:           "近N日涨跌幅的相反数",
+		Category:              "趋势与动量",
+		ParameterLabel:        "回看天数",
+		Unit:                  "ratio",
+		Example:               "原始值 0.05 表示近 N 日下跌约 5%，-0.05 表示上涨约 5%。",
+		ImplementationVersion: 1,
+	},
+	{
 		Kind: "ma_bias", Default: 20,
 		New:                   func(d int) core.Factor { return &均线偏离{Days: d} },
 		Description:           "收盘价相对N日均线的偏离率",
@@ -179,6 +199,26 @@ var registry = []entry{
 		ImplementationVersion: 1,
 	},
 	{
+		Kind: "amihud_illiquidity", Default: 20,
+		New:                   func(d int) core.Factor { return &Amihud非流动性{Days: d} },
+		Description:           "近N日单位成交额对应的绝对收益率均值",
+		Category:              "规模与流动性",
+		ParameterLabel:        "统计天数",
+		Unit:                  "score",
+		Example:               "原始值 0.02 表示平均每 1 亿元成交额对应约 2% 的绝对收益率，数值越大流动性越弱。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "log_float_cap", Default: 1,
+		New:                   func(int) core.Factor { return &对数流通市值{} },
+		Description:           "流通市值（亿元）的自然对数",
+		Category:              "规模与流动性",
+		ParameterLabel:        "无参数（当日流通股本）",
+		Unit:                  "score",
+		Example:               "原始值 5.99 表示流通市值约为 exp(5.99)=400 亿元。",
+		ImplementationVersion: 1,
+	},
+	{
 		Kind: "body", Default: 1,
 		New:                   func(int) core.Factor { return &实体幅度{} },
 		Description:           "K线实体占比",
@@ -219,6 +259,16 @@ var registry = []entry{
 		ImplementationVersion: 1,
 	},
 	{
+		Kind: "high_distance", Default: 252,
+		New:                   func(d int) core.Factor { return &N日收盘高点距离{Days: d} },
+		Description:           "收盘价相对近N日最高收盘价的距离",
+		Category:              "位置",
+		ParameterLabel:        "回看天数",
+		Unit:                  "ratio",
+		Example:               "原始值 -0.10 表示当前收盘价低于近 N 日最高收盘价约 10%，0 表示处于最高点。",
+		ImplementationVersion: 1,
+	},
+	{
 		Kind: "kvalue", Default: 9,
 		New:                   func(d int) core.Factor { return &K值{Days: d} },
 		Description:           "KDJ K线",
@@ -236,6 +286,78 @@ var registry = []entry{
 		ParameterLabel:        "统计天数",
 		Unit:                  "correlation",
 		Example:               "原始值 0.6 表示近 N 日量价正相关，0 为不相关，-0.6 为负相关。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "pe_ttm", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "pe_ttm", Label: "市盈率TTM"}
+		},
+		Description:           "最近可见的滚动市盈率",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 15 表示总市值约为过去 12 个月归母利润的 15 倍；亏损公司可能为负值。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "pe_static", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "pe_static", Label: "静态市盈率"}
+		},
+		Description:           "最近可见的静态市盈率",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 20 表示总市值约为最近完整年度归母利润的 20 倍。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "pb_mrq", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "pb_mrq", Label: "市净率MRQ"}
+		},
+		Description:           "最近可见的市净率（最近报告期）",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 2.5 表示总市值约为最近报告期净资产的 2.5 倍。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "ps_ttm", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "ps_ttm", Label: "市销率TTM"}
+		},
+		Description:           "最近可见的滚动市销率",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 3 表示总市值约为过去 12 个月营业收入的 3 倍。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "pcf_ocf_ttm", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "pcf_ocf_ttm", Label: "市现率TTM"}
+		},
+		Description:           "最近可见的经营现金流口径滚动市现率",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 12 表示总市值约为过去 12 个月经营现金流的 12 倍。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "peg", Default: 1,
+		NewContext: func(int) core.ContextFactor {
+			return 最新字段{Dataset: "valuation.daily", Field: "peg", Label: "PEG"}
+		},
+		Description:           "最近可见的供应商口径 PEG",
+		Category:              "估值",
+		ParameterLabel:        "无参数（日频历史值）",
+		Unit:                  "multiple",
+		Example:               "原始值 1.2 表示市盈率约为供应商采用的盈利增长率的 1.2 倍。",
 		ImplementationVersion: 1,
 	},
 }

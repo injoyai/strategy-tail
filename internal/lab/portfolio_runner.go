@@ -301,7 +301,7 @@ func (r *Runner) cancelExperiment(id, msg string) error {
 // markExperimentFailed 标记失败并返回错误（全局状态置 error）。
 func (r *Runner) markExperimentFailed(id, msg string) error {
 	_ = r.experimentStore.MarkFailed(id, msg)
-	return fmt.Errorf("%s", msg)
+	return errors.New(msg)
 }
 
 // markExperimentInsufficient 标记无有效样本（运行成功但样本不足，返回 nil
@@ -457,6 +457,15 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 		r.setPortfolioPhase(portfolioPhaseMetrics)
 		wm, err := windowMetrics(ledgers)
 		if err != nil {
+			return err
+		}
+		// 基线增量：滚动 IC 模型在同窗重跑等权秩基线组合后求净收益差
+		// （同一数据/执行/会计/指标链）；等权秩模型基线 = 自身，增量 0。
+		wm.BaselineIncrement, err = r.baselineIncrementFor(m, factors, data, testDates, wm.NetReturn, stop)
+		if err != nil {
+			if errors.Is(err, errStopped) {
+				return errStopped
+			}
 			return err
 		}
 		outcome := portfolioresearch.ValidationWindowOutcome{
@@ -727,6 +736,13 @@ func resolveCombineWeights(spec portfolioresearch.CombinationSpec, factors []por
 	if spec.Method == portfolioresearch.CombinationEqualWeightRank {
 		return nil, false, nil
 	}
+	// 防御：滚动 IC 方法必须携带 rollingIc。读取路径虽已由 m.Validate 校验
+	// （CombinationSpec.Validate 拒绝 nil），此处再显式防护——磁盘手工构造、
+	// hash 自洽的非法模型也不得在 goroutine 中 nil 解引用 panic，fail closed
+	// 返回明确错误。
+	if spec.RollingIC == nil {
+		return nil, false, fmt.Errorf("combination.method=rolling_ic_weight 必须提供 rollingIc（模型记录非法，fail closed）")
+	}
 	keys := make([]string, len(factors))
 	for i, f := range factors {
 		keys[i] = f.Key
@@ -969,8 +985,36 @@ func windowMetrics(ledgers []portfolioresearch.DailyLedger) (portfolioresearch.V
 		// 基准缺失：信息比率/年化超额不可用（设计 §9.5）。
 		InformationRatio:  nil,
 		AnnualExcess:      nil,
-		BaselineIncrement: 0, // 等权秩基线 = 模型本身；滚动 IC 基线另行计算
+		// 基线增量默认 0（等权秩模型基线 = 自身）；滚动 IC 模型由验证循环
+		// 在同窗重跑等权秩基线后回填真实值（见 baselineIncrementFor）。
+		BaselineIncrement: 0,
 	}, nil
+}
+
+// baselineIncrementFor 单窗相对等权秩基线的净收益增量（口径与窗内 Metrics
+// 一致：同一数据/执行/会计/指标链）。等权秩模型基线 = 自身 → 增量 0，
+// 无需重跑；滚动 IC 模型在同一窗口上重跑等权秩基线组合（combinePortfolio
+// 传 nil 权重 = Combine 内部等权秩），增量 = IC 权重组合净收益 − 等权秩
+// 基线净收益。滚动 IC 训练不足回退等权时增量 ≈ 0；回退现金时增量为负，
+// 如实反映策略相对基线的表现，MinBaselineIncrement 门禁据此按真实值求值。
+func (r *Runner) baselineIncrementFor(m portfolioresearch.FactorModel, factors []portfolioresearch.FactorSeries, data *portfolioRunData, testDates []string, mainNetReturn float64, stop chan struct{}) (float64, error) {
+	if m.Combination.Method == portfolioresearch.CombinationEqualWeightRank {
+		return 0, nil
+	}
+	baseScores, err := combinePortfolio(factors, m.TransformPipeline.Missing, nil, false)
+	if err != nil {
+		return 0, err
+	}
+	baseLedgers, _, err := runPortfolioDays(m, baseScores, data, testDates, portfolioNotional, stop, nil)
+	if err != nil {
+		return 0, err
+	}
+	baseSeries := portfolioresearch.FromLedgers(baseLedgers)
+	baseMetrics, err := portfolioresearch.ComputeMetrics(baseSeries, nil, 0)
+	if err != nil {
+		return 0, err
+	}
+	return mainNetReturn - baseMetrics.Net.CumulativeReturn, nil
 }
 
 // unfilledRate 未成交率 = 未成交意图数 / 总意图数（[0,1]）。

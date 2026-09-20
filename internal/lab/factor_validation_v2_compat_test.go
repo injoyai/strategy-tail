@@ -24,34 +24,34 @@ import (
 
 // v2CompatFixtureMetadata 夹具元数据快照（Task 0 动作 2 的七项逐项记录）。
 type v2CompatFixtureMetadata struct {
-	Scenario              string // 夹具场景名
-	CandidateRevision     int    // 冻结的候选 revision
-	FactorKind            string // 因子实例 kind
-	FactorDays            int    // 因子实例 days
-	FactorName            string // 因子实例 name
-	FactorUnit            string // 因子实例 unit
-	ImplementationVersion int    // 因子实现版本
-	Direction             string // 冻结预期方向（研究协议 Hypothesis.ExpectedDirection）
-	EvidenceClass         string // 验证证据等级（retrospective | prospective）或分析层 exploratory
-	DataPriceSource       string // 数据快照：价格来源
-	DataPriceVersion      string // 数据快照：价格数据版本
-	DataPITState          string // 数据快照：PIT 状态
-	ResearchProtocolHash  string // 研究协议 hash（绑定股票池/数据/标签版本）
-	RequestHash           string // 冻结内容 hash（空字符串表示未冻结——拒绝路径）
+	Scenario             string // 夹具场景名
+	CandidateRevision    int    // 冻结的候选 revision
+	FactorKind           string // 因子实例 kind
+	FactorDays           int    // 因子实例 days
+	FactorName           string // 因子实例 name
+	FactorUnit           string // 因子实例 unit
+	ImplementationVersion int   // 因子实现版本
+	Direction            string // 冻结预期方向（研究协议 Hypothesis.ExpectedDirection）
+	EvidenceClass        string // 验证证据等级（retrospective | prospective）或分析层 exploratory
+	DataPriceSource      string // 数据快照：价格来源
+	DataPriceVersion     string // 数据快照：价格数据版本
+	DataPITState         string // 数据快照：PIT 状态
+	ResearchProtocolHash string // 研究协议 hash（绑定股票池/数据/标签版本）
+	RequestHash          string // 冻结内容 hash（空字符串表示未冻结——拒绝路径）
 }
 
 // collectViewMetadata 从冻结请求提取七项元数据（验证层夹具用）。
 func collectViewMetadata(scenario string, view ValidationView) v2CompatFixtureMetadata {
 	m := v2CompatFixtureMetadata{
-		Scenario:              scenario,
-		CandidateRevision:     view.Request.Protocol.CandidateRevision,
-		FactorKind:            view.Request.Candidate.Factor.Kind,
-		FactorDays:            view.Request.Candidate.Factor.Days,
-		FactorName:            view.Request.Candidate.Factor.Name,
-		FactorUnit:            view.Request.Candidate.Factor.Unit,
+		Scenario:             scenario,
+		CandidateRevision:    view.Request.Protocol.CandidateRevision,
+		FactorKind:           view.Request.Candidate.Factor.Kind,
+		FactorDays:           view.Request.Candidate.Factor.Days,
+		FactorName:           view.Request.Candidate.Factor.Name,
+		FactorUnit:           view.Request.Candidate.Factor.Unit,
 		ImplementationVersion: view.Request.Candidate.Factor.ImplementationVersion,
-		EvidenceClass:         view.Request.Protocol.EvidenceClass,
-		RequestHash:           view.Request.RequestHash,
+		EvidenceClass:        view.Request.Protocol.EvidenceClass,
+		RequestHash:          view.Request.RequestHash,
 	}
 	if p := view.Request.ResearchProtocol; p != nil {
 		m.Direction = p.Hypothesis.ExpectedDirection
@@ -267,20 +267,20 @@ func TestCompatV2ValidationExploratoryInputFixture(t *testing.T) {
 	// 七项元数据在分析层同样可读（candidate revision/因子实例/实现版本/
 	// 方向/证据等级/数据快照/hash），供逐项准入表记录。
 	m := v2CompatFixtureMetadata{
-		Scenario:              "exploratory-input",
-		CandidateRevision:     cand.Revision,
-		FactorKind:            cand.Factor.Kind,
-		FactorDays:            cand.Factor.Days,
-		FactorName:            cand.Factor.Name,
-		FactorUnit:            cand.Factor.Unit,
+		Scenario:             "exploratory-input",
+		CandidateRevision:    cand.Revision,
+		FactorKind:           cand.Factor.Kind,
+		FactorDays:           cand.Factor.Days,
+		FactorName:           cand.Factor.Name,
+		FactorUnit:           cand.Factor.Unit,
 		ImplementationVersion: cand.Factor.ImplementationVersion,
-		Direction:             p.Hypothesis.ExpectedDirection,
-		EvidenceClass:         rep.EvidenceClass,
-		DataPriceSource:       p.Data.PriceSource,
-		DataPriceVersion:      p.Data.PriceVersion,
-		DataPITState:          p.Data.PITState,
-		ResearchProtocolHash:  h,
-		RequestHash:           "", // 未冻结，无 request hash（拒绝路径）
+		Direction:            p.Hypothesis.ExpectedDirection,
+		EvidenceClass:        rep.EvidenceClass,
+		DataPriceSource:      p.Data.PriceSource,
+		DataPriceVersion:     p.Data.PriceVersion,
+		DataPITState:         p.Data.PITState,
+		ResearchProtocolHash: h,
+		RequestHash:          "", // 未冻结，无 request hash（拒绝路径）
 	}
 	assertMetadataComplete(t, m, false)
 }

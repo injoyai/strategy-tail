@@ -306,7 +306,10 @@ func ComputeAttribution(in AttributionInput) (PortfolioAttribution, error) {
 
 	for _, d := range in.Days {
 		// 股票贡献（期初权重 × 当日收益）与行业聚合（缺行业归 "unknown"）。
-		for code, w := range d.ActualWeights {
+		// 按代码升序迭代累加（确定性：map 无序迭代会使浮点加法顺序不定，
+		// 同输入两次运行产生 ~1e-15 噪声，破坏"逐位一致"契约；Task 11 审计发现）。
+		for _, code := range sortedKeys(d.ActualWeights) {
+			w := d.ActualWeights[code]
 			r := d.Returns[code]
 			if math.IsNaN(r) || math.IsInf(r, 0) {
 				r = 0
@@ -337,16 +340,20 @@ func ComputeAttribution(in AttributionInput) (PortfolioAttribution, error) {
 		fees += d.Fees
 
 		// 信号选择收益（理想目标权重下收益；理想现金 = 1 - Σ理想权重）。
+		// 按代码升序迭代累加（确定性，见上注释）。
 		if d.IdealWeights != nil {
 			r := 0.0
-			for code, w := range d.IdealWeights {
+			idealSum := 0.0
+			for _, code := range sortedKeys(d.IdealWeights) {
+				w := d.IdealWeights[code]
+				idealSum += w
 				ret := d.Returns[code]
 				if math.IsNaN(ret) || math.IsInf(ret, 0) {
 					ret = 0
 				}
 				r += w * ret
 			}
-			r += (1 - sumMap(d.IdealWeights)) * rfDaily
+			r += (1 - idealSum) * rfDaily
 			selection += r
 			hasSelection = true
 		}
@@ -373,9 +380,10 @@ func ComputeAttribution(in AttributionInput) (PortfolioAttribution, error) {
 		}
 	}
 
-	// 组装输出（确定性：股票按代码升序、行业按行业名升序）。
+	// 组装输出（确定性：股票按代码升序、行业按行业名升序；股票贡献/现金
+	// 合计按代码升序累加，见上注释）。
 	pa.CashContribution = cashCum
-	pa.StockCashSum = sumMap(stockCum) + cashCum
+	pa.StockCashSum = sumSorted(stockCum) + cashCum
 	if in.InitialEquity > 0 {
 		pa.CostDrag = fees / in.InitialEquity
 	}
@@ -443,4 +451,16 @@ func cloneMap(m map[string]float64) map[string]float64 {
 		out[k] = v
 	}
 	return out
+}
+
+// sumSorted 按代码升序累加权重（确定性浮点加法：map 无序迭代会使求和顺序
+// 不定，同输入两次运行产生 ~1e-15 噪声，破坏"逐位一致"契约；Task 11 审计
+// 发现并修复。target.go 的 sumMap 供容差比较场景使用，此处归因输出需要
+// 位级确定性）。
+func sumSorted(m map[string]float64) float64 {
+	s := 0.0
+	for _, code := range sortedKeys(m) {
+		s += m[code]
+	}
+	return s
 }

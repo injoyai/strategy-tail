@@ -38,7 +38,7 @@ func main() {
 
 	core.Backtest{
 		Buyer: buy.And{
-			b,
+			//b,
 			MACDBuyer,
 			//common.MACDBuyer,
 		},

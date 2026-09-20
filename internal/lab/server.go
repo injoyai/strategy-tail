@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -151,18 +152,32 @@ func (s *Server) Handler() http.Handler { return s.mux }
 //go:embed web
 var webFS embed.FS
 
-// handleIndex 静态页服务（web/lab/index.html）。
+// handleIndex 静态资源服务（web/lab/，含 index.html 与 Vue 模块脚本）。
+// 仅服务 web/lab 内的常规文件，防路径穿越；无构建链，直接读 embed。
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if name == "" {
+		name = "index.html"
+	}
+	embedName := "web/lab/" + name
+	if strings.HasSuffix(embedName, "/") {
 		http.NotFound(w, r)
 		return
 	}
-	data, err := webFS.ReadFile("web/lab/index.html")
+	data, err := webFS.ReadFile(embedName)
 	if err != nil {
-		http.Error(w, "前端页面缺失: "+err.Error(), http.StatusInternalServerError)
+		http.NotFound(w, r)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	switch {
+	case strings.HasSuffix(embedName, ".html"):
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	case strings.HasSuffix(embedName, ".css"):
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+	case strings.HasSuffix(embedName, ".js"):
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	}
+	w.Header().Set("Cache-Control", "no-store")
 	w.Write(data)
 }
 

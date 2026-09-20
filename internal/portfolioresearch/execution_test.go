@@ -684,3 +684,50 @@ func TestUnfilledReasonsAreStableEnums(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildIntentsFillsTargetWeight 订单意图必须回填当日目标权重（审计引用，
+// orders.csv weight 列）：买入/部分减持 = 目标有效权重；清仓卖出（目标无该
+// 代码）与缺失/非有限权重 = 0；跨日保留保留创建当日权重。
+func TestBuildIntentsFillsTargetWeight(t *testing.T) {
+	lots := []HoldingLot{
+		tLot("A", 500, 10, "2026-01-02"), // 增持：目标 800 → 买 300
+		tLot("B", 500, 10, "2026-01-02"), // 减持：目标 200 → 卖 300
+		tLot("C", 500, 10, "2026-01-02"), // 清仓：目标无 C → 卖 500
+	}
+	targetShares := map[string]int{"A": 800, "B": 200}
+	effective := map[string]float64{"A": 0.4, "B": 0.1, "C": 0.25}
+	intents := buildIntents(lots, targetShares, nil, effective)
+
+	byCode := map[string]OrderIntent{}
+	for _, it := range intents {
+		byCode[it.Code] = it
+	}
+	// 买入：目标有效权重 0.4。
+	if it := byCode["A"]; it.Side != SideBuy || !approx(it.Weight, 0.4, 1e-12) {
+		t.Fatalf("A 买入意图权重 = %+v, want buy/0.4", it)
+	}
+	// 部分减持：剩余目标有效权重 0.1。
+	if it := byCode["B"]; it.Side != SideSell || !approx(it.Weight, 0.1, 1e-12) {
+		t.Fatalf("B 减持意图权重 = %+v, want sell/0.1", it)
+	}
+	// 清仓卖出：目标无该代码 → 权重 0。
+	if it := byCode["C"]; it.Side != SideSell || it.Weight != 0 {
+		t.Fatalf("C 清仓意图权重 = %+v, want sell/0", it)
+	}
+
+	// 缺失/非有限权重 → 0（与 intentPriority 同策略）。
+	bad := buildIntents(lots, map[string]int{"A": 800}, nil,
+		map[string]float64{"A": math.NaN(), "B": math.Inf(1)})
+	for _, it := range bad {
+		if it.Weight != 0 {
+			t.Fatalf("非有限/缺失目标权重应归 0: %+v", it)
+		}
+	}
+
+	// 跨日保留保留创建当日目标权重（carriedBuys 原样复制，不重估）。
+	carried := carriedBuys([]OrderIntent{{Code: "D", Side: SideBuy, Shares: 100, Weight: 0.3, Priority: 1}},
+		[]OrderIntent{{Code: "A", Side: SideBuy, Shares: 100}})
+	if len(carried) != 1 || !approx(carried[0].Weight, 0.3, 1e-12) {
+		t.Fatalf("跨日保留意图应保留创建当日权重 0.3: %+v", carried)
+	}
+}

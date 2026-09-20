@@ -254,6 +254,96 @@ func TestPortfolioModelHandlers(t *testing.T) {
 	doReq(t, h, http.MethodPost, "/api/factor-models", conflict, http.StatusConflict)
 }
 
+// TestPortfolioModelPagination 模型列表服务端分页（Task 10 规格缺口修复）：
+// 无分页参数旧客户端兼容（models 全量 + total）、总数/页大小/越界页/稳定
+// 排序、非法分页参数 400、只带单参数时缺省补全。
+func TestPortfolioModelPagination(t *testing.T) {
+	env := newPortfolioTestEnv(t)
+	h := env.s.Handler()
+	// 创建 3 个模型（不同 requestId → 不同模型）。
+	for _, rid := range []string{testUUID1, testUUID2, "9b2f1c3d-4e5f-4a7b-8c9d-0e1f2a3b4c5e"} {
+		createModelViaAPI(t, h, env.validationID, rid)
+	}
+
+	// 旧客户端兼容：不带分页参数 → models 全量 + total。
+	res := doReq(t, h, http.MethodGet, "/api/factor-models", nil, http.StatusOK)
+	var all struct {
+		Models []portfolioresearch.FactorModel `json:"models"`
+		Items  []portfolioresearch.FactorModel `json:"items"`
+		Total  int                             `json:"total"`
+	}
+	if err := json.Unmarshal(res, &all); err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Models) != 3 || len(all.Items) != 3 || all.Total != 3 {
+		t.Fatalf("无分页参数应返回全量 3 条 + total=3, got models=%d items=%d total=%d",
+			len(all.Models), len(all.Items), all.Total)
+	}
+
+	type pageResp struct {
+		Models   []portfolioresearch.FactorModel `json:"models"`
+		Items    []portfolioresearch.FactorModel `json:"items"`
+		Total    int                             `json:"total"`
+		Page     int                             `json:"page"`
+		PageSize int                             `json:"pageSize"`
+	}
+	// 分页：page=1&pageSize=2 → 2 条；page=2 → 1 条。
+	res = doReq(t, h, http.MethodGet, "/api/factor-models?page=1&pageSize=2", nil, http.StatusOK)
+	var p1 pageResp
+	if err := json.Unmarshal(res, &p1); err != nil {
+		t.Fatal(err)
+	}
+	if p1.Total != 3 || len(p1.Items) != 2 || p1.Page != 1 || p1.PageSize != 2 {
+		t.Fatalf("第 1 页 total/items/page/pageSize = %d/%d/%d/%d, want 3/2/1/2",
+			p1.Total, len(p1.Items), p1.Page, p1.PageSize)
+	}
+	// models 兼容字段与 items 一致。
+	if len(p1.Models) != 2 || p1.Models[0].ModelID != p1.Items[0].ModelID {
+		t.Fatalf("分页响应 models 应与 items 一致")
+	}
+	res = doReq(t, h, http.MethodGet, "/api/factor-models?page=2&pageSize=2", nil, http.StatusOK)
+	var p2 pageResp
+	if err := json.Unmarshal(res, &p2); err != nil {
+		t.Fatal(err)
+	}
+	if len(p2.Items) != 1 {
+		t.Fatalf("第 2 页 items = %d, want 1", len(p2.Items))
+	}
+	// 稳定排序：分页合并后与全量列表逐位一致（无重复无遗漏）。
+	combined := append(append([]portfolioresearch.FactorModel{}, p1.Items...), p2.Items...)
+	if len(combined) != len(all.Models) {
+		t.Fatalf("分页合并 %d != 全量 %d", len(combined), len(all.Models))
+	}
+	for i := range combined {
+		if combined[i].ModelID != all.Models[i].ModelID {
+			t.Fatalf("分页顺序与全量不一致: 第 %d 个 %s != %s", i, combined[i].ModelID, all.Models[i].ModelID)
+		}
+	}
+
+	// 越界页：空 items + 真实 total（页码可恢复）。
+	res = doReq(t, h, http.MethodGet, "/api/factor-models?page=3&pageSize=2", nil, http.StatusOK)
+	var p3 pageResp
+	if err := json.Unmarshal(res, &p3); err != nil {
+		t.Fatal(err)
+	}
+	if len(p3.Items) != 0 || p3.Total != 3 || p3.Page != 3 {
+		t.Fatalf("越界页 items/total/page = %d/%d/%d, want 0/3/3", len(p3.Items), p3.Total, p3.Page)
+	}
+
+	// 非法分页参数 → 400（与实验/验证列表同款校验）。
+	doReq(t, h, http.MethodGet, "/api/factor-models?page=0", nil, http.StatusBadRequest)
+	doReq(t, h, http.MethodGet, "/api/factor-models?pageSize=9999", nil, http.StatusBadRequest)
+	// 只带单参数时缺省补全：pageSize 指定 → page 缺省 1；page 指定 → pageSize 缺省 20。
+	res = doReq(t, h, http.MethodGet, "/api/factor-models?pageSize=2", nil, http.StatusOK)
+	var ps pageResp
+	if err := json.Unmarshal(res, &ps); err != nil {
+		t.Fatal(err)
+	}
+	if ps.Page != 1 || ps.PageSize != 2 || ps.Total != 3 {
+		t.Fatalf("只带 pageSize: page/pageSize/total = %d/%d/%d, want 1/2/3", ps.Page, ps.PageSize, ps.Total)
+	}
+}
+
 // TestPortfolioExperimentHandlers 实验 API：创建 201、幂等 200、列表分页/
 // 稳定排序、详情、非法输入 400。
 func TestPortfolioExperimentHandlers(t *testing.T) {

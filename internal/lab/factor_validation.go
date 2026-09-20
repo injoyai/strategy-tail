@@ -122,8 +122,8 @@ func (w WalkForwardSpec) validate() error {
 // 聚合口径白名单：机器门禁使用哪种聚合必须冻结进 policy（计划 Task 8
 // Step 4），不允许评估完成后切换最有利口径。
 const (
-	validationAggregationWindowEqual      = "window_equal_weight"  // 按窗口等权（默认）
-	validationAggregationObservationEqual = "observation_weighted" // 按观察日加权
+	validationAggregationWindowEqual      = "window_equal_weight"      // 按窗口等权（默认）
+	validationAggregationObservationEqual = "observation_weighted"     // 按观察日加权
 )
 
 // ValidationPolicy 机器门禁（设计 §11.3）。所有阈值冻结前可见、可编辑并
@@ -147,7 +147,7 @@ type ValidationPolicy struct {
 }
 
 // normalizeValidationPolicy 策略规范化：空聚合口径归一为窗口等权默认值
-// （透明默认模板，设计 §11.3）。
+//（透明默认模板，设计 §11.3）。
 func normalizeValidationPolicy(p ValidationPolicy) ValidationPolicy {
 	if p.Aggregation == "" {
 		p.Aggregation = validationAggregationWindowEqual
@@ -339,9 +339,9 @@ func createValidationRequestHash(req CreateValidationRequest) (string, error) {
 // 发现期证据摘要与 hash）、完整研究协议、因子实现版本、股票池/数据/标签
 // 版本、全部已登记 trial、滚动窗口与验收政策。
 type ValidationRequest struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	ID            string             `json:"id"`
-	FrozenAt      string             `json:"frozenAt"`
+	SchemaVersion int               `json:"schemaVersion"`
+	ID            string            `json:"id"`
+	FrozenAt      string            `json:"frozenAt"`
 	Protocol      ValidationProtocol `json:"protocol"`
 	// Candidate 冻结的候选 revision 快照（含 FactorRef/Use/Evidence 及其
 	// ReportSHA256 绑定）；后续候选修订不影响本记录。
@@ -367,17 +367,17 @@ type ValidationRequest struct {
 // 化 JSON 序列化。ID 与 FrozenAt 是记录标识与冻结时间，一并纳入。
 func validationRequestHash(v ValidationRequest) (string, error) {
 	canon := struct {
-		SchemaVersion        int                `json:"schemaVersion"`
-		ID                   string             `json:"id"`
-		FrozenAt             string             `json:"frozenAt"`
+		SchemaVersion        int               `json:"schemaVersion"`
+		ID                   string            `json:"id"`
+		FrozenAt             string            `json:"frozenAt"`
 		Protocol             ValidationProtocol `json:"protocol"`
-		Candidate            FactorCandidate    `json:"candidate"`
-		ResearchProtocol     *ResearchProtocol  `json:"researchProtocol,omitempty"`
-		ResearchProtocolHash string             `json:"researchProtocolHash,omitempty"`
-		Trials               []FactorTrial      `json:"trials"`
-		CreateRequestID      string             `json:"createRequestId"`
-		CreateRequestHash    string             `json:"createRequestHash"`
-		Supersedes           string             `json:"supersedes"`
+		Candidate            FactorCandidate   `json:"candidate"`
+		ResearchProtocol     *ResearchProtocol `json:"researchProtocol,omitempty"`
+		ResearchProtocolHash string            `json:"researchProtocolHash,omitempty"`
+		Trials               []FactorTrial     `json:"trials"`
+		CreateRequestID      string            `json:"createRequestId"`
+		CreateRequestHash    string            `json:"createRequestHash"`
+		Supersedes           string            `json:"supersedes"`
 	}{v.SchemaVersion, v.ID, v.FrozenAt, v.Protocol, v.Candidate, v.ResearchProtocol,
 		v.ResearchProtocolHash, v.Trials, v.CreateRequestID, v.CreateRequestHash, v.Supersedes}
 	buf, err := json.Marshal(canon)
@@ -465,9 +465,9 @@ type ValidationAggregate struct {
 // FactorValidationReport 最终不可变验证报告（report.json，完成标记：存在
 // 即终态，一次写入永不覆盖）。
 type FactorValidationReport struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	ValidationID  string `json:"validationId"`
-	FinishedAt    string `json:"finishedAt"`
+	SchemaVersion int               `json:"schemaVersion"`
+	ValidationID  string            `json:"validationId"`
+	FinishedAt    string            `json:"finishedAt"`
 	// State 最终状态：passed | failed | insufficient | error（与 Verdict
 	// 一一对应；State 冗余存储便于列表派生）。
 	State   ValidationState   `json:"state"`
@@ -476,9 +476,9 @@ type FactorValidationReport struct {
 	Checks []ValidationCheck `json:"checks"`
 	// WindowCount/ValidWindowCount/InsufficientWindowCount 窗口计数披露；
 	// insufficient 与 error 窗口计入 InsufficientWindowCount。
-	WindowCount             int `json:"windowCount"`
-	ValidWindowCount        int `json:"validWindowCount"`
-	InsufficientWindowCount int `json:"insufficientWindowCount"`
+	WindowCount              int `json:"windowCount"`
+	ValidWindowCount         int `json:"validWindowCount"`
+	InsufficientWindowCount  int `json:"insufficientWindowCount"`
 	// Aggregate 聚合披露（error 状态可为 nil——执行异常不生成统计结论）。
 	Aggregate *ValidationAggregate `json:"aggregate,omitempty"`
 	// Message 结论说明（尤其 insufficient/error 的原因）。

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
@@ -105,7 +106,7 @@ func (s StrategySpec) validateFilters() error {
 // validate 单项过滤校验：kind 可注册、days>0、因子版本 fail-closed、
 // operator 枚举、阈值有限且区间不反向。
 func (ft *FactorFilterSpec) validate() error {
-	if f.Build(ft.Kind, ft.Days) == nil {
+	if f.BuildContext(ft.Kind, ft.Days) == nil {
 		return fmt.Errorf("未知因子类型: %s", ft.Kind)
 	}
 	if ft.Days <= 0 {
@@ -269,7 +270,7 @@ func (s StrategySpec) Variants() ([]core.Variant, error) {
 // between→[min,max]；单边用 ±1e9（0 是合法因子值，不用 0 表示无界）。
 // 构建前重复执行版本校验（fail-closed，不允许绕过 validate 直接 build）。
 func (ft *FactorFilterSpec) build() (sb.A因子过滤, error) {
-	fct := f.Build(ft.Kind, ft.Days)
+	fct := f.BuildWithData(ft.Kind, ft.Days, common.ResearchData)
 	if fct == nil {
 		return sb.A因子过滤{}, fmt.Errorf("未知因子类型: %s", ft.Kind)
 	}
@@ -292,7 +293,7 @@ func (ft *FactorFilterSpec) build() (sb.A因子过滤, error) {
 
 // describe 单条件的人类可读描述（因子名称与区间）。
 func (ft *FactorFilterSpec) describe() string {
-	name := f.Build(ft.Kind, ft.Days).Name()
+	name := f.BuildContext(ft.Kind, ft.Days).Name()
 	switch ft.Operator {
 	case "gte":
 		return fmt.Sprintf("%s≥%.4g", name, *ft.Min)

@@ -166,7 +166,27 @@ type Seller interface {
 ```
 
 新增真实供应商时，应先把供应商字段规范化为稳定 Dataset ID/Field，再构造因子；不要让供应商原始字段名进入策略。`researchdata.Store` 是有界研究和测试实现，全市场长期历史可换成数据库实现，只要保持 `researchdata.View` 契约。
-默认 Lab Runner 使用 `common.ResearchData` Hub；供应商适配器注册并加载数据后，无需修改 Runner 即可把同一 PIT 视图交给上下文因子。
+默认 Lab Runner 使用 `common.ResearchData`；运行时初始化后它指向本地 SQLite `View`，测试或有界任务仍可注入内存 `Hub`。供应商适配器注册并加载数据后，无需修改 Runner 即可把同一 PIT 视图交给上下文因子。
+
+### 历史估值数据
+
+`cmd/valuation-sync` 从东方财富估值分析公开历史接口同步 A 股日频估值，规范化为
+`valuation.daily` 并写入 `research.valuation.database`（默认
+`data/research/valuation.db`）。Lab 启动时只读取本地库，不会隐式联网更新。
+
+```powershell
+# 先用少量股票验证；代码可写 sh600519、600519.SH 或裸 6 位代码
+go run ./cmd/valuation-sync -codes sh600519,sz000001 -start 2020-01-01
+
+# 明确要求后才同步当前本地股票列表，避免误触发全市场长任务
+go run ./cmd/valuation-sync -all -start 2020-01-01 -workers 4
+```
+
+当前注册的历史估值因子包括 `pe_ttm`、`pe_static`、`pb_mrq`、`ps_ttm`、
+`pcf_ocf_ttm` 和 `peg`；同一数据集还保留收盘价、总/流通市值及总/流通股本。
+供应商记录的交易日按当日 15:00 视为可见，因此适用于“收盘信号、下一交易日执行”
+研究。由于公开历史接口不提供原始修订日志，记录会标记
+`pit_status=unverified_revision_history`，严格 PIT 验证不得把它提升为已验证证据。
 
 ## 已知边界
 

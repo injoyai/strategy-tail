@@ -59,7 +59,12 @@ func (s *Server) handleCreateFactorModel(w http.ResponseWriter, r *http.Request)
 	writeJSONCode(w, code, map[string]any{"created": created, "model": m})
 }
 
-// handleListFactorModels 模型列表（默认隐藏归档；includeArchived 只接受 true/false）。
+// handleListFactorModels 模型列表（服务端分页）：默认隐藏归档；includeArchived
+// 只接受 true/false。page/pageSize 为可选查询参数（page>=1、pageSize 1-200，
+// 与实验/验证列表一致，见 parsePageParams）；响应含分页元数据
+// items/total/page/pageSize，并保留既有 models 字段——旧客户端不传分页参数
+// 时行为不变（models 返回全量并带 total）。排序（CreatedAt 倒序 + ID 升序
+// 兜底）由 Store 保证，页码越界返回空 items + 真实 total（页码可恢复）。
 func (s *Server) handleListFactorModels(w http.ResponseWriter, r *http.Request) {
 	includeArchived := false
 	switch r.URL.Query().Get("includeArchived") {
@@ -70,12 +75,46 @@ func (s *Server) handleListFactorModels(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusBadRequest, "includeArchived 只接受 true/false")
 		return
 	}
+	// 分页参数可选：均不传（旧客户端）→ 全量列表 + 分页元数据；任一带参 →
+	// 服务端分页（缺省页补默认值，与实验/验证列表同款校验与越界语义）。
+	hasPage := r.URL.Query().Get("page") != "" || r.URL.Query().Get("pageSize") != ""
+	page, pageSize := 1, 0
+	if hasPage {
+		var ok bool
+		page, pageSize, ok = parsePageParams(w, r)
+		if !ok {
+			return
+		}
+	}
 	list, err := s.modelStore.List(includeArchived)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "读取模型列表失败")
 		return
 	}
-	writeJSON(w, map[string]any{"models": list})
+	total := len(list)
+	if !hasPage {
+		writeJSON(w, map[string]any{
+			"models": list, "items": list, "total": total, "page": 1, "pageSize": total,
+		})
+		return
+	}
+	start := (page - 1) * pageSize
+	if start >= total {
+		writeJSON(w, map[string]any{
+			"models": []portfolioresearch.FactorModel{},
+			"items":  []portfolioresearch.FactorModel{},
+			"total":  total, "page": page, "pageSize": pageSize,
+		})
+		return
+	}
+	end := start + pageSize
+	if end > total {
+		end = total
+	}
+	items := list[start:end]
+	writeJSON(w, map[string]any{
+		"models": items, "items": items, "total": total, "page": page, "pageSize": pageSize,
+	})
 }
 
 // handleGetFactorModel 模型详情：默认最新 revision；?revision=N 读指定修订。
@@ -195,7 +234,8 @@ func (s *Server) handleGetExperiment(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, "实验不存在: "+id)
 			return
 		}
-		writeErr(w, http.StatusBadRequest, err.Error())
+		// 记录损坏属服务器状态问题（fail closed），非客户端请求错误。
+		writeErr(w, http.StatusInternalServerError, "读取实验记录失败")
 		return
 	}
 	writeJSON(w, map[string]any{"experiment": exp})
@@ -337,7 +377,8 @@ func (s *Server) handleStartPortfolioRun(w http.ResponseWriter, r *http.Request)
 				writeErr(w, http.StatusNotFound, "实验不存在: "+id)
 				return
 			}
-			writeErr(w, http.StatusBadRequest, err.Error())
+			// 记录损坏属服务器状态问题（fail closed），非客户端请求错误。
+			writeErr(w, http.StatusInternalServerError, "读取实验记录失败")
 			return
 		}
 		if err := s.portfolioRunner.StartPortfolioExperiment(id); err != nil {
@@ -351,7 +392,8 @@ func (s *Server) handleStartPortfolioRun(w http.ResponseWriter, r *http.Request)
 				writeErr(w, http.StatusNotFound, "验证不存在: "+id)
 				return
 			}
-			writeErr(w, http.StatusBadRequest, err.Error())
+			// 记录损坏属服务器状态问题（fail closed），非客户端请求错误。
+			writeErr(w, http.StatusInternalServerError, "读取验证记录失败")
 			return
 		}
 		if err := s.portfolioRunner.StartPortfolioValidation(id); err != nil {
@@ -383,7 +425,8 @@ func (s *Server) handleGetPortfolioRun(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusNotFound, "实验不存在: "+id)
 				return
 			}
-			writeErr(w, http.StatusBadRequest, err.Error())
+			// 记录损坏属服务器状态问题（fail closed），非客户端请求错误。
+			writeErr(w, http.StatusInternalServerError, "读取实验记录失败")
 			return
 		}
 		writeJSON(w, map[string]any{"runId": id, "task": taskPortfolioExperiment, "run": exp})
@@ -394,7 +437,8 @@ func (s *Server) handleGetPortfolioRun(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, http.StatusNotFound, "验证不存在: "+id)
 				return
 			}
-			writeErr(w, http.StatusBadRequest, err.Error())
+			// 记录损坏属服务器状态问题（fail closed），非客户端请求错误。
+			writeErr(w, http.StatusInternalServerError, "读取验证记录失败")
 			return
 		}
 		writeJSON(w, map[string]any{"runId": id, "task": taskPortfolioValidation, "run": view})

@@ -93,7 +93,7 @@ func TestBenjaminiHochbergTiesAndBounds(t *testing.T) {
 
 func TestBenjaminiHochbergRejectsInvalid(t *testing.T) {
 	for name, ps := range map[string][]float64{
-		"负数":  {0.1, -0.01},
+		"负数": {0.1, -0.01},
 		"大于1": {0.5, 1.5},
 		"NaN": {math.NaN()},
 	} {

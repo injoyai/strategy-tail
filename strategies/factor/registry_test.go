@@ -8,11 +8,12 @@ import (
 
 // wantKinds 目录的固定顺序（顺序是 API 合同，不得漂移）。
 var wantKinds = [...]string{
-	"momentum", "ma_bias", "slope", "volatility", "amplitude",
+	"momentum", "skip_month_momentum", "short_reversal", "ma_bias", "slope", "volatility", "amplitude",
 	"macd_hist", "macd_delta", "macd_trough_position", "macd_negative_streak", "macd_rising_streak", "ma_min_slope",
-	"volume_ratio", "volume_pct", "volume_surge",
+	"volume_ratio", "volume_pct", "volume_surge", "amihud_illiquidity", "log_float_cap",
 	"body", "upper_shadow", "lower_shadow",
-	"position", "kvalue", "vp_corr",
+	"position", "high_distance", "kvalue", "vp_corr",
+	"pe_ttm", "pe_static", "pb_mrq", "ps_ttm", "pcf_ocf_ttm", "peg",
 }
 
 func TestAll(t *testing.T) {
@@ -29,15 +30,15 @@ func TestAll(t *testing.T) {
 			t.Fatalf("目录项字段缺失: %+v", e)
 		}
 	}
-	// kind 唯一，且 Build(kind,0) 的名字与目录名一致（锁定 registry Default 与因子内 daysOr fallback 不漂移）
+	// kind 唯一，且上下文构造的名字与目录名一致。
 	seen := map[string]bool{}
 	for _, e := range all {
 		if seen[e.Kind] {
 			t.Fatalf("kind 重复: %s", e.Kind)
 		}
 		seen[e.Kind] = true
-		if f := Build(e.Kind, 0); f == nil || f.Name() != e.Name {
-			t.Fatalf("%s: Build 默认名 %v 与目录名 %q 不一致", e.Kind, f, e.Name)
+		if f := BuildContext(e.Kind, 0); f == nil || f.Name() != e.Name {
+			t.Fatalf("%s: BuildContext 默认名 %v 与目录名 %q 不一致", e.Kind, f, e.Name)
 		}
 	}
 	// 顺序稳定
@@ -54,7 +55,7 @@ func TestAll(t *testing.T) {
 func TestRegistryMetadata(t *testing.T) {
 	wantCategory := map[string]bool{
 		"趋势与动量": true, "波动": true, "量能": true,
-		"K线形态": true, "位置": true, "相关性": true,
+		"规模与流动性": true, "K线形态": true, "位置": true, "相关性": true, "估值": true,
 	}
 	wantUnit := map[string]bool{
 		"ratio": true, "multiple": true, "score": true, "correlation": true,
@@ -82,9 +83,9 @@ func TestRegistryMetadata(t *testing.T) {
 			}
 		}
 		// defaultDays 与 Build(kind, 0) 一致：窗口因子名以 (N) 结尾，N 应等于 defaultDays
-		f := Build(e.Kind, 0)
+		f := BuildContext(e.Kind, 0)
 		if f == nil {
-			t.Fatalf("%s: Build 失败", e.Kind)
+			t.Fatalf("%s: BuildContext 失败", e.Kind)
 		}
 		if name := f.Name(); strings.HasSuffix(name, ")") {
 			if i := strings.LastIndex(name, "("); i >= 0 {
@@ -95,8 +96,8 @@ func TestRegistryMetadata(t *testing.T) {
 			}
 		}
 		// 显式传入 defaultDays 应与默认构造同名（单根K线因子 days 被忽略，亦成立）
-		if g := Build(e.Kind, e.DefaultDays); g == nil || g.Name() != f.Name() {
-			t.Fatalf("%s: Build(kind, defaultDays) 与 Build(kind, 0) 名称不一致", e.Kind)
+		if g := BuildContext(e.Kind, e.DefaultDays); g == nil || g.Name() != f.Name() {
+			t.Fatalf("%s: BuildContext(kind, defaultDays) 与默认构造名称不一致", e.Kind)
 		}
 	}
 }

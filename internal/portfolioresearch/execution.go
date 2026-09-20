@@ -279,6 +279,8 @@ func (w *execWork) markQuality(typ, code, detail string, degraded bool) {
 // buildIntents 从持仓与目标股数推导买卖意图：
 // 目标股数 > 当前 → 买入；目标股数 < 当前 → 卖出；目标无该代码 → 清仓卖出。
 // 确定性：卖出按代码升序，买入按冻结优先级（见 orderBuys）。
+// Weight 回填当日目标权重（Constrained.Effective，与目标股数 Constrained.Shares
+// 同口径；审计引用 orders.csv weight 列），清仓卖出目标无该代码 → 0。
 func buildIntents(lots []HoldingLot, targetShares map[string]int, scores, effective map[string]float64) []OrderIntent {
 	cur := map[string]int{}
 	for _, l := range lots {
@@ -296,13 +298,30 @@ func buildIntents(lots []HoldingLot, targetShares map[string]int, scores, effect
 		curShares := cur[c]
 		tgtShares := targetShares[c]
 		priority := intentPriority(c, scores, effective)
+		// 目标权重只对目标仍持有（tgtShares>0）的代码有意义；清仓卖出
+		// （目标无该代码）目标权重为 0。
+		weight := 0.0
+		if tgtShares > 0 {
+			weight = targetWeight(c, effective)
+		}
 		if tgtShares > curShares {
-			buys = append(buys, OrderIntent{Code: c, Side: SideBuy, Shares: tgtShares - curShares, Priority: priority})
+			buys = append(buys, OrderIntent{Code: c, Side: SideBuy, Shares: tgtShares - curShares, Priority: priority, Weight: weight})
 		} else if tgtShares < curShares {
-			sells = append(sells, OrderIntent{Code: c, Side: SideSell, Shares: curShares - tgtShares, Priority: priority})
+			sells = append(sells, OrderIntent{Code: c, Side: SideSell, Shares: curShares - tgtShares, Priority: priority, Weight: weight})
 		}
 	}
 	return append(sells, buys...)
+}
+
+// targetWeight 当日目标权重（Constrained.Effective 口径，与目标股数一一对应）。
+// 缺失/非有限 → 0（与 intentPriority 同策略）。
+func targetWeight(code string, effective map[string]float64) float64 {
+	if effective != nil {
+		if v, ok := effective[code]; ok && !math.IsNaN(v) && !math.IsInf(v, 0) {
+			return v
+		}
+	}
+	return 0
 }
 
 // intentPriority 冻结优先级 = 信号日分数（缺失用目标有效权重，再缺用 0），并列按代码升序。
@@ -322,6 +341,7 @@ func intentPriority(code string, scores, effective map[string]float64) float64 {
 
 // carriedBuys 跨日保留的买单意图：仅当新目标对该代码保持沉默（不产生买入/卖出
 // 意图）时补入，避免与新的研究意图冲突；同代码以新目标为准。
+// Weight 保留创建当日目标权重，跨日不重估（审计口径：当日目标权重）。
 func carriedBuys(pending []OrderIntent, fresh []OrderIntent) []OrderIntent {
 	freshCodes := map[string]bool{}
 	for _, it := range fresh {
