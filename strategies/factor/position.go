@@ -30,6 +30,32 @@ func (f N日高低位) Value(code string, dks extend.Klines) float64 {
 	return (dks[len(dks)-1].Close.Float64() - llv) / (hhv - llv)
 }
 
+// 收盘分位 是今收盘在近 N 日（含今日）收盘价中的分位：收盘 ≤ 今收盘 的天数占比，
+// 与 量分位 同口径；值域 [1/N, 1]，数据不足（len < Days）返回 NaN。
+// 与 N日高低位 的差异：高低位是区间内线性位置，本因子是排名分位（全平价窗口 → 1）。
+type 收盘分位 struct {
+	Days int
+}
+
+func (f 收盘分位) Name() string {
+	return fmt.Sprintf("收盘分位(%d)", daysOr(f.Days, 120))
+}
+
+func (f 收盘分位) Value(code string, dks extend.Klines) float64 {
+	n := daysOr(f.Days, 120)
+	if len(dks) < n {
+		return math.NaN()
+	}
+	today := dks[len(dks)-1].Close.Float64()
+	cnt := 0
+	for _, k := range dks[len(dks)-n:] {
+		if k.Close.Float64() <= today {
+			cnt++
+		}
+	}
+	return float64(cnt) / float64(n)
+}
+
 // K值 是 KDJ 指标中的 K 线（0..100）：K = 2/3·K前 + 1/3·RSV，首日 K前=50。
 // RSV = (close - LLV) / (HHV - LLV) * 100，窗口为截至当日最多 n 根；HHV=LLV 时 RSV=50。
 // 数据不足（len < Days）返回 NaN。

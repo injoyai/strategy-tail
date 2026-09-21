@@ -42,6 +42,39 @@ func TestN日高低位(t *testing.T) {
 	}
 }
 
+func Test收盘分位(t *testing.T) {
+	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
+
+	// 单调上涨 1..5（Days=5）：全部收盘 ≤ 今收 → 1
+	ks := closes(base, 1, 2, 3, 4, 5)
+	f := 收盘分位{Days: 5}
+	wantVal(t, f.Name(), f.Value("sh600000", ks), 1, 1e-9)
+
+	// 单调下跌 5..1：仅今收 ≤ 今收 → 1/5 = 0.2
+	down := closes(base, 5, 4, 3, 2, 1)
+	wantVal(t, "最低点", f.Value("sh600000", down), 0.2, 1e-9)
+
+	// 并列：[2,1,3,2,2]（今收=2）：≤2 的有 2,1,2,2 → 4/5 = 0.8
+	tie := closes(base, 2, 1, 3, 2, 2)
+	wantVal(t, "并列", f.Value("sh600000", tie), 0.8, 1e-9)
+
+	// 全平价 → 1.0（与 N日高低位 的 NaN 不同：并列按 ≤ 计入）
+	flat := closes(base, 5, 5, 5, 5, 5)
+	wantVal(t, "全平", f.Value("sh600000", flat), 1, 1e-9)
+
+	// 窗口截取：[1,5,5,5,2]（Days=3）窗口为最近 3 根 [5,5,2] → 仅 2 ≤ 2 → 1/3；若误用全序列则为 2/5=0.4
+	win := closes(base, 1, 5, 5, 5, 2)
+	f3 := 收盘分位{Days: 3}
+	wantVal(t, "窗口截取", f3.Value("sh600000", win), 1.0/3.0, 1e-9)
+
+	// 数据不足
+	wantNaN(t, "数据不足", f.Value("sh600000", ks[:4]))
+
+	if g := (收盘分位{}).Name(); g != "收盘分位(120)" {
+		t.Fatalf("默认参数名异常: %s", g)
+	}
+}
+
 func TestK值(t *testing.T) {
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
 

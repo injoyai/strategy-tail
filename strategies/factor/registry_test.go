@@ -12,7 +12,7 @@ var wantKinds = [...]string{
 	"macd_hist", "macd_delta", "macd_trough_position", "macd_negative_streak", "macd_rising_streak", "ma_min_slope",
 	"volume_ratio", "volume_pct", "volume_surge", "amihud_illiquidity", "log_float_cap",
 	"body", "upper_shadow", "lower_shadow",
-	"position", "high_distance", "kvalue", "vp_corr",
+	"position", "high_distance", "close_pct", "kvalue", "vp_corr",
 	"pe_ttm", "pe_static", "pb_mrq", "ps_ttm", "pcf_ocf_ttm", "peg",
 }
 

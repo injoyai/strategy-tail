@@ -269,6 +269,16 @@ var registry = []entry{
 		ImplementationVersion: 1,
 	},
 	{
+		Kind: "close_pct", Default: 120,
+		New:                   func(d int) core.Factor { return &收盘分位{Days: d} },
+		Description:           "今收盘在近N日收盘价中的分位",
+		Category:              "位置",
+		ParameterLabel:        "统计窗口",
+		Unit:                  "ratio",
+		Example:               "原始值 0.85 表示今收盘不低于近 N 日（含今日）中 85% 交易日的收盘价。",
+		ImplementationVersion: 1,
+	},
+	{
 		Kind: "kvalue", Default: 9,
 		New:                   func(d int) core.Factor { return &K值{Days: d} },
 		Description:           "KDJ K线",
