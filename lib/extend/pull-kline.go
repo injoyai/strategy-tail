@@ -374,8 +374,8 @@ func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string) error {
 				}
 			}()
 
-			//暂时去掉指数的分钟数据更新
-			if protocol.IsIndex(code) {
+			//指数仅更新白名单（上证指数/沪深300），其余指数跳过分钟数据更新
+			if protocol.IsIndex(code) && !hasAnyPrefix(code, 指数白名单) {
 				return
 			}
 
