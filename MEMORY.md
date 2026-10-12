@@ -55,6 +55,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - `core/forward_return.go` 的 `DefaultForwardDays` 含 90 天（HEAD 已提交），测试期望已同步。
 - `cmd/backtest/main.go` 保留死代码（TestBuy/TestSell/years 覆盖等），用户故意留作快速改参数的草稿区，勿清理。
 - 用户偏好：cmd/backtest/main.go 是参数调试入口，编辑时避开用户正在修改的区域。
+- **数据范围决策（2026-10-12）**：本地行情库只保留沪深主板股票（sh60/sz00）+ 上证指数 sh000001 与沪深300 sh000300（两者日线+分钟均保留，回测基准依赖）。已删除：2017 及以前分钟数据、北交所/科创板/创业板/ETF 全部 K 线、其余全部指数数据。`lib/extend/pull-kline.go` 默认拉取列表已同步过滤（`主板前缀` + `指数白名单`）；显式配置 `pull.codes` 时不受此过滤。注意：修改过滤逻辑后需重启常驻进程，否则旧进程仍按全市场拉取，下个交易日 15:15 会把已删数据重新下载。
 
 ## 尾盘阴线收回策略（2026-09 新增）
 - **组件**：`strategies/buy/buy_tail_pullback.go` 的 `A阴线收回{SupportPeriod, MinBodyRatio, MaxRise, Trend}`——上升趋势中阴线盘中跌破支撑均线（MA5/MA10）、尾盘收回、博次日反弹。趋势过滤通过 `Trend core.Buyer` 注入复用 `buy.MAUp` / `buy.A均线多头排列`。7 项单测见 buy_tail_pullback_test.go。

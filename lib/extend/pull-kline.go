@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,23 @@ const (
 	DirMinute = "min-kline"
 	DirDay    = "day-kline"
 )
+
+// 主板前缀 默认仅拉取沪深主板股票（与 common.go 中 Market沪深主板.Prefixes 保持一致）。
+// 北交所/科创板/创业板/ETF 数据已清理，不再拉取，避免定时任务重新下载。
+var 主板前缀 = []string{"sh60", "sz00"}
+
+// 指数白名单 仅保留上证指数与沪深300（回测基准依赖），日线与分钟线均拉取；其余指数数据已清理。
+var 指数白名单 = []string{"sh000001", "sh000300"}
+
+// hasAnyPrefix 判断 code 是否以任一前缀开头。
+func hasAnyPrefix(code string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(code, p) {
+			return true
+		}
+	}
+	return false
+}
 
 type PullKlineConfig struct {
 	Codes      []string  //操作代码
@@ -90,11 +108,19 @@ func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
 		return nil
 	}
 
+	// 默认代码列表：股票仅保留沪深主板；指数仅保留上证指数与沪深300（日线与分钟线均拉取）。
 	codes := this.Config.Codes
 	if len(codes) == 0 {
-		codes = m.Codes.GetStockCodes()
-		codes = append(codes, m.Codes.GetETFCodes()...)
-		codes = append(codes, m.Codes.GetIndexCodes()...)
+		for _, v := range m.Codes.GetStockCodes() {
+			if hasAnyPrefix(v, 主板前缀) {
+				codes = append(codes, v)
+			}
+		}
+		for _, v := range m.Codes.GetIndexCodes() {
+			if hasAnyPrefix(v, 指数白名单) {
+				codes = append(codes, v)
+			}
+		}
 	}
 	for _, v := range this.Types {
 		switch v {
