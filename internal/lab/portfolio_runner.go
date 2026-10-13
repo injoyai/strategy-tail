@@ -132,6 +132,8 @@ func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan str
 	r.stopCh = stop
 	r.running.Store(true)
 	r.doneCodes.Store(0)
+	r.totalCodes.Store(0)
+	r.currentCode.Store(nil)
 	r.task.Store(&task)
 	state := "running"
 	r.state.Store(&state)
@@ -983,8 +985,8 @@ func windowMetrics(ledgers []portfolioresearch.DailyLedger) (portfolioresearch.V
 		UnfilledRate:     unfilledRate(ledgers),
 		MaxConcentration: metrics.Quality.MaxConcentration,
 		// 基准缺失：信息比率/年化超额不可用（设计 §9.5）。
-		InformationRatio:  nil,
-		AnnualExcess:      nil,
+		InformationRatio: nil,
+		AnnualExcess:     nil,
 		// 基线增量默认 0（等权秩模型基线 = 自身）；滚动 IC 模型由验证循环
 		// 在同窗重跑等权秩基线后回填真实值（见 baselineIncrementFor）。
 		BaselineIncrement: 0,

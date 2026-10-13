@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -24,8 +25,10 @@ const (
 	Day    = "day"
 	Minute = "minute"
 
-	DirMinute = "min-kline"
-	DirDay    = "day-kline"
+	DirMinute         = "min-kline"
+	DirDay            = "day-kline"
+	updateCloseHour   = 15
+	updateCloseMinute = 0
 )
 
 // 主板前缀 默认仅拉取沪深主板股票（与 common.go 中 Market沪深主板.Prefixes 保持一致）。
@@ -66,7 +69,8 @@ func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
 		return nil, err
 	}
 
-	updated, err := tdx.NewUpdated(db, 15, 31)
+	// A complete update after the 15:00 close satisfies today's batch.
+	updated, err := tdx.NewUpdated(db, updateCloseHour, updateCloseMinute)
 	if err != nil {
 		return nil, err
 	}
@@ -92,49 +96,115 @@ func (this *PullKline) Run(m *tdx.Manage, spec string) error {
 	return err
 }
 
+// UpdateProgress counts completed code/type jobs after their final retry.
+// Callbacks are serialized; Failed jobs never mark the batch as up to date.
+type UpdateProgress struct {
+	Stage   string `json:"stage"`
+	Done    int    `json:"done"`
+	Total   int    `json:"total"`
+	Code    string `json:"code"`
+	Failed  int    `json:"failed"`
+	Skipped bool   `json:"skipped"`
+	Message string `json:"message,omitempty"`
+}
+
 func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
-	if len(must) == 0 || !must[0] {
+	return this.UpdateWithProgress(m, len(must) > 0 && must[0], nil)
+}
+
+// manual bypasses the trading-day check, but keeps the existing freshness check.
+func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report func(UpdateProgress)) error {
+	release, err := lockUpdates(this.Config.Dir)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if m == nil || this.Updated == nil {
+		return fmt.Errorf("行情更新器尚未初始化")
+	}
+	progress := UpdateProgress{Stage: "checking"}
+	emit := func() {
+		if report != nil {
+			report(progress)
+		}
+	}
+	emit()
+	if !manual {
+		if m.Workday == nil {
+			return fmt.Errorf("交易日信息尚未就绪")
+		}
 		if !m.Workday.TodayIs() {
-			logs.Debug("今天不是交易日或工作日信息未更新,不更新数据")
+			progress.Skipped, progress.Message = true, "今天不是交易日，本次自动更新已跳过"
+			emit()
 			return nil
 		}
 	}
-
 	updated, err := this.Updated.Updated("pull")
 	if err != nil {
 		return err
 	}
 	if updated {
+		progress.Skipped, progress.Message = true, "最近收盘批次已完整更新，无需重复下载"
+		emit()
 		return nil
 	}
-
-	// 默认代码列表：股票仅保留沪深主板；指数仅保留上证指数与沪深300（日线与分钟线均拉取）。
-	codes := this.Config.Codes
+	types := append([]string(nil), this.Types...)
+	if len(types) == 0 {
+		return fmt.Errorf("未配置日线或分钟线更新类型")
+	}
+	seen := map[string]bool{}
+	for _, kind := range types {
+		if (kind != Day && kind != Minute) || seen[kind] {
+			return fmt.Errorf("无效或重复的更新类型: %s", kind)
+		}
+		seen[kind] = true
+	}
+	codes := append([]string(nil), this.Config.Codes...)
 	if len(codes) == 0 {
-		for _, v := range m.Codes.GetStockCodes() {
-			if hasAnyPrefix(v, 主板前缀) {
-				codes = append(codes, v)
+		if m.Codes == nil {
+			return fmt.Errorf("行情代码列表尚未就绪")
+		}
+		for _, code := range m.Codes.GetStockCodes() {
+			if hasAnyPrefix(code, 主板前缀) {
+				codes = append(codes, code)
 			}
 		}
-		for _, v := range m.Codes.GetIndexCodes() {
-			if hasAnyPrefix(v, 指数白名单) {
-				codes = append(codes, v)
+		for _, code := range m.Codes.GetIndexCodes() {
+			if hasAnyPrefix(code, 指数白名单) {
+				codes = append(codes, code)
 			}
 		}
 	}
-	for _, v := range this.Types {
-		switch v {
-		case Day:
-			err := this.updateDayKline(m, codes)
+	if len(codes) == 0 {
+		return fmt.Errorf("没有可更新的股票或指数")
+	}
+	progress.Total = len(codes) * len(types)
+	var updateErrors []error
+	for _, kind := range types {
+		progress.Stage, progress.Code = kind, ""
+		emit()
+		onCode := func(code string, err error) {
+			progress.Done++
+			progress.Code = code
 			if err != nil {
-				return err
+				progress.Failed++
 			}
-		case Minute:
-			err := this.updateMinKline(m, codes)
-			if err != nil {
-				return err
-			}
+			emit()
 		}
+		switch kind {
+		case Day:
+			err = this.updateDayKline(m, codes, onCode)
+		case Minute:
+			err = this.updateMinKline(m, codes, onCode)
+		}
+		if err != nil {
+			updateErrors = append(updateErrors, fmt.Errorf("%s: %w", kind, err))
+		}
+	}
+	if len(updateErrors) > 0 {
+		progress.Message = fmt.Sprintf("全部更新单元已处理，失败 %d/%d，可手动重试", progress.Failed, progress.Total)
+		emit()
+		return fmt.Errorf("%s: %w", progress.Message, errors.Join(updateErrors...))
 	}
 	return this.Updated.Update("pull")
 }
@@ -248,157 +318,149 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 	return ks, nil
 }
 
-func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string) error {
-
+func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string, report ...func(string, error)) error {
 	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
 	}
+	return runUpdateCodes(codes, this.Config.Goroutines, func(code string) (err error) {
+		//连接数据库
+		db, err := xorms.NewSqlite(filepath.Join(this.Config.Dir, DirDay, code+".db"))
+		if err != nil {
+			return err
+		}
+		defer db.Close()
 
-	b := bar.NewCoroutine(len(codes), this.Config.Goroutines, bar.WithPrefix("[xx000000]"))
-	defer b.Close()
+		if err = db.Sync2(new(Kline)); err != nil {
+			return err
+		}
 
-	for i := range codes {
+		//2. 获取最后一条数据
+		last := new(Kline)
+		if _, err = db.Desc("Unix").Get(last); err != nil {
+			return err
+		}
 
-		code := codes[i]
+		//3. 从服务器获取数据
+		var resp *protocol.KlineResp
+		err = m.Do(func(c *tdx.Client) error {
+			switch {
+			case protocol.IsIndex(code):
+				resp, err = c.GetIndexDayUntil(code, func(k *protocol.Kline) bool {
+					return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
+				})
+			default:
+				resp, err = c.GetKlineDayUntil(code, func(k *protocol.Kline) bool {
+					return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
+				})
+			}
+			return err
+		})
+		if err != nil {
+			return err
+		}
 
-		b.GoRetry(func() (err error) {
-
-			b.SetPrefix(fmt.Sprintf("[%s]", code))
-			b.Flush()
-
-			defer func() {
-				if err != nil {
-					b.Logf("[错误] [%s] %s\n", code, err)
-					b.Flush()
+		//4. 插入数据库
+		if resp == nil || len(resp.List) == 0 {
+			return fmt.Errorf("%s 日线响应为空，保留已有数据", code)
+		}
+		err = db.SessionFunc(func(session *xorm.Session) error {
+			if _, er := session.Where("Unix >= ?", last.Time.Unix()).Delete(new(Kline)); er != nil {
+				return er
+			}
+			for _, v := range resp.List {
+				if v.Time.Before(last.Time) {
+					continue
 				}
-			}()
-
-			//连接数据库
-			db, err := xorms.NewSqlite(filepath.Join(this.Config.Dir, DirDay, code+".db"))
-			if err != nil {
-				return err
-			}
-			defer db.Close()
-
-			if err = db.Sync2(new(Kline)); err != nil {
-				return err
-			}
-
-			//2. 获取最后一条数据
-			last := new(Kline)
-			if _, err = db.Desc("Unix").Get(last); err != nil {
-				return err
-			}
-
-			//3. 从服务器获取数据
-			var resp *protocol.KlineResp
-			err = m.Do(func(c *tdx.Client) error {
-				switch {
-				case protocol.IsIndex(code):
-					resp, err = c.GetIndexDayUntil(code, func(k *protocol.Kline) bool {
-						return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
-					})
-				default:
-					resp, err = c.GetKlineDayUntil(code, func(k *protocol.Kline) bool {
-						return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
-					})
+				k := &Kline{
+					Unix:       v.Time.Unix(),
+					Kline:      v,
+					Turnover:   0,
+					FloatStock: 0,
+					TotalStock: 0,
 				}
-				return err
-			})
-			if err != nil {
-				return err
-			}
-
-			//4. 插入数据库
-			err = db.SessionFunc(func(session *xorm.Session) error {
-				if _, er := session.Where("Unix >= ?", last.Time.Unix()).Delete(new(Kline)); er != nil {
+				if eq := m.Gbbq.GetEquity(code, v.Time); eq != nil {
+					k.Turnover = eq.Turnover(v.Volume * 100)
+					k.FloatStock = eq.Float
+					k.TotalStock = eq.Total
+				}
+				if _, er := session.Insert(k); er != nil {
 					return er
 				}
-				for _, v := range resp.List {
-					if v.Time.Before(last.Time) {
-						continue
-					}
-					k := &Kline{
-						Unix:       v.Time.Unix(),
-						Kline:      v,
-						Turnover:   0,
-						FloatStock: 0,
-						TotalStock: 0,
-					}
-					if eq := m.Gbbq.GetEquity(code, v.Time); eq != nil {
-						k.Turnover = eq.Turnover(v.Volume * 100)
-						k.FloatStock = eq.Float
-						k.TotalStock = eq.Total
-					}
-					if _, er := session.Insert(k); er != nil {
-						return er
-					}
-				}
-				return nil
-			})
+			}
+			return nil
+		})
 
-			return
-
-		}, tdx.DefaultRetry)
-
-	}
-
-	b.Wait()
-	return nil
+		return err
+	}, report...)
 }
 
-func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string) error {
-
+func (this *PullKline) updateMinKline(m *tdx.Manage, codes []string, report ...func(string, error)) error {
 	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
 		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
 	}
-
-	b := bar.NewCoroutine(len(codes), this.Config.Goroutines, bar.WithPrefix("[xx000000]"))
-	defer b.Close()
-
 	year := time.Now().Year()
+	return runUpdateCodes(codes, this.Config.Goroutines, func(code string) (err error) {
+		//指数仅更新白名单（上证指数/沪深300），其余指数跳过分钟数据更新
+		if protocol.IsIndex(code) && !hasAnyPrefix(code, 指数白名单) {
+			return nil
+		}
 
-	for i := range codes {
-
-		code := codes[i]
-
-		b.GoRetry(func() (err error) {
-
-			b.SetPrefix(fmt.Sprintf("[%s]", code))
-			b.Flush()
-
-			defer func() {
-				if err != nil {
-					b.Logf("[错误] [%s] %s\n", code, err)
-					b.Flush()
-				}
-			}()
-
-			//指数仅更新白名单（上证指数/沪深300），其余指数跳过分钟数据更新
-			if protocol.IsIndex(code) && !hasAnyPrefix(code, 指数白名单) {
-				return
+		ks := protocol.Klines{}
+		//判断数据库文件是否存在,如果今年的数据库文件不存在,则按年向前填充
+		filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
+		if !exists(filename) {
+			//尝试更新去年的数据
+			ks, err = this.updateMinuteKlineYear(m, code, year-1, ks)
+			if err != nil {
+				return err
 			}
+		}
+		//更新今年的数据
+		_, err = this.updateMinuteKlineYear(m, code, year, ks)
 
-			ks := protocol.Klines{}
-			//判断数据库文件是否存在,如果今年的数据库文件不存在,则按年向前填充
-			filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
-			if !exists(filename) {
-				//尝试更新去年的数据
-				ks, err = this.updateMinuteKlineYear(m, code, year-1, ks)
-				if err != nil {
-					return err
-				}
-			}
-			//更新今年的数据
-			_, err = this.updateMinuteKlineYear(m, code, year, ks)
+		return err
+	}, report...)
+}
 
-			return
-
-		}, tdx.DefaultRetry)
-
+// Unlike bar.GoRetry, this retains the terminal error and reports each job once.
+func runUpdateCodes(codes []string, workers int, update func(string) error, report ...func(string, error)) error {
+	if workers <= 0 {
+		workers = 1
 	}
-
+	b := bar.NewCoroutine(len(codes), workers, bar.WithPrefix("[xx000000]"))
+	defer b.Close()
+	var mu sync.Mutex
+	var firstErr error
+	failed := 0
+	for _, code := range codes {
+		b.Go(func() {
+			var err error
+			for attempt := 0; attempt < tdx.DefaultRetry; attempt++ {
+				err = update(code)
+				if err == nil {
+					break
+				}
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				failed++
+				if firstErr == nil {
+					firstErr = fmt.Errorf("%s: %w", code, err)
+				}
+				logs.Err(err)
+			}
+			for _, onCode := range report {
+				if onCode != nil {
+					onCode(code, err)
+				}
+			}
+		})
+	}
 	b.Wait()
+	if firstErr != nil {
+		return fmt.Errorf("更新失败 %d/%d（首个错误：%w）", failed, len(codes), firstErr)
+	}
 	return nil
 }
 
@@ -438,6 +500,9 @@ func (this *PullKline) updateMinuteKlineYear(m *tdx.Manage, code string, year in
 		if err != nil {
 			return nil, err
 		}
+	}
+	if len(ks) == 0 {
+		return nil, fmt.Errorf("%s 分钟线响应为空，保留已有数据", code)
 	}
 
 	err = db.SessionFunc(func(session *xorm.Session) error {

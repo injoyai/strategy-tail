@@ -8,9 +8,11 @@ import { state } from '../store.js';
 import { Api } from '../api.js';
 import { factorTypeName, groupFactors } from '../format.js';
 import { buildConfig } from '../config.js';
+import MacdBacktest from './MacdBacktest.js';
 
 export default {
   name: 'Tab1Run',
+  components: { MacdBacktest },
   inject: ['switchTab', 'startTask'],
   setup() {
     return { state, factorTypeName, groupFactors };
@@ -36,7 +38,7 @@ export default {
     sampleCodesVisible() { return state.runCfg.sampleMode === 'codes'; },
   },
   mounted() {
-    this.loadScript();
+    if (state.runMode === 'adv') this.loadScript();
     this.loadPresets();
     // 因子目录由 01 页加载；就绪后创建默认条件卡（只一次）
     watch(() => state.factorCatalog, cat => {
@@ -49,7 +51,7 @@ export default {
   },
   methods: {
     // —— 模式 / 编辑器 ——
-    setMode(m) { state.runMode = m; },
+    setMode(m) { state.runMode = m; if (m === 'adv' && !this.script) this.loadScript(); },
     toggleEditor() { this.editorExpanded = !this.editorExpanded; },
     async loadScript() {
       try { this.script = (await Api.getScript()).content; }
@@ -237,12 +239,15 @@ export default {
     },
   },
   template: `
-<div class="grid2">
-  <div class="card">
+<div>
     <div class="mode-switch" role="group" aria-label="配置模式">
-      <button type="button" :aria-pressed="String(state.runMode==='simple')" @click="setMode('simple')">简单配置</button>
+      <button type="button" :aria-pressed="String(state.runMode==='macd')" @click="setMode('macd')">参数回测</button>
+      <button type="button" :aria-pressed="String(state.runMode==='simple')" @click="setMode('simple')">因子组合</button>
       <button type="button" :aria-pressed="String(state.runMode==='adv')" @click="setMode('adv')">高级脚本</button>
     </div>
+    <macd-backtest v-show="state.runMode==='macd'" />
+<div class="grid2" v-show="state.runMode!=='macd'">
+  <div class="card">
 
     <!-- 简单模式：声明式多条件策略 -->
     <template v-if="state.runMode==='simple'">
@@ -380,6 +385,7 @@ export default {
       <div class="hint">成本/仓位沿用 config.yaml 回测配置。同时只允许 1 个回测任务。</div>
     </div>
   </div>
+</div>
 </div>
   `,
 };

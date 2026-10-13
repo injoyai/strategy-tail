@@ -48,8 +48,9 @@ const ScriptPath = "strategies/script/matrix.go"
 
 // Server lab 服务。
 type Server struct {
-	runner *Runner
-	mux    *http.ServeMux
+	runner      *Runner
+	mux         *http.ServeMux
+	dataUpdater *DataUpdater
 	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
@@ -72,6 +73,7 @@ func NewServer() *Server {
 		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
 		candidateStore: NewCandidateStore(candidateDataDir),
 	}
+	s.dataUpdater = newDataUpdater(s.runner, common.ResolveRuntimePath(filepath.Join("data", "lab", "data-update.json")), updateData)
 	s.wirePortfolioStores()
 	s.registerRoutes()
 	return s
@@ -98,6 +100,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		analysisStore:  analyses,
 		candidateStore: candidates,
 	}
+	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(candidates.root, "data-update.json"), updateData)
 	s.wirePortfolioStores()
 	s.registerRoutes()
 	return s
@@ -105,6 +108,11 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 
 // registerRoutes 注册全部 REST 路由。
 func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("GET /api/macd/config", s.handleMACDConfig)
+	s.mux.HandleFunc("POST /api/macd/run", s.handleMACDRun)
+	s.mux.HandleFunc("GET /api/data-update/status", s.handleDataUpdateStatus)
+	s.mux.HandleFunc("PUT /api/data-update/config", s.handleDataUpdateConfig)
+	s.mux.HandleFunc("POST /api/data-update/run", s.handleDataUpdateRun)
 	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
 	s.mux.HandleFunc("PUT /api/script", s.handlePutScript)
 	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)
@@ -278,7 +286,15 @@ func scriptName() string {
 
 // handleStatus 进度查询。
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.runner.Status())
+	status := s.runner.Status()
+	if status["task"] == "data_update" {
+		update := s.dataUpdater.Status()
+		status["phase"] = update.Stage
+		status["failed"] = update.Failed
+		status["skipped"] = update.Skipped
+		status["message"] = update.Message
+	}
+	writeJSON(w, status)
 }
 
 // handleStop 停止任务。

@@ -5,6 +5,7 @@ package main
 // 仅监听 127.0.0.1（设计文档 §10 非目标：不做鉴权/远程访问）。
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -41,8 +42,12 @@ func main() {
 
 	go openBrowser(url)
 
+	server := lab.NewServer()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go server.RunDataUpdateScheduler(ctx)
 	srv := &http.Server{
-		Handler:           lab.NewServer().Handler(),
+		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	logs.PanicErr(srv.Serve(ln))

@@ -5,6 +5,7 @@ import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { factorTypeName } from '../format.js';
 import { mountChart, dropChart } from '../echarts.js';
+import { MACD_GROUPS, macdEnabled } from './MacdBacktest.js';
 
 export default {
   name: 'Tab2Compare',
@@ -17,6 +18,15 @@ export default {
   },
   computed: {
     rep() { return state.currentReport; },
+    macdParameters() {
+      const p = state.currentReport?.config.macd;
+      if (!p) return [];
+      return MACD_GROUPS.flatMap(g => [
+        ...g.conditions.map(c => ({label: c.label + '（条件）', value: macdEnabled(p, c.key) ? '已勾选' : '未勾选'})),
+        ...g.fields.filter(f => macdEnabled(p, f.condition)).map(f => ({label: f.label,
+          value: (f.unit === '%' ? +(p[f.key] * 100).toFixed(6) : p[f.key]) + ' ' + f.unit})),
+      ]);
+    },
     reportMeta() {
       const r = state.currentReport;
       if (!r) return '';
@@ -42,7 +52,8 @@ export default {
     },
     coverageText() {
       const cov = state.currentReport && state.currentReport.coverage;
-      return cov ? `样本覆盖：请求 ${cov.requested} · 完成 ${cov.completed} · 跳过 ${cov.skipped}` : '';
+      const unit = state.currentReport?.source === 'macd' ? '股票×年份' : '股票';
+      return cov ? `样本覆盖（${unit}）：请求 ${cov.requested} · 完成 ${cov.completed} · 跳过 ${cov.skipped}` : '';
     },
   },
   mounted() {
@@ -130,7 +141,7 @@ export default {
   },
   template: `
 <div class="card">
-  <h3>变体汇总 <span class="hint">{{ reportMeta }}</span></h3>
+  <h3>{{ rep?.source === 'macd' ? '回测统计' : '变体汇总' }} <span class="hint">{{ reportMeta }}</span></h3>
 
   <!-- 多条件对照摘要：仅简单模式报告 -->
   <div v-if="showCmp && cmp">
@@ -163,8 +174,17 @@ export default {
         </tbody>
       </table>
     </div>
-    <div class="coverage">{{ coverageText }}</div>
   </div>
+  <div v-if="coverageText" class="coverage">{{ coverageText }}</div>
+  <details v-if="rep?.coverage.skipped > 0" class="macd-parameters">
+    <summary>查看跳过原因（{{ rep.coverage.skipped }}）</summary>
+    <ul><li v-for="f in rep.coverage.failures" :key="f.code + ':' + f.year">{{ f.code }} · {{ f.year }} · {{ f.message }}</li></ul>
+  </details>
+
+  <details v-if="macdParameters.length" class="macd-parameters">
+    <summary>本次回测参数</summary>
+    <dl><template v-for="p in macdParameters" :key="p.label"><dt>{{ p.label }}</dt><dd>{{ p.value }}</dd></template></dl>
+  </details>
 
   <div class="detail-wrap">
     <table>
@@ -179,13 +199,13 @@ export default {
             <td>{{ v.stats.total }}</td>
             <td :class="v.stats.total ? (v.stats.winRate >= 50 ? 'pos' : 'neg') : ''">{{ v.stats.total ? v.stats.winRate.toFixed(2) : '-' }}</td>
             <td :class="v.stats.total ? (v.stats.avgProfit >= 0 ? 'pos' : 'neg') : ''">{{ v.stats.total ? v.stats.avgProfit.toFixed(2) : '-' }}</td>
-            <td>{{ v.stats.total ? (isFinite(v.stats.profitFactor) ? v.stats.profitFactor.toFixed(2) : '+Inf') : '-' }}</td>
+            <td>{{ statPF(v) }}</td>
             <td :class="v.stats.total ? 'pos' : ''">{{ v.stats.total ? v.stats.maxProfit.toFixed(2) : '-' }}</td>
             <td :class="v.stats.total ? 'neg' : ''">{{ v.stats.total ? v.stats.maxLoss.toFixed(2) : '-' }}</td>
             <td :class="profitWan(v) != null ? (profitWan(v) >= 0 ? 'pos' : 'neg') : ''">{{ profitWan(v) != null ? profitWan(v).toFixed(1) : '-' }}</td>
           </tr>
         </template>
-        <tr v-else><td colspan="9" class="empty">暂无报告，先在 ② 运行回测</td></tr>
+        <tr v-else><td colspan="9" class="empty">暂无报告，先在回测配置中运行回测</td></tr>
       </tbody>
     </table>
   </div>

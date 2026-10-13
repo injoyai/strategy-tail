@@ -40,7 +40,8 @@ type RunConfig struct {
 	TakeProfit  float64 `json:"takeProfit"`  // 止盈比例（0.10=10%）；0=不启用
 	StopLoss    float64 `json:"stopLoss"`    // 止损比例；0=不启用
 	// 脚本文件名（报告目录标识，取脚本名去扩展名）
-	ScriptName string `json:"scriptName"`
+	ScriptName string          `json:"scriptName"`
+	MACD       *MACDParameters `json:"macd,omitempty"`
 }
 
 // Validate 配置合法性检查。
@@ -50,6 +51,20 @@ func (c RunConfig) Validate() error {
 	}
 	if err := c.validateSample(); err != nil {
 		return err
+	}
+	if c.MACD != nil {
+		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
+			return fmt.Errorf("参数回测使用 MACD 反转卖出，请勿混入其他卖出规则")
+		}
+		if c.StartYear < 1990 {
+			return fmt.Errorf("起始年份不能早于 1990")
+		}
+		if c.SampleMode == "codes" {
+			if err := validateMACDCodes(c.SampleCodes); err != nil {
+				return err
+			}
+		}
+		return c.MACD.validate()
 	}
 	if c.HoldingDays <= 0 && c.TakeProfit <= 0 && c.StopLoss <= 0 {
 		return fmt.Errorf("卖出规则至少启用一项（持仓天数/止盈/止损）")
@@ -100,6 +115,12 @@ func (c RunConfig) years() []int {
 
 // seller 按配置构造卖出规则。
 func (c RunConfig) seller() core.Seller {
+	if c.MACD != nil {
+		if !c.MACD.conditions().SellMACD {
+			return ss.Or{}
+		}
+		return ss.Or{ss.MACD反转{Lookback: c.MACD.SellLookback}}
+	}
 	sellers := []core.Seller(nil)
 	if c.HoldingDays > 0 {
 		sellers = append(sellers, ss.A持仓N天{Days: c.HoldingDays})
@@ -374,6 +395,8 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 	r.stopCh = stop
 	r.running.Store(true)
 	r.doneCodes.Store(0)
+	r.totalCodes.Store(0)
+	r.currentCode.Store(nil)
 	// task 先于 state 写入：读侧见 state=running 必见当前 task
 	task := "backtest"
 	r.task.Store(&task)
@@ -413,6 +436,9 @@ var errStopped = fmt.Errorf("已停止")
 
 // Stop 请求停止当前任务（无任务时为空操作）。
 func (r *Runner) Stop() {
+	if task := r.task.Load(); task != nil && *task == "data_update" {
+		return // 数据更新按数据库事务完成，避免留下半批更新状态。
+	}
 	if r.running.Load() {
 		select {
 		case <-r.stopCh:
@@ -502,6 +528,8 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	r.stopCh = stop
 	r.running.Store(true)
 	r.doneCodes.Store(0)
+	r.totalCodes.Store(0)
+	r.currentCode.Store(nil)
 	// task 先于 state 写入：读侧见 state=running 必见当前 task
 	task := "analysis"
 	r.task.Store(&task)
@@ -554,6 +582,9 @@ func (rep *Report) RunID() string {
 // run 执行回测主循环（复用 backtest_tail 模式）。
 // spec 非 nil 时按简单模式填充 Source/StrategySpec/Comparison。
 func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec, stop chan struct{}) (*Report, error) {
+	if common.Pull == nil {
+		return nil, fmt.Errorf("行情运行时尚未初始化")
+	}
 	started := time.Now()
 
 	codes, err := r.resolveCodes(cfg, stop)
@@ -563,6 +594,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	r.totalCodes.Store(int64(len(codes)))
 
 	years := cfg.years()
+	if cfg.MACD != nil {
+		r.totalCodes.Store(int64(len(codes) * len(years)))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -591,6 +625,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 
 	seller := cfg.seller()
 	cost, pos, _, _, _ := common.LoadBacktestConfig()
+	if cfg.MACD != nil && cost == (core.Cost{}) {
+		cost = core.DefaultCost()
+	}
 	runVariants := make([]researchrun.Variant, len(variants))
 	for i, variant := range variants {
 		runVariants[i] = researchrun.Variant{
@@ -598,7 +635,11 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		}
 	}
 
-	run, err := researchrun.Run(ctx, researchrun.Config{
+	execute := researchrun.Run
+	if cfg.MACD != nil {
+		execute = runMACDYears
+	}
+	run, err := execute(ctx, researchrun.Config{
 		Codes:         codes,
 		Years:         years,
 		Variants:      runVariants,
@@ -632,6 +673,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		Coverage:   run.Coverage,
 		Source:     sourceScript,
 	}
+	if cfg.MACD != nil {
+		report.Source = "macd"
+	}
 	for _, result := range run.Results {
 		vr := VariantReport{Name: result.Variant.Name, Stats: newTradeStatsJSON(core.Stats(result.Trades))}
 		vr.Trades = toTradeJSON(result.Trades)
@@ -644,7 +688,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		report.Comparison = buildComparison(sp, report.Variants)
 	}
 
-	if err := saveReport(report); err != nil {
+	if err := saveReport(report, run.Results); err != nil {
 		return nil, fmt.Errorf("报告落盘失败: %w", err)
 	}
 	return report, nil
@@ -700,7 +744,7 @@ func toTradeJSON(trades []core.Trade) []TradeJSON {
 }
 
 // saveReport 落盘报告（AGENTS.md 6.1）：report.json（原子写）+ 每变体 CSV + 汇总 HTML。
-func saveReport(rep *Report) error {
+func saveReport(rep *Report, raw ...[]researchrun.Result) error {
 	dir := filepath.Join("output", "trades", rep.RunID())
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
@@ -722,13 +766,18 @@ func saveReport(rep *Report) error {
 	// 每变体 CSV + 全部变体汇总 HTML（core.ExportTradesCSV/HTML 按 AGENTS.md 6.1）
 	getDayKlines := common.Pull.DayKlines
 	var allTrades []core.Trade
-	for _, vr := range rep.Variants {
+	for i, vr := range rep.Variants {
 		trades := fromTradeJSON(vr.Trades)
-		_ = core.ExportTradesCSV(rep.Config.ScriptName, rep.RunID()+"_"+vr.Name, trades)
+		if len(raw) > 0 {
+			trades = raw[0][i].Trades
+		}
+		if _, err := core.ExportTradesCSVWithError(rep.Config.ScriptName, rep.RunID()+"_"+vr.Name, trades); err != nil {
+			return err
+		}
 		allTrades = append(allTrades, trades...)
 	}
-	_ = core.ExportTradesHTML(rep.Config.ScriptName, rep.RunID()+"_summary", allTrades, getDayKlines)
-	return nil
+	_, err = core.ExportTradesHTMLWithError(rep.Config.ScriptName, rep.RunID()+"_summary", allTrades, getDayKlines)
+	return err
 }
 
 // fromTradeJSON 由报告 JSON 还原 core.Trade（供 CSV/HTML 导出复用口径）。

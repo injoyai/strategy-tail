@@ -6,13 +6,15 @@ import { reactive } from './vendor/vue.esm-browser.prod.js';
 
 export const state = reactive({
   // —— 全局 / 状态轮询 ——
-  activeTab: 4,          // 当前 Tab 编号；默认进入 01 因子研究
+  activeTab: 1,          // 默认从熟悉的参数回测开始
   status: null,          // 最近一次 /api/status 响应
   statusError: false,    // 轮询网络失败 → connection-error 提示条
   taskRunning: false,    // 任务运行中（按钮禁用 / 状态条进度）
 
   // —— 02 策略与运行 ——
-  runMode: 'simple',     // simple | adv
+  runMode: 'macd',       // macd | simple | adv
+  macdCfg: null,
+  dataUpdating: false,
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
     endYear: 2026,
