@@ -5,15 +5,73 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/tdx"
+	"github.com/injoyai/tdx/lib/xorms"
 )
+
+func TestDataUpdateStatusReadsSharedSuccessMarker(t *testing.T) {
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "update.db")
+	db, err := xorms.NewSqlite(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Sync2(new(tdx.UpdateModel)); err != nil {
+		t.Fatal(err)
+	}
+	last := time.Date(2026, 10, 12, 16, 0, 0, 0, time.Local)
+	if _, err := db.Insert(&tdx.UpdateModel{Key: "pull", Time: last.Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	oldPull := common.Pull
+	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	t.Cleanup(func() { common.Pull = oldPull })
+	s := NewServer()
+	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(dir, "settings.json"), updateData)
+	s.dataUpdater.status.LastSuccess = "2026-10-10T16:00:00+08:00"
+	s.dataUpdater.status.State = "error"
+	s.dataUpdater.status.FinishedAt = last.AddDate(0, 0, 2).Format(time.RFC3339)
+	s.dataUpdater.status.Failed = 2
+	read := func() DataUpdateStatus {
+		res := httptest.NewRecorder()
+		s.handleDataUpdateStatus(res, httptest.NewRequest(http.MethodGet, "/api/data-update/status", nil))
+		var status DataUpdateStatus
+		if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
+			t.Fatal(err)
+		}
+		return status
+	}
+	status := read()
+	if status.LastSuccess != last.Format(time.RFC3339) || status.State != "error" || status.Failed != 2 || status.FinishedAt == "" {
+		t.Fatalf("shared success or failed attempt missing: %+v", status)
+	}
+	if s.dataUpdater.Status().LastSuccess != "2026-10-10T16:00:00+08:00" {
+		t.Fatal("status read rewrote saved Web state")
+	}
+	if err := os.Remove(filename); err != nil {
+		t.Fatal(err)
+	}
+	if status := read(); status.LastSuccess != "" || status.LastSuccessError != "" {
+		t.Fatalf("missing database reused stale Web timestamp: %+v", status)
+	}
+	if err := os.WriteFile(filename, []byte("invalid database"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if status := read(); status.LastSuccessError == "" || status.State != "error" {
+		t.Fatalf("database read failure hidden: %+v", status)
+	}
+}
 
 func waitDataUpdate(t *testing.T, u *DataUpdater) DataUpdateStatus {
 	t.Helper()
@@ -140,6 +198,75 @@ func TestDataUpdateFailurePreservesLastSuccessAndReleasesLock(t *testing.T) {
 		t.Fatalf("could not retry: %v", err)
 	}
 	waitDataUpdate(t, u)
+}
+
+func TestDataUpdatePartialSuccessSurvivesRetryAndRestart(t *testing.T) {
+	filename := filepath.Join(t.TempDir(), "settings.json")
+	u := newDataUpdater(NewRunner(), filename, func(_ bool, progress func(extend.UpdateProgress)) error {
+		progress(extend.UpdateProgress{Done: 3, Total: 3, Failed: 1})
+		return errors.New("one download failed")
+	})
+	u.status.LastSuccess = "2026-10-12T16:00:00+08:00"
+	if err := u.Start(true); err != nil {
+		t.Fatal(err)
+	}
+	s := waitDataUpdate(t, u)
+	if s.LastPartialSuccess != s.FinishedAt || s.LastPartialSuccess == "" || s.State != "error" || s.LastSuccess != "2026-10-12T16:00:00+08:00" {
+		t.Fatalf("partial update lost or full success advanced: %+v", s)
+	}
+	reloaded := newDataUpdater(NewRunner(), filename, func(bool, func(extend.UpdateProgress)) error {
+		return errors.New("retry could not start downloads")
+	})
+	if reloaded.Status().LastPartialSuccess != s.LastPartialSuccess {
+		t.Fatal("partial success did not survive restart")
+	}
+	if err := reloaded.Start(true); err != nil {
+		t.Fatal(err)
+	}
+	retried := waitDataUpdate(t, reloaded)
+	if retried.LastPartialSuccess != s.LastPartialSuccess || retried.Failed != 0 {
+		t.Fatalf("failed retry erased prior update: %+v", retried)
+	}
+}
+
+func TestDataUpdateLegacyPartialSuccessAndUnfinishedFailures(t *testing.T) {
+	for _, tc := range []struct {
+		name                string
+		done, total, failed int
+		partial             bool
+	}{
+		{"partial", 6400, 6400, 2, true},
+		{"all failed", 3, 3, 3, false},
+		{"unfinished", 2, 3, 1, false},
+		{"empty", 0, 0, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			filename := filepath.Join(t.TempDir(), "settings.json")
+			saved := DataUpdateStatus{Config: DataUpdateConfig{Time: "15:45"}, State: "error", FinishedAt: "2026-10-14T17:32:21+08:00",
+				UpdateProgress: extend.UpdateProgress{Done: tc.done, Total: tc.total, Failed: tc.failed}}
+			body, err := json.Marshal(saved)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filename, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			u := newDataUpdater(NewRunner(), filename, func(_ bool, progress func(extend.UpdateProgress)) error {
+				progress(saved.UpdateProgress)
+				return errors.New("downloads failed")
+			})
+			if got := u.Status().LastPartialSuccess; (got == saved.FinishedAt) != tc.partial || (!tc.partial && got != "") {
+				t.Fatalf("legacy classification: %q", got)
+			}
+			if err := u.Start(true); err != nil {
+				t.Fatal(err)
+			}
+			status := waitDataUpdate(t, u)
+			if (status.LastPartialSuccess != "") != tc.partial {
+				t.Fatalf("run classification: %+v", status)
+			}
+		})
+	}
 }
 
 func TestAutomaticUpdateWaitsForTasksAndRunsOncePerDay(t *testing.T) {

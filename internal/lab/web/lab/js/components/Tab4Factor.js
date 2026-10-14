@@ -432,7 +432,6 @@ export default {
   },
   template: `
 <div class="card">
-  <h3>因子研究</h3>
   <div class="form-row factor-controls">
     <label for="factorKind">因子</label>
     <select id="factorKind" style="min-width:220px" v-model="factorKind" aria-describedby="factorParamHelp">
@@ -449,19 +448,20 @@ export default {
     <label class="factor-inline-label" for="factorEndYear">结束年份</label>
     <input type="number" v-model.number="factorEndYear" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
   </div>
-  <div class="hint factor-control-help" id="factorParamHelp">因子参数决定历史计算区间；未来收益窗口只用于评估因子之后的表现。开始/结束年份是本页独立的分析区间，不影响策略回测页。</div>
+  <details class="ui-help"><summary>分析说明</summary><p class="hint factor-control-help" id="factorParamHelp">因子参数决定历史计算区间，未来收益窗口用于评价；分析年份独立于回测设置。</p></details>
   <div class="editor-actions">
     <button class="primary" @click="runAnalysis" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">开始分析</button>
   </div>
   <div class="msg" :class="state.factorMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.factorMsg.text }}</div>
 
-  <div class="concept" id="factorConcept" v-if="curFactor">
-    <div class="concept-head"><span id="fcName">{{ fcName }}</span><span class="badge" id="fcCat">{{ fcCat }}</span></div>
+  <details class="concept ui-help" id="factorConcept" v-if="curFactor">
+    <summary><span id="fcName">{{ fcName }}</span> · 因子说明</summary>
+    <div class="concept-head"><span class="badge" id="fcCat">{{ fcCat }}</span></div>
     <div class="concept-line" id="fcDesc">{{ fcDesc }}</div>
     <div class="concept-line" id="fcParam">{{ fcParam }}</div>
     <div class="concept-line" id="fcExample">{{ fcExample }}</div>
-    <div class="hint">因子不存在普遍有效的阈值：同一参数在不同市场、样本与周期下表现不同，请以本次样本的分组分布与统计显著性为准。</div>
-  </div>
+    <div class="hint">阈值随市场、样本和周期变化，以本次分布与显著性为准。</div>
+  </details>
 
   <div v-if="state.currentAnalysis" ref="factorBody">
     <div class="coverage" id="rangeMeta" style="margin:14px 0 0">
@@ -486,7 +486,7 @@ export default {
       <button class="secondary" @click="openCandidateDlg" :disabled="!candidateSaveOk">保存为候选</button>
       <button type="button" class="secondary" @click="switchTab(5)" v-if="state.candidateSavedFor">查看候选 →</button>
       <span class="spacer"></span>
-      <span class="hint">把该因子与参数（不含阈值）加入 ② 的简单配置，阈值由你在那里填写。</span>
+      <span class="hint">阈值在回测配置中填写。</span>
       <span class="hint" v-if="!candidateSaveOk">{{ candidateSaveHint }}</span>
     </div>
 
@@ -540,7 +540,7 @@ export default {
           </tbody>
         </table>
       </div>
-      <div class="hint" id="yearBias">样本池说明：当前 all 股票池取自当前沪深主板代码列表，不是历史时点成分股，退市股票缺失，存在生存者偏差；后上市股票只从其有数据的年份起参与，缺失年份见失败明细。</div>
+      <details class="ui-help"><summary>样本口径</summary><p class="hint" id="yearBias">使用当前沪深主板股票池，缺少退市股票，存在生存者偏差；后上市股票仅参与有数据的年份，缺失项见覆盖明细。</p></details>
     </template>
     <div class="empty" v-show="!hasYears" id="yearNA">{{ yearNA }}</div>
 
@@ -550,7 +550,7 @@ export default {
       <div ref="icChart" class="chart-ic"></div>
     </details>
   </div>
-  <div class="empty" v-else id="factorEmpty" role="status">暂无分析结果，选择因子后点击“开始分析”。</div>
+  <div class="empty" v-else id="factorEmpty" role="status">暂无分析结果</div>
 </div>
   `,
 };

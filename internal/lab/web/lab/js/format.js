@@ -1,6 +1,27 @@
 // 展示层格式化助手：只影响显示，JSON/提交始终用原始值。
 // unit 取值见 strategies/factor/registry.go（ratio / multiple / 其他原值）。
 
+// 参数模式已下线，历史报告仍显示当时启用的条件与参数。
+export function formatMacdParameters(p) {
+  if (!p) return [];
+  const enabled = key => p.enabled == null || p.enabled[key] === true;
+  return [
+    ['floatCap', '流通市值过滤', [['minFloatCap', '流通市值下限', '亿元']]],
+    ['price', '价格过滤', [['maxPrice', '价格上限', '元']]],
+    ['limitUp', '过滤涨停', []],
+    ['negative', 'MACD 负柱天数', [['negativeMinDays', '负柱天数下限', '天'], ['negativeMaxDays', '负柱天数上限', '天']]],
+    ['rising', 'MACD 连涨天数', [['risingMinDays', '连涨天数下限', '天'], ['risingMaxDays', '连涨天数上限', '天']]],
+    ['priceMA', '收盘价高于均线', [['priceMAPeriod', '收盘价高于均线', '日']]],
+    ['trend1', '趋势均线一向上', [['trendPeriod1', '趋势均线一周期', '日'], ['trendMinSlope1', '均线一最小日斜率', '%']]],
+    ['trend2', '趋势均线二向上', [['trendPeriod2', '趋势均线二周期', '日'], ['trendMinSlope2', '均线二最小日斜率', '%']]],
+    ['sellMACD', 'MACD 反转卖出', [['sellLookback', '高点回看天数', '天']]],
+  ].flatMap(([key, label, fields]) => [
+    {label: label + '（条件）', value: enabled(key) ? '已勾选' : '未勾选'},
+    ...(enabled(key) ? fields.map(([field, label, unit]) => ({label,
+      value: (unit === '%' ? +(p[field] * 100).toFixed(6) : p[field]) + ' ' + unit})) : []),
+  ]);
+}
+
 // esc HTML 转义（Vue 模板自动转义，仅文本拼接等少数场景使用）。
 export const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -168,4 +189,32 @@ export function filterText(f, catalog) {
   if (f.operator === 'lte') return nm + '≤' + fmt(f.max);
   if (f.operator === 'between') return nm + '∈[' + fmt(f.min) + ',' + fmt(f.max) + ']';
   return nm;
+}
+
+// 只读冻结快照；未填写的参数明确显示缺省，不用目录的表单默认值替换。
+export function formatBuilderSpec(spec, catalog) {
+  if (!spec) return '';
+  const entries = new Map(catalog.map(e => [e.id, e]));
+  function rule(node, depth = 1) {
+    const pad = '  '.repeat(depth);
+    if (!node) return pad + '未设置';
+    if (node.type === 'group') {
+      return pad + (node.op === 'and' ? '全部满足（AND）' : '任一满足（OR）') + '\n' +
+        node.children.map(child => rule(child, depth + 1)).join('\n');
+    }
+    const entry = entries.get(node.componentId);
+    const values = new Map((entry?.params || []).map(def => [def.key, {
+      label: def.label, unit: def.unit || '', value: node.params?.[def.key],
+    }]));
+    for (const [key, value] of Object.entries(node.params || {})) {
+      if (!values.has(key)) values.set(key, {label: key, unit: '', value});
+    }
+    const params = [...values.values()].map(p => p.label + '=' +
+      (p.value == null ? '未设置' : (Array.isArray(p.value) ? p.value.join(',') : p.value) + p.unit));
+    return pad + (entry?.name || node.componentId) + (params.length ? '：' + params.join('；') : '');
+  }
+  return [`策略：${spec.name}（定义版本 ${spec.version}）`, '买入条件', rule(spec.buy),
+    '策略卖出信号', rule(spec.sellSignal), '独立风控（任一触发）',
+    spec.risks?.length ? spec.risks.map(node => rule(node)).join('\n') : '  未添加',
+    `持有至期末：${spec.holdToEnd ? '已选择（期末 Virtual 估值，独立风控仍可触发）' : '未选择'}`].join('\n');
 }

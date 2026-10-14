@@ -147,7 +147,6 @@ export default {
   },
   template: `
 <div class="card">
-  <h3>交易明细与K线</h3>
   <div class="filters">
     <select v-model="fVariant" aria-label="变体筛选">
       <option value="">全部变体</option>
@@ -161,7 +160,7 @@ export default {
   </div>
   <div class="detail-wrap">
     <table>
-      <thead><tr><th>变体</th><th>代码</th><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>盈亏(元)</th><th>收益率%</th><th>持仓天</th></tr></thead>
+      <thead><tr><th>变体</th><th>代码</th><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>盈亏(元)</th><th>收益率%</th><th>持仓天</th><th>成交类型</th></tr></thead>
       <tbody>
         <template v-if="visibleTrades.length">
           <tr v-for="(t, i) in visibleTrades" :key="i" @click="showKline(t)">
@@ -175,9 +174,10 @@ export default {
             <td :class="t.profit >= 0 ? 'pos' : 'neg'">{{ t.profit.toFixed(0) }}</td>
             <td :class="t.rate >= 0 ? 'pos' : 'neg'">{{ t.rate.toFixed(2) }}</td>
             <td>{{ t.holdingDays }}</td>
+            <td>{{ t.virtual === true ? '期末估值（Virtual）' : t.virtual === false ? '实际成交' : '未记录' }}</td>
           </tr>
         </template>
-        <tr v-else><td colspan="10" class="empty">{{ noTradesText }}</td></tr>
+        <tr v-else><td colspan="11" class="empty">{{ noTradesText }}</td></tr>
       </tbody>
     </table>
   </div>

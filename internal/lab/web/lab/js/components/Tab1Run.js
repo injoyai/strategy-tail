@@ -1,6 +1,6 @@
-// Tab1Run：02 策略与运行（简单配置 / 高级脚本 / 运行配置）。
+// Tab1Run：回测配置；运行参数在共用弹窗中确认。
 // 从 index.html 迁移：setMode/toggleEditor/loadScript/checkScript/saveScript/
-// sampleModeChange/buildConfig/runBacktest/runSimple/loadPresets/renderPresetInfo/
+// buildConfig/runBacktest/runSimple/loadPresets/renderPresetInfo/
 // ensureDefaultConds/addCond/delCond/renderConds/buildCondCard/buildSpec/focusSimpleCondition。
 // 状态提升：simpleConds/presetId/specName/runCfg/focusCondReq 全部在 store（跨页共享）。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
@@ -8,12 +8,12 @@ import { state } from '../store.js';
 import { Api } from '../api.js';
 import { factorTypeName, groupFactors } from '../format.js';
 import { buildConfig } from '../config.js';
-import MacdBacktest from './MacdBacktest.js';
+import Tab1Builder from './Tab1Builder.js';
 
 export default {
   name: 'Tab1Run',
-  components: { MacdBacktest },
-  inject: ['switchTab', 'startTask'],
+  components: { Tab1Builder },
+  inject: ['switchTab', 'startTask', 'openRunConfig'],
   setup() {
     return { state, factorTypeName, groupFactors };
   },
@@ -34,8 +34,6 @@ export default {
         ? `${p.description}。它会作为基础买入条件，并与下方因子条件同时满足。`
         : '不附加市值、价格、涨停或均线回调等预设条件；买入只由下方因子条件决定，对照基准为全部样本。';
     },
-    sampleSizeVisible() { return state.runCfg.sampleMode === 'random'; },
-    sampleCodesVisible() { return state.runCfg.sampleMode === 'codes'; },
   },
   mounted() {
     if (state.runMode === 'adv') this.loadScript();
@@ -142,14 +140,21 @@ export default {
     },
 
     // —— 运行配置 / 提交 ——
-    async runBacktest() {
+    requestRun() {
+      if (state.taskRunning) return;
+      const mode = state.runMode;
+      if (mode === 'simple' && !this.buildSpec()) return;
+      this.openRunConfig(mode, () => this.runBacktest(mode));
+    },
+    async runBacktest(mode = state.runMode) {
       state.scriptMsg = {text: '', ok: true};
-      if (state.runMode === 'simple') return this.runSimple();
+      if (mode === 'simple') return this.runSimple();
       try {
         await Api.saveScript(this.script); // 运行前先保存
         const d = await Api.runBacktest(buildConfig());
         state.scriptMsg = {text: `已提交 ${d.variants} 个变体，运行进度见右下角任务卡。`, ok: true};
         this.startTask('backtest');
+        return true;
       } catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
     },
     async runSimple() {
@@ -162,6 +167,7 @@ export default {
           : n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
         state.scriptMsg = {text: `已提交 ${d.variants} 个变体（${detail}），运行进度见右下角任务卡。`, ok: true};
         this.startTask('backtest');
+        return true;
       } catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
     },
     // 收集并校验 StrategySpec；失败返回 null（错误贴近字段展示并聚焦第一个错误）
@@ -241,24 +247,22 @@ export default {
   template: `
 <div>
     <div class="mode-switch" role="group" aria-label="配置模式">
-      <button type="button" :aria-pressed="String(state.runMode==='macd')" @click="setMode('macd')">参数回测</button>
+      <button type="button" :aria-pressed="String(state.runMode==='builder')" @click="setMode('builder')">自由搭建</button>
       <button type="button" :aria-pressed="String(state.runMode==='simple')" @click="setMode('simple')">因子组合</button>
       <button type="button" :aria-pressed="String(state.runMode==='adv')" @click="setMode('adv')">高级脚本</button>
     </div>
-    <macd-backtest v-show="state.runMode==='macd'" />
-<div class="grid2" v-show="state.runMode!=='macd'">
+<div>
   <div class="card">
 
     <!-- 简单模式：声明式多条件策略 -->
     <template v-if="state.runMode==='simple'">
-      <h3>简单配置</h3>
       <div class="form-row"><label for="presetSel">基础策略（可选）</label>
         <select id="presetSel" style="min-width:200px" v-model="state.presetId" aria-describedby="presetDesc">
           <option value="">不使用预设（仅因子条件）</option>
           <option v-for="p in presetInfos" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>
-      <div class="hint" id="presetDesc">{{ presetDescText }}</div>
+      <details v-if="state.presetId" class="ui-help"><summary>预设说明</summary><p class="hint" id="presetDesc">{{ presetDescText }}</p></details>
       <ul class="preset-rules" v-if="presetInfo">
         <li v-for="(r, i) in (presetInfo.rules || [])" :key="i">{{ r }}</li>
       </ul>
@@ -327,63 +331,28 @@ export default {
         <button class="secondary" ref="btnAddCond" @click="addCond">添加条件</button>
         <span class="hint" id="condLimitHint">当前 {{ state.simpleConds.length }} 个条件</span>
       </div>
-      <div class="hint" style="margin-top:8px">口径说明：当前回测仍按当日数据判定并以同日价格成交；因子页的未来收益只用于因子评价，不代表可实现的组合收益。信号与次日成交的解耦将作为后续执行模型改造。</div>
+      <details class="ui-help"><summary>成交口径</summary><p class="hint">按当日信号和同日价格成交；因子未来收益仅用于评价，不等于组合收益。</p></details>
     </template>
+
+    <!-- 自由搭建：条件树策略搭建器 -->
+    <tab1-builder v-else-if="state.runMode==='builder'" />
 
     <!-- 高级模式：脚本编辑 -->
     <template v-else>
-      <h3>策略脚本（strategies/script/matrix.go）</h3>
+      <h3>策略脚本</h3>
       <textarea id="editor" class="editor" :class="{expanded: editorExpanded}" v-model="script" spellcheck="false"></textarea>
       <div class="editor-actions">
         <button class="secondary" @click="checkScript">语法检查</button>
         <button class="secondary" @click="saveScript">保存脚本</button>
         <button class="secondary" @click="toggleEditor" :aria-expanded="String(editorExpanded)">{{ editorExpanded ? '收起' : '展开' }}</button>
       </div>
-      <div class="hint">脚本契约：package main + func Strategy() []core.Variant。可 import strategies/buy、strategies/sell、core。重逻辑请组合现有组件，内联循环会被解释执行变慢。</div>
+      <details class="ui-help"><summary>脚本说明</summary><p class="hint">package main + func Strategy() []core.Variant；可导入 buy、sell、core，优先组合现有组件。</p><p class="hint">文件：strategies/script/matrix.go</p></details>
     </template>
 
-    <div class="editor-actions" style="margin-top:12px">
-      <button class="primary" @click="runBacktest" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">运行回测</button>
+    <div class="editor-actions" style="margin-top:12px" v-show="state.runMode!=='builder'">
+      <button class="primary" @click="requestRun" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">运行回测</button>
     </div>
-    <div class="msg" :class="state.scriptMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.scriptMsg.text }}</div>
-  </div>
-
-  <div>
-    <div class="card">
-      <h3>运行配置</h3>
-      <div class="form-row"><label>时间范围</label>
-        <input type="number" v-model.number="state.runCfg.startYear" min="2000" style="width:80px">
-        <span> - </span>
-        <input type="number" v-model.number="state.runCfg.endYear" min="2000" style="width:80px">
-      </div>
-      <div class="form-row"><label>样本池</label>
-        <select v-model="state.runCfg.sampleMode">
-          <option value="all">全部（沪深主板）</option>
-          <option value="random">随机 N 只</option>
-          <option value="codes">指定代码</option>
-        </select>
-      </div>
-      <div class="form-row" v-show="sampleSizeVisible"><label>随机数量</label>
-        <input type="number" v-model.number="state.runCfg.sampleSize" min="1">
-      </div>
-      <div class="form-row" v-show="sampleCodesVisible"><label>代码列表</label>
-        <input type="text" v-model="state.runCfg.sampleCodes" placeholder="sh600000,sz000001" style="width:100%">
-      </div>
-      <div class="group-sep">卖出规则（至少启用一项）</div>
-      <div class="form-row"><label>持仓N天</label>
-        <input type="checkbox" v-model="state.runCfg.holdingOn">
-        <input type="number" v-model.number="state.runCfg.holdingDays" min="1" style="width:80px">
-      </div>
-      <div class="form-row"><label>止盈</label>
-        <input type="checkbox" v-model="state.runCfg.tpOn">
-        <input type="number" v-model.number="state.runCfg.takeProfit" step="0.5" style="width:80px"><span>%</span>
-      </div>
-      <div class="form-row"><label>止损</label>
-        <input type="checkbox" v-model="state.runCfg.slOn">
-        <input type="number" v-model.number="state.runCfg.stopLoss" step="0.5" style="width:80px"><span>%</span>
-      </div>
-      <div class="hint">成本/仓位沿用 config.yaml 回测配置。同时只允许 1 个回测任务。</div>
-    </div>
+    <div class="msg" v-show="state.runMode!=='builder'" :class="state.scriptMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.scriptMsg.text }}</div>
   </div>
 </div>
 </div>

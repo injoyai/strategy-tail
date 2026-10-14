@@ -6,14 +6,13 @@ import { reactive } from './vendor/vue.esm-browser.prod.js';
 
 export const state = reactive({
   // —— 全局 / 状态轮询 ——
-  activeTab: 1,          // 默认从熟悉的参数回测开始
+  activeTab: 1,          // 默认进入回测配置
   status: null,          // 最近一次 /api/status 响应
   statusError: false,    // 轮询网络失败 → connection-error 提示条
   taskRunning: false,    // 任务运行中（按钮禁用 / 状态条进度）
 
   // —— 02 策略与运行 ——
-  runMode: 'macd',       // macd | simple | adv
-  macdCfg: null,
+  runMode: 'builder',    // builder | simple | adv
   dataUpdating: false,
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
@@ -41,6 +40,18 @@ export const state = reactive({
   condsInitialized: false,           // 默认条件卡只创建一次（因子目录就绪后）
   presetId: '',                      // 基础策略预设选择（''=不使用预设）
   specName: '',                      // 策略名称输入
+
+  // —— 02 自由搭建（策略搭建器；树结构与后端 BuilderSpec 同形） ——
+  builderCatalog: [],                // 可运行组件目录（GET /api/builder/components）
+  builderUnavailable: [],            // 暂未接入组件及原因（仅展示说明）
+  builderTemplates: [],              // 内置模板（GET /api/builder/templates）
+  builderStrategies: [],             // 已保存策略列表（GET /api/builder/strategies）
+  builderSpec: null,                 // 当前编辑的 spec {version, name, buy, sellSignal, holdToEnd, risks}
+  builderId: '',                     // 当前策略 ID（''=未保存草稿）
+  builderBusy: false,                // 策略保存/加载互斥，跨模式切换保留
+  builderBaseline: '',               // 最近保存/加载快照，用于保护未保存编辑
+  builderVersion: 0,                 // 乐观锁：打开/保存时的版本号
+  builderMsg: {text: '', ok: true},  // 搭建器消息条
 
   // —— 批量任务卡（状态条；polling.js 写入，根组件渲染） ——
   taskDock: null,

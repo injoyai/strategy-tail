@@ -3,9 +3,9 @@
 // 行点击 → state.selectedVariant + switchTab(3)；图表按 activeTab 可见时渲染。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
-import { factorTypeName } from '../format.js';
+import { factorTypeName, formatBuilderSpec, formatMacdParameters } from '../format.js';
+import { Api } from '../api.js';
 import { mountChart, dropChart } from '../echarts.js';
-import { MACD_GROUPS, macdEnabled } from './MacdBacktest.js';
 
 export default {
   name: 'Tab2Compare',
@@ -18,14 +18,11 @@ export default {
   },
   computed: {
     rep() { return state.currentReport; },
+    builderRules() {
+      return formatBuilderSpec(state.currentReport?.config.builder, state.builderCatalog);
+    },
     macdParameters() {
-      const p = state.currentReport?.config.macd;
-      if (!p) return [];
-      return MACD_GROUPS.flatMap(g => [
-        ...g.conditions.map(c => ({label: c.label + '（条件）', value: macdEnabled(p, c.key) ? '已勾选' : '未勾选'})),
-        ...g.fields.filter(f => macdEnabled(p, f.condition)).map(f => ({label: f.label,
-          value: (f.unit === '%' ? +(p[f.key] * 100).toFixed(6) : p[f.key]) + ' ' + f.unit})),
-      ]);
+      return formatMacdParameters(state.currentReport?.config.macd);
     },
     reportMeta() {
       const r = state.currentReport;
@@ -59,7 +56,11 @@ export default {
   mounted() {
     // 面板可见（v-show）后容器才有尺寸，图表必须在此后才 init
     watch(() => state.activeTab, n => { if (n === 2) this.renderNow(); });
-    watch(() => state.currentReport, () => { if (state.activeTab === 2) this.renderNow(); });
+    watch(() => state.currentReport, () => {
+      this.loadBuilderCatalog();
+      if (state.activeTab === 2) this.renderNow();
+    });
+    this.loadBuilderCatalog();
     if (state.activeTab === 2 && state.currentReport) this.renderNow();
   },
   unmounted() {
@@ -67,6 +68,11 @@ export default {
     dropChart(this.winC);
   },
   methods: {
+    async loadBuilderCatalog() {
+      if (!state.currentReport?.config.builder || state.builderCatalog.length) return;
+      try { state.builderCatalog = (await Api.builderComponents()).components || []; }
+      catch { /* 目录不可用时仍按冻结的组件标识展示规则与参数。 */ }
+    },
     statLine(v) {
       if (!v || !v.stats || !v.stats.total) return '无交易';
       const s = v.stats;
@@ -184,6 +190,10 @@ export default {
   <details v-if="macdParameters.length" class="macd-parameters">
     <summary>本次回测参数</summary>
     <dl><template v-for="p in macdParameters" :key="p.label"><dt>{{ p.label }}</dt><dd>{{ p.value }}</dd></template></dl>
+  </details>
+  <details v-if="builderRules" class="macd-parameters">
+    <summary>本次回测规则（报告快照）</summary>
+    <pre class="builder-snapshot">{{ builderRules }}</pre>
   </details>
 
   <div class="detail-wrap">

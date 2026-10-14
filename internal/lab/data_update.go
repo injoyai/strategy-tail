@@ -34,13 +34,19 @@ func (c DataUpdateConfig) validate() error {
 type DataUpdateStatus struct {
 	Config DataUpdateConfig `json:"config"`
 	extend.UpdateProgress
-	State        string `json:"state"`
-	StartedAt    string `json:"startedAt,omitempty"`
-	FinishedAt   string `json:"finishedAt,omitempty"`
-	LastSuccess  string `json:"lastSuccess,omitempty"`
-	LastAutoDay  string `json:"lastAutoDay,omitempty"`
-	Error        string `json:"error,omitempty"`
-	ScheduleNote string `json:"scheduleNote,omitempty"`
+	State              string `json:"state"`
+	StartedAt          string `json:"startedAt,omitempty"`
+	FinishedAt         string `json:"finishedAt,omitempty"`
+	LastSuccess        string `json:"lastSuccess,omitempty"`
+	LastPartialSuccess string `json:"lastPartialSuccess,omitempty"`
+	LastSuccessError   string `json:"lastSuccessError,omitempty"`
+	LastAutoDay        string `json:"lastAutoDay,omitempty"`
+	Error              string `json:"error,omitempty"`
+	ScheduleNote       string `json:"scheduleNote,omitempty"`
+}
+
+func (s DataUpdateStatus) partialSuccess() bool {
+	return s.State == "error" && !s.Skipped && s.Total > 0 && s.Done == s.Total && s.Failed > 0 && s.Failed < s.Total
 }
 
 // DataUpdater shares Runner's task lock. The pull layer also locks the database
@@ -73,6 +79,9 @@ func newDataUpdater(r *Runner, filename string, run func(bool, func(extend.Updat
 		return u
 	}
 	u.status = saved
+	if u.status.LastPartialSuccess == "" && saved.partialSuccess() {
+		u.status.LastPartialSuccess = saved.FinishedAt
+	}
 	if saved.State == "running" {
 		u.status.State = "idle"
 		u.status.LastAutoDay = ""
@@ -125,7 +134,7 @@ func (u *DataUpdater) Start(manual bool) error {
 		return errDataTaskBusy
 	}
 	config, lastSuccess, lastAutoDay := u.status.Config, u.status.LastSuccess, u.status.LastAutoDay
-	u.status = DataUpdateStatus{Config: config, State: "running", StartedAt: time.Now().Format(time.RFC3339), LastSuccess: lastSuccess, LastAutoDay: lastAutoDay}
+	u.status = DataUpdateStatus{Config: config, State: "running", StartedAt: time.Now().Format(time.RFC3339), LastSuccess: lastSuccess, LastPartialSuccess: u.status.LastPartialSuccess, LastAutoDay: lastAutoDay}
 	if !manual {
 		u.status.LastAutoDay = time.Now().In(u.location).Format(time.DateOnly)
 	}
@@ -168,6 +177,9 @@ func (u *DataUpdater) Start(manual bool) error {
 			u.status.Message = "数据更新完成"
 		}
 		u.status.State = state
+		if u.status.partialSuccess() {
+			u.status.LastPartialSuccess = u.status.FinishedAt
+		}
 		if saveErr := u.persistLocked(); saveErr != nil {
 			u.status.Error = "保存更新状态失败: " + saveErr.Error()
 		}
@@ -229,7 +241,17 @@ func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func (s *Server) handleDataUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, s.dataUpdater.Status())
+	status := s.dataUpdater.Status()
+	if common.Pull != nil {
+		status.LastSuccess = ""
+		last, err := common.Pull.LastSuccessfulUpdate()
+		if err != nil {
+			status.LastSuccessError = "无法读取行情库的完整更新时间"
+		} else if !last.IsZero() {
+			status.LastSuccess = last.Format(time.RFC3339)
+		}
+	}
+	writeJSON(w, status)
 }
 
 func (s *Server) handleDataUpdateConfig(w http.ResponseWriter, r *http.Request) {
@@ -251,7 +273,7 @@ func (s *Server) handleDataUpdateConfig(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, s.dataUpdater.Status())
+	s.handleDataUpdateStatus(w, r)
 }
 
 func (s *Server) handleDataUpdateRun(w http.ResponseWriter, r *http.Request) {

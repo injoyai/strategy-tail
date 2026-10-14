@@ -109,7 +109,7 @@ export default {
       </select></div>
     <div class="cf-row"><label for="pfTrialCounted">计入试验次数</label><input type="checkbox" id="pfTrialCounted" v-model="trialCounted"></div>
     <div class="cf-row"><label for="pfCountReason">计数理由</label><textarea class="resize-none" id="pfCountReason" v-model="countReason" maxlength="500" placeholder="说明计入/不计入试验次数的理由"></textarea></div>
-    <div class="hint" id="pfExpNote" style="margin:4px 0 10px">研究区间必填（YYYY-MM-DD）；创建成功返回 queued 状态，随后在运行列表中启动。</div>
+    <div class="hint" id="pfExpNote" style="margin:4px 0 10px">创建后在运行列表中启动。</div>
     <div class="cf-row">
       <div class="cf-actions">
         <button type="button" class="primary" @click="createExperiment" :disabled="saving" :aria-busy="String(saving)">创建实验</button>

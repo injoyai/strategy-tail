@@ -72,7 +72,7 @@ export default {
     modelEmptyText() {
       const pg = state.pfModelPageData;
       const total = pg ? (pg.total || 0) : 0;
-      if (!total) return '暂无模型：完成 v1 验证后点击“创建模型”，把已验证因子组装成冻结模型。';
+      if (!total) return '暂无模型，完成因子验证后可创建。';
       if (!this.modelRows.length) {
         return state.pfModelPage > this.modelPages
           ? `页码越界：共 ${total} 个模型，当前在第 ${state.pfModelPage} 页之外，请翻页返回。`
@@ -1056,8 +1056,7 @@ export default {
 <div>
   <!-- 证据脊柱 -->
   <div class="card">
-    <h3>证据脊柱</h3>
-    <div class="hint" style="margin:-10px 0 2px">把已冻结的验证证据按真实数据流连接到样本外结论；点击节点定位到对应配置或报告。节点只表达审计关系，不代替详细表格，也不展示脱离证据的“魔法总分”。</div>
+    <h3>研究流程</h3>
     <div class="pf-spine" v-if="spineNodes.length">
       <template v-for="(n, i) in spineNodes" :key="i">
         <button type="button" class="pf-spine-node" :data-node-state="n.state" @click="spineGoTo(n.target)">
@@ -1069,12 +1068,12 @@ export default {
         <span v-if="i < spineNodes.length - 1" class="pf-spine-arrow" aria-hidden="true">→</span>
       </template>
     </div>
-    <div class="empty" v-else style="margin-top:12px" role="status">尚未选择模型：从下方模型列表选择（或创建）模型后，证据脊柱将按该模型的数据流点亮。</div>
+    <div class="empty" v-else style="margin-top:12px" role="status">选择或创建模型</div>
   </div>
 
   <!-- 模型列表 -->
   <div class="card" style="margin-top:18px">
-    <h3>模型列表 <span class="hint">revision 为追加式不可变快照；编辑即产生新 revision，不原地覆盖。</span><span class="pf-stale-tag" v-if="state.pfStale && state.activeTab===6">数据可能已过期</span></h3>
+    <h3>模型列表 <span class="pf-stale-tag" v-if="state.pfStale && state.activeTab===6">数据可能已过期</span></h3>
     <div class="pf-toolbar">
       <button type="button" class="secondary" @click="loadPortfolioModels(false)" :disabled="state.pfTaskRunning">刷新</button>
       <button type="button" class="primary" id="btnPfCreateModel" @click="openPfCreate" :disabled="state.pfTaskRunning">创建模型</button>
@@ -1153,7 +1152,7 @@ export default {
 
     <details class="pf-section" id="pfSecEvidence" open>
       <summary>① 输入证据（已验证因子）</summary>
-      <div class="hint">模型只能引用冻结的验证因子；勾选后保存产生模型（新）revision。可选项聚合自已有模型的已验证因子；候选库中的因子须先完成 v1 验证后才能进入组合模型。</div>
+      <div class="hint">仅可引用已验证因子；候选因子须先完成因子验证。</div>
       <div class="pf-evidence-list">
         <div class="pf-evidence-item" v-for="f in state.pfValidatedFactors" :key="f.validationId">
           <input type="checkbox" :id="'pfev_' + f.validationId" :checked="state.pfSelectedValidationIds.includes(f.validationId)" @change="onEvidenceToggle(f, $event)">
@@ -1217,7 +1216,7 @@ export default {
             <option value="cash">cash（保持现金）</option>
           </select></div>
       </div>
-      <div class="hint">滚动 IC 权重只读取训练窗口数据，测试窗在结构上无法进入训练器（后端类型隔离）。</div>
+      <div class="hint">IC 权重仅使用训练窗口数据。</div>
     </details>
 
     <details class="pf-section" id="pfSecPolicy">
@@ -1284,7 +1283,7 @@ export default {
         <div class="pf-field"><label for="pfMinBaselineIncrement">相对等权基线增量下限</label><input type="number" id="pfMinBaselineIncrement" v-model="form.minBaselineIncrement" step="any"></div>
         <div class="pf-field"><label for="pfMaxDegradedWindows">允许降级窗口数上限（0=未配置）</label><input type="number" id="pfMaxDegradedWindows" v-model="form.maxDegradedWindows" min="0" step="1"></div>
       </div>
-      <div class="hint">门禁阈值 0（或空）= 未配置该门禁（跳过并报告 unknown）；比例字段一律小数（0.5=50%）。最终结论（passed/failed/insufficient/error）由后端按冻结规格生成。</div>
+      <div class="hint">阈值为 0 或空时跳过该门禁；比例使用小数（0.5 = 50%）。</div>
     </details>
 
     <div class="editor-actions" style="margin-top:14px">
@@ -1292,7 +1291,7 @@ export default {
       <button type="button" class="secondary" @click="openPfExperimentDlg(state.pfEditModel)" :disabled="state.pfTaskRunning">创建实验…</button>
       <button type="button" class="secondary" @click="openPfValidationDlg(state.pfEditModel)" :disabled="state.pfTaskRunning">创建验证…</button>
       <button type="button" class="secondary" @click="closePfEdit">收起编辑</button>
-      <span class="hint" style="margin:0">保存模型产生新 revision；创建实验/验证需要模型已保存（使用当前 revision 与 hash）。</span>
+      <span class="hint" style="margin:0">保存会创建新版本；实验与验证使用已保存版本。</span>
     </div>
     <div class="msg" :class="editMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ editMsg.text }}</div>
   </div>
@@ -1300,7 +1299,7 @@ export default {
   <div class="pf-grid" style="margin-top:18px">
     <!-- 运行列表 -->
     <div class="card">
-      <h3>运行列表 <span class="hint">服务端分页；行点击查看运行详情</span></h3>
+      <h3>运行列表</h3>
       <div class="pf-toolbar">
         <button type="button" class="secondary" @click="loadPfExperiments(false)">刷新</button>
         <span class="pf-filters">
@@ -1339,7 +1338,7 @@ export default {
           </table>
         </div>
       </template>
-      <div class="empty" v-else role="status">{{ state.pfExperiments && state.pfExperiments.total ? '本页没有运行记录。' : '暂无组合运行：在模型编辑中“创建实验”后启动。' }}</div>
+      <div class="empty" v-else role="status">{{ state.pfExperiments && state.pfExperiments.total ? '本页无记录' : '暂无运行，在模型编辑中创建实验。' }}</div>
       <div class="pf-pager" v-if="expPages > 1">
         <button type="button" @click="pfExpPageMove(-1)" :disabled="state.pfExpPage <= 1">上一页</button>
         <span>{{ expPageInfo }}</span>
@@ -1348,7 +1347,7 @@ export default {
     </div>
     <!-- 验证列表 -->
     <div class="card">
-      <h3>验证列表 <span class="hint">服务端分页；行点击查看验证详情</span></h3>
+      <h3>验证列表</h3>
       <div class="pf-toolbar">
         <button type="button" class="secondary" @click="loadPfValidations(false)">刷新</button>
         <span class="pf-filters">
@@ -1384,7 +1383,7 @@ export default {
           </table>
         </div>
       </template>
-      <div class="empty" v-else role="status">{{ state.pfValidations && state.pfValidations.total ? '本页没有验证记录。' : '暂无组合验证：在模型编辑中“创建验证”后启动。' }}</div>
+      <div class="empty" v-else role="status">{{ state.pfValidations && state.pfValidations.total ? '本页无记录' : '暂无验证，在模型编辑中创建验证。' }}</div>
       <div class="pf-pager" v-if="valPages > 1">
         <button type="button" @click="pfValPageMove(-1)" :disabled="state.pfValPage <= 1">上一页</button>
         <span>{{ valPageInfo }}</span>
@@ -1469,7 +1468,7 @@ export default {
         <div class="pf-table-wrap" style="max-height:360px" v-html="valWindowsHtml"></div>
       </div>
       <div class="pf-detail-block">
-        <h4>最终门禁（后端 Evaluate 输出）</h4>
+        <h4>最终门禁</h4>
         <div class="pf-table-wrap" style="max-height:360px" v-html="valGatesHtml"></div>
       </div>
       <div class="pf-detail-block">
@@ -1479,9 +1478,8 @@ export default {
       <div class="editor-actions" style="margin-top:12px">
         <template v-if="state.pfSelectedVal.state === 'created'">
           <button type="button" class="primary" @click="startPfValidation(valRecId())" :disabled="state.pfTaskRunning">运行验证</button>
-          <span class="hint" style="margin:0">长任务提交：服务端确认后按全局状态栏进度推进，窗口结果逐窗持久保存，断线可恢复。</span>
         </template>
-        <span v-else class="hint" style="margin:0">验证已完成（不可重复运行）；如需修改模型或门禁，请创建新验证（自动标记旧验证为已见数据）。</span>
+        <span v-else class="hint" style="margin:0">验证已完成。修改模型或门禁后需创建新验证，旧测试窗将视为已见数据。</span>
       </div>
     </div>
   </div>

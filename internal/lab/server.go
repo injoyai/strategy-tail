@@ -38,10 +38,16 @@ import (
 //	GET      /api/analysis/{analysisId} 指定不可变分析报告
 //	GET      /api/strategy-presets 简单模式预设策略目录
 //	POST     /api/strategy/run  启动简单模式回测（声明式 StrategySpec；请求问题 400，任务互斥 409）
-//	POST     /api/factor-candidates 创建候选（201 新建 / 200 幂等命中 / 409 冲突）
+//	POST /api/factor-candidates 创建候选（201 新建 / 200 幂等命中 / 409 冲突）
 //	GET      /api/factor-candidates?includeArchived=  候选列表（默认隐藏归档）
 //	GET      /api/factor-candidates/{id} 候选详情（含实时兼容状态）
 //	PUT      /api/factor-candidates/{id} 追加候选修订（expectedRevision 冲突 409）
+//	GET      /api/builder/components 搭建器组件目录（可运行 + 不可用及原因）
+//	GET      /api/builder/templates  搭建器内置模板
+//	GET/POST /api/builder/strategies 策略库列表 / 新建（201）
+//	GET/PUT  /api/builder/strategies/{id} 读取 / 覆盖保存（expectedVersion 冲突 409）
+//	POST     /api/builder/strategies/{id}/copy 复制策略（201，源不变）
+//	POST     /api/builder/run 启动搭建器回测（请求问题 400，任务互斥 409）
 
 // ScriptPath 策略脚本路径（页面编辑器直接读写该文件）。
 const ScriptPath = "strategies/script/matrix.go"
@@ -55,6 +61,8 @@ type Server struct {
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
 	candidateStore *CandidateStore
+	// builderStore 搭建器策略库（生产默认 data/lab/strategies；测试注入临时根）。
+	builderStore *BuilderStore
 
 	// 多因子组合研究 v2（Task 9）依赖：模型/实验/验证库与组合执行器。
 	// validationInput 为 v1 验证输入适配器（模型装配时重读上游验证）。
@@ -72,6 +80,7 @@ func NewServer() *Server {
 		mux:            http.NewServeMux(),
 		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
 		candidateStore: NewCandidateStore(candidateDataDir),
+		builderStore:   NewBuilderStore(builderDataDir),
 	}
 	s.dataUpdater = newDataUpdater(s.runner, common.ResolveRuntimePath(filepath.Join("data", "lab", "data-update.json")), updateData)
 	s.wirePortfolioStores()
@@ -99,6 +108,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		mux:            http.NewServeMux(),
 		analysisStore:  analyses,
 		candidateStore: candidates,
+		builderStore:   NewBuilderStore(builderDataDir), // 搭建器测试按需覆盖
 	}
 	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(candidates.root, "data-update.json"), updateData)
 	s.wirePortfolioStores()
@@ -134,6 +144,16 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/factor-candidates", s.handleListCandidates)
 	s.mux.HandleFunc("GET /api/factor-candidates/{id}", s.handleGetCandidate)
 	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", s.handleUpdateCandidate)
+
+	// 搭建器：自由组合策略（设计文档 §5）。
+	s.mux.HandleFunc("GET /api/builder/components", s.handleBuilderComponents)
+	s.mux.HandleFunc("GET /api/builder/templates", s.handleBuilderTemplates)
+	s.mux.HandleFunc("GET /api/builder/strategies", s.handleBuilderListStrategies)
+	s.mux.HandleFunc("POST /api/builder/strategies", s.handleBuilderCreateStrategy)
+	s.mux.HandleFunc("GET /api/builder/strategies/{id}", s.handleBuilderGetStrategy)
+	s.mux.HandleFunc("PUT /api/builder/strategies/{id}", s.handleBuilderUpdateStrategy)
+	s.mux.HandleFunc("POST /api/builder/strategies/{id}/copy", s.handleBuilderCopyStrategy)
+	s.mux.HandleFunc("POST /api/builder/run", s.handleBuilderRun)
 
 	// 多因子组合研究 v2（Task 9，设计 §12.2）。
 	s.mux.HandleFunc("POST /api/factor-models", s.handleCreateFactorModel)

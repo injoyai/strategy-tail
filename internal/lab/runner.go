@@ -42,6 +42,9 @@ type RunConfig struct {
 	// 脚本文件名（报告目录标识，取脚本名去扩展名）
 	ScriptName string          `json:"scriptName"`
 	MACD       *MACDParameters `json:"macd,omitempty"`
+	// Builder 搭建器模式（自由组合条件树，设计文档 §2/§4）：
+	// 卖出规则由条件树管理，与 MACD 参数回测、简单卖出参数互斥。
+	Builder *BuilderSpec `json:"builder,omitempty"`
 }
 
 // Validate 配置合法性检查。
@@ -51,6 +54,23 @@ func (c RunConfig) Validate() error {
 	}
 	if err := c.validateSample(); err != nil {
 		return err
+	}
+	if c.Builder != nil {
+		if c.StartYear < 1990 {
+			return fmt.Errorf("起始年份不能早于 1990")
+		}
+		if c.SampleMode == "codes" {
+			if err := validateMACDCodes(c.SampleCodes); err != nil {
+				return err
+			}
+		}
+		if c.MACD != nil {
+			return fmt.Errorf("搭建器模式不能与 MACD 参数回测同时使用")
+		}
+		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
+			return fmt.Errorf("搭建器模式的卖出规则由条件树管理，请勿混入持仓天数/止盈/止损")
+		}
+		return c.Builder.validate("run")
 	}
 	if c.MACD != nil {
 		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
@@ -115,6 +135,14 @@ func (c RunConfig) years() []int {
 
 // seller 按配置构造卖出规则。
 func (c RunConfig) seller() core.Seller {
+	if c.Builder != nil {
+		s, err := c.Builder.Seller()
+		if err != nil {
+			// Validate("run") 已拒绝非法条件树；空 Or 恒 false（持有到期兜底）
+			return ss.Or{}
+		}
+		return s
+	}
 	if c.MACD != nil {
 		if !c.MACD.conditions().SellMACD {
 			return ss.Or{}
@@ -134,10 +162,11 @@ func (c RunConfig) seller() core.Seller {
 	return ss.Or(sellers)
 }
 
-// 报告来源：script=高级脚本模式，simple=声明式简单模式。
+// 报告来源：script=高级脚本模式，simple=声明式简单模式，builder=自由搭建模式。
 const (
-	sourceScript = "script"
-	sourceSimple = "simple"
+	sourceScript  = "script"
+	sourceSimple  = "simple"
+	sourceBuilder = "builder"
 )
 
 // VariantReport 单变体结果（report.json 与 API 直出共用结构）。
@@ -675,6 +704,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	}
 	if cfg.MACD != nil {
 		report.Source = "macd"
+	}
+	if cfg.Builder != nil {
+		report.Source = sourceBuilder
 	}
 	for _, result := range run.Results {
 		vr := VariantReport{Name: result.Variant.Name, Stats: newTradeStatsJSON(core.Stats(result.Trades))}

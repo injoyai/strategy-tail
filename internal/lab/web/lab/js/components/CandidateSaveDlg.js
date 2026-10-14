@@ -149,7 +149,7 @@ export default {
       <div class="cf-actions">
         <button class="primary" @click="saveCandidate" :disabled="saving" :aria-busy="String(saving)">保存候选</button>
         <button class="secondary" @click="closeDlg">取消</button>
-        <span class="hint" style="margin:0" id="candFormNote">等频分组边界是跨日累计分布，不会自动转成固定阈值；保存为候选不代表样本外验证通过。</span>
+        <span class="hint" style="margin:0" id="candFormNote">分组边界不会自动转成阈值；候选未经样本外验证。</span>
       </div>
     </div>
     <div class="msg" :class="msg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ msg.text }}</div>

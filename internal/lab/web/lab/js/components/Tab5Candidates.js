@@ -124,11 +124,10 @@ export default {
   },
   template: `
 <div class="card" id="candidateSection" style="margin-top:18px">
-  <h3>我的候选因子</h3>
   <div class="cand-toolbar">
     <button class="secondary" @click="toggleArchived" :aria-pressed="String(state.showCandidatesArchived)">{{ archBtnText }}</button>
     <button class="secondary" @click="loadCandidates">刷新</button>
-    <span class="hint" style="margin:0" id="candListHint">候选保存的是不可变分析证据；保存不代表样本外验证通过。</span>
+    <span class="hint" style="margin:0" id="candListHint">样本内证据，未经样本外验证。</span>
   </div>
   <div class="warnbar" v-if="loadErr" id="candLoadErr" role="alert">{{ loadErr }}</div>
   <template v-if="rows.length">

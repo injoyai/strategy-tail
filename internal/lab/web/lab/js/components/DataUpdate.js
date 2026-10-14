@@ -1,18 +1,71 @@
 import { state } from '../store.js';
 import { Api } from '../api.js';
 
+export function isMarketDataFresh(status, now = Date.now()) {
+  if (!status) return false;
+  // 上海为 UTC+8；使用 UTC 字段计算日界线，避免浏览器本地时区影响。
+  const hour = 3600000, offset = 8 * hour;
+  const local = new Date(now + offset);
+  const midnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - offset;
+  const open = midnight + 9.5 * hour, close = midnight + 15 * hour;
+  if (now >= open && now < close) return false;
+  const since = now < open ? close - 24 * hour : close;
+  return [!status.lastSuccessError && status.lastSuccess, status.lastPartialSuccess].some(value => {
+    const updated = Date.parse(value);
+    return updated >= since && updated <= now;
+  });
+}
+
 export default {
   name: 'DataUpdate',
   inject: ['startTask'],
   setup() { return {state}; },
-  data() { return {status: null, loading: true, submitting: false, saving: false, error: '', notice: '', enabled: false, time: '15:45', initialized: false, timer: null, disposed: false}; },
+  data() { return {status: null, now: Date.now(), loading: true, submitting: false, saving: false, error: '', notice: '', timeError: false, enabled: false, time: '15:45', initialized: false, timer: null, disposed: false}; },
   computed: {
+    fresh() { return isMarketDataFresh(this.status, this.now); },
+    partialSuccess() {
+      const s = this.status;
+      return s?.state === 'error' && !s.skipped && s.total > 0 && s.done === s.total && s.failed > 0 && s.failed < s.total;
+    },
     running() { return this.status?.state === 'running'; },
+    progressPercent() {
+      return this.status?.total > 0 ? Math.max(0, Math.min(100, Math.round(this.status.done / this.status.total * 100))) : null;
+    },
+    bubbleText() {
+      if (this.error || this.status?.lastSuccessError) return '异常';
+      if (this.loading) return '读取中';
+      if (this.running) return this.progressPercent == null ? '更新中' : this.progressPercent + '%';
+      if (!this.status) return '异常';
+      return this.fresh ? '已更新' : '未更新';
+    },
+    bubbleLabel() { return `行情数据：${this.bubbleText}。${this.status?.finishedAt ? '最近检查：' + this.checkResult + '。' : ''}最后完整更新（上海时间）：${this.lastUpdateText}。点击展开详情`; },
+    lastUpdateText() {
+      if (!this.status) return this.loading ? '读取中…' : '读取失败';
+      if (this.status.lastSuccessError) return '读取失败';
+      return this.status.lastSuccess ? this.displayTime(this.status.lastSuccess) : '暂无完整成功记录';
+    },
+    checkResult() {
+      if (this.partialSuccess) return `部分成功（失败 ${this.status.failed}/${this.status.total}）`;
+      if (this.status?.state === 'error') return this.status.failed > 0 ? `部分失败（${this.status.failed}/${this.status.total}）` : '失败';
+      if (this.status?.skipped) return '已跳过';
+      return this.status?.state === 'done' ? '成功' : '已结束';
+    },
   },
   mounted() { this.poll(); },
   unmounted() { this.disposed = true; clearTimeout(this.timer); },
   methods: {
-    displayTime(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai'}) : '尚无成功记录'; },
+    toggleDetails() {
+      this.$refs.bubble.focus();
+      this.$refs.panel.togglePopover();
+    },
+    closeDetails() {
+      this.$refs.panel.hidePopover();
+      this.$refs.bubble.focus();
+    },
+    displayTime(value) {
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? '时间记录无效' : date.toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'});
+    },
     applyStatus(s) {
       const wasRunning = state.dataUpdating;
       this.status = s;
@@ -31,6 +84,7 @@ export default {
       } catch (e) { if (!this.disposed) this.error = '无法读取更新状态：' + e.message; }
       finally {
         if (!this.disposed) {
+          this.now = Date.now();
           this.loading = false;
           this.timer = setTimeout(() => this.poll(), this.running ? 2000 : 10000);
         }
@@ -47,7 +101,8 @@ export default {
     },
     async save() {
       if (this.saving) return;
-      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.time)) { this.notice = '请输入有效的更新时间，例如 15:45'; this.$refs.time.focus(); return; }
+      this.timeError = false;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(this.time)) { this.timeError = true; this.notice = '请输入有效的更新时间，例如 15:45'; this.$refs.time.focus(); return; }
       this.saving = true;
       this.notice = '';
       try { this.applyStatus(await Api.configureDataUpdate({enabled: this.enabled, time: this.time})); this.notice = '自动更新设置已保存'; }
@@ -56,27 +111,46 @@ export default {
     },
   },
   template: `
-<section class="card data-update" aria-labelledby="data-update-title">
+<div class="data-update-widget">
+<button ref="bubble" type="button" class="data-update-bubble" popovertarget="data-update-panel" @click.prevent="toggleDetails" :data-fresh="String(fresh)" :aria-label="bubbleLabel" :title="bubbleLabel">
+  <span class="data-update-dot" aria-hidden="true"></span><span>行情</span><span class="data-update-badge">{{ bubbleText }}</span>
+</button>
+<section ref="panel" id="data-update-panel" class="data-update" popover="auto" aria-labelledby="data-update-title">
+  <div class="data-update-head"><strong id="data-update-title">行情数据</strong>
+    <button type="button" class="data-update-close" popovertarget="data-update-panel" popovertargetaction="hide" @click.prevent="closeDetails" aria-label="收起行情详情" autofocus>×</button>
+  </div>
+  <div class="hint data-update-time" role="status">最后完整更新（上海时间）<br><time v-if="status?.lastSuccess && !status?.lastSuccessError" :datetime="status.lastSuccess">{{ lastUpdateText }}</time><span v-else>{{ lastUpdateText }}</span></div>
   <div class="data-update-toolbar">
-    <div><strong id="data-update-title">行情数据</strong><span class="hint">最近完整更新：{{ displayTime(status?.lastSuccess) }}</span></div>
+    <span v-if="running" class="hint">{{ progressPercent == null ? '正在检查行情…' : '更新中 · ' + progressPercent + '%' }}</span>
+    <span v-else class="hint">{{ status?.finishedAt ? checkResult : '尚无检查记录' }}</span>
     <button type="button" class="secondary" @click="update" :disabled="loading || !status || submitting || state.taskRunning || running" :aria-busy="String(submitting || running)">{{ running ? '更新中…' : '手动更新' }}</button>
   </div>
-  <div v-if="loading" role="status" class="hint">正在读取更新状态…</div>
-  <div v-if="running" class="hint" role="status">更新进度见公共任务栏；当前任务完成前，回测与研究任务已锁定。</div>
-  <div v-else-if="status?.state==='done'" class="hint" role="status">{{ status.message || '数据检查完成' }}</div>
-  <div v-if="status?.error" class="msg err" role="alert">{{ status.error }}<span v-if="status.state==='error'">。失败项可手动重试，已有数据不会整库清空。</span></div>
+  <div v-if="running && status?.startedAt" class="hint data-update-time">本次开始：<time :datetime="status.startedAt">{{ displayTime(status.startedAt) }}</time></div>
+  <div v-else-if="status?.finishedAt" class="hint data-update-time" role="status">最近检查结束：<time :datetime="status.finishedAt">{{ displayTime(status.finishedAt) }}</time></div>
+  <div v-if="status?.total > 0" class="data-update-progress">
+    <progress v-if="running" class="progress-inner" :max="status.total" :value="status.done" aria-label="行情更新进度"></progress>
+    <span class="hint">{{ status.done }}/{{ status.total }} · 失败 {{ status.failed || 0 }}</span>
+  </div>
+  <div v-if="status?.lastSuccessError" class="msg err" role="alert">{{ status.lastSuccessError }}</div>
   <div v-if="error" class="msg err" role="alert">{{ error }} <button type="button" class="secondary" @click="poll">重新读取</button></div>
+  <div class="data-update-options">
+  <details v-if="status?.error" class="ui-help error-details">
+    <summary>{{ status.state==='error' ? '错误详情 · 可手动重试' : '错误详情' }}</summary>
+    <div class="msg err">{{ status.error }}</div>
+  </details>
   <details class="data-update-settings">
     <summary>自动更新：{{ status?.config.enabled ? '已开启 · 每日 ' + status.config.time : '未开启' }}</summary>
     <form novalidate @submit.prevent="save" class="data-update-config">
       <label class="checkbox-label"><input type="checkbox" v-model="enabled">开启自动更新</label>
-      <label for="data-update-time">上海时间</label><input ref="time" id="data-update-time" type="time" v-model="time" required>
+      <label for="data-update-time">上海时间</label><input ref="time" id="data-update-time" type="time" v-model="time" required :aria-invalid="String(timeError)" :aria-describedby="timeError ? 'data-update-notice' : undefined" @input="timeError = false">
       <button type="submit" class="secondary" :disabled="saving || loading || !status" :aria-busy="String(saving)">保存设置</button>
-      <span class="hint">服务运行时在交易日检查；任务占用时延后更新，失败后可手动重试。建议收盘后更新。</span>
+      <span class="hint">仅服务运行时生效，建议收盘后更新。</span>
     </form>
   </details>
-  <div class="msg" role="status" aria-live="polite">{{ notice }}</div>
+  </div>
+  <div v-if="notice" id="data-update-notice" class="msg" role="status" aria-live="polite">{{ notice }}</div>
   <div v-if="status?.scheduleNote" class="hint">{{ status.scheduleNote }}</div>
 </section>
+</div>
   `,
 };

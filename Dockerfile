@@ -1,7 +1,7 @@
 # 策略实验室（cmd/lab）容器镜像
 # sqlite 驱动为 glebarez/go-sqlite（纯 Go），CGO_ENABLED=0 静态编译即可
-# 基础镜像取本地已缓存的 golang:1.25 / alpine:latest，不依赖 Docker Hub 可达
-FROM golang:1.25 AS builder
+# 基础镜像取本地已缓存的 golang:1.25-alpine / alpine:3.22，不依赖 Docker Hub 可达
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
@@ -13,13 +13,16 @@ ENV GOPROXY=${GOPROXY}
 COPY go.mod go.sum ./
 RUN go mod download
 
+# golang:alpine 基础镜像不含 tzdata，运行阶段从这里拷贝时区数据
+RUN apk add --no-cache tzdata
+
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab
 
 ###############################################################################
 #                                  运行阶段
 ###############################################################################
-FROM alpine:latest
+FROM alpine:3.22
 
 # K 线时间与交易日判断依赖本地时区（Asia/Shanghai）
 ENV TZ=Asia/Shanghai

@@ -10,6 +10,7 @@ import { TABS, TAB_SLUG, TAB_NUM, TASK_LABEL, PF_PHASE } from './constants.js';
 import { animatePanel, animateStatus, initMotion } from './motion.js';
 import Tab1Run from './components/Tab1Run.js';
 import DataUpdate from './components/DataUpdate.js';
+import RunConfigDlg from './components/RunConfigDlg.js';
 import Tab2Compare from './components/Tab2Compare.js';
 import Tab3Trades from './components/Tab3Trades.js';
 import Tab4Factor from './components/Tab4Factor.js';
@@ -24,7 +25,7 @@ import PfValidationDlg from './components/PfValidationDlg.js';
 const App = {
   name: 'App',
   components: {
-    Tab1Run, DataUpdate, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
+    Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
     CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
@@ -34,6 +35,7 @@ const App = {
     return {
       switchTab: n => this.switchTab(n),
       startTask: (task, opts) => this.startTask(task, opts),
+      openRunConfig: (mode, run) => this.$refs.runConfig.openDlg(mode, run),
       openCandidateDlg: () => this.$refs.candSave && this.$refs.candSave.openDlg(),
       openCandidateEdit: c => this.$refs.candEdit && this.$refs.candEdit.openDlg(c),
       openCandidateEvidence: c => this.$refs.candEv && this.$refs.candEv.openDlg(c),
@@ -50,7 +52,7 @@ const App = {
       if (v && !old) this.$nextTick(() => animateStatus(this.$refs.statusbar));
     });
     initMotion();
-    // Tab 状态从 URL 恢复；无参数时进入参数回测，不自动运行任务。
+    // Tab 状态从 URL 恢复；无参数时进入自由搭建，不自动运行任务。
     const initial = TAB_NUM[new URLSearchParams(location.search).get('tab')];
     if (initial) this.switchTab(initial);
   },
@@ -211,6 +213,8 @@ const App = {
                 '，详见“回测结果”摘要。', ok: true};
             } else if (state.currentReport.source === 'macd') {
               state.scriptMsg = {text: '参数回测完成，已载入结果。', ok: true};
+            } else if (state.currentReport.source === 'builder') {
+              state.scriptMsg = {text: '搭建器回测完成，已载入结果。', ok: true};
             } else {
               state.scriptMsg = {text: '已载入高级脚本多变体报告。', ok: true};
             }
@@ -241,30 +245,23 @@ const App = {
     <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
   </div>
   <div class="brand-copy">
-    <span class="eyebrow">A-SHARE RESEARCH WORKBENCH</span>
     <h1>策略实验室</h1>
   </div>
-  <div class="header-meta" aria-label="运行环境">
-    <span class="local-badge"><span class="live-dot" aria-hidden="true"></span>本地研究会话</span>
-  </div>
-</header>
-
 <div class="tabs" role="tablist" aria-label="功能区" @keydown="onTabsKeydown">
   <button v-for="t in tabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
     :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
     :tabindex="state.activeTab === t.n ? 0 : -1" @click="switchTab(t.n)">
-    <span class="tab-copy"><span class="tab-title">{{ t.title }}</span><span class="tab-desc">{{ t.desc }}</span></span>
+    <span class="tab-title">{{ t.title }}</span>
   </button>
 </div>
+</header>
 
 <main>
-  <data-update />
-  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && state.taskDock.task !== 'data_update'" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">
         <span class="status-dot" aria-hidden="true"></span>
-        <span class="status-kicker">BATCH JOB</span>
         <span id="statusState">{{ state.taskDock ? state.taskDock.title : '' }}</span>
       </div>
       <span id="statusPercent">{{ state.taskDock ? state.taskDock.percent : '' }}</span>
@@ -275,8 +272,8 @@ const App = {
     </div>
     <div class="status-foot">
       <div class="status-meta">
-        <span id="statusDetail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
-        <span id="statusCurrent">{{ state.taskDock ? state.taskDock.current : '' }}</span>
+        <span id="statusDetail" class="status-detail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
+        <span id="statusCurrent" class="status-current" v-if="state.taskDock && (state.taskDock.running || state.taskDock.connectionError || state.taskDock.task !== 'data_update')">{{ state.taskDock.current }}</span>
       </div>
       <div class="status-actions">
         <button type="button" class="secondary" v-if="state.taskDock && state.taskDock.connectionError" @click="pollStatus()">重试读取</button>
@@ -284,7 +281,10 @@ const App = {
         <button type="button" class="secondary" v-if="state.taskDock && !state.taskDock.running" @click="dismissTaskDock()">关闭</button>
       </div>
     </div>
-    <div class="msg" v-if="state.taskDock && state.taskDock.error" role="alert">{{ state.taskDock.error }}</div>
+    <details class="ui-help error-details" v-if="state.taskDock && state.taskDock.error && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)">
+      <summary>错误详情</summary>
+      <div class="msg">{{ state.taskDock.error }}</div>
+    </details>
   </section>
 
   <div v-for="t in tabs" :key="t.n" class="tab-panel" :id="'tab' + t.n" :ref="el => setPanelRef(el, t.n)"
@@ -298,11 +298,13 @@ const App = {
   </div>
 </main>
 
+<data-update />
 <candidate-save-dlg ref="candSave" />
 <candidate-edit-dlg ref="candEdit" />
 <candidate-evidence-dlg ref="candEv" />
 <pf-experiment-dlg ref="pfExpDlg" />
 <pf-validation-dlg ref="pfValDlg" />
+<run-config-dlg ref="runConfig" />
   `,
 };
 

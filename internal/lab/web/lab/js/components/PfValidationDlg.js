@@ -89,7 +89,7 @@ export default {
   </div>
   <div class="candidate-form" style="margin-top:0">
     <div class="cf-row"><label for="pfValModelRef">模型</label><span id="pfValModelRef" style="font-size:12px;color:var(--ink2)">{{ model ? model.modelId + '（revision v' + model.revision + '）' : '—' }}</span></div>
-    <div class="hint" style="margin:0 0 10px">验证规格（窗口/门禁/基准）使用上方“⑥ 门禁”分区当前值；规格全部字段进入验证 hash，修改模型或门禁即产生新验证 ID。旧验证保留，并由新验证的 Supersedes 标记为已见数据。</div>
+    <div class="hint" style="margin:0 0 10px">使用当前门禁设置。修改模型或门禁会创建新验证，旧测试窗将视为已见数据。</div>
     <div class="cf-row">
       <div class="cf-actions">
         <button type="button" class="primary" ref="createBtn" @click="createValidation" :disabled="saving" :aria-busy="String(saving)">创建验证</button>
