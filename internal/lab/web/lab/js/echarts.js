@@ -3,7 +3,16 @@
 // 返回 null，各调用方须降级为表格/文本展示，页面功能保持可用。
 import { markRaw } from './vendor/vue.esm-browser.prod.js';
 
-export const charts = []; // 全部实例：窗口 resize 时统一 resize()
+export const charts = [];
+
+// v-show 切页不会触发窗口 resize；容器恢复可见后按实际尺寸重绘。
+const resizeObserver = new ResizeObserver(entries => {
+  for (const {target, contentRect} of entries) {
+    if (contentRect.width > 0 && contentRect.height > 0) {
+      echarts.getInstanceByDom(target)?.resize();
+    }
+  }
+});
 
 export function mountChart(el, useDark = true) {
   if (!el || typeof echarts === 'undefined') return null;
@@ -12,16 +21,18 @@ export function mountChart(el, useDark = true) {
   // echarts 内部抛 TypeError（且发生在 nextTick 回调里被静默吞没），图表从此不再重绘。
   const c = markRaw(echarts.init(el, useDark ? 'dark' : undefined));
   charts.push(c);
+  resizeObserver.observe(el);
   return c;
 }
 
 export function dropChart(c) {
   const i = charts.indexOf(c);
   if (i >= 0) charts.splice(i, 1);
-  if (c) c.dispose();
+  if (c) {
+    resizeObserver.unobserve(c.getDom());
+    c.dispose();
+  }
 }
-
-window.addEventListener('resize', () => charts.forEach(c => c.resize()));
 
 // A 股语义：红涨绿跌（仅收益语义；分组柱、涨跌、盈亏同源）。
 export const CHART_COLORS = {pos: '#ef4444', neg: '#22c55e'};

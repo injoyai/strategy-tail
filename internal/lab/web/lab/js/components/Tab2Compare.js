@@ -125,7 +125,7 @@ export default {
         backgroundColor: 'transparent',
         title: {text: '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
         tooltip: {trigger: 'axis'},
-        legend: {top: 6, right: 10, type: 'scroll'},
+        legend: {top: 30, right: 10, type: 'scroll'},
         grid: {left: 50, right: 20, top: 60, bottom: 40},
         xAxis: {type: 'time'},
         yAxis: {scale: true},
