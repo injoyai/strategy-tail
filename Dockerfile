@@ -26,7 +26,7 @@ FROM alpine:3.22
 
 # K 线时间与交易日判断依赖本地时区（Asia/Shanghai）
 ENV TZ=Asia/Shanghai
-# 容器内必须监听 0.0.0.0，否则 docker 端口映射不可达（本地直跑默认仍为 127.0.0.1）
+# 本地直跑与容器内默认均监听 0.0.0.0。
 ENV LAB_ADDR=0.0.0.0:8765
 
 WORKDIR /app

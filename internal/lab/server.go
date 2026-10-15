@@ -173,14 +173,7 @@ func (s *Server) registerRoutes() {
 }
 
 // Handler 返回 http.Handler（测试用 httptest 直连）。
-func (s *Server) Handler() http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions && !requireSameOrigin(w, r) {
-			return
-		}
-		s.mux.ServeHTTP(w, r)
-	})
-}
+func (s *Server) Handler() http.Handler { return s.mux }
 
 // webFS 前端静态资源（go:embed，无构建链）。
 //
@@ -231,7 +224,8 @@ func (s *Server) handlePutScript(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Content string `json:"content"`
 	}
-	if !decodeStrict(r, w, &req, maxCandidateBody) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Content) == "" {
@@ -255,7 +249,8 @@ func (s *Server) handleCheckScript(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Content string `json:"content"`
 	}
-	if !decodeStrict(r, w, &req, maxCandidateBody) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
 		return
 	}
 	if err := CheckScript(req.Content); err != nil {

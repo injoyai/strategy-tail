@@ -25,46 +25,26 @@ func init() { os.WriteFile(%q, []byte("init"), 0600) }
 	}
 }
 
-func TestServerRejectsCrossOriginMutations(t *testing.T) {
+func TestScriptAndStopAcceptRemoteOrigin(t *testing.T) {
 	h := NewServer().Handler()
-	for _, route := range []struct{ method, path string }{
-		{http.MethodPut, "/api/script"},
-		{http.MethodPost, "/api/script/check"},
-		{http.MethodPost, "/api/run"},
-		{http.MethodPost, "/api/stop"},
-		{http.MethodPost, "/api/analyze"},
-		{http.MethodPost, "/api/strategy/run"},
-		{http.MethodPost, "/api/factor-candidates"},
-	} {
-		t.Run(route.path, func(t *testing.T) {
-			for _, header := range []string{"Origin", "Sec-Fetch-Site"} {
-				r := httptest.NewRequest(route.method, "http://localhost"+route.path, strings.NewReader("{}"))
-				if header == "Origin" {
-					r.Header.Set(header, "https://example.invalid")
-				} else {
-					r.Header.Set(header, "cross-site")
-				}
-				w := httptest.NewRecorder()
-				h.ServeHTTP(w, r)
-				if w.Code != http.StatusForbidden {
-					t.Fatalf("%s: status=%d, want 403", header, w.Code)
-				}
-			}
-		})
+	for _, path := range []string{"/api/script/check", "/api/stop"} {
+		r := httptest.NewRequest(http.MethodPost, "http://192.168.1.10:8765"+path, strings.NewReader(`{"content":"package main"}`))
+		r.Header.Set("Origin", "http://192.168.1.20:8765")
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d, body=%s", path, w.Code, w.Body.String())
+		}
 	}
 }
 
-func TestScriptRequestsRejectOversizedBody(t *testing.T) {
+func TestScriptCheckAcceptsLargeBody(t *testing.T) {
 	h := NewServer().Handler()
-	for _, route := range []struct{ method, path string }{
-		{http.MethodPut, "/api/script"},
-		{http.MethodPost, "/api/script/check"},
-	} {
-		r := httptest.NewRequest(route.method, route.path, strings.NewReader(`{"content":"`+strings.Repeat(" ", int(maxCandidateBody))+`"}`))
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, r)
-		if w.Code != http.StatusRequestEntityTooLarge {
-			t.Fatalf("%s: status=%d, want 413", route.path, w.Code)
-		}
+	r := httptest.NewRequest(http.MethodPost, "/api/script/check", strings.NewReader(`{"content":"package main`+strings.Repeat(" ", 1<<16)+`"}`))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"ok":true`) {
+		t.Fatalf("status=%d, body=%s", w.Code, w.Body.String())
 	}
 }

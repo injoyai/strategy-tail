@@ -28,7 +28,7 @@ elif args[0]=='rename' and scenario=='rename-fail': sys.exit(1)
 '''
 
 class DeployTest(unittest.TestCase):
-    def scenario(self, case):
+    def scenario(self, case, bind=None):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'docker').write_text(DOCKER)
@@ -37,6 +37,10 @@ class DeployTest(unittest.TestCase):
                 (root / name).chmod(0o755)
             env = dict(os.environ, PATH=directory + os.pathsep + os.environ['PATH'],
                        DEPLOY_TEST_ROOT=directory, DEPLOY_TEST_CASE=case)
+            env.pop('BIND', None)
+            env.pop('PORT', None)
+            if bind is not None:
+                env['BIND'] = bind
             result = subprocess.run(['bash', str(ROOT / 'deploy.sh')], env=env,
                                     capture_output=True, text=True, timeout=10)
             calls = [json.loads(line) for line in (root / 'calls').read_text().splitlines()]
@@ -56,6 +60,13 @@ class DeployTest(unittest.TestCase):
         self.assertFalse(any(call[0] == 'rm' for call in calls))
         run = next(call for call in calls if call[0] == 'run')
         self.assertIn(str(ROOT / 'data') + ':/app/data', run)
+        self.assertIn('0.0.0.0:8765:8765', run)
+
+    def test_explicit_bind_is_preserved(self):
+        code, calls = self.scenario('success', bind='192.168.1.10')
+        self.assertEqual(code, 0)
+        run = next(call for call in calls if call[0] == 'run')
+        self.assertIn('192.168.1.10:8765:8765', run)
 
     def test_rename_failure_restarts_original_container(self):
         code, calls = self.scenario('rename-fail')

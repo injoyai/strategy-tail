@@ -2,7 +2,7 @@ package main
 
 // 策略实验室入口：go run ./cmd/lab → 启动本地 Web 服务并自动打开浏览器。
 //
-// 仅监听 127.0.0.1（设计文档 §10 非目标：不做鉴权/远程访问）。
+// 默认监听 0.0.0.0，可通过 LAB_ADDR 覆盖。
 
 import (
 	"context"
@@ -21,16 +21,16 @@ import (
 
 func main() {
 	common.MustInitialize()
-	// 默认仅监听 127.0.0.1（设计文档 §10 非目标：不做鉴权/远程访问）；
-	// 容器部署时通过 LAB_ADDR=0.0.0.0:8765 覆盖，否则端口映射不可达。
 	addr := os.Getenv("LAB_ADDR")
 	if addr == "" {
-		addr = "127.0.0.1:8765"
+		addr = "0.0.0.0:8765"
 	}
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		// 端口被占用时自动换一个（上次进程未退出的场景）
-		ln, err = net.Listen("tcp", "127.0.0.1:0")
+		host, _, splitErr := net.SplitHostPort(addr)
+		logs.PanicErr(splitErr)
+		ln, err = net.Listen("tcp", net.JoinHostPort(host, "0"))
 		logs.PanicErr(err)
 		addr = ln.Addr().String()
 		logs.Warnf("默认端口被占用，改用 %s", addr)

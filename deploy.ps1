@@ -3,11 +3,11 @@
 # 容器重建后数据不丢，宿主机 ./data ./output 与容器内实时一致。
 #
 # 用法：.\deploy.ps1
-# 局域网访问：.\deploy.ps1 -Bind 0.0.0.0（或先 $env:BIND = '0.0.0.0'）
+# 默认绑定 0.0.0.0，可通过 -Bind 或 $env:BIND 覆盖。
 # 需要：PowerShell 5.1+；Docker Desktop 可用（docker 在 PATH 中）。
 # 注意：本文件必须保存为 UTF-8 with BOM，否则 Windows PowerShell 5.1 会按 GBK 解析中文。
 param(
-    [string]$Bind = $(if ($env:BIND) { $env:BIND } else { '127.0.0.1' })
+    [string]$Bind = $(if ($env:BIND) { $env:BIND } else { '0.0.0.0' })
 )
 
 # 显式 Continue：规避 PS5.1 中 EAP=Stop 与原生命令 stderr 重定向（2>&1）冲突的坑；
@@ -21,7 +21,7 @@ $RootMount = $Root -replace '\\', '/'
 $Image = 'strategy-lab'
 $Container = 'strategy-lab'
 $HostPort = 8765
-# 默认仅绑回环地址（服务无鉴权，与本地直跑的安全边界一致）
+# 默认绑定所有网卡。
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host "错误: 未找到 docker，请确认 Docker Desktop 已安装并在 PATH 中"
