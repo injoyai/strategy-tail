@@ -81,7 +81,7 @@ type Seller interface {
 
 ### Docker 部署策略实验室
 
-策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（需 Docker Desktop 已安装且 `docker` 在 PATH 中；macOS / Linux 脚本还需 Python 3）：
+策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（需已安装 Docker、Python 3，且 `docker` 在 PATH 中）：
 
 macOS / Linux：
 
@@ -89,16 +89,8 @@ macOS / Linux：
 ./deploy.sh
 ```
 
-Windows（PowerShell）：
-
-```powershell
-.\deploy.ps1
-```
-
 - `deploy.sh` 在构建前和切换前检查 `/api/status`；任务运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，原数据挂载保持不变；新容器通过 `/api/builder/components` 自检后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
-- `deploy.ps1` 保留原有构建、移除旧容器、启动与 `/api/factors` 自检流程。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
-- `deploy.ps1` 默认绑定 `0.0.0.0`，绑定地址可通过 `-Bind` 参数或 `$env:BIND` 设置。
 - `./data`、`./output`、`./strategies/script` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
 ### Lab 策略搭建与行情更新
