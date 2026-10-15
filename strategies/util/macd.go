@@ -10,12 +10,20 @@ func MACDHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
 	if len(dif) == 0 {
 		return nil
 	}
-	dea := emaSeries(dif, signal)
-	hist := make([]float64, len(dif))
-	for i := range dif {
-		hist[i] = dif[i] - dea[i]
+	// DIF 缓冲区由本次调用独占，直接复用为柱值，避免额外分配 DEA 和 Hist。
+	dea := dif[0]
+	alpha := 2.0 / (float64(signal) + 1.0)
+	for i, value := range dif {
+		if i > 0 {
+			if signal <= 1 {
+				dea = value
+			} else {
+				dea = dea + alpha*(value-dea)
+			}
+		}
+		dif[i] = value - dea
 	}
-	return hist
+	return dif
 }
 
 // MACDDIF 返回快慢 EMA 的差值，供柱值与 DIF 因子共用同一计算口径。
@@ -24,17 +32,25 @@ func MACDDIF(dks extend.Klines, fast, slow int) []float64 {
 	if n == 0 {
 		return nil
 	}
-	closes := make([]float64, n)
-	for i := range dks {
-		closes[i] = dks[i].Close.Float64()
-	}
-
-	emaFast := emaSeries(closes, fast)
-	emaSlow := emaSeries(closes, slow)
-
 	dif := make([]float64, n)
+	emaFast, emaSlow := dks[0].Close.Float64(), dks[0].Close.Float64()
+	fastAlpha := 2.0 / (float64(fast) + 1.0)
+	slowAlpha := 2.0 / (float64(slow) + 1.0)
 	for i := 0; i < n; i++ {
-		dif[i] = emaFast[i] - emaSlow[i]
+		if i > 0 {
+			close := dks[i].Close.Float64()
+			if fast <= 1 {
+				emaFast = close
+			} else {
+				emaFast = emaFast + fastAlpha*(close-emaFast)
+			}
+			if slow <= 1 {
+				emaSlow = close
+			} else {
+				emaSlow = emaSlow + slowAlpha*(close-emaSlow)
+			}
+		}
+		dif[i] = emaFast - emaSlow
 	}
 
 	return dif

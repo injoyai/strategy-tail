@@ -4,6 +4,7 @@
 Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件（`strategies/buy|sell` 的 And/Or 组合子）→ `core.Backtest` 回测引擎 → `cmd/*` 各回测入口 → `lib/extend` 从 tdx 拉取 K 线并按"每股一个 sqlite db"落盘（`data/database/day-kline/`、`min-kline/`）。
 
 ## 架构与关键决策
+- **输入可变时指标不可按切片身份缓存**：分钟级回测会更新 K 线指针；MACD 只在调用内复用独占缓冲区，跨调用复用必须先设计输入版本与失效边界，保持 EMA 运算顺序及逐前缀结果一致。
 - **行情气泡与完整批次标记分开（2026-10-14）**：按用户要求，全部更新单元已处理且部分失败也可让气泡显示已更新；Web 的 `lastPartialSuccess` 单独持久化并跨重试、重启保留。它只参与界面新鲜度，不能替代 CLI/Web 共享的完整成功标记，也不能阻止失败项重试。
 - **Lab 行情更新时点与互斥（2026-10-13）**：新鲜度节点为上海收盘 15:00（用户要求收盘后完整更新过即跳过，取代原 15:31），Web 自动检查默认 15:45（避免沿用旧 `pull.spec` 的 15:15 时点而把前一窗口视为收盘数据）。Web 自动设置独立保存，默认关闭；仅服务存活时调度。Web 更新、回测与研究共用 Runner 锁和任务状态（`/api/status`）；行情进度只在全局气泡详情中展示，其他任务沿用任务栏。跨进程文件锁只约束写入更新，不等于锁住另一个 CLI 的所有读取。更新按单票事务提交，批次失败仍可能已有部分股票成功，因此“最后完整成功时间”与逐股票数据覆盖不可混同；失败不推进整批新鲜度记录，单票失败继续处理其余股票及分钟线，全部完成后统一汇总。详见 README 的参数回测与行情更新说明。
 - **Lab 前端 Vue 化（2026-09-19）**：`internal/lab/web/lab/index.html` 从 4654 行单文件（内联 JS+CSS）迁移为 Vue 3 无构建链多文件模块——本地 vendor `js/vendor/vue.esm-browser.prod.js`（esm-browser 完整版含运行时编译器，须下载落盘，embed 编译期冻结；**扩展名必须 .js**，server.go 只对 .html/.css/.js 设 MIME，浏览器 ESM 加载 .vue 会因 MIME 失败），echarts@5/gsap@3.13 仍走 CDN。组件在 `js/components/*.js`（原生 Vue 组件对象 + template 字符串，无 SFC 编译），入口 `js/app.js`（根组件 + `createApp(App).mount('#app')`，**App 必须 `const App = {}` 而非 `export default {}`，否则 `createApp(App)` 引用未定义变量**）。跨页共享状态全部提升到 `js/store.js`（reactive `state`）：`simpleConds`/`presetId`/`specName`（01/05 追加条件→02 消费）、`focusCondReq`（**约定：写入方先 push simpleConds → switchTab(1) → 再写本字段**，02 页 watch 消费聚焦）、`candidatesDirty`/`pfExpDirty`/`pfValDirty`（dialog 保存成功递增，05/06 页 watch 刷新）。`buildConfig()` 提为共享 `js/config.js`（02 回测与 01 分析共用）；`currentGrouping`/`analysisYearsForChart`/`groupFactors` 提到 `js/format.js`。**架构约束**：`switchTab`/`startTask`/各 dialog 打开方法由根组件 `provide`（dialog 挂根组件 main 顶层，**不得放 tab panel 内**——沿用"hidden 祖先内 showModal 不渲染"坑）；组合任务 done 分支根组件经 `$refs.tab6.pfOnTaskDone(runId, task)` 回调 06 页。状态条（原 `.show` 显隐）改为 `v-show="!!state.taskDock"`（store 响应式），任务状态机（done/total=-1 不定进度、PF_PHASE、connection-error）保留在 app.js `renderTaskProgress`。验证：`go build ./...` + `go test ./internal/lab -run "TestLabPage"`（web_contract_test.go 已改为检查 js 模块契约字符串）+ 浏览器冒烟（页面挂载/6 tabs/因子目录 31 项 optgroup/02 默认条件卡+添加条件+高级脚本加载/06 全空态）。
@@ -102,7 +103,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
   - 节点计数（≤64）跨整棵树共享（Buy+SellSignal+Risks），构造 64 节点边界用例须把卖出侧置空+HoldToEnd。
   - 模板等价参数陷阱：buy_price 的 min 目录 Default=2 会污染等价（须显式 `min:0`）；MACD fast/slow/signal 显式 0 会 violate Min=2（等价场景必须缺省，工厂 0 值与 buyer() 零值一致）。
   - 搭建器 ratio 参数在界面和策略／报告快照中都保存百分数，仅工厂构造时除以 100；旧 MACD 参数契约则保存比例，勿混用。缺省参数不能用目录的表单 Default 填补，否则会改变历史规则。
-  - `decodeStrict` 只负责解码与大小限制，不包含同源保护；Lab 写入与运行入口须另调用 `requireSameOrigin`。独立风控只接受单个条件，不能把风险规则藏进 AND 子树。
+  - `decodeStrict` 只负责解码与大小限制；Lab 统一在 `Server.Handler()` 对写入、运行与停止请求调用 `requireSameOrigin`，直接调用处理函数不能假定已经过该边界。脚本校验用 Yaegi `Compile`，不得改回会执行初始化的 `Eval`。独立风控只接受单个条件，不能把风险规则藏进 AND 子树。
   - Go JSON 的 `omitempty` 会省略空 `risks`／`params`；前端编辑须容忍字段缺失，不把缺省参数替换为表单默认值。
   - lab 测试必须 docker `golang:1.25-alpine` + `TZ=Asia/Shanghai`（goutil/oss 无 darwin 实现，本机跑不了）；快速静态检查用 `GOOS=linux go build/vet`。前端改动须 `./deploy.sh` 重建镜像才生效（go:embed 编译期嵌入）。
 

@@ -66,11 +66,14 @@ type Trade struct {
 }
 
 func (this *Trade) Realtime(k *protocol.Kline) {
-	if k != nil && !this.Sold {
-		this.SellPrice = k.Close.Float64()
-		if this.BuyPrice != 0 {
-			this.Income = (this.SellPrice - this.BuyPrice) / this.BuyPrice * 100
+	if !this.Sold {
+		if k == nil {
+			return
 		}
+		this.SellPrice = k.Close.Float64()
+	}
+	if this.BuyPrice > 0 {
+		this.Income = (this.SellPrice - this.BuyPrice) / this.BuyPrice * 100
 	}
 }
 
@@ -81,9 +84,7 @@ func (this *Trade) Sell(s *core.Sell) *Trade {
 	this.Sold = true
 	this.SellTime = s.Time.Format(time.DateTime)
 	this.SellPrice = s.Price.Float64()
-	if s.Price > 0 {
-		this.Income = (this.SellPrice - this.BuyPrice) / this.SellPrice * 100
-	}
+	this.Realtime(nil)
 	return this
 }
 

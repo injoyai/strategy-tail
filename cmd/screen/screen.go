@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -172,12 +173,13 @@ func (s *ScreenService) marshal(_type string, payload any) string {
 
 // buildHistoryResponse 构建历史买卖点响应
 func (s *ScreenService) response(_type string, ts []*Trade) Response {
+	ts = cloneTrades(ts)
+	s.mu.RLock()
 	for i := range ts {
-		s.mu.RLock()
 		k := s.lastPrices[ts[i].Code]
-		s.mu.RUnlock()
 		ts[i].Realtime(k)
 	}
+	s.mu.RUnlock()
 	sort.Slice(ts, func(i, j int) bool {
 		return ts[i].BuyTime > ts[j].BuyTime
 	})
@@ -186,6 +188,19 @@ func (s *ScreenService) response(_type string, ts []*Trade) Response {
 		Count:   len(ts),
 		Results: ts,
 	}
+}
+
+func cloneTrades(ts []*Trade) []*Trade {
+	if ts == nil {
+		return nil
+	}
+	cloned := make([]*Trade, len(ts))
+	for i, trade := range ts {
+		copy := *trade
+		copy.Tags = append([]string(nil), trade.Tags...)
+		cloned[i] = &copy
+	}
+	return cloned
 }
 
 func (this *ScreenService) init() error {
@@ -228,14 +243,25 @@ func (this *ScreenService) init() error {
 
 func (this *ScreenService) _update() {
 	//更新最新数据到本地数据库
-	logs.PrintErr(common.Update())
+	if err := common.Update(); err != nil {
+		logs.Err(err)
+		return
+	}
 	//加载本地日线数据到缓存
-	this.getHistoryDayKlines()
+	if err := this.getHistoryDayKlines(); err != nil {
+		logs.Err(err)
+		return
+	}
 	if update, err := this.update.Updated("history"); err != nil || !update {
-		logs.PrintErr(this.updateHistoryTrade())
-		_, err = this.loadingTrades()
-		logs.PrintErr(err)
-		this.update.Update("history")
+		if err := this.updateHistoryTrade(); err != nil {
+			logs.Err(err)
+			return
+		}
+		if _, err := this.loadingTrades(); err != nil {
+			logs.Err(err)
+			return
+		}
+		logs.PrintErr(this.update.Update("history"))
 	}
 }
 
@@ -319,6 +345,7 @@ func (this *ScreenService) realtimeShells() error {
 		}
 	}
 	this.mu.Lock()
+	this.lastTrades = cloneTrades(trades)
 	this.lastSells = sells
 	this.mu.Unlock()
 	//推送实时卖点数据
@@ -379,7 +406,7 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 				ss = append(ss, buy.Strategy(st.Name, st.Buyer))
 			}
 		}
-		buy.Strategy("全部", buy.Or(ss))
+		buyer = buy.Strategy("全部", buy.Or(ss))
 		strategyName = "全部策略"
 	} else {
 		for _, st := range s.Strategies {
@@ -481,6 +508,7 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		if strategyKey != "" && strategyKey != "all" && t.Strategy != strategyKey {
 			continue
 		}
+		t.Realtime(nil)
 		dt := DiagnoseTrade{
 			BuyTime:    t.BuyTime,
 			BuyPrice:   t.BuyPrice,
@@ -517,13 +545,15 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 }
 
 // reloadHistoryKlines 重新加载历史日线缓存(用于跨天刷新)
-func (this *ScreenService) getHistoryDayKlines() {
+func (this *ScreenService) getHistoryDayKlines() error {
 	b := bar.NewCoroutine(
 		len(this.Codes),
 		this.Goroutines,
 		bar.WithPrefix("[加载日线][xx000000]"),
 	)
 	defer b.Close()
+	var mu sync.Mutex
+	var failures []error
 	for i := range this.Codes {
 		code := this.Codes[i]
 		b.Go(func() {
@@ -533,6 +563,9 @@ func (this *ScreenService) getHistoryDayKlines() {
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()
+				mu.Lock()
+				failures = append(failures, fmt.Errorf("%s 日线: %w", code, err))
+				mu.Unlock()
 				return
 			}
 			if len(ks) > 300 {
@@ -544,6 +577,7 @@ func (this *ScreenService) getHistoryDayKlines() {
 		})
 	}
 	b.Wait()
+	return errors.Join(failures...)
 }
 
 func (this *ScreenService) loadingTrades() ([]*Trade, error) {
@@ -553,7 +587,7 @@ func (this *ScreenService) loadingTrades() ([]*Trade, error) {
 	}
 	//缓存历史交易数据(供HTTP读取)
 	this.mu.Lock()
-	this.lastTrades = trades
+	this.lastTrades = cloneTrades(trades)
 	this.mu.Unlock()
 	return trades, nil
 }
@@ -582,11 +616,7 @@ func (this *ScreenService) updateHistoryTrade() error {
 
 		days = int(time.Since(latest)/(time.Hour*24)) + 1
 
-		//删除最新买入日期起的交易数据,后续重新计算(修正盘中价→收盘价等场景)
 		logs.Debug("重新历史节点:", latest.Format(time.DateTime), days)
-		if _, err := this.DB.Where("BuyTime >= ?", latest.Format(time.DateTime)).Delete(&Trade{}); err != nil {
-			return err
-		}
 
 	} else {
 		//数据库为空,全量计算
@@ -594,13 +624,21 @@ func (this *ScreenService) updateHistoryTrade() error {
 	}
 
 	//计算新交易
-	ts := this.getHistoryTrade(days)
-	if len(ts) == 0 {
-		return nil
+	ts, err := this.getHistoryTrade(days)
+	if err != nil {
+		return err
 	}
+	return this.replaceHistoryTrades(latest, ts)
+}
 
-	//插入新交易(不删除已有数据)
+// 完整计算成功后才替换区间，删除与插入共用事务，失败保留旧记录。
+func (this *ScreenService) replaceHistoryTrades(latest time.Time, ts []*Trade) error {
 	return this.DB.SessionFunc(func(session *xorm.Session) error {
+		if !latest.IsZero() {
+			if _, err := session.Where("BuyTime >= ?", latest.Format(time.DateTime)).Delete(&Trade{}); err != nil {
+				return err
+			}
+		}
 		for _, t := range ts {
 			if t.BuyTime < latest.Format(time.DateTime) {
 				continue
@@ -614,8 +652,13 @@ func (this *ScreenService) updateHistoryTrade() error {
 }
 
 // getHistoryTrade 计算历史买点
-// includeToday: 是否包含今日K线(盘中排除,避免用实时价误判收盘价策略)
-func (this *ScreenService) getHistoryTrade(days int) []*Trade {
+func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
+	if len(this.Codes) == 0 {
+		return nil, fmt.Errorf("历史重算股票样本为空")
+	}
+	if common.Manage == nil {
+		return nil, fmt.Errorf("行情运行时尚未初始化")
+	}
 	b := bar.NewCoroutine(
 		len(this.Codes),
 		this.Goroutines,
@@ -625,6 +668,7 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 
 	mu := sync.Mutex{}
 	ts := []*Trade(nil)
+	var failures []error
 	for i := range this.Codes {
 		code := this.Codes[i]
 
@@ -636,6 +680,12 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 
 			b.SetPrefix(fmt.Sprintf("[历史成交][%s]", code))
 			b.Flush()
+			if len(ks) == 0 {
+				mu.Lock()
+				failures = append(failures, fmt.Errorf("%s 缺少历史日线", code))
+				mu.Unlock()
+				return
+			}
 
 			//获取历史买点
 			mbs := map[string][]*core.Buy{}
@@ -665,6 +715,9 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
 				b.Flush()
+				mu.Lock()
+				failures = append(failures, fmt.Errorf("%s 分钟行情: %w", code, err))
+				mu.Unlock()
 				return
 			}
 
@@ -715,7 +768,7 @@ func (this *ScreenService) getHistoryTrade(days int) []*Trade {
 	}
 
 	b.Wait()
-	return ts
+	return ts, errors.Join(failures...)
 }
 
 // getRealtimeQuotes - 批量获取实时行情

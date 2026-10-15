@@ -39,14 +39,14 @@ func LoadScript(src string) ([]core.Variant, error) {
 	return extractVariants(v)
 }
 
-// CheckScript 仅做编译期校验（干跑），不执行 Strategy()。
+// CheckScript 仅做编译期校验，不执行全局初始化、init() 或 Strategy()。
 // 返回 nil 表示脚本语法与类型检查通过。
 func CheckScript(src string) error {
 	i, err := newInterp()
 	if err != nil {
 		return err
 	}
-	if _, err := i.Eval(src); err != nil {
+	if _, err := i.Compile(src); err != nil {
 		return fmt.Errorf("脚本编译失败: %w", err)
 	}
 	return nil

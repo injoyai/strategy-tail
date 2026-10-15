@@ -79,6 +79,9 @@ func TestCommonCommandEntrypointsInitializeRuntime(t *testing.T) {
 		}
 		var source strings.Builder
 		for _, file := range files {
+			if strings.HasSuffix(file, "_test.go") {
+				continue
+			}
 			data, err := os.ReadFile(file)
 			if err != nil {
 				t.Fatal(err)
@@ -90,7 +93,7 @@ func TestCommonCommandEntrypointsInitializeRuntime(t *testing.T) {
 			!strings.Contains(text, `"github.com/injoyai/strategy-tail"`) {
 			continue
 		}
-		if !strings.Contains(text, "common.MustInitialize()") {
+		if !strings.Contains(text, "common.MustInitialize()") && !strings.Contains(text, "common.Initialize()") {
 			t.Errorf("cmd/%s 使用 common 但未显式初始化运行时", entry.Name())
 		}
 	}
