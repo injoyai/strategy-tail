@@ -44,11 +44,17 @@ type RunConfig struct {
 	MACD       *MACDParameters `json:"macd,omitempty"`
 	// Builder 搭建器模式（自由组合条件树，设计文档 §2/§4）：
 	// 卖出规则由条件树管理，与 MACD 参数回测、简单卖出参数互斥。
-	Builder *BuilderSpec `json:"builder,omitempty"`
+	Builder *BuilderSpec   `json:"builder,omitempty"`
+	Account *AccountConfig `json:"account,omitempty"`
 }
 
 // Validate 配置合法性检查。
 func (c RunConfig) Validate() error {
+	if c.Account != nil {
+		if err := c.Account.Validate(); err != nil {
+			return err
+		}
+	}
 	if err := c.validateYears(); err != nil {
 		return err
 	}
@@ -171,9 +177,10 @@ const (
 
 // VariantReport 单变体结果（report.json 与 API 直出共用结构）。
 type VariantReport struct {
-	Name   string         `json:"name"`
-	Stats  TradeStatsJSON `json:"stats"`
-	Trades []TradeJSON    `json:"trades"`
+	Name    string         `json:"name"`
+	Stats   TradeStatsJSON `json:"stats"`
+	Trades  []TradeJSON    `json:"trades"`
+	Account *AccountReport `json:"account,omitempty"`
 }
 
 // TradeStatsJSON core.TradeStats 的可序列化形态（camelCase tag）。
@@ -239,6 +246,7 @@ type Report struct {
 	Source       string               `json:"source"`
 	StrategySpec *StrategySpec        `json:"strategySpec,omitempty"`
 	Comparison   *ComparisonSummary   `json:"comparison,omitempty"`
+	Benchmark    []BenchmarkPoint     `json:"benchmark,omitempty"`
 }
 
 // ComparisonSummary 简单模式对比摘要（实施文档 §4.4）：
@@ -668,7 +676,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if cfg.MACD != nil {
 		execute = runMACDYears
 	}
-	run, err := execute(ctx, researchrun.Config{
+	runCfg := researchrun.Config{
 		Codes:         codes,
 		Years:         years,
 		Variants:      runVariants,
@@ -680,11 +688,20 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		GetDayKlines:  common.Pull.DayKlines,
 		GetMinKlines:  common.Pull.MinKlines,
 		OnCodeDone: func(progress researchrun.Progress) {
+			r.totalCodes.Store(int64(progress.Total))
 			r.doneCodes.Store(int64(progress.Done))
 			current := progress.Code
 			r.currentCode.Store(&current)
 		},
-	})
+	}
+	var run researchrun.Report
+	var accounts []*AccountReport
+	var benchmark []BenchmarkPoint
+	if cfg.Account != nil {
+		run, accounts, benchmark, err = runAccountBacktest(ctx, runCfg, *cfg.Account)
+	} else {
+		run, err = execute(ctx, runCfg)
+	}
 	if errors.Is(err, context.Canceled) {
 		return nil, errStopped
 	}
@@ -701,6 +718,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		Variants:   make([]VariantReport, 0, len(variants)),
 		Coverage:   run.Coverage,
 		Source:     sourceScript,
+		Benchmark:  benchmark,
 	}
 	if cfg.MACD != nil {
 		report.Source = "macd"
@@ -708,8 +726,11 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if cfg.Builder != nil {
 		report.Source = sourceBuilder
 	}
-	for _, result := range run.Results {
+	for i, result := range run.Results {
 		vr := VariantReport{Name: result.Variant.Name, Stats: newTradeStatsJSON(core.Stats(result.Trades))}
+		if cfg.Account != nil {
+			vr.Account = accounts[i]
+		}
 		vr.Trades = toTradeJSON(result.Trades)
 		report.Variants = append(report.Variants, vr)
 	}

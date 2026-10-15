@@ -7,7 +7,7 @@ import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
 import { factorTypeName, groupFactors } from '../format.js';
-import { buildConfig } from '../config.js';
+import { buildConfig, ACCOUNT_CONFIG } from '../config.js';
 import Tab1Builder from './Tab1Builder.js';
 
 export default {
@@ -151,7 +151,7 @@ export default {
       if (mode === 'simple') return this.runSimple();
       try {
         await Api.saveScript(this.script); // 运行前先保存
-        const d = await Api.runBacktest(buildConfig());
+        const d = await Api.runBacktest({...buildConfig(), account: ACCOUNT_CONFIG});
         state.scriptMsg = {text: `已提交 ${d.variants} 个变体，运行进度见右下角任务卡。`, ok: true};
         this.startTask('backtest');
         return true;
@@ -189,7 +189,7 @@ export default {
           takeProfit: state.runCfg.tpOn ? +state.runCfg.takeProfit / 100 : 0,
           stopLoss: state.runCfg.slOn ? +state.runCfg.stopLoss / 100 : 0,
         },
-        run: {startYear: cfg.startYear, endYear: cfg.endYear, sampleMode: cfg.sampleMode},
+        run: {startYear: cfg.startYear, endYear: cfg.endYear, sampleMode: cfg.sampleMode, account: ACCOUNT_CONFIG},
       };
       if (cfg.sampleMode === 'random') spec.run.sampleSize = cfg.sampleSize;
       if (cfg.sampleMode === 'codes') spec.run.sampleCodes = cfg.sampleCodes;

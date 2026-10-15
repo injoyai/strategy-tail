@@ -8,10 +8,12 @@ const Vue = await import(moduleURL(read('./lab/js/vendor/vue.esm-browser.prod.js
 const state = globalThis.builderTestState = Vue.reactive({});
 const api = globalThis.builderTestApi = {};
 globalThis.builderTestVue = Vue;
+globalThis.builderTestAccount = (await import(moduleURL(read('./lab/js/config.js').replace("import { state } from './store.js';", 'const state = globalThis.builderTestState;')))).ACCOUNT_CONFIG;
 globalThis.builderTestDialog = (await import(moduleURL(read('./lab/js/components/dlgMixin.js')))).dlgMixin;
 const source = read('./lab/js/components/Tab1Builder.js')
   .replace("import { state } from '../store.js';", 'const state = globalThis.builderTestState;')
   .replace("import { Api } from '../api.js';", 'const Api = globalThis.builderTestApi;')
+  .replace("import { ACCOUNT_CONFIG } from '../config.js';", 'const ACCOUNT_CONFIG = globalThis.builderTestAccount;')
   .replace("import { useId, shallowReactive } from '../vendor/vue.esm-browser.prod.js';", 'const {useId, shallowReactive} = globalThis.builderTestVue;')
   .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.builderTestDialog;');
 const {default: Builder, NodeEdit, paramError, reorderNode} = await import(moduleURL(source));
@@ -339,7 +341,10 @@ test('回测请求待响应时不重复提交', async () => {
   state.runCfg = {startYear: 2025, endYear: 2025, sampleMode: 'all'};
   let finish, calls = 0, tasks = 0;
   ctx.startTask = () => tasks++;
-  api.runBuilder = () => {calls++; return new Promise(resolve => {finish = resolve;});};
+  api.runBuilder = cfg => {
+    assert.deepEqual(cfg.account, {initialCapital: 100000, maxPositions: 5, orderBudget: 20000});
+    calls++; return new Promise(resolve => {finish = resolve;});
+  };
   const pending = ctx.runBuilder();
   await ctx.runBuilder();
   assert.equal(calls, 1);

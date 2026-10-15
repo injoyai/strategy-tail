@@ -5,9 +5,11 @@ import test from 'node:test';
 const read = p => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
 const moduleURL = s => 'data:text/javascript;base64,' + Buffer.from(s).toString('base64');
 const state = globalThis.runConfigTestState = {};
+globalThis.runConfigTestAccount = (await import(moduleURL(read('./lab/js/config.js').replace("import { state } from './store.js';", 'const state = globalThis.runConfigTestState;')))).ACCOUNT_CONFIG;
 globalThis.runConfigTestMixin = (await import(moduleURL(read('./lab/js/components/dlgMixin.js')))).dlgMixin;
 const {default: Dialog} = await import(moduleURL(read('./lab/js/components/RunConfigDlg.js')
   .replace("import { state } from '../store.js';", 'const state = globalThis.runConfigTestState;')
+  .replace("import { ACCOUNT_CONFIG } from '../config.js';", 'const ACCOUNT_CONFIG = globalThis.runConfigTestAccount;')
   .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.runConfigTestMixin;')));
 function instance(mode = 'builder', run = async () => true) {
   Object.assign(state, {taskRunning: false, builderMsg: {text: ''}, scriptMsg: {text: ''},

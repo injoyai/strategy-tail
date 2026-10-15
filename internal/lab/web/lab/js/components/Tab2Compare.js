@@ -5,7 +5,7 @@ import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { factorTypeName, formatBuilderSpec, formatMacdParameters } from '../format.js';
 import { Api } from '../api.js';
-import { mountChart, dropChart } from '../echarts.js';
+import { mountChart, dropChart, ANNUAL_PALETTE, NAV_COLORS } from '../echarts.js';
 
 export default {
   name: 'Tab2Compare',
@@ -18,6 +18,18 @@ export default {
   },
   computed: {
     rep() { return state.currentReport; },
+    accountMode() { return !!this.rep?.config.account; },
+    benchmarkReturn() { return this.rep?.benchmark?.at(-1)?.return ?? null; },
+    accountWarnings() {
+      return this.vs.flatMap(v => {
+        const a = v.account;
+        if (!a) return [];
+        const messages = [];
+        if (a.missingMinuteDays) messages.push(`${v.name}：${a.missingMinuteDays} 个持仓交易日缺少分钟行情，卖出按日线收盘判断`);
+        if (a.staleValuationDays) messages.push(`${v.name}：${a.staleValuationDays} 个持仓交易日缺少日线，沿用上一收盘价估值`);
+        return messages;
+      });
+    },
     builderRules() {
       return formatBuilderSpec(state.currentReport?.config.builder, state.builderCatalog);
     },
@@ -40,12 +52,12 @@ export default {
       (state.currentReport ? state.currentReport.variants : []).forEach(v => { m[v.name] = v; });
       return m;
     },
-    // 按 avgProfit 降序（无交易排 -1e9）
+    // 账户报告按账户收益排序；历史逐笔报告保留原排序。
     vs() {
       const r = state.currentReport;
       if (!r) return [];
-      return [...r.variants].sort((a, b) =>
-        (b.stats.total ? b.stats.avgProfit : -1e9) - (a.stats.total ? a.stats.avgProfit : -1e9));
+      const rank = v => this.accountMode ? (this.accountReturn(v) ?? -1e9) : (v.stats.total ? v.stats.avgProfit : -1e9);
+      return [...r.variants].sort((a, b) => rank(b) - rank(a));
     },
     coverageText() {
       const cov = state.currentReport && state.currentReport.coverage;
@@ -68,6 +80,13 @@ export default {
     dropChart(this.winC);
   },
   methods: {
+    accountReturn(v) { return v.account?.points?.at(-1)?.return ?? null; },
+    excessReturn(v) {
+      const r = this.accountReturn(v);
+      return r != null && this.benchmarkReturn != null ? r - this.benchmarkReturn : null;
+    },
+    returnFmt(r) { return r == null ? '-' : r.toFixed(2); },
+    returnCls(r) { return r == null || r === 0 ? '' : r > 0 ? 'pos' : 'neg'; },
     async loadBuilderCatalog() {
       if (!state.currentReport?.config.builder || state.builderCatalog.length) return;
       try { state.builderCatalog = (await Api.builderComponents()).components || []; }
@@ -113,22 +132,33 @@ export default {
       const trendEl = this.$refs.trendChart;
       const winEl = this.$refs.winChart;
       if (!trendEl || !winEl) return;
-      // 累计收益曲线：每变体按买入时间排交易，累计收益率
-      const series = vs.filter(v => v.stats.total > 0).map(v => {
+      // 账户曲线来自服务器每日估值，历史报告仍使用原逐笔累计口径。
+      const series = this.accountMode ? vs.filter(v => v.account?.points?.length).map((v, i) => ({
+        name: v.name, type: 'line', showSymbol: false, lineStyle: {width: 1.5},
+        color: ANNUAL_PALETTE[(i + 1) % ANNUAL_PALETTE.length],
+        data: v.account.points.map(p => [p.date, p.return]),
+      })) : vs.filter(v => v.stats.total > 0).map(v => {
         const ts = [...v.trades].sort((a, b) => a.buyTime.localeCompare(b.buyTime));
         let acc = 0;
         return {name: v.name, type: 'line', showSymbol: false, lineStyle: {width: 1.5},
           data: ts.map(t => { acc += t.rate; return [t.buyTime, Number(acc.toFixed(2))]; })};
       });
+      if (this.accountMode && this.rep.benchmark?.length) {
+        series.push({name: '上证指数（买入持有）', type: 'line', showSymbol: false,
+          lineStyle: {width: 2, type: 'dashed'}, color: NAV_COLORS.net,
+          data: this.rep.benchmark.map(p => [p.date, p.return])});
+      }
       if (!this.trendC) { this.trendC = mountChart(trendEl); if (!this.trendC) return; }
       this.trendC.setOption({
+        animation: !this.accountMode,
         backgroundColor: 'transparent',
-        title: {text: '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
-        tooltip: {trigger: 'axis'},
+        title: {text: this.accountMode ? '账户累计收益率' : '逐笔收益率累计（非资金曲线）', left: 10, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
+        tooltip: {trigger: 'axis', valueFormatter: v => `${Number(v).toFixed(2)}%`},
         legend: {top: 30, right: 10, type: 'scroll'},
-        grid: {left: 50, right: 20, top: 60, bottom: 40},
-        xAxis: {type: 'time'},
-        yAxis: {scale: true},
+        grid: {left: 50, right: this.accountMode ? 50 : 20, top: 60, bottom: 40},
+        xAxis: this.accountMode ? {type: 'category', data: this.rep.benchmark?.map(p => p.date) || [],
+          boundaryGap: false, axisLabel: {hideOverlap: true}} : {type: 'time'},
+        yAxis: {scale: true, axisLabel: {formatter: '{value}%'}},
         series,
       }, true);
       if (!this.winC) { this.winC = mountChart(winEl); if (!this.winC) return; }
@@ -159,14 +189,14 @@ export default {
       </div>
       <div class="cmp-box combo">
         <div class="t">{{ cmp.combinedVariant }}</div>
-        <div class="big">{{ cmp.combinedTrades }} 笔 · 信号保留率 {{ cmp.retentionRate == null ? '-' : (cmp.retentionRate * 100).toFixed(2) + '%' }}</div>
+        <div class="big">{{ cmp.combinedTrades }} 笔 · {{ accountMode ? '成交数比' : '信号保留率' }} {{ cmp.retentionRate == null ? '-' : (cmp.retentionRate * 100).toFixed(2) + '%' }}</div>
         <div class="sub">{{ statLine(byName[cmp.combinedVariant]) }}</div>
       </div>
     </div>
     <div class="cmp-contrib">
-      <h4>条件贡献（单条件 = 基准 + 单独追加该条件）</h4>
+      <h4>{{ accountMode ? '条件对照（各变体按相同资金规则独立回测）' : '条件贡献（单条件 = 基准 + 单独追加该条件）' }}</h4>
       <table>
-        <thead><tr><th>#</th><th>条件</th><th>交易数</th><th>信号保留率</th><th>胜率%</th><th>平均%</th><th>盈亏比</th></tr></thead>
+        <thead><tr><th>#</th><th>条件</th><th>交易数</th><th>{{ accountMode ? '成交数比' : '信号保留率' }}</th><th>胜率%</th><th>平均%</th><th>盈亏比</th></tr></thead>
         <tbody>
           <tr v-for="(f, i) in (cmp.factorVariants || [])" :key="i">
             <td>{{ i + 1 }}</td>
@@ -182,6 +212,15 @@ export default {
     </div>
   </div>
   <div v-if="coverageText" class="coverage">{{ coverageText }}</div>
+  <p v-if="rep && !accountMode" class="hint" role="status">历史报告未记录账户资金；重新运行回测后可查看账户收益率与上证指数对比。</p>
+  <details v-if="accountMode" class="macd-parameters">
+    <summary>账户：{{ rep.config.account.initialCapital / 10000 }} 万元 · 最多 {{ rep.config.account.maxPositions }} 只 · 每笔预算 {{ rep.config.account.orderBudget / 10000 }} 万元</summary>
+    <p>每笔预算含买入费用，资金不足时减少股数，按 100 股取整；同日先卖后买，买入信号按代码升序执行，单票只持有一笔。跨年保留现金与持仓，未卖出持仓按每日收盘价估值。</p>
+    <p>账户收益率 =（现金 + 持仓市值）÷ 初始资金 − 1。上证指数以回测首个交易日收盘价为基准，按同期买入持有价格涨幅计算；指数不扣交易成本，策略含费用与滑点。超额列为两者之差（百分点）。</p>
+    <p v-if="showCmp">各变体使用独立账户；成交数比是实际成交笔数相对基准的比例，不代表买入信号筛选比例。</p>
+    <p>沿用现有行情和策略成交假设，未新增分红现金流、涨跌停排队和成交容量模型；该结果为模拟账户收益。</p>
+  </details>
+  <div v-if="accountWarnings.length" class="warnbar" role="status"><ul><li v-for="message in accountWarnings" :key="message">{{ message }}</li></ul></div>
   <details v-if="rep?.coverage.skipped > 0" class="macd-parameters">
     <summary>查看跳过原因（{{ rep.coverage.skipped }}）</summary>
     <ul><li v-for="f in rep.coverage.failures" :key="f.code + ':' + f.year">{{ f.code }} · {{ f.year }} · {{ f.message }}</li></ul>
@@ -198,7 +237,7 @@ export default {
 
   <div class="detail-wrap">
     <table>
-      <thead><tr><th>#</th><th>变体</th><th>笔数</th><th>胜率%</th><th>平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
+      <thead><tr><th>#</th><th>变体</th><th v-if="accountMode">账户收益%</th><th v-if="accountMode">上证收益%</th><th v-if="accountMode">超额(百分点)</th><th>笔数</th><th>胜率%</th><th>单笔平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
       <tbody>
         <template v-if="vs.length">
           <tr v-for="(v, i) in vs" :key="v.name"
@@ -206,6 +245,9 @@ export default {
             @click="selectVariant(v)">
             <td>{{ i + 1 }}</td>
             <td>{{ v.name }}</td>
+            <td v-if="accountMode" :class="returnCls(accountReturn(v))">{{ returnFmt(accountReturn(v)) }}</td>
+            <td v-if="accountMode" :class="returnCls(benchmarkReturn)">{{ returnFmt(benchmarkReturn) }}</td>
+            <td v-if="accountMode" :class="returnCls(excessReturn(v))">{{ returnFmt(excessReturn(v)) }}</td>
             <td>{{ v.stats.total }}</td>
             <td :class="v.stats.total ? (v.stats.winRate >= 50 ? 'pos' : 'neg') : ''">{{ v.stats.total ? v.stats.winRate.toFixed(2) : '-' }}</td>
             <td :class="v.stats.total ? (v.stats.avgProfit >= 0 ? 'pos' : 'neg') : ''">{{ v.stats.total ? v.stats.avgProfit.toFixed(2) : '-' }}</td>
@@ -215,13 +257,13 @@ export default {
             <td :class="profitWan(v) != null ? (profitWan(v) >= 0 ? 'pos' : 'neg') : ''">{{ profitWan(v) != null ? profitWan(v).toFixed(1) : '-' }}</td>
           </tr>
         </template>
-        <tr v-else><td colspan="9" class="empty">暂无报告，先在回测配置中运行回测</td></tr>
+        <tr v-else><td :colspan="accountMode ? 12 : 9" class="empty">暂无报告，先在回测配置中运行回测</td></tr>
       </tbody>
     </table>
   </div>
 
   <div class="charts2">
-    <div ref="trendChart" class="chart-block"></div>
+    <div ref="trendChart" class="chart-block" role="img" :aria-label="accountMode ? '账户累计收益率与上证指数对比，期末数值见上方表格' : '逐笔收益率累计，非资金曲线'"></div>
     <div ref="winChart" class="chart-block"></div>
   </div>
 </div>

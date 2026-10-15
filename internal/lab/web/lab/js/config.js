@@ -2,6 +2,9 @@
 // 对应原 index.html 的 buildConfig()（读 DOM → 改读 store）。
 import { state } from './store.js';
 
+// 本次用户确定的账户规则，三种回测入口共用并随报告冻结。
+export const ACCOUNT_CONFIG = Object.freeze({initialCapital: 100000, maxPositions: 5, orderBudget: 20000});
+
 export function buildConfig() {
   const c = state.runCfg;
   const cfg = {

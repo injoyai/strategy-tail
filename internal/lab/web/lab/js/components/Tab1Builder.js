@@ -6,6 +6,7 @@
 // 版本冲突（409）保留当前输入等待重新处理。
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { ACCOUNT_CONFIG } from '../config.js';
 import { useId, shallowReactive } from '../vendor/vue.esm-browser.prod.js';
 import { dlgMixin } from './dlgMixin.js';
 
@@ -474,7 +475,7 @@ export default {
         return;
       }
       const cfg = {startYear: +c.startYear, endYear: +c.endYear, sampleMode: c.sampleMode,
-        builder: JSON.parse(JSON.stringify(state.builderSpec))};
+        builder: JSON.parse(JSON.stringify(state.builderSpec)), account: ACCOUNT_CONFIG};
       if (cfg.sampleMode === 'random') cfg.sampleSize = +c.sampleSize;
       if (cfg.sampleMode === 'codes') {
         cfg.sampleCodes = c.sampleCodes.split(',').map(s => s.trim()).filter(Boolean);

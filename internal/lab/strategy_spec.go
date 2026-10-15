@@ -50,11 +50,12 @@ type ExitSpec struct {
 
 // StrategyRunSpec 运行范围：字段与 RunConfig 对应，转换后由其校验。
 type StrategyRunSpec struct {
-	StartYear   int      `json:"startYear"`
-	EndYear     int      `json:"endYear"`
-	SampleMode  string   `json:"sampleMode"`            // all|random|codes
-	SampleSize  int      `json:"sampleSize,omitempty"`  // random 模式
-	SampleCodes []string `json:"sampleCodes,omitempty"` // codes 模式
+	StartYear   int            `json:"startYear"`
+	EndYear     int            `json:"endYear"`
+	SampleMode  string         `json:"sampleMode"`            // all|random|codes
+	SampleSize  int            `json:"sampleSize,omitempty"`  // random 模式
+	SampleCodes []string       `json:"sampleCodes,omitempty"` // codes 模式
+	Account     *AccountConfig `json:"account,omitempty"`
 }
 
 // StrategySpec 简单策略配置快照（API 提交与报告保存共用）。
@@ -179,6 +180,7 @@ func (s StrategySpec) RunConfig() RunConfig {
 		TakeProfit:  s.Exit.TakeProfit,
 		StopLoss:    s.Exit.StopLoss,
 		ScriptName:  "simple",
+		Account:     s.Run.Account,
 	}
 }
 

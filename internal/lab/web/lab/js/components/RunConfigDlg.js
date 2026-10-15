@@ -1,4 +1,5 @@
 import { state } from '../store.js';
+import { ACCOUNT_CONFIG } from '../config.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
@@ -9,6 +10,7 @@ export default {
   },
   setup() {
     return {
+      account: ACCOUNT_CONFIG,
       years: [{key: 'startYear', label: '开始年份'}, {key: 'endYear', label: '结束年份'}],
       exits: [
         {on: 'holdingOn', key: 'holdingDays', label: '持仓上限', unit: '交易日', step: 1},
@@ -81,6 +83,7 @@ export default {
   </div>
   <form novalidate @submit.prevent="confirm">
     <fieldset class="run-config-fields" :disabled="submitting">
+      <p class="hint">初始资金 {{ account.initialCapital / 10000 }} 万元 · 最多 {{ account.maxPositions }} 只 · 每笔预算 {{ account.orderBudget / 10000 }} 万元（含费用）</p>
       <div class="run-config-years">
         <div v-for="y in years" :key="y.key" class="form-row">
           <label :for="'run-' + y.key">{{ y.label }}</label>

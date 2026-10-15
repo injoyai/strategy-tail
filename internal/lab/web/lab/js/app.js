@@ -121,7 +121,7 @@ const App = {
           ? `${done}/${total} 单元`
           : PF_PHASE[s.phase] || '正在准备组合任务')
         : total > 0 && (done > 0 || st !== 'running')
-          ? `${done}/${total} ${s.task === 'data_update' ? '更新单元' : s.config?.macd ? '股票×年份' : '只股票'}`
+          ? `${done}/${total} ${s.task === 'data_update' ? '更新单元' : s.config?.account ? '加载与交易日单元' : s.config?.macd ? '股票×年份' : '只股票'}`
           : isUpdate ? updatePhase : '正在准备股票列表';
       if (isUpdate && total > 0) detail += ` · 失败 ${Number(s.failed) || 0}`;
       const current = isUpdate
@@ -209,7 +209,7 @@ const App = {
             if (state.currentReport.source === 'simple' && state.currentReport.comparison) {
               const c = state.currentReport.comparison;
               state.scriptMsg = {text: `多条件组合对照已生成：基准 ${c.baselineTrades} 笔 → 组合 ${c.combinedTrades} 笔` +
-                (c.retentionRate == null ? '' : `（保留 ${(c.retentionRate * 100).toFixed(1)}%）`) +
+                (c.retentionRate == null ? '' : `（${state.currentReport.config?.account ? '成交数比' : '保留'} ${(c.retentionRate * 100).toFixed(1)}%）`) +
                 '，详见“回测结果”摘要。', ok: true};
             } else if (state.currentReport.source === 'macd') {
               state.scriptMsg = {text: '参数回测完成，已载入结果。', ok: true};
