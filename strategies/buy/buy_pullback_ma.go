@@ -3,8 +3,8 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A回踩N日均线 判断股价回踩指定均线后收回的形态。
@@ -62,8 +62,8 @@ func (s A回踩N日均线) Buy(code string, dks extend.Klines) bool {
 
 	today := dks[n-1]
 	yesterday := dks[n-2]
-	maPeriodToday := core.MA(dks, period)
-	maPeriodYesterday := core.MA(dks[:n-1], period)
+	maPeriodToday := f.A均线(period).Value(code, dks)
+	maPeriodYesterday := f.A均线(period).Value(code, dks[:n-1])
 
 	// 条件2：今天收盘价 > MA(Period) 且 > 昨天收盘价（收回均线且收阳）
 	if today.Close.Float64() <= maPeriodToday {
@@ -87,7 +87,7 @@ func (s A回踩N日均线) Buy(code string, dks extend.Klines) bool {
 	}
 	lowestLow := dks[windowStart].Low.Float64()
 	for i := windowStart; i < n-1; i++ { // 不含今天
-		maAtDay := core.MA(dks[:i+1], period)
+		maAtDay := f.A均线(period).Value(code, dks[:i+1])
 		if dks[i].Low.Float64() <= maAtDay {
 			touched = true
 		}
@@ -105,7 +105,7 @@ func (s A回踩N日均线) Buy(code string, dks extend.Klines) bool {
 		if supportIdx < supportPeriod {
 			supportIdx = supportPeriod - 1
 		}
-		maSupport := core.MA(dks[:supportIdx+1], supportPeriod)
+		maSupport := f.A均线(supportPeriod).Value(code, dks[:supportIdx+1])
 		if lowestLow < maSupport {
 			return false
 		}

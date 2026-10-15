@@ -3,6 +3,7 @@ package sell
 import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // LongMADown 是 250 日或 60 日均线不再同时向上时卖出的策略。
@@ -31,8 +32,8 @@ func maUp(dks extend.Klines, period, lookback int) bool {
 
 	n := len(dks)
 	for x := 0; x < lookback; x++ {
-		maNow := core.MA(dks[:n-x], period)
-		maPrev := core.MA(dks[:n-x-1], period)
+		maNow := f.A均线(period).Value("", dks[:n-x])
+		maPrev := f.A均线(period).Value("", dks[:n-x-1])
 		if maNow <= maPrev {
 			return false
 		}

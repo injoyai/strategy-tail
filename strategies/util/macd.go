@@ -6,6 +6,20 @@ import "github.com/injoyai/strategy-tail/lib/extend"
 // 返回值为 DIF - DEA，没有乘以 2。
 // 所有 MACD 策略都基于同一套计算，避免买卖条件之间口径不一致。
 func MACDHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
+	dif := MACDDIF(dks, fast, slow)
+	if len(dif) == 0 {
+		return nil
+	}
+	dea := emaSeries(dif, signal)
+	hist := make([]float64, len(dif))
+	for i := range dif {
+		hist[i] = dif[i] - dea[i]
+	}
+	return hist
+}
+
+// MACDDIF 返回快慢 EMA 的差值，供柱值与 DIF 因子共用同一计算口径。
+func MACDDIF(dks extend.Klines, fast, slow int) []float64 {
 	n := len(dks)
 	if n == 0 {
 		return nil
@@ -23,12 +37,7 @@ func MACDHistogram(dks extend.Klines, fast, slow, signal int) []float64 {
 		dif[i] = emaFast[i] - emaSlow[i]
 	}
 
-	dea := emaSeries(dif, signal)
-	hist := make([]float64, n)
-	for i := 0; i < n; i++ {
-		hist[i] = dif[i] - dea[i]
-	}
-	return hist
+	return dif
 }
 
 // SmoothedMACDHistogram 返回对原始 MACD 量柱再做一次 EMA 平滑后的序列。

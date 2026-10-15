@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A跌破短期均线 是收盘价跌破短期均线即触发的卖出条件。
@@ -32,7 +33,7 @@ func (s A跌破短期均线) Sell(code string, dks extend.Klines, b core.Buy) bo
 		return false
 	}
 	closePrice := dks[len(dks)-1].Close.Float64()
-	ma := core.MA(dks, period)
+	ma := f.A均线(period).Value(code, dks)
 	return closePrice < ma
 }
 
@@ -91,21 +92,7 @@ func (s A_ATR止盈) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	if n < period+1 || b.Price.Float64() <= 0 {
 		return false
 	}
-	trSum := 0.0
-	for i := n - period; i < n; i++ {
-		high := dks[i].High.Float64()
-		low := dks[i].Low.Float64()
-		prevClose := dks[i-1].Close.Float64()
-		tr := high - low
-		if d := high - prevClose; d > tr {
-			tr = d
-		}
-		if d := prevClose - low; d > tr {
-			tr = d
-		}
-		trSum += tr
-	}
-	atr := trSum / float64(period)
+	atr := f.ATR值(period).Value(code, dks)
 	closePrice := dks[n-1].Close.Float64()
 	return closePrice >= b.Price.Float64()+mul*atr
 }
@@ -141,14 +128,14 @@ func (s A均线死叉) Sell(code string, dks extend.Klines, b core.Buy) bool {
 		return false
 	}
 	// 今日：短期均线 < 长期均线
-	maShortNow := core.MA(dks, short)
-	maLongNow := core.MA(dks, long)
+	maShortNow := f.A均线(short).Value(code, dks)
+	maLongNow := f.A均线(long).Value(code, dks)
 	if maShortNow >= maLongNow {
 		return false
 	}
 	// 昨日：短期均线 >= 长期均线（刚刚下穿）
-	maShortPrev := core.MA(dks[:n-1], short)
-	maLongPrev := core.MA(dks[:n-1], long)
+	maShortPrev := f.A均线(short).Value(code, dks[:n-1])
+	maLongPrev := f.A均线(long).Value(code, dks[:n-1])
 	return maShortPrev >= maLongPrev
 }
 
@@ -194,7 +181,7 @@ func (s A缩量滞涨) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	count := 0
 	for i := n - lookback; i < n; i++ {
 		// 缩量
-		avg := core.AverageVolume(dks[i-volPeriod : i])
+		avg := f.A前N日均量(volPeriod).Value(code, dks[:i+1])
 		if avg <= 0 || float64(dks[i].Volume) > avg*volRatio {
 			continue
 		}

@@ -52,7 +52,7 @@ func (f 均线偏离) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < days {
 		return math.NaN()
 	}
-	ma := dks.MA(days).Float64()
+	ma := A均线(days).Value(code, dks)
 	if ma == 0 {
 		return math.NaN()
 	}

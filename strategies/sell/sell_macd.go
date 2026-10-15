@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 type MACD struct {
@@ -47,7 +47,7 @@ func (s MACD反转) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		s.Lookback = 20
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != len(dks) {
 		return false
 	}
@@ -139,7 +139,7 @@ func (s MACD买入后连跌) Sell(code string, dks extend.Klines, buy core.Buy) 
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A收盘跌破均线 是收盘价连续N日跌破指定均线的卖出条件。
@@ -43,7 +43,7 @@ func (s A收盘跌破均线) Sell(code string, dks extend.Klines, buy core.Buy) 
 		return false
 	}
 	for i := n - days; i < n; i++ {
-		ma := core.MA(dks[:i+1], period)
+		ma := f.A均线(period).Value(code, dks[:i+1])
 		if dks[i].Close.Float64() > ma {
 			return false
 		}
@@ -79,7 +79,7 @@ func (s A_RSI超买) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if len(dks) < period+1 {
 		return false
 	}
-	return util.CalcRSI(dks, period) > threshold
+	return f.RSI值(period).Value(code, dks) > threshold
 }
 
 // A_MACD死叉且DIF为负 是 MACD 死叉同时 DIF 小于 0 的卖出条件。
@@ -100,7 +100,7 @@ func (s A_MACD死叉且DIF为负) Sell(code string, dks extend.Klines, buy core.
 	if n < slow+signal {
 		return false
 	}
-	hist := util.MACDHistogram(dks, fast, slow, signal)
+	hist := (f.MACD柱值{Fast: fast, Slow: slow, Signal: signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -108,14 +108,7 @@ func (s A_MACD死叉且DIF为负) Sell(code string, dks extend.Klines, buy core.
 	if !(hist[n-2] > 0 && hist[n-1] <= 0) {
 		return false
 	}
-	// 计算 DIF
-	closes := make([]float64, n)
-	for i := range dks {
-		closes[i] = dks[i].Close.Float64()
-	}
-	emaFast := emaSeries(closes, fast)
-	emaSlow := emaSeries(closes, slow)
-	dif := emaFast[n-1] - emaSlow[n-1]
+	dif := (f.MACDDIF值{Fast: fast, Slow: slow}).Value(code, dks)
 	return dif < 0
 }
 
@@ -197,25 +190,6 @@ func defaultMACDParams(fast, slow, signal int) (int, int, int) {
 	return fast, slow, signal
 }
 
-// emaSeries 计算 EMA 序列（与util包中相同算法）
-func emaSeries(values []float64, period int) []float64 {
-	n := len(values)
-	out := make([]float64, n)
-	if n == 0 {
-		return out
-	}
-	if period <= 1 {
-		copy(out, values)
-		return out
-	}
-	alpha := 2.0 / (float64(period) + 1.0)
-	out[0] = values[0]
-	for i := 1; i < n; i++ {
-		out[i] = out[i-1] + alpha*(values[i]-out[i-1])
-	}
-	return out
-}
-
 // A固定止损 是相对买入价跌幅超过阈值的卖出条件。
 // Pct 表示止损百分比，默认 0.05（即-5%）。
 // 立即触发，无延迟。建议作为第一道防线。
@@ -273,22 +247,7 @@ func (s A_ATR止损) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	if n < period+1 || b.Price.Float64() <= 0 {
 		return false
 	}
-	// 计算ATR
-	trSum := 0.0
-	for i := n - period; i < n; i++ {
-		high := dks[i].High.Float64()
-		low := dks[i].Low.Float64()
-		prevClose := dks[i-1].Close.Float64()
-		tr := high - low
-		if d := high - prevClose; d > tr {
-			tr = d
-		}
-		if d := prevClose - low; d > tr {
-			tr = d
-		}
-		trSum += tr
-	}
-	atr := trSum / float64(period)
+	atr := f.ATR值(period).Value(code, dks)
 	closePrice := dks[n-1].Close.Float64()
 	return closePrice < b.Price.Float64()-mul*atr
 }
@@ -373,7 +332,7 @@ func (s A放量大阴线) Sell(code string, dks extend.Klines, b core.Buy) bool 
 	if today.RiseRate() > -fallPct {
 		return false
 	}
-	avgVol := core.AverageVolume(dks[n-6 : n-1])
+	avgVol := f.A前N日均量(5).Value(code, dks)
 	if avgVol <= 0 {
 		return false
 	}

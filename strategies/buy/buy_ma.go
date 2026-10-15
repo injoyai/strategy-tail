@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 func A流通市值小于(f float64) A流通市值 {
@@ -32,11 +33,11 @@ func (b A流通市值) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}
-	last := dks[len(dks)-1]
-	if b.Min > 0 && last.FloatValue().Float64()/1e8 < b.Min {
+	value := (f.A流通市值{}).Value(code, dks)
+	if b.Min > 0 && value < b.Min {
 		return false
 	}
-	if b.Max > 0 && last.FloatValue().Float64()/1e8 > b.Max {
+	if b.Max > 0 && value > b.Max {
 		return false
 	}
 	return true

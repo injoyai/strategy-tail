@@ -2,6 +2,7 @@ package buy
 
 import (
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A收盘大于昨收 是"当日收盘价大于昨日收盘价"买入条件。
@@ -20,7 +21,5 @@ func (s A收盘大于昨收) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < 2 {
 		return false
 	}
-	today := dks[len(dks)-1]
-	yesterday := dks[len(dks)-2]
-	return today.Close.Float64() > yesterday.Close.Float64()
+	return f.A价格("close").Value(code, dks) > f.A价格("close").Value(code, dks[:len(dks)-1])
 }

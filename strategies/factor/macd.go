@@ -5,7 +5,6 @@ import (
 	"math"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 const (
@@ -142,8 +141,8 @@ func (f 均线最弱日斜率) Value(code string, dks extend.Klines) float64 {
 	n := len(dks)
 	weakest := math.Inf(1)
 	for offset := 0; offset < maSlopeLookback; offset++ {
-		maNow := dks[:n-offset].MA(period).Float64()
-		maPrev := dks[:n-offset-1].MA(period).Float64()
+		maNow := A均线(period).Value(code, dks[:n-offset])
+		maPrev := A均线(period).Value(code, dks[:n-offset-1])
 		if maPrev <= 0 {
 			return math.NaN()
 		}
@@ -157,6 +156,6 @@ func standardMACD(dks extend.Klines) ([]float64, bool) {
 	if len(dks) < macdMinSamples {
 		return nil, false
 	}
-	hist := util.MACDHistogram(dks, macdFast, macdSlow, macdSignal)
+	hist := (MACD柱值{Fast: macdFast, Slow: macdSlow, Signal: macdSignal}).Series(dks)
 	return hist, len(hist) == len(dks)
 }

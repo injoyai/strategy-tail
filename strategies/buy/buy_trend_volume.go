@@ -3,9 +3,8 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A收盘高于均线 是收盘价高于指定均线的买入条件。
@@ -30,7 +29,7 @@ func (b A收盘高于均线) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	today := dks[len(dks)-1]
-	return today.Close.Float64() > core.MA(dks, b.Period)
+	return today.Close.Float64() > f.A均线(b.Period).Value(code, dks)
 }
 
 // A均线向上 是指定均线方向向上的买入条件。
@@ -94,12 +93,11 @@ func (b A成交量放大) Buy(code string, dks extend.Klines) bool {
 	if n < period+1 {
 		return false
 	}
-	today := dks[n-1]
-	avg := core.AverageVolume(dks[n-1-period : n-1])
+	avg := f.A前N日均量(period).Value(code, dks)
 	if avg <= 0 {
 		return false
 	}
-	return float64(today.Volume) > avg*ratio
+	return (f.A成交量{}).Value(code, dks) > avg*ratio
 }
 
 // RSI区间 是 RSI 在指定区间内的买入条件。
@@ -141,7 +139,7 @@ func (b RSI区间) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < period+1 {
 		return false
 	}
-	rsi := util.CalcRSI(dks, period)
+	rsi := f.RSI值(period).Value(code, dks)
 	return rsi >= min && rsi <= max
 }
 
@@ -171,8 +169,8 @@ func (b RSI超卖回升) Buy(code string, dks extend.Klines) bool {
 	if n < period+2 {
 		return false
 	}
-	prevRSI := util.CalcRSI(dks[:n-1], period)
-	rsi := util.CalcRSI(dks, period)
+	prevRSI := f.RSI值(period).Value(code, dks[:n-1])
+	rsi := f.RSI值(period).Value(code, dks)
 	return prevRSI < threshold && rsi >= threshold
 }
 
@@ -195,7 +193,7 @@ func (b MACD金叉) Buy(code string, dks extend.Klines) bool {
 	if n < slow+signal {
 		return false
 	}
-	hist := util.MACDHistogram(dks, fast, slow, signal)
+	hist := (f.MACD柱值{Fast: fast, Slow: slow, Signal: signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -221,7 +219,7 @@ func (b MACD零轴上方) Buy(code string, dks extend.Klines) bool {
 	if n < slow+signal {
 		return false
 	}
-	hist := util.MACDHistogram(dks, fast, slow, signal)
+	hist := (f.MACD柱值{Fast: fast, Slow: slow, Signal: signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -261,7 +259,7 @@ func (b A乖离率小于) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < period {
 		return false
 	}
-	ma := core.MA(dks, period)
+	ma := f.A均线(period).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -291,7 +289,7 @@ func (b A成交额大于) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}
-	return dks[len(dks)-1].Amount.Float64() >= min
+	return (f.A成交额{}).Value(code, dks) >= min
 }
 
 // riseRateNDays 计算最近N日累计涨幅百分比
@@ -353,22 +351,7 @@ func (b ATR波动率范围) Buy(code string, dks extend.Klines) bool {
 	if n < period+1 {
 		return false
 	}
-	// 计算ATR (True Range 平均)
-	trSum := 0.0
-	for i := n - period; i < n; i++ {
-		high := dks[i].High.Float64()
-		low := dks[i].Low.Float64()
-		prevClose := dks[i-1].Close.Float64()
-		tr := high - low
-		if d := high - prevClose; d > tr {
-			tr = d
-		}
-		if d := prevClose - low; d > tr {
-			tr = d
-		}
-		trSum += tr
-	}
-	atr := trSum / float64(period)
+	atr := f.ATR值(period).Value(code, dks)
 	closePrice := dks[n-1].Close.Float64()
 	if closePrice <= 0 {
 		return false
@@ -433,8 +416,8 @@ func (b A均线多头排列) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	for i := 0; i < len(periods)-1; i++ {
-		short := core.MA(dks, periods[i])
-		long := core.MA(dks, periods[i+1])
+		short := f.A均线(periods[i]).Value(code, dks)
+		long := f.A均线(periods[i+1]).Value(code, dks)
 		if short <= long {
 			return false
 		}
@@ -464,15 +447,8 @@ func (b A实体阳线) Buy(code string, dks extend.Klines) bool {
 	today := dks[len(dks)-1]
 	open := today.Open.Float64()
 	close := today.Close.Float64()
-	high := today.High.Float64()
-	low := today.Low.Float64()
 	if close <= open {
 		return false
 	}
-	rangeVal := high - low
-	if rangeVal <= 0 {
-		return false
-	}
-	body := close - open
-	return body/rangeVal >= minRatio
+	return (f.A实体振幅占比{}).Value(code, dks) >= minRatio
 }

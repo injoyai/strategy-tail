@@ -3,8 +3,8 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A站上N日均线 判断收盘价连续 N 天站在指定均线上方。
@@ -53,7 +53,7 @@ func (s A站上N日均线) Buy(code string, dks extend.Klines) bool {
 		if idx < 0 {
 			return false
 		}
-		maAtDay := core.MA(dks[:idx+1], period)
+		maAtDay := f.A均线(period).Value(code, dks[:idx+1])
 		closePrice := dks[idx].Close.Float64()
 		if closePrice <= maAtDay {
 			return false

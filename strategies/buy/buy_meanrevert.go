@@ -2,36 +2,10 @@ package buy
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
-
-// ----------------------------------------------------------------------------
-// 公共计算工具（浮点精度，避免 BOLL 整数 std 的精度损失）
-// ----------------------------------------------------------------------------
-
-// meanStd 计算近 n 日收盘价的均值与样本标准差。
-// 返回 (ma, std)；数据不足时 std=0。
-func meanStd(dks extend.Klines, n int) (float64, float64) {
-	if len(dks) < n || n <= 0 {
-		return 0, 0
-	}
-	window := dks[len(dks)-n:]
-	sum := 0.0
-	for _, k := range window {
-		sum += k.Close.Float64()
-	}
-	ma := sum / float64(n)
-	var sq float64
-	for _, k := range window {
-		d := k.Close.Float64() - ma
-		sq += d * d
-	}
-	std := math.Sqrt(sq / float64(n))
-	return ma, std
-}
 
 // ----------------------------------------------------------------------------
 // 1. A布林下轨 — 收盘价跌破布林下轨买入（最经典的均值回归入场）
@@ -71,11 +45,7 @@ func (s A布林下轨) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma, std := meanStd(dks, p)
-	if std <= 0 {
-		return false
-	}
-	lower := ma - st*std
+	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
 	return dks[len(dks)-1].Close.Float64() <= lower
 }
 
@@ -116,7 +86,7 @@ func (s A乖离超卖) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma := dks.MA(p).Float64()
+	ma := f.A均线(p).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -162,11 +132,7 @@ func (s AZScore超卖) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma, std := meanStd(dks, p)
-	if std <= 0 {
-		return false
-	}
-	z := (dks[len(dks)-1].Close.Float64() - ma) / std
+	z := f.ZScore值(p).Value(code, dks)
 	return z <= mz
 }
 
@@ -253,21 +219,13 @@ func (s A布林下轨缩量) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	// 布林下轨
-	ma, std := meanStd(dks, p)
-	if std <= 0 {
-		return false
-	}
-	lower := ma - st*std
-	if dks[len(dks)-1].Close.Float64() > lower {
+	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
+	if !(dks[len(dks)-1].Close.Float64() <= lower) {
 		return false
 	}
 	// 地量确认
 	today := dks[len(dks)-1]
-	var volSum float64
-	for i := len(dks) - 1 - vd; i < len(dks)-1; i++ {
-		volSum += float64(dks[i].Volume)
-	}
-	avgVol := volSum / float64(vd)
+	avgVol := f.A前N日均量(vd).Value(code, dks)
 	if avgVol <= 0 {
 		return false
 	}
@@ -324,15 +282,11 @@ func (s A布林下轨RSI超卖) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	// 布林下轨
-	ma, std := meanStd(dks, p)
-	if std <= 0 {
-		return false
-	}
-	lower := ma - st*std
-	if dks[len(dks)-1].Close.Float64() > lower {
+	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
+	if !(dks[len(dks)-1].Close.Float64() <= lower) {
 		return false
 	}
 	// RSI 超卖
-	rsi := util.CalcRSI(dks, rp)
+	rsi := f.RSI值(rp).Value(code, dks)
 	return rsi <= rt
 }

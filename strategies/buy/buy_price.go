@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -45,8 +46,7 @@ func (b A价格) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	today := dks[len(dks)-1]
-	price := today.Close.Float64()
+	price := f.A价格("close").Value(code, dks)
 	if b.Min > 0 && price < b.Min {
 		return false
 	}
@@ -79,9 +79,9 @@ func (b A过滤涨停) Buy(code string, dks extend.Klines) bool {
 
 	switch code[:4] {
 	case "sh60", "sz00":
-		return dks[len(dks)-1].RiseRate() < 9.8
+		return (f.A单日涨幅{}).Value(code, dks) < 9.8
 	case "sh68", "sz30", "bj92":
-		return dks[len(dks)-1].RiseRate() < 19.8
+		return (f.A单日涨幅{}).Value(code, dks) < 19.8
 	default:
 		return false
 	}
@@ -109,9 +109,9 @@ func (b A涨停) Buy(code string, dks extend.Klines) bool {
 
 	switch code[:4] {
 	case "sh60", "sz00":
-		return dks[len(dks)-1].RiseRate() >= 9.8
+		return (f.A单日涨幅{}).Value(code, dks) >= 9.8
 	case "sh68", "sz30", "bj92":
-		return dks[len(dks)-1].RiseRate() >= 19.8
+		return (f.A单日涨幅{}).Value(code, dks) >= 19.8
 	default:
 		return false
 	}
@@ -138,7 +138,7 @@ func (b A单日涨幅小于) Buy(code string, dks extend.Klines) bool {
 	if len(dks) == 0 {
 		return false
 	}
-	return dks[len(dks)-1].RiseRate() < max
+	return (f.A单日涨幅{}).Value(code, dks) < max
 }
 
 // A近N日涨幅小于 是近N日累计涨幅小于指定值的买入条件。
@@ -198,7 +198,7 @@ func (b A单日涨幅范围) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	rise := dks[len(dks)-1].RiseRate()
+	rise := (f.A单日涨幅{}).Value(code, dks)
 	if b.Min != 0 && rise < b.Min {
 		return false
 	}

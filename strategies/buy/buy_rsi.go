@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/strategy-tail/strategies/util"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // RSI 是 RSI 超卖买入策略。
@@ -34,7 +34,7 @@ func (s RSI) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	rsi := util.CalcRSI(dks, s.Period)
+	rsi := f.RSI值(s.Period).Value(code, dks)
 	if rsi >= s.Threshold {
 		return false
 	}
@@ -68,7 +68,7 @@ func (s RSI拐头) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < p+2 {
 		return false
 	}
-	todayRSI := util.CalcRSI(dks, p)
-	prevRSI := util.CalcRSI(dks[:len(dks)-1], p)
+	todayRSI := f.RSI值(p).Value(code, dks)
+	prevRSI := f.RSI值(p).Value(code, dks[:len(dks)-1])
 	return todayRSI > prevRSI
 }

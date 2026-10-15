@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -143,16 +143,7 @@ func (b A倍量) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	today := dks[n-1]
-	var baseline float64
-	if base == 1 {
-		baseline = float64(dks[n-2].Volume)
-	} else {
-		sum := 0.0
-		for i := n - 1 - base; i < n-1; i++ {
-			sum += float64(dks[i].Volume)
-		}
-		baseline = sum / float64(base)
-	}
+	baseline := f.A前N日均量(base).Value(code, dks)
 	if baseline <= 0 {
 		return false
 	}
@@ -199,7 +190,7 @@ func (b A现价大于N日均线) Buy(code string, dks extend.Klines) bool {
 	}
 
 	today := dks[len(dks)-1]
-	ma := core.MA(dks, day)
+	ma := f.A均线(day).Value(code, dks)
 
 	return today.Close.Float64() > ma
 }
@@ -225,7 +216,7 @@ func (b BuyCloseBelowMA) Buy(code string, dks extend.Klines) bool {
 	}
 
 	today := dks[len(dks)-1]
-	ma := core.MA(dks, b.Period)
+	ma := f.A均线(b.Period).Value(code, dks)
 	return today.Close.Float64() < ma
 }
 
@@ -252,8 +243,8 @@ func (b BreakMA) Buy(code string, dks extend.Klines) bool {
 	n := len(dks)
 	today := dks[n-1]
 	yesterday := dks[n-2]
-	maNow := core.MA(dks, b.Period)
-	maPrev := core.MA(dks[:n-1], b.Period)
+	maNow := f.A均线(b.Period).Value(code, dks)
+	maPrev := f.A均线(b.Period).Value(code, dks[:n-1])
 	if yesterday.Close.Float64() >= maPrev || today.Close.Float64() <= maNow {
 		return false
 	}
@@ -294,8 +285,8 @@ func maUp(dks extend.Klines, period, lookback int, minSlope float64) bool {
 
 	n := len(dks)
 	for x := 0; x < lookback; x++ {
-		maNow := core.MA(dks[:n-x], period)
-		maPrev := core.MA(dks[:n-x-1], period)
+		maNow := f.A均线(period).Value("", dks[:n-x])
+		maPrev := f.A均线(period).Value("", dks[:n-x-1])
 		if maNow <= maPrev {
 			return false
 		}
@@ -359,7 +350,7 @@ func (b A缩量) Buy(code string, dks extend.Klines) bool {
 	}
 
 	today := dks[len(dks)-1]
-	avg := core.AverageVolume(dks[len(dks)-1-b.Days : len(dks)-1])
+	avg := f.A前N日均量(b.Days).Value(code, dks)
 	if avg <= 0 || float64(today.Volume) >= avg*b.Ratio {
 		return false
 	}

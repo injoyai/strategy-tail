@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
@@ -62,7 +63,7 @@ func (s MACD反转) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -137,7 +138,7 @@ func (s MACD正数缓降最低点) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -223,7 +224,7 @@ func (s MACD平滑) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -434,7 +435,7 @@ func (s MACD负数) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -492,7 +493,7 @@ func (s MACD正数) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -573,7 +574,7 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -689,7 +690,7 @@ func (s MACD负柱缩短) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}
@@ -778,7 +779,7 @@ func (s MACD转红) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	hist := util.MACDHistogram(dks, s.Fast, s.Slow, s.Signal)
+	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
 	if len(hist) != n {
 		return false
 	}

@@ -2,10 +2,10 @@ package sell
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // ----------------------------------------------------------------------------
@@ -14,25 +14,6 @@ import (
 // dks 包含到"今天"为止的全部 K 线（含买入日之前的历史数据）。
 // 回测引擎保证：买入日当天不会调用 Sell，故 Sell 判断 dks 最后一天即可。
 // ----------------------------------------------------------------------------
-
-// meanStd 计算近 n 日收盘价均值与样本标准差（浮点精度）。
-func meanStd(dks extend.Klines, n int) (float64, float64) {
-	if len(dks) < n || n <= 0 {
-		return 0, 0
-	}
-	window := dks[len(dks)-n:]
-	sum := 0.0
-	for _, k := range window {
-		sum += k.Close.Float64()
-	}
-	ma := sum / float64(n)
-	var sq float64
-	for _, k := range window {
-		d := k.Close.Float64() - ma
-		sq += d * d
-	}
-	return ma, math.Sqrt(sq / float64(n))
-}
 
 // ----------------------------------------------------------------------------
 // 1. A回到布林中轨 — 价格回归布林中轨卖出
@@ -62,7 +43,7 @@ func (s A回到布林中轨) Sell(code string, dks extend.Klines, buy core.Buy) 
 	if len(dks) < p {
 		return false
 	}
-	ma := dks.MA(p).Float64()
+	ma := f.A均线(p).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -96,7 +77,7 @@ func (s A回到均线) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma := dks.MA(p).Float64()
+	ma := f.A均线(p).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -131,7 +112,7 @@ func (s A乖离归零) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma := dks.MA(p).Float64()
+	ma := f.A均线(p).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -166,11 +147,7 @@ func (s AZScore归零) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if len(dks) < p {
 		return false
 	}
-	ma, std := meanStd(dks, p)
-	if std <= 0 {
-		return false
-	}
-	z := (dks[len(dks)-1].Close.Float64() - ma) / std
+	z := f.ZScore值(p).Value(code, dks)
 	return z >= 0
 }
 
@@ -249,6 +226,6 @@ func (s ARSI恢复) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		return false
 	}
 	// 用 extend.Klines 自带的 RSI（int64 0-100）
-	rsi := float64(dks.RSI(p))
+	rsi := f.A整数RSI值(p).Value(code, dks)
 	return rsi >= t
 }

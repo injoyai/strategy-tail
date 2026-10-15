@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A实体阴线 是"有实体的阴线"K 线形态买入条件。
@@ -45,8 +46,7 @@ func (s A实体阴线) Buy(code string, dks extend.Klines) bool {
 
 	// 条件2：实体比例过滤十字星（脏数据下 high==low 时除零保护）
 	if s.MinBodyRatio > 0 {
-		rangeVal := today.High.Float64() - today.Low.Float64()
-		if rangeVal <= 0 || (open-close)/rangeVal < s.MinBodyRatio {
+		if !((f.A实体振幅占比{}).Value(code, dks) >= s.MinBodyRatio) {
 			return false
 		}
 	}
