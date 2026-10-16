@@ -30,13 +30,5 @@ func maUp(dks extend.Klines, period, lookback int) bool {
 		return false
 	}
 
-	n := len(dks)
-	for x := 0; x < lookback; x++ {
-		maNow := f.A均线(period).Value("", dks[:n-x])
-		maPrev := f.A均线(period).Value("", dks[:n-x-1])
-		if maNow <= maPrev {
-			return false
-		}
-	}
-	return true
+	return (f.MA最弱日增量{Period: period, Lookback: lookback}).Value("", dks) > 0
 }

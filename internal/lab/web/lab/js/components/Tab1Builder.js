@@ -9,6 +9,7 @@ import { Api } from '../api.js';
 import { ACCOUNT_CONFIG } from '../config.js';
 import { useId, shallowReactive } from '../vendor/vue.esm-browser.prod.js';
 import { dlgMixin } from './dlgMixin.js';
+import FactorCondition, { newFactorCondition, factorConditionError } from './FactorCondition.js';
 
 const nodeDrag = shallowReactive({node: null, parent: null, target: null, after: false});
 // 实例标识只用于视图；排序后保留输入与焦点，不写入策略 JSON。
@@ -72,6 +73,7 @@ export function paramError(def, value) {
 
 function nodeError(node, role) {
   if (role === 'risk' && node.type !== 'condition') return '独立风控不能分组，请分别添加每条风控';
+  if (node.type === 'factor') return node.factor ? '' : '因子条件缺少定义，请删除后重新添加';
   if (node.type === 'group') return node.children.length ? '' : '请添加条件或删除空分组';
   const entry = state.builderCatalog.find(e => e.id === node.componentId);
   if (!entry || entry.role !== role) return '请选择该区域支持的组件';
@@ -83,6 +85,10 @@ function treeErrors(node, role) {
   const error = nodeError(node, role);
   if (error) return [error];
   if (node.type === 'group') return node.children.flatMap(child => treeErrors(child, role));
+  if (node.type === 'factor') {
+    const error = factorConditionError(node.factor, state.factorCatalog || []);
+    return error ? [error.message] : [];
+  }
   const entry = state.builderCatalog.find(e => e.id === node.componentId);
   return (entry.params || []).flatMap(def => {
     const error = paramError(def, node.params?.[def.key]);
@@ -116,6 +122,7 @@ export const NodeEdit = {
     if (nodeDrag.node === this.node || nodeDrag.target === this.node) this.clearDrag();
   },
   computed: {
+    factorCatalog() { return state.factorCatalog || []; },
     nodeError() { return nodeError(this.node, this.role); },
     entry() { return state.builderCatalog.find(e => e.id === this.node.componentId) || null; },
     entryGroups() {
@@ -128,7 +135,7 @@ export const NodeEdit = {
       return [...m.entries()].map(([category, items]) => ({category, items}));
     },
     isGroup() { return this.node.type === 'group'; },
-    nodeLabel() { return this.isGroup ? '分组' : (this.entry?.name || '条件'); },
+    nodeLabel() { return this.isGroup ? '分组' : (this.node.type === 'factor' ? '因子条件' : this.entry?.name || '条件'); },
   },
   methods: {
     showHelp() {
@@ -156,7 +163,7 @@ export const NodeEdit = {
           control?.focus({preventScroll: true});
         }
       });
-      const name = node.type === 'group' ? '分组' : (state.builderCatalog.find(e => e.id === node.componentId)?.name || '条件');
+      const name = node.type === 'group' ? '分组' : node.type === 'factor' ? '因子条件' : (state.builderCatalog.find(e => e.id === node.componentId)?.name || '条件');
       state.builderMsg = {text: `已将「${name}」移到第 ${to + 1} 项；保存后保留新顺序。`, ok: true};
     },
     startDrag(ev) {
@@ -202,6 +209,12 @@ export const NodeEdit = {
       const first = state.builderCatalog.find(e => e.role === this.role);
       if (!first) return;
       this.node.children.push({type: 'condition', componentId: first.id, params: defaultParams(first)});
+    },
+    addFactor() {
+      const first = this.factorCatalog[0];
+      if (!first || this.role === 'risk') return;
+      this.node.children.push({type: 'factor', factor: newFactorCondition(first)});
+      this.$nextTick(() => this.$el?.querySelector('.bnode-children > :last-child select')?.focus());
     },
     addGroup() {
       const first = state.builderCatalog.find(e => e.role === this.role);
@@ -259,7 +272,15 @@ export const NodeEdit = {
       </div>
       <div class="bnode-actions">
         <button type="button" class="secondary" @click="addCond">+ 条件</button>
+        <button v-if="role !== 'risk'" type="button" class="secondary" @click="addFactor" :disabled="!factorCatalog.length">+ 因子条件</button>
         <button type="button" class="secondary" @click="addGroup">+ 子分组</button>
+      </div>
+    </template>
+    <template v-else-if="node.type === 'factor'">
+      <div class="bnode-head bnode-condition-row">
+        ${orderControls}
+        <factor-condition v-if="node.factor" :condition="node.factor" :catalog="factorCatalog" />
+        <button v-if="removable" type="button" class="cond-del" aria-label="删除因子条件" @click="removeSelf">删除</button>
       </div>
     </template>
     <template v-else>
@@ -298,7 +319,7 @@ export const NodeEdit = {
   </div>
   `,
 };
-NodeEdit.components = {BuilderNodeEdit: NodeEdit};
+NodeEdit.components = {BuilderNodeEdit: NodeEdit, FactorCondition};
 
 export default {
   name: 'Tab1Builder',
@@ -306,7 +327,7 @@ export default {
   components: {BuilderNodeEdit: NodeEdit},
   inject: ['startTask', 'openRunConfig'],
   setup() { return {state}; },
-  data() { return {catalogReady: false, loadingCatalog: false, submitting: false, nameError: '', sideErrors: {buy: '', sell: ''}, replaceAction: null}; },
+  data() { return {catalogReady: false, loadingCatalog: false, factorCatalogError: '', submitting: false, nameError: '', sideErrors: {buy: '', sell: ''}, replaceAction: null}; },
   created() { if (!state.builderSpec) this.newStrategy(); },
   computed: {
     spec() { return state.builderSpec; },
@@ -333,26 +354,23 @@ export default {
       this.replaceAction = null;
       action?.();
     },
-    selectTemplate(event) {
-      const id = event.target.value;
-      event.target.value = '';
-      if (id) this.requestReplace(() => this.loadTemplate(id));
-    },
     async init() {
       if (this.loadingCatalog) return;
       this.loadingCatalog = true;
       if (!state.builderSpec) this.newStrategy();
       try {
-        const cat = await Api.builderComponents();
-        state.builderCatalog = cat.components || [];
-        state.builderUnavailable = cat.unavailable || [];
+        const [components, factors] = await Promise.allSettled([Api.builderComponents(), Api.factors()]);
+        if (components.status === 'rejected') throw components.reason;
+        state.builderCatalog = components.value.components || [];
+        state.builderUnavailable = components.value.unavailable || [];
+        if (factors.status === 'fulfilled') {
+          state.factorCatalog = factors.value;
+          this.factorCatalogError = '';
+        } else this.factorCatalogError = '因子目录加载失败：' + factors.reason.message + '。已有组件条件仍可编辑。';
         this.catalogReady = true;
         state.builderMsg = {text: '', ok: true};
       } catch (e) { state.builderMsg = {text: '组件目录加载失败: ' + e.message, ok: false}; return; }
       finally { this.loadingCatalog = false; }
-      try {
-        state.builderTemplates = (await Api.builderTemplates()).templates || [];
-      } catch (e) { state.builderMsg = {text: '模板加载失败: ' + e.message, ok: false}; }
       this.loadStrategies();
     },
     async loadStrategies() {
@@ -383,6 +401,14 @@ export default {
         children: [{type: 'condition', componentId: first.id, params: defaultParams(first)}]};
       this.sideErrors.sell = '';
     },
+    addFactorRoot(side) {
+      const entry = state.factorCatalog?.[0];
+      if (!entry) return;
+      state.builderSpec[side] = {type: 'group', op: side === 'buy' ? 'and' : 'or',
+        children: [{type: 'factor', factor: newFactorCondition(entry)}]};
+      this.sideErrors[side === 'buy' ? 'buy' : 'sell'] = '';
+      this.$nextTick(() => this.$refs[side + 'Tree']?.$el.querySelector('.bnode-factor-fields select')?.focus());
+    },
     addRisk() {
       const first = state.builderCatalog.find(e => e.role === 'risk');
       if (!first) return;
@@ -390,15 +416,6 @@ export default {
       this.sideErrors.sell = '';
     },
     removeRisk(i) { state.builderSpec.risks.splice(i, 1); },
-    loadTemplate(id) {
-      if (state.builderBusy) return;
-      const t = state.builderTemplates.find(x => x.id === id);
-      if (!t) return;
-      state.builderSpec = JSON.parse(JSON.stringify(t.spec));
-      state.builderId = '';
-      state.builderVersion = 0;
-      state.builderMsg = {text: `已载入模板「${t.name}」：可直接运行或修改后另存。`, ok: true};
-    },
     async loadStrategy() {
       const sel = this.$refs.strategySel;
       const id = sel && sel.value;
@@ -494,8 +511,8 @@ export default {
   template: `
   <div>
     <div v-if="spec" class="builder-editor">
-      <div v-if="!catalogReady" class="editor-actions">
-        <span class="hint">{{ loadingCatalog ? '正在加载组件目录…' : '组件目录尚未加载' }}</span>
+      <div v-if="!catalogReady || factorCatalogError" class="editor-actions" role="status">
+        <span class="hint">{{ loadingCatalog ? '正在加载目录…' : factorCatalogError || '组件目录尚未加载' }}</span>
         <button type="button" class="secondary" @click="init" :disabled="loadingCatalog">重试加载</button>
       </div>
 
@@ -504,12 +521,6 @@ export default {
         <div class="form-row builder-name"><label for="builderName">策略名称 <span class="builder-save-status">{{ state.builderId ? (dirty ? '有修改' : '已保存') + ' · v' + state.builderVersion : '未保存草稿' }}</span></label>
           <input id="builderName" type="text" v-model="spec.name" :aria-invalid="String(!!nameError)" :aria-describedby="nameError ? 'builder-name-error' : undefined" @input="nameError = ''" maxlength="80" placeholder="如：MACD反转-试验">
           <p v-if="nameError" id="builder-name-error" class="builder-field-error">{{ nameError }}</p>
-        </div>
-        <div class="form-row"><label for="builderTpl">内置模板</label>
-          <select id="builderTpl" :disabled="state.builderBusy || !catalogReady" @change="selectTemplate" aria-label="载入内置模板">
-            <option value="">选择模板…</option>
-            <option v-for="t in state.builderTemplates" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
         </div>
         <div class="form-row"><label for="strategySel">策略库</label>
           <select id="strategySel" ref="strategySel" :disabled="state.builderBusy" @change="requestReplace(loadStrategy)" aria-label="加载已保存策略">
@@ -531,19 +542,21 @@ export default {
       <div class="subhead">买入条件</div>
       <button v-if="spec.buy" type="button" class="secondary" @click="spec.buy = null">清空买入条件</button>
       <p v-if="sideErrors.buy" id="builder-buy-error" class="builder-field-error">{{ sideErrors.buy }}</p>
-      <builder-node-edit v-if="spec.buy" :node="spec.buy" role="buy" :parent="[]" :index="-1" />
+      <builder-node-edit v-if="spec.buy" ref="buyTree" :node="spec.buy" role="buy" :parent="[]" :index="-1" />
       <div v-else class="empty" style="padding:12px">
         买入条件为空（不能回测）。
         <button type="button" class="secondary" @click="addBuyRoot" :disabled="!catalogReady" :aria-invalid="String(!!sideErrors.buy)" :aria-describedby="sideErrors.buy ? 'builder-buy-error' : undefined">添加买入条件</button>
+        <button type="button" class="secondary" @click="addFactorRoot('buy')" :disabled="!catalogReady || !state.factorCatalog?.length" aria-label="添加因子买入条件">添加因子条件</button>
       </div>
 
       <div class="subhead">卖出信号</div>
       <button v-if="spec.sellSignal" type="button" class="secondary" @click="spec.sellSignal = null">清空卖出信号</button>
       <p v-if="sideErrors.sell" id="builder-sell-error" class="builder-field-error">{{ sideErrors.sell }}</p>
-      <builder-node-edit v-if="spec.sellSignal" :node="spec.sellSignal" role="sell_signal" :parent="[]" :index="-1" />
+      <builder-node-edit v-if="spec.sellSignal" ref="sellSignalTree" :node="spec.sellSignal" role="sell_signal" :parent="[]" :index="-1" />
       <div v-else class="empty" style="padding:12px">
         未设置卖出信号。
         <button type="button" class="secondary" @click="addSellRoot" :disabled="!catalogReady" :aria-invalid="String(!!sideErrors.sell)" :aria-describedby="sideErrors.sell ? 'builder-sell-error' : undefined">添加卖出信号</button>
+        <button type="button" class="secondary" @click="addFactorRoot('sellSignal')" :disabled="!catalogReady || !state.factorCatalog?.length" aria-label="添加因子卖出信号">添加因子条件</button>
       </div>
 
       <div class="subhead">独立风控</div>

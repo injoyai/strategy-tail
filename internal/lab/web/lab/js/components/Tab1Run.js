@@ -1,6 +1,6 @@
-// Tab1Run：回测配置；运行参数在共用弹窗中确认。
+// Tab1Run：回测配置；运行参数由共享弹窗确认。
 // 从 index.html 迁移：setMode/toggleEditor/loadScript/checkScript/saveScript/
-// buildConfig/runBacktest/runSimple/loadPresets/renderPresetInfo/
+// sampleModeChange/buildConfig/runBacktest/runSimple/loadPresets/renderPresetInfo/
 // ensureDefaultConds/addCond/delCond/renderConds/buildCondCard/buildSpec/focusSimpleCondition。
 // 状态提升：simpleConds/presetId/specName/runCfg/focusCondReq 全部在 store（跨页共享）。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
@@ -34,6 +34,8 @@ export default {
         ? `${p.description}。它会作为基础买入条件，并与下方因子条件同时满足。`
         : '不附加市值、价格、涨停或均线回调等预设条件；买入只由下方因子条件决定，对照基准为全部样本。';
     },
+    sampleSizeVisible() { return state.runCfg.sampleMode === 'random'; },
+    sampleCodesVisible() { return state.runCfg.sampleMode === 'codes'; },
   },
   mounted() {
     if (state.runMode === 'adv') this.loadScript();
@@ -144,7 +146,7 @@ export default {
       if (state.taskRunning) return;
       const mode = state.runMode;
       if (mode === 'simple' && !this.buildSpec()) return;
-      this.openRunConfig(mode, () => this.runBacktest(mode));
+      this.openRunConfig(mode, () => mode === 'simple' ? this.runSimple() : this.runBacktest(mode));
     },
     async runBacktest(mode = state.runMode) {
       state.scriptMsg = {text: '', ok: true};
@@ -249,20 +251,20 @@ export default {
     <div class="mode-switch" role="group" aria-label="配置模式">
       <button type="button" :aria-pressed="String(state.runMode==='builder')" @click="setMode('builder')">自由搭建</button>
       <button type="button" :aria-pressed="String(state.runMode==='simple')" @click="setMode('simple')">因子组合</button>
-      <button type="button" :aria-pressed="String(state.runMode==='adv')" @click="setMode('adv')">高级脚本</button>
     </div>
 <div>
   <div class="card">
 
     <!-- 简单模式：声明式多条件策略 -->
     <template v-if="state.runMode==='simple'">
+      <h3>简单配置</h3>
       <div class="form-row"><label for="presetSel">基础策略（可选）</label>
         <select id="presetSel" style="min-width:200px" v-model="state.presetId" aria-describedby="presetDesc">
           <option value="">不使用预设（仅因子条件）</option>
           <option v-for="p in presetInfos" :key="p.id" :value="p.id">{{ p.name }}</option>
         </select>
       </div>
-      <details v-if="state.presetId" class="ui-help"><summary>预设说明</summary><p class="hint" id="presetDesc">{{ presetDescText }}</p></details>
+      <div class="hint" id="presetDesc">{{ presetDescText }}</div>
       <ul class="preset-rules" v-if="presetInfo">
         <li v-for="(r, i) in (presetInfo.rules || [])" :key="i">{{ r }}</li>
       </ul>
@@ -331,29 +333,18 @@ export default {
         <button class="secondary" ref="btnAddCond" @click="addCond">添加条件</button>
         <span class="hint" id="condLimitHint">当前 {{ state.simpleConds.length }} 个条件</span>
       </div>
-      <details class="ui-help"><summary>成交口径</summary><p class="hint">按当日信号和同日价格成交；因子未来收益仅用于评价，不等于组合收益。</p></details>
+      <div class="hint" style="margin-top:8px">口径说明：当前回测仍按当日数据判定并以同日价格成交；因子页的未来收益只用于因子评价，不代表可实现的组合收益。信号与次日成交的解耦将作为后续执行模型改造。</div>
     </template>
 
     <!-- 自由搭建：条件树策略搭建器 -->
     <tab1-builder v-else-if="state.runMode==='builder'" />
-
-    <!-- 高级模式：脚本编辑 -->
-    <template v-else>
-      <h3>策略脚本</h3>
-      <textarea id="editor" class="editor" :class="{expanded: editorExpanded}" v-model="script" spellcheck="false"></textarea>
-      <div class="editor-actions">
-        <button class="secondary" @click="checkScript">语法检查</button>
-        <button class="secondary" @click="saveScript">保存脚本</button>
-        <button class="secondary" @click="toggleEditor" :aria-expanded="String(editorExpanded)">{{ editorExpanded ? '收起' : '展开' }}</button>
-      </div>
-      <details class="ui-help"><summary>脚本说明</summary><p class="hint">package main + func Strategy() []core.Variant；可导入 buy、sell、core，优先组合现有组件。</p><p class="hint">文件：strategies/script/matrix.go</p></details>
-    </template>
 
     <div class="editor-actions" style="margin-top:12px" v-show="state.runMode!=='builder'">
       <button class="primary" @click="requestRun" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">运行回测</button>
     </div>
     <div class="msg" v-show="state.runMode!=='builder'" :class="state.scriptMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.scriptMsg.text }}</div>
   </div>
+
 </div>
 </div>
   `,

@@ -10,14 +10,25 @@ const api = globalThis.builderTestApi = {};
 globalThis.builderTestVue = Vue;
 globalThis.builderTestAccount = (await import(moduleURL(read('./lab/js/config.js').replace("import { state } from './store.js';", 'const state = globalThis.builderTestState;')))).ACCOUNT_CONFIG;
 globalThis.builderTestDialog = (await import(moduleURL(read('./lab/js/components/dlgMixin.js')))).dlgMixin;
+globalThis.builderTestFormat = await import(moduleURL(read('./lab/js/format.js')));
+globalThis.builderTestFactor = await import(moduleURL(read('./lab/js/components/FactorCondition.js')
+  .replace("import { useId } from '../vendor/vue.esm-browser.prod.js';", 'const {useId} = globalThis.builderTestVue;')
+  .replace("import { factorHasDays, factorTypeName, groupFactors } from '../format.js';", 'const {factorHasDays, factorTypeName, groupFactors} = globalThis.builderTestFormat;')));
 const source = read('./lab/js/components/Tab1Builder.js')
   .replace("import { state } from '../store.js';", 'const state = globalThis.builderTestState;')
   .replace("import { Api } from '../api.js';", 'const Api = globalThis.builderTestApi;')
   .replace("import { ACCOUNT_CONFIG } from '../config.js';", 'const ACCOUNT_CONFIG = globalThis.builderTestAccount;')
   .replace("import { useId, shallowReactive } from '../vendor/vue.esm-browser.prod.js';", 'const {useId, shallowReactive} = globalThis.builderTestVue;')
-  .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.builderTestDialog;');
+  .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.builderTestDialog;')
+  .replace("import FactorCondition, { newFactorCondition, factorConditionError } from './FactorCondition.js';",
+    'const {default: FactorCondition, newFactorCondition, factorConditionError} = globalThis.builderTestFactor;');
 const {default: Builder, NodeEdit, paramError, reorderNode} = await import(moduleURL(source));
 const {formatBuilderSpec} = await import(moduleURL(read('./lab/js/format.js')));
+const {default: FactorCondition, newFactorCondition, factorConditionError} = globalThis.builderTestFactor;
+const factors = [{kind: 'momentum', name: 'N日动量(20)', defaultDays: 20, implementationVersion: 1,
+  unit: 'ratio', category: '趋势', parameterLabel: '回看天数'},
+  {kind: 'body', name: '实体幅度', defaultDays: 1, implementationVersion: 1,
+    unit: 'ratio', category: '形态', parameterLabel: '无参数'}];
 const catalog = [{id: 'buy_all', role: 'buy', name: '全部样本买入'}, {
   id: 'buy_ma_bull', role: 'buy', name: '均线多头排列', params: [
     {key: 'periods', label: '均线周期', type: 'intList', min: 1, max: 1000},
@@ -25,11 +36,12 @@ const catalog = [{id: 'buy_all', role: 'buy', name: '全部样本买入'}, {
 }];
 function instance() {
   for (const key of Object.keys(state)) delete state[key];
-  Object.assign(state, {builderCatalog: catalog, builderSpec: null, builderBusy: false,
-    builderId: '', builderVersion: 0, builderStrategies: [], builderTemplates: [],
+  Object.assign(state, {builderCatalog: catalog, factorCatalog: factors, builderSpec: null, builderBusy: false,
+    builderId: '', builderVersion: 0, builderStrategies: [],
     builderUnavailable: [], builderMsg: {text: '', ok: true}, taskRunning: false});
   for (const key of Object.keys(api)) delete api[key];
   api.builderStrategies = async () => ({strategies: []});
+  api.factors = async () => factors;
   const ctx = {...Builder.mixins[0].data(), ...Builder.data(), state, $refs: {}, $nextTick: f => f(),
     $el: {querySelector: () => ({focus() {}})}};
   for (const [key, fn] of Object.entries({...Builder.mixins[0].methods, ...Builder.methods})) ctx[key] = fn.bind(ctx);
@@ -196,6 +208,9 @@ test('策略校验通过后选择运行配置，打开弹窗不会发送回测',
 test('初始渲染及目录失败可显示错误并重试', async () => {
   const ctx = instance();
   assert.doesNotThrow(() => render(Builder.template, ctx));
+  const selects = elements(render(Builder.template, ctx), 'select');
+  assert.equal(selects.some(v => v.props?.id === 'builderTpl'), false);
+  assert.equal(selects.some(v => v.props?.id === 'strategySel'), true);
   api.builderComponents = async () => {throw new Error('离线');};
   await ctx.init();
   assert.match(state.builderMsg.text, /离线/);
@@ -203,7 +218,6 @@ test('初始渲染及目录失败可显示错误并重试', async () => {
   assert.equal(ctx.catalogReady, false);
   assert.doesNotThrow(() => render(Builder.template, ctx));
   api.builderComponents = async () => ({components: catalog});
-  api.builderTemplates = async () => ({templates: []});
   await ctx.init();
   assert.equal(ctx.catalogReady, true);
   assert.equal(state.builderMsg.ok, true);
@@ -351,4 +365,114 @@ test('回测请求待响应时不重复提交', async () => {
   finish(); await pending;
   assert.equal(tasks, 1);
   assert.equal(ctx.submitting, false);
+});
+
+function factorEditor(condition = newFactorCondition(factors[0]), prefix = 'factor-test') {
+  const ctx = {condition, catalog: factors, prefix, factorTypeName: globalThis.builderTestFormat.factorTypeName,
+    $nextTick: fn => fn(), $el: {querySelector: () => null}};
+  for (const [key, fn] of Object.entries(FactorCondition.methods)) ctx[key] = fn.bind(ctx);
+  for (const [key, fn] of Object.entries(FactorCondition.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
+  return ctx;
+}
+
+test('因子条件按百分比输入，保留零值、小数窗口错误和非法输入', () => {
+  const ctx = factorEditor();
+  ctx.input('min', {target: {value: '5'}});
+  ctx.input('max', {target: {value: '10'}});
+  assert.equal(ctx.condition.min, 0.05);
+  assert.equal(ctx.displayValue('min'), 5);
+  assert.equal(ctx.error, null);
+  ctx.input('days', {target: {value: '2.5'}});
+  assert.equal(ctx.condition.days, 2.5);
+  assert.equal(ctx.error.field, 'days');
+  ctx.input('days', {target: {value: '2'}});
+  ctx.input('min', {target: {value: '0'}});
+  assert.equal(ctx.condition.min, 0);
+  assert.equal(ctx.error, null);
+  ctx.input('min', {target: {value: '', validity: {badInput: true}}});
+  assert.equal(ctx.condition.min, '');
+  assert.equal(ctx.error.field, 'min');
+  const input = elements(render(FactorCondition.template, ctx), 'input').find(v => v.props.id.endsWith('-min')).props;
+  assert.equal(input['aria-invalid'], 'true');
+  assert.equal(input['aria-describedby'], input.id + '-error');
+  ctx.input('min', {target: {value: ''}});
+  assert.equal(ctx.condition.min, null);
+  ctx.condition.operator = 'lte';
+  assert.equal(ctx.error, null);
+  ctx.selectFactor({target: {value: 'body'}});
+  assert.equal(ctx.hasDays, false);
+  assert.equal(ctx.condition.days, 1);
+  assert.equal(ctx.condition.min, null);
+});
+
+test('因子版本和未知因子不会被静默替换，标签及错误 ID 按实例独立', () => {
+  const condition = {...newFactorCondition(factors[0]), factorVersion: 99, min: 0, max: 1};
+  const ctx = factorEditor(condition, 'first-factor');
+  let focused = false;
+  ctx.$el.querySelector = () => ({focus() {focused = true;}});
+  assert.equal(ctx.error.field, 'kind');
+  assert.equal(condition.factorVersion, 99);
+  ctx.useCurrentVersion();
+  assert.equal(focused, true);
+  assert.equal(condition.factorVersion, 1);
+  assert.equal(ctx.error, null);
+  assert.notEqual(ctx.id('min'), factorEditor(undefined, 'second-factor').id('min'));
+  const before = JSON.stringify(condition);
+  assert.equal(factorConditionError(condition, []).field, 'kind');
+  assert.equal(JSON.stringify(condition), before);
+  assert.match(formatBuilderSpec({version: 1, name: '快照', buy: {type: 'factor', factor: condition}}, catalog, factors), /N日动量\(20\)∈\[0%,100%\]/);
+  assert.match(formatBuilderSpec({version: 1, name: '旧目录', buy: {type: 'factor', factor: condition}}, catalog), /momentum\(20\)/);
+  assert.equal(JSON.stringify(condition), before);
+});
+
+test('因子节点可与旧组件组成条件树，保存保留买卖规则与原始比例', async () => {
+  const builder = instance(), ctx = editor('factor-parent');
+  ctx.node = {type: 'group', op: 'or', children: [ctx.node]};
+  ctx.factorCatalog = factors; ctx.$nextTick = fn => fn();
+  ctx.addFactor();
+  assert.equal(ctx.node.children.length, 2);
+  assert.equal(ctx.node.children[1].type, 'factor');
+  const ft = ctx.node.children[1].factor;
+  ft.operator = 'gte'; ft.min = 0.05;
+  state.builderSpec.buy = ctx.node;
+  state.builderSpec.sellSignal = {type: 'factor', factor: {...ft, operator: 'lte', max: 0}};
+  assert.deepEqual(builder.validateLocal(), []);
+  let received;
+  api.createBuilderStrategy = async spec => {received = spec; return {strategy: {id: 'factor', version: 1, name: spec.name}};};
+  await builder.saveStrategy();
+  assert.equal(received.buy.children[1].factor.min, 0.05);
+  assert.equal(received.sellSignal.factor.max, 0);
+  const before = JSON.stringify(state.builderSpec);
+  state.factorCatalog = [];
+  assert.match(builder.validateLocal().join('\n'), /因子目录/);
+  assert.equal(JSON.stringify(state.builderSpec), before);
+  state.builderSpec.risks = [state.builderSpec.sellSignal];
+  assert.match(builder.validateLocal().join('\n'), /独立风控/);
+});
+
+test('因子目录加载失败保留草稿并可重试', async () => {
+  const builder = instance(), draft = state.builderSpec;
+  state.factorCatalog = [];
+  api.builderComponents = async () => ({components: catalog});
+  api.factors = async () => {throw new Error('因子目录离线');};
+  await builder.init();
+  assert.equal(builder.catalogReady, true);
+  assert.equal(state.builderSpec, draft);
+  assert.match(builder.factorCatalogError, /因子目录离线/);
+  assert.deepEqual(builder.validateLocal(), []);
+  api.factors = async () => factors;
+  await builder.init();
+  assert.equal(builder.catalogReady, true);
+  assert.equal(builder.factorCatalogError, '');
+});
+
+test('空白策略可直接添加因子买入和卖出规则，不插入额外基准组件', () => {
+  const builder = instance();
+  builder.newStrategy();
+  builder.addFactorRoot('buy');
+  builder.addFactorRoot('sellSignal');
+  assert.deepEqual(state.builderSpec.buy.children, [{type: 'factor', factor: newFactorCondition(factors[0])}]);
+  assert.equal(state.builderSpec.buy.op, 'and');
+  assert.equal(state.builderSpec.sellSignal.op, 'or');
+  assert.equal(state.builderSpec.sellSignal.children[0].factor.factorVersion, 1);
 });

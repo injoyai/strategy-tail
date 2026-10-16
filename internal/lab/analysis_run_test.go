@@ -744,6 +744,16 @@ func TestRunAnalysisMultiYearCoverage(t *testing.T) {
 	if rep.Stats.Pairs != 24 {
 		t.Fatalf("全区间 Pairs = %d, want 24", rep.Stats.Pairs)
 	}
+	// 并发逐票逐年合并不得丢失观测；每个分组档位都必须包含全部有效样本。
+	for _, set := range rep.AllGroupings {
+		observations := 0
+		for _, group := range set.Stats {
+			observations += group.Observations
+		}
+		if observations != 24*len(codes) {
+			t.Fatalf("%d 组观测数 = %d, want %d", set.Groups, observations, 24*len(codes))
+		}
+	}
 	// 落盘报告携带新增字段（前端与历史文件按字段存在性降级）
 	buf, err := os.ReadFile(filepath.Join("output", "factor", "momentum", "report.json"))
 	if err != nil {

@@ -10,6 +10,8 @@ export async function api(method, url, body) {
 }
 
 export const Api = {
+  macdConfig: () => api('GET', '/api/macd/config'),
+  runMACD: cfg => api('POST', '/api/macd/run', cfg),
   dataUpdateStatus: () => api('GET', '/api/data-update/status'),
   updateData: () => api('POST', '/api/data-update/run', {}),
   configureDataUpdate: cfg => api('PUT', '/api/data-update/config', cfg),
@@ -22,6 +24,9 @@ export const Api = {
   stop: () => api('POST', '/api/stop'),
   status: () => api('GET', '/api/status'),
   latestReport: () => api('GET', '/api/report/latest'),
+  reports: () => api('GET', '/api/reports'),
+  report: id => api('GET', '/api/report/' + encodeURIComponent(id)),
+  deleteReport: id => api('DELETE', '/api/report/' + encodeURIComponent(id)),
   kline: (code, from, to) => api('GET', `/api/kline/${encodeURIComponent(code)}?from=${from}&to=${to}`),
   // 因子研究
   factors: () => api('GET', '/api/factors'),

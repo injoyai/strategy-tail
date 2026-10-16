@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A指数多头排列 以基准指数均线排列作为大盘环境过滤条件。
@@ -58,8 +59,8 @@ func (b A指数多头排列) Buy(code string, dks extend.Klines) bool {
 
 	// 检查均线多头排列：MA[0] > MA[1] > MA[2]
 	for i := 0; i < len(periods)-1; i++ {
-		short := aligned.MA(periods[i])
-		long := aligned.MA(periods[i+1])
+		short := f.A均线(periods[i]).Price(aligned)
+		long := f.A均线(periods[i+1]).Price(aligned)
 		if short <= long {
 			return false
 		}
@@ -106,6 +107,6 @@ func (b A指数站上MA) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	ma := aligned.MA(period)
-	return aligned[len(aligned)-1].Close.Float64() > ma.Float64()
+	ma := f.A均线(period).Value(code, aligned)
+	return aligned[len(aligned)-1].Close.Float64() > ma
 }

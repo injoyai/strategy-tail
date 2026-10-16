@@ -370,6 +370,36 @@ var registry = []entry{
 		Example:               "原始值 1.2 表示市盈率约为供应商采用的盈利增长率的 1.2 倍。",
 		ImplementationVersion: 1,
 	},
+	{
+		Kind: "macd_negative_shrinking_streak", Default: 1,
+		New:                   func(int) core.Factor { return &MACD负柱缩短天数{} },
+		Description:           "12/26/9 MACD柱连续上涨且前一柱为负的步数，含首次穿越零轴",
+		Category:              "趋势与动量",
+		ParameterLabel:        "无参数（连续计数，固定12/26/9）",
+		Unit:                  "score",
+		Example:               "原始值 3 表示连续 3 步上涨且每步前一柱为负；今天可以首次为零或转正。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "macd_same_sign_reversals", Default: 10,
+		New:                   func(d int) core.Factor { return &MACD同号段最大反转次数{Days: d} },
+		Description:           "12/26/9 MACD经EMA5平滑后，近N步各同号段反转次数的最大值",
+		Category:              "趋势与动量",
+		ParameterLabel:        "观察步数（固定12/26/9、EMA5）",
+		Unit:                  "score",
+		Example:               "原始值 2 表示窗口内反转最多的同号段发生 2 次方向变化；异号段分别计数，平段不改变方向。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "macd_same_sign_max_change", Default: 5,
+		New:                   func(d int) core.Factor { return &MACD同号最大变化比{Days: d} },
+		Description:           "12/26/9 MACD近N步同号非零柱的最大变化比，跳过零轴穿越",
+		Category:              "趋势与动量",
+		ParameterLabel:        "观察步数（固定12/26/9）",
+		Unit:                  "ratio",
+		Example:               "原始值 0.5 表示同号非零柱的最大变化比为 50%；没有可比较步骤时为 0。",
+		ImplementationVersion: 1,
+	},
 }
 
 // All 返回全部因子目录。

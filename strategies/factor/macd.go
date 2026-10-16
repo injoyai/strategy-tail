@@ -72,16 +72,7 @@ func (f MACD低位位置) Value(code string, dks extend.Klines) float64 {
 	}
 
 	n := len(hist)
-	window := hist[n-1-days : n-1]
-	lo, hi := window[0], window[0]
-	for _, value := range window[1:] {
-		lo = math.Min(lo, value)
-		hi = math.Max(hi, value)
-	}
-	if hi == lo {
-		return 0
-	}
-	return (hist[n-2] - lo) / (hi - lo)
+	return SeriesPosition(hist[n-1-days : n-1])
 }
 
 // MACD负柱连续天数 是从当日向前连续小于零的 MACD 柱数量。
@@ -95,11 +86,7 @@ func (f MACD负柱连续天数) Value(code string, dks extend.Klines) float64 {
 	if !ok {
 		return math.NaN()
 	}
-	count := 0
-	for i := len(hist) - 1; i >= 0 && hist[i] < 0; i-- {
-		count++
-	}
-	return float64(count)
+	return float64(NegativeStreak(hist))
 }
 
 // MACD柱连续增长天数 是从当日向前连续满足 hist[i] > hist[i-1] 的上涨步数。
@@ -114,11 +101,7 @@ func (f MACD柱连续增长天数) Value(code string, dks extend.Klines) float64
 	if !ok {
 		return math.NaN()
 	}
-	count := 0
-	for i := len(hist) - 1; i > 0 && hist[i] > hist[i-1]; i-- {
-		count++
-	}
-	return float64(count)
+	return float64(RisingStreak(hist))
 }
 
 // 均线最弱日斜率 是最近 5 个交易日中，N 日均线逐日相对涨速的最小值。
@@ -133,23 +116,7 @@ func (f 均线最弱日斜率) Name() string {
 }
 
 func (f 均线最弱日斜率) Value(code string, dks extend.Klines) float64 {
-	period := daysOr(f.Days, 20)
-	if len(dks) < period+maSlopeLookback {
-		return math.NaN()
-	}
-
-	n := len(dks)
-	weakest := math.Inf(1)
-	for offset := 0; offset < maSlopeLookback; offset++ {
-		maNow := A均线(period).Value(code, dks[:n-offset])
-		maPrev := A均线(period).Value(code, dks[:n-offset-1])
-		if maPrev <= 0 {
-			return math.NaN()
-		}
-		slope := (maNow - maPrev) / maPrev
-		weakest = math.Min(weakest, slope)
-	}
-	return weakest
+	return (MA最弱日斜率{Period: daysOr(f.Days, 20), Lookback: maSlopeLookback}).Value(code, dks)
 }
 
 func standardMACD(dks extend.Klines) ([]float64, bool) {

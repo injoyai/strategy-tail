@@ -40,18 +40,18 @@ func (b A上证N日均线向上) Buy(code string, dks extend.Klines) bool {
 	}
 
 	t := dks[len(dks)-1].Time
-	aligned := make(protocol.Klines, 0, len(b.Ks))
+	aligned := make(extend.Klines, 0, len(b.Ks))
 	for _, k := range b.Ks {
 		if k == nil {
 			continue
 		}
 		if !k.Time.After(t) {
-			aligned = append(aligned, k)
+			aligned = append(aligned, &extend.Kline{Kline: k})
 		}
 	}
 	if len(aligned) == 0 {
 		return false
 	}
 
-	return maUp2(aligned, period, lookback, b.MinSlope)
+	return maUp(aligned, period, lookback, b.MinSlope)
 }

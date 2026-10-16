@@ -5,7 +5,6 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 // MACD反转 是 MACD 低位拐头买入策略。
@@ -81,18 +80,7 @@ func (s MACD反转) Buy(code string, dks extend.Klines) bool {
 		end = s.MinLookback
 	}
 	for k := s.MinLookback; k <= end; k++ {
-		windowStart := n - 1 - k
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		isMin := true
-		for i := windowStart; i <= n-2; i++ {
-			if hist[i] < yesterday {
-				isMin = false
-				break
-			}
-		}
-		if isMin {
+		if k <= 0 || f.SeriesPosition(hist[max(n-1-k, 0):n-1]) == 0 {
 			return true
 		}
 	}
@@ -180,7 +168,7 @@ func (s MACD正数缓降最低点) Buy(code string, dks extend.Klines) bool {
 // MaxRatio 表示相邻两天量柱变化的最大允许比值，默认 3.0。
 //
 // 触发条件：最近 Days 天内，相邻交易日的 MACD 量柱变化比值都不超过 MaxRatio。
-// 变化比值 = |今天量柱 - 昨天量柱| / |昨天量柱|（昨天量柱为0时按1处理）。
+// 变化比值 = |(今天量柱 - 昨天量柱) / 昨天量柱|；零柱及异号步骤不参与。
 // 该策略适合作为 BuyAnd 的过滤条件，排除量柱忽高忽低的股票。
 type MACD平滑 struct {
 	Fast     int
@@ -229,43 +217,14 @@ func (s MACD平滑) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 检查最近 Days 天内相邻量柱的变化比值
-	for i := n - s.Days; i < n; i++ {
-		if i <= 0 {
-			continue
-		}
-		prev := hist[i-1]
-		curr := hist[i]
-		diff := curr - prev
-
-		// 量柱同号（同正或同负）才校验平滑度
-		// 异号（穿越零轴）属于正常反转，不视为突变
-		if prev == 0 || curr == 0 {
-			continue
-		}
-		if (prev > 0) != (curr > 0) {
-			continue // 穿越零轴，跳过
-		}
-
-		// 变化比值 = |变化量| / |昨天量柱|
-		ratio := diff / prev
-		if ratio < 0 {
-			ratio = -ratio
-		}
-
-		if ratio > s.MaxRatio {
-			return false
-		}
-	}
-
-	return true
+	return !(f.MaxSameSignChangeRatio(hist, s.Days) > s.MaxRatio)
 }
 
 // MACD顺滑 是 MACD 量柱曲线光滑的买入条件。
 // 对原始 MACD 量柱序列再做一次 EMA 平滑，然后检查最近 Days 天平滑后量柱的
 // 方向反转次数。与旧版不同，本版按"正数段/负数段"分别统计反转次数：
 // 量柱穿越零轴时不计入反转（零轴穿越是正常反转），但同号段（连续正数或连续负数）
-// 内的方向变化才算拐头。
+// 内的方向变化才算拐头。接触零轴时沿用上一非零符号。
 //
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。
@@ -273,7 +232,7 @@ func (s MACD平滑) Buy(code string, dks extend.Klines) bool {
 // Smooth 表示对量柱做 EMA 平滑的周期，默认 5。值越大曲线越光滑但滞后越大。
 // Days 表示回看最近多少个交易日检查曲线光滑度，默认 10。
 // MaxReversals 表示最近 Days 天内，每个同号段（连续正数或连续负数）内允许的
-// 量柱方向反转次数，默认 1。
+// 量柱方向反转次数，默认 0。
 //   - MaxReversals=0 要求每个同号段内量柱严格单调。
 //   - MaxReversals=1 允许每个同号段内 1 次方向反转（如先降后升的 V 形）。
 //   - 零轴穿越（正→负或负→正）不计入反转，但会开启一个新的同号段，
@@ -327,64 +286,13 @@ func (s MACD顺滑) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	smoothed := util.SmoothedMACDHistogram(dks, s.Fast, s.Slow, s.Signal, s.Smooth)
+	smoothed := (f.MACD平滑柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal, Smooth: s.Smooth}).Series(dks)
 	if len(smoothed) != n {
 		return false
 	}
 
-	// 按同号段（连续正数 / 连续负数）分段统计方向反转次数：
-	// 零轴穿越开启新段，段内反转计数归零；任一段内反转数 > MaxReversals 即拒绝。
-	maxRev := s.MaxReversals
-	prevDir := 0  // 0:未知, 1:上升, -1:下降
-	prevSign := 0 // 0:未知, 1:正, -1:负
-	segRev := 0   // 当前同号段内反转次数
-	for i := n - s.Days; i < n; i++ {
-		if i <= 0 {
-			continue
-		}
-		curr := smoothed[i]
-		prev := smoothed[i-1]
-
-		// 确定当前量柱符号
-		sign := 0
-		if curr > 0 {
-			sign = 1
-		} else if curr < 0 {
-			sign = -1
-		}
-
-		// 符号变化（零轴穿越）→ 开启新段，重置方向与段内反转计数
-		if prevSign != 0 && sign != 0 && sign != prevSign {
-			prevDir = 0
-			segRev = 0
-		}
-		if sign != 0 {
-			prevSign = sign
-		}
-
-		// 统计同号段内方向反转
-		diff := curr - prev
-		dir := 0
-		if diff > 0 {
-			dir = 1
-		} else if diff < 0 {
-			dir = -1
-		}
-		if dir == 0 {
-			continue
-		}
-		if prevDir != 0 && dir != prevDir {
-			segRev++
-			if segRev > maxRev {
-				return false
-			}
-		}
-		if dir != 0 {
-			prevDir = dir
-		}
-	}
-
-	return true
+	reversals := f.SameSignMaxReversals(smoothed, s.Days)
+	return reversals == 0 || reversals <= s.MaxReversals
 }
 
 // MACD负数 是 MACD 连续负数买入条件。
@@ -440,13 +348,7 @@ func (s MACD负数) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	count := 0
-	for i := n - 1; i >= 0; i-- {
-		if hist[i] >= 0 {
-			break
-		}
-		count++
-	}
+	count := f.NegativeStreak(hist)
 
 	if count < s.MinDays {
 		return false
@@ -498,13 +400,7 @@ func (s MACD正数) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	for i := n - s.Days; i < n; i++ {
-		if hist[i] <= 0 {
-			return false
-		}
-	}
-
-	return true
+	return f.PositiveStreak(hist) >= s.Days
 }
 
 // MACD连涨 是 MACD 柱子连续 N 天上升的买入条件。
@@ -579,20 +475,12 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 从最新交易日向前数连续上涨天数
-	// streakEnd: 连涨段最后一根的索引（含今天，即 n-1）
-	// streakStart: 连涨段第一根的索引
 	streakEnd := n - 1
 	if hist[streakEnd] <= hist[streakEnd-1] {
-		// 今天没有比昨天大，连涨 0 天
 		return false
 	}
-	streakStart := streakEnd
-	for streakStart > 0 && hist[streakStart] > hist[streakStart-1] {
-		streakStart--
-	}
-	// 连涨天数 = 上涨步数（今天>昨天算1步），等于连涨段除基础柱外的步数
-	streakDays := streakEnd - streakStart
+	streakDays := f.RisingStreak(hist)
+	streakStart := streakEnd - streakDays
 
 	// 校验连涨天数下限
 	if streakDays < s.MinDays {
@@ -629,7 +517,7 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 // 社区经典"绿柱缩短"抄底逻辑：下跌趋势中，绿柱（负柱）由长变短代表
 // 空头动能衰竭，是底部反转的早期信号。
 // 本条件要求：昨日为负柱，且今日负柱比昨日更接近零轴（hist[n-1] > hist[n-2]），
-// 并且近 Lookback 根柱子内负柱总体在收窄（最近 MinDays 根中递增步数 >= MinDays）。
+// 并且连续上涨步数达到 MinDays，包含首次到达或越过零轴的一步。
 //
 // Fast 表示快线 EMA 周期，默认 12。
 // Slow 表示慢线 EMA 周期，默认 26。
@@ -639,9 +527,8 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 //   - 配置范围：MinDays=2, MaxDays=3 表示最近 2~3 天负柱都在变短。
 //   - 若 MaxDays < MinDays 或 MaxDays == 0，则上限不生效，只校验下限 MinDays。
 //
-// Lookback 表示负柱缩短前的回看窗口，默认 0（不校验）。
-// 当 Lookback > 0 时，要求近 Lookback 根柱子内存在"负柱缩短"的起点，
-// 即窗口内较早位置曾出现连续负柱（体现"大量负柱"前提）。
+// Lookback 保留旧参数兼容；原正窗口检查包含昨日，而昨日负柱已是前置条件，
+// 因此该参数不增加额外限制。
 //
 // 该策略常与 MACD负数 / A企稳信号 / MACD转红 组合使用：
 //
@@ -695,23 +582,16 @@ func (s MACD负柱缩短) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 昨天必须是负柱（今天转红由 MACD转红 负责）
+	// 昨日必须为负，今日允许首次到达或越过零轴。
 	yesterday := hist[n-2]
 	if yesterday >= 0 {
 		return false
 	}
 
-	// 从最新交易日向前数连续"负柱变短"天数
-	// 负柱变短 = 今天比昨天更接近零轴（更大），且两者都为负
-	streakEnd := n - 1
-	if !(hist[streakEnd] > hist[streakEnd-1]) {
+	if !(hist[n-1] > hist[n-2]) {
 		return false
 	}
-	streakStart := streakEnd
-	for streakStart > 0 && hist[streakStart] > hist[streakStart-1] && hist[streakStart-1] < 0 {
-		streakStart--
-	}
-	streakDays := streakEnd - streakStart
+	streakDays := f.NegativeShorteningStreak(hist)
 
 	if streakDays < s.MinDays {
 		return false
@@ -720,23 +600,7 @@ func (s MACD负柱缩短) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 校验回看窗口内曾出现连续负柱（"大量负柱"前提）
-	if s.Lookback > 0 {
-		windowStart := n - 1 - s.Lookback
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		hasNegative := false
-		for i := windowStart; i < n; i++ {
-			if hist[i] < 0 {
-				hasNegative = true
-				break
-			}
-		}
-		if !hasNegative {
-			return false
-		}
-	}
+	// 昨日负柱已包含在任一正 Lookback 窗口中，无需另扫。
 
 	return true
 }

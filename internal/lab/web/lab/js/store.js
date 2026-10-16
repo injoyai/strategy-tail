@@ -6,13 +6,14 @@ import { reactive } from './vendor/vue.esm-browser.prod.js';
 
 export const state = reactive({
   // —— 全局 / 状态轮询 ——
-  activeTab: 1,          // 默认进入回测配置
+  activeTab: 1,          // 默认进入自由搭建
   status: null,          // 最近一次 /api/status 响应
   statusError: false,    // 轮询网络失败 → connection-error 提示条
   taskRunning: false,    // 任务运行中（按钮禁用 / 状态条进度）
 
   // —— 02 策略与运行 ——
-  runMode: 'builder',    // builder | simple | adv
+  runMode: 'builder',    // builder | simple
+  macdCfg: null,
   dataUpdating: false,
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
@@ -48,8 +49,6 @@ export const state = reactive({
   builderStrategies: [],             // 已保存策略列表（GET /api/builder/strategies）
   builderSpec: null,                 // 当前编辑的 spec {version, name, buy, sellSignal, holdToEnd, risks}
   builderId: '',                     // 当前策略 ID（''=未保存草稿）
-  builderBusy: false,                // 策略保存/加载互斥，跨模式切换保留
-  builderBaseline: '',               // 最近保存/加载快照，用于保护未保存编辑
   builderVersion: 0,                 // 乐观锁：打开/保存时的版本号
   builderMsg: {text: '', ok: true},  // 搭建器消息条
 

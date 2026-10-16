@@ -49,11 +49,12 @@ func hasAnyPrefix(code string, prefixes []string) bool {
 }
 
 type PullKlineConfig struct {
-	Codes      []string  //操作代码
-	Types      []string  //更新类型
-	Dir        string    //数据位置
-	Goroutines int       //协程数量
-	StartAt    time.Time //数据开始时间
+	Codes             []string  //操作代码
+	Types             []string  //更新类型
+	Dir               string    //数据位置
+	Goroutines        int       //协程数量
+	StartAt           time.Time //数据开始时间
+	ValuationDatabase string    // 非空时，每个收盘批次额外采集沪深主板估值快照。
 }
 
 func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
@@ -145,8 +146,9 @@ func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report fun
 	}
 	if updated {
 		progress.Skipped, progress.Message = true, "最近收盘批次已完整更新，无需重复下载"
+		progress, err = this.updateValuation(m, progress, report)
 		emit()
-		return nil
+		return err
 	}
 	types := append([]string(nil), this.Types...)
 	if len(types) == 0 {
@@ -179,6 +181,9 @@ func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report fun
 		return fmt.Errorf("没有可更新的股票或指数")
 	}
 	progress.Total = len(codes) * len(types)
+	if this.Config.ValuationDatabase != "" {
+		progress.Total++
+	}
 	var updateErrors []error
 	for _, kind := range types {
 		progress.Stage, progress.Code = kind, ""
@@ -200,6 +205,10 @@ func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report fun
 		if err != nil {
 			updateErrors = append(updateErrors, fmt.Errorf("%s: %w", kind, err))
 		}
+	}
+	progress, err = this.updateValuation(m, progress, report)
+	if err != nil {
+		updateErrors = append(updateErrors, err)
 	}
 	if len(updateErrors) > 0 {
 		progress.Message = fmt.Sprintf("全部更新单元已处理，失败 %d/%d，可手动重试", progress.Failed, progress.Total)
@@ -361,7 +370,8 @@ func (this *PullKline) updateDayKline(m *tdx.Manage, codes []string, report ...f
 
 		//4. 插入数据库
 		if resp == nil || len(resp.List) == 0 {
-			return fmt.Errorf("%s 日线响应为空，保留已有数据", code)
+			// 未上市等情况可能暂无行情，空响应不应删除已有数据或计为失败。
+			return nil
 		}
 		err = db.SessionFunc(func(session *xorm.Session) error {
 			if _, er := session.Where("Unix >= ?", last.Time.Unix()).Delete(new(Kline)); er != nil {
@@ -502,7 +512,8 @@ func (this *PullKline) updateMinuteKlineYear(m *tdx.Manage, code string, year in
 		}
 	}
 	if len(ks) == 0 {
-		return nil, fmt.Errorf("%s 分钟线响应为空，保留已有数据", code)
+		// 未上市等情况可能暂无行情，空响应不应删除已有数据或计为失败。
+		return ks, nil
 	}
 
 	err = db.SessionFunc(func(session *xorm.Session) error {

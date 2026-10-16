@@ -6,6 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
+	"github.com/injoyai/tdx/protocol"
 )
 
 // 这些底层因子供现有条件组合使用，不自动加入研究目录。
@@ -16,11 +17,19 @@ type A均线 int
 
 func (f A均线) Name() string { return fmt.Sprintf("均线(%d)", daysOr(int(f), 20)) }
 func (f A均线) Value(code string, dks extend.Klines) float64 {
-	n := daysOr(int(f), 20)
-	if len(dks) < n {
+	if len(dks) < daysOr(int(f), 20) {
 		return math.NaN()
 	}
-	return dks.MA(n).Float64()
+	return f.Price(dks).Float64()
+}
+
+// Price 供条件保留整数价格比较；缺数据返回 0，调用方须先校验窗口。
+func (f A均线) Price(dks extend.Klines) protocol.Price {
+	n := daysOr(int(f), 20)
+	if len(dks) < n {
+		return 0
+	}
+	return dks.MA(n)
 }
 
 // 前N日均量 不含今日，使用浮点累计保留原买卖条件的运算顺序；0 默认 5 日。
@@ -32,11 +41,7 @@ func (f A前N日均量) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < n+1 {
 		return math.NaN()
 	}
-	var sum float64
-	for _, k := range dks[len(dks)-n-1 : len(dks)-1] {
-		sum += float64(k.Volume)
-	}
-	return sum / float64(n)
+	return A均量(n).Value(code, dks[:len(dks)-1])
 }
 
 // RSI值 使用条件共用的浮点 RSI，0 默认 14 日。
@@ -180,6 +185,37 @@ func (f MACD柱值) Value(code string, dks extend.Klines) float64 {
 	return hist[len(hist)-1]
 }
 
+// MACD平滑柱值 对原始 MACD 柱再次 EMA 平滑，参数 0 默认 12/26/9/5。
+// Series 供时序条件一次读取整段序列，预热期仍由各条件校验。
+type MACD平滑柱值 struct {
+	Fast   int
+	Slow   int
+	Signal int
+	Smooth int
+}
+
+func (f MACD平滑柱值) smoothPeriod() int {
+	if f.Smooth == 0 {
+		return 5
+	}
+	return f.Smooth
+}
+func (f MACD平滑柱值) Name() string {
+	fast, slow, signal := (MACD柱值{Fast: f.Fast, Slow: f.Slow, Signal: f.Signal}).params()
+	return fmt.Sprintf("MACD平滑柱值(%d,%d,%d,%d)", fast, slow, signal, f.smoothPeriod())
+}
+func (f MACD平滑柱值) Series(dks extend.Klines) []float64 {
+	fast, slow, signal := (MACD柱值{Fast: f.Fast, Slow: f.Slow, Signal: f.Signal}).params()
+	return util.SmoothedMACDHistogram(dks, fast, slow, signal, f.smoothPeriod())
+}
+func (f MACD平滑柱值) Value(code string, dks extend.Klines) float64 {
+	hist := f.Series(dks)
+	if len(hist) == 0 {
+		return math.NaN()
+	}
+	return hist[len(hist)-1]
+}
+
 // MACDDIF值 是快慢 EMA 的原始差值，参数 0 默认 12/26。
 type MACDDIF值 struct {
 	Fast int
@@ -191,10 +227,14 @@ func (f MACDDIF值) Name() string {
 	return fmt.Sprintf("MACDDIF(%d,%d)", fast, slow)
 }
 func (f MACDDIF值) Value(code string, dks extend.Klines) float64 {
-	fast, slow, _ := (MACD柱值{Fast: f.Fast, Slow: f.Slow}).params()
-	dif := util.MACDDIF(dks, fast, slow)
+	dif := f.Series(dks)
 	if len(dif) == 0 {
 		return math.NaN()
 	}
 	return dif[len(dif)-1]
+}
+
+func (f MACDDIF值) Series(dks extend.Klines) []float64 {
+	fast, slow, _ := (MACD柱值{Fast: f.Fast, Slow: f.Slow}).params()
+	return util.MACDDIF(dks, fast, slow)
 }

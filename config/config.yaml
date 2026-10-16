@@ -10,7 +10,7 @@ pull:
 
 research:
   valuation:
-    # 日频历史估值（PE/PB/PS/PCF/PEG）的本地持久库。
+    # 历史估值及每日TDX主板PE、股息率快照的本地持久库。
     database: "./data/research/valuation.db"
 
 screen:

@@ -232,7 +232,7 @@ func (b A突破N天新高) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	today := dks[len(dks)-1]
-	return today.High >= dks.HHV(days)
+	return today.High >= f.A最高价(days).Price(dks)
 }
 
 // A近N天最高价 是当前收盘价等于近 N 个交易日最高价的买入条件。
@@ -258,5 +258,5 @@ func (b A近N天最高价) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	today := dks[len(dks)-1]
-	return today.Close >= dks.HHV(days)
+	return today.Close >= f.A最高价(days).Price(dks)
 }

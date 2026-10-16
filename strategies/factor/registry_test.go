@@ -14,6 +14,7 @@ var wantKinds = [...]string{
 	"body", "upper_shadow", "lower_shadow",
 	"position", "high_distance", "close_pct", "kvalue", "vp_corr",
 	"pe_ttm", "pe_static", "pb_mrq", "ps_ttm", "pcf_ocf_ttm", "peg",
+	"macd_negative_shrinking_streak", "macd_same_sign_reversals", "macd_same_sign_max_change",
 }
 
 func TestAll(t *testing.T) {

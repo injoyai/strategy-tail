@@ -4,6 +4,10 @@
 Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件（`strategies/buy|sell` 的 And/Or 组合子）→ `core.Backtest` 回测引擎 → `cmd/*` 各回测入口 → `lib/extend` 从 tdx 拉取 K 线并按"每股一个 sqlite db"落盘（`data/database/day-kline/`、`min-kline/`）。
 
 ## 架构与关键决策
+- **因子分析横截面内存**：v3 分析按股票×年份计算后立即加锁合并到按日期组织的横截面；不能保留每票每天的嵌套 map 再整体复制，多年全市场会因海量小对象触发 OOM。服务重启后的初始 `idle/backtest` 不代表因子分析被主动停止，前端应提示意外中断。
+- **ECharts 与 Vue 的 DOM 所有权**：图表宿主内不能放 Vue 的加载/错误节点。ECharts 初始化会清空宿主，删除 Vue 的条件锚点，导致第二次选择时报 `insertBefore` 空指针；提示必须放宿主外，宿主本身可用 v-show 控制可见性。
+- **回测历史与删除（2026-10-15）**：Web 回测报告以 `output/trades/<RunID>/report.json` 持久化，最新接口无内存报告时从磁盘恢复。单次删除共用 Runner 锁，并精确删除共享策略目录内该 RunID 的 CSV/HTML；不能整目录删除共享策略导出。前端历史选择与交易明细共享 `state.currentReport`，确认框 Teleport 到 body，避免隐藏页签阻挡模态。
+- **行情空数据语义（用户要求，2026-10-15）**：行情源请求成功但日线/分钟线为空可能是未上市，视为更新单元已处理，保留已有数据，不计失败或重试；无其他错误时可推进整批完成标记。空列表不等于已确认未上市，也不代表实际新增了行情记录。
 - **访问默认值（用户明确要求，2026-10-15）**：Lab 本地启动及 Bash 部署默认绑定 `0.0.0.0`，端口冲突换端口时保持绑定主机；不得在普通优化中擅自改为仅本机访问或新增全局来源拦截。
 - **输入可变时指标不可按切片身份缓存**：分钟级回测会更新 K 线指针；MACD 只在调用内复用独占缓冲区，跨调用复用必须先设计输入版本与失效边界，保持 EMA 运算顺序及逐前缀结果一致。
 - **账户净值与旧逐笔统计不可互换（2026-10-15）**：独立逐股回测结果缺少统一资金占用，不能逐笔累加或复利回算账户，必须重新统一回测；新账户模式复用 `ForEachCodeData` 加载与 Buyer/Seller/Cost 合同，不调用逐股 `Do()`。账户期末 Virtual 是持仓估值，不扣未发生的卖出费用，与旧 `Do()` 虚拟清算口径不同；账户曲线以报告 `Account.Points` 为准，CSV/HTML 仍是逐笔统计。旧 API 缺 `account` 保留原路径，不能给历史报告补默认资金来伪造账户收益。
@@ -14,6 +18,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **显式运行时初始化与根目录（2026-09-19）**：导入根包不再打开或创建数据库；所有 `cmd/*` 入口先调用幂等的 `common.MustInitialize()`，库调用方可用返回错误的 `Initialize()`，`Update()` 也会兜底初始化。`RuntimeRoot()` 优先读取 `STRATEGY_TAIL_ROOT`，否则从当前目录或可执行文件目录向上查找 `go.mod`，找不到时保留当前目录以兼容容器 `/app`；初始化 TDX Manage/Pull 期间临时切到运行时根并恢复原 cwd。`pull.database` 相对路径与 `research.universe` 统一经 `ResolveRuntimePath` 固定到根目录，绝对路径保持不变。Lab 的 `codes` 样本模式不再无条件读取全市场列表，只有 `all/random` 才要求运行时已初始化。`cmd/backtest/main.go` 仅增加初始化调用，草稿内容未整理。
 - **多类型研究数据边界（2026-09-17）**：`researchdata` 定义供应商无关的 Dataset/Provider/Registry/View 与内存 Store。每条记录必须有稳定 Key、`EventAt`、`AvailableAt`、Source/Version；历史读取同时按业务时间与可得时间截断，同一 Key 只取查询时点可见的最新修订，缺 `AvailableAt` fail closed。`core.ContextFactor` + `FactorContext{Code,AsOf,Klines,Data}` 支持财务/基本面/公告等因子；`Contextual` 兼容旧价量因子，`BindContextFactor` 可接回现有 Buyer/TopN/Backtest。通用实现为 `strategies/factor` 的 `最新字段`、`字段变化率`、`事件计数`；大规模历史应另做持久化 `researchdata.View`，当前 Store 只用于有界研究和测试。
 - **历史估值数据（2026-09-19）**：`researchdata.SQLiteStore` 是全市场历史用的持久化 `View`；`researchdata/eastmoney` 把公开日频估值规范化为 `valuation.daily`，字段含 PE-TTM/静态 PE/PB-MRQ/PS-TTM/经营现金流 PCF-TTM/PEG 及市值股本，`cmd/valuation-sync` 显式按代码或 `-all` 回填到 `research.valuation.database`，Lab 启动只读本地库、不隐式联网。交易日记录按 15:00 可见，适配收盘信号；但供应商不给历史修订日志，记录固定标记 `pit_status=unverified_revision_history`，研究证据不得提升为 strict PIT。
+- **TDX估值快照与每日更新**：`PullKlineConfig.ValuationDatabase` 由运行时指向同一研究库，`PullKline.UpdateWithProgress` 在既有跨进程锁内同步 `tdx.valuation.daily`（PE-TTM、静态PE、百分数单位股息率）；K线 `pull` 与估值 `valuation` 分别检查收盘批次，避免K线已完成时漏采估值或失败后不能重试。保留源日期，以真实采集时间作为 `AvailableAt`，不得将最新快照回填历史；数据集契约兼容首次手工入库。
 - **简单回测基础策略可选（2026-09-17）**：`StrategySpec.basePresetId` 允许为空；空值由后端映射为 `buy.A全部` 透明基准，实际买入只由因子过滤条件决定（2026-09-19 用户裁决取消 1～4 项限制：数量不限、可为 0，0 条即只回测基础策略/全部样本基准），组合名称使用“因子组合”，不暗示存在预设策略。Lab 原生下拉默认“不使用预设（仅因子条件）”，选择任一预设后仍可切回空项；条件编辑器默认只生成 1 条，避免两条相同默认条件让初始表单天然无效。未知非空 ID 继续拒绝，旧请求与旧报告兼容。
 - **回测引擎 `core.Backtest`**：`Run()` 中 Cost 零值自动回退 `DefaultCost()`（防止零佣金零滑点失真）；`MCIterations` 字段接入 `config.yaml` 的 `backtest.monte_carlo_iterations`（<=0 默认 1000）。当前通用命令只有 `cmd/backtest` 直接调用 `Backtest.Run()`；`cmd/market-regime` 与 Lab 走 `internal/researchrun`。
 - **`Do()` 指针覆写副作用（多组合复用数据必须隔离）**：`Do()` 分钟级卖出循环会原地覆写 `dks[i].Kline` 指针（`today.Kline = minuteKlines.Kline(...)`，等价性测试锁定为"原版行为不可更改"）。同一份 `extend.Klines` 要跑多个回测组合/多次复用时，必须深拷贝 `*extend.Kline` 与内嵌 `*protocol.Kline`，否则组合间互相污染；生产实现统一收口在 `internal/researchrun`，命令与 Lab 不再各自复制。

@@ -3,8 +3,8 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // ============================================================================
@@ -26,10 +26,12 @@ import (
 
 // A下跌企稳倍量 是"长期下跌后企稳 + 缩量平稳 + 3倍倍量"的复合买入策略。
 // 通过 Mode 选择下跌过滤档位：
-//   Mode="deep"      深度回撤（默认），要求距120日高点回撤 >= MinDrawdown 且收盘在60日线下
-//   Mode="mild"      温和回撤，要求距120日高点回撤 >= MinDrawdown 且收盘在60日线下
-//   Mode="none"      不做长期下跌过滤（仅企稳+缩量+倍量）
-//   Mode="confirm5"  不做下跌过滤，新增"倍量日收盘站上5日均线"右侧确认（缩量企稳后的首次放量站稳5日线）
+//
+//	Mode="deep"      深度回撤（默认），要求距120日高点回撤 >= MinDrawdown 且收盘在60日线下
+//	Mode="mild"      温和回撤，要求距120日高点回撤 >= MinDrawdown 且收盘在60日线下
+//	Mode="none"      不做长期下跌过滤（仅企稳+缩量+倍量）
+//	Mode="confirm5"  不做下跌过滤，新增"倍量日收盘站上5日均线"右侧确认（缩量企稳后的首次放量站稳5日线）
+//
 // MinDrawdown 表示最小回撤幅度（百分比），deep 默认 40，mild 默认 25。
 // VolumeRatio 表示倍量阈值，默认 3.0（较昨日量与近5日均量同时放大）。
 // ShrinkDays 表示缩量观察窗口，默认 5。
@@ -109,7 +111,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 	mode := b.mode()
 	if mode != "none" && mode != "confirm5" {
 		dd := b.drawdown()
-		high120 := dks[n-121 : n-1].HHV(120).Float64()
+		high120 := f.A最高价(120).Value(code, dks[:n-1])
 		if high120 <= 0 {
 			return false
 		}
@@ -119,7 +121,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 			return false
 		}
 		// 昨日收盘在 60 日均线下方
-		ma60 := core.MA(dks[:n-1], 60)
+		ma60 := f.A均线(60).Value(code, dks[:n-1])
 		if closePrice > ma60 {
 			return false
 		}
@@ -154,7 +156,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 	// 4b. 通达信倍量：仅要求今日量 > 昨日量 × 2（VOL/REF(VOL,1)>2）
 	//     默认（非通达信）则额外要求今日量 >= 近5日均量 × VolumeRatio 双重确认
 	if !b.TdxVolume {
-		avg5 := core.AverageVolume(dks[n-1-b.shrinkDays() : n-1])
+		avg5 := f.A前N日均量(b.shrinkDays()).Value(code, dks)
 		if avg5 <= 0 || float64(today.Volume) < avg5*ratio {
 			return false
 		}
@@ -162,7 +164,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 
 	// 5. 右侧确认（仅 confirm5 档）：倍量日收盘站上 5 日均线
 	if mode == "confirm5" {
-		ma5 := core.MA(dks[n-6:n-1], 5) // 截止昨日的 5 日均线
+		ma5 := f.A均线(5).Value(code, dks[:n-1]) // 截止昨日的 5 日均线
 		if today.Close.Float64() <= ma5 {
 			return false
 		}
@@ -194,7 +196,7 @@ func stabilizeSignal(dks extend.Klines, window int) bool {
 		if i < 3 {
 			continue
 		}
-		prevLow := dks[i-3 : i].LLV(3)
+		prevLow := f.A最低价(3).Price(dks[:i])
 		if today.Low < prevLow {
 			continue
 		}
@@ -213,11 +215,8 @@ func shrinkStable(dks extend.Klines, days int) bool {
 	}
 	// 近期窗口 [n-days, n-1)
 	recent := dks[n-1-days : n-1]
-	// 前期窗口 [n-2*days, n-days)
-	prior := dks[n-1-2*days : n-1-days]
-
-	recentAvg := core.AverageVolume(recent)
-	priorAvg := core.AverageVolume(prior)
+	recentAvg := f.A前N日均量(days).Value("", dks)
+	priorAvg := f.A前N日均量(days).Value("", dks[:n-days])
 	if priorAvg <= 0 {
 		return false
 	}

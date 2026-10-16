@@ -24,12 +24,14 @@ const (
 
 // BuilderNode 条件树节点。
 // type=group 时 Op（and|or）+ Children；type=condition 时 ComponentID + Params。
+// type=factor 时 Factor 复用因子组合的声明；仅用于买入与策略卖出信号。
 type BuilderNode struct {
-	Type        string         `json:"type"`
-	Op          string         `json:"op,omitempty"`
-	ComponentID string         `json:"componentId,omitempty"`
-	Params      map[string]any `json:"params,omitempty"`
-	Children    []*BuilderNode `json:"children,omitempty"`
+	Type        string            `json:"type"`
+	Op          string            `json:"op,omitempty"`
+	ComponentID string            `json:"componentId,omitempty"`
+	Params      map[string]any    `json:"params,omitempty"`
+	Factor      *FactorFilterSpec `json:"factor,omitempty"`
+	Children    []*BuilderNode    `json:"children,omitempty"`
 }
 
 // BuilderSpec 搭建器策略定义（Lab 自身版本化契约，独立于简单模式 StrategySpec）。
@@ -83,6 +85,9 @@ func validateNode(n *BuilderNode, role string, depth int, counter *int) error {
 	}
 	switch n.Type {
 	case "group":
+		if n.Factor != nil {
+			return fmt.Errorf("分组节点不应携带因子定义")
+		}
 		if n.Op != "and" && n.Op != "or" {
 			return fmt.Errorf("分组组合方式无效: %q（须为 and 或 or）", n.Op)
 		}
@@ -101,6 +106,9 @@ func validateNode(n *BuilderNode, role string, depth int, counter *int) error {
 			}
 		}
 	case "condition":
+		if n.Factor != nil {
+			return fmt.Errorf("组件条件不应携带因子定义")
+		}
 		if n.ComponentID == "" {
 			return fmt.Errorf("条件节点缺少组件标识")
 		}
@@ -116,6 +124,19 @@ func validateNode(n *BuilderNode, role string, depth int, counter *int) error {
 				n.ComponentID, builderRoleName(entry.Role), builderRoleName(role))
 		}
 		if err := validateParams(entry, n.Params); err != nil {
+			return err
+		}
+	case "factor":
+		if role != roleBuy && role != roleSell {
+			return fmt.Errorf("因子条件仅用于买入或策略卖出信号，不能作为独立风控")
+		}
+		if n.ComponentID != "" || len(n.Params) != 0 || n.Op != "" || len(n.Children) != 0 {
+			return fmt.Errorf("因子节点不应携带组件、参数或分组字段")
+		}
+		if n.Factor == nil {
+			return fmt.Errorf("因子节点缺少因子定义")
+		}
+		if err := n.Factor.validate(); err != nil {
 			return err
 		}
 	default:
@@ -292,6 +313,12 @@ func (s *BuilderSpec) Seller() (core.Seller, error) {
 
 // buyer 递归构建买入树。
 func (n *BuilderNode) buyer() (core.Buyer, error) {
+	if n.Type == "factor" {
+		if n.Factor == nil {
+			return nil, fmt.Errorf("因子节点缺少因子定义")
+		}
+		return n.Factor.build()
+	}
 	if n.Type == "condition" {
 		factory, ok := buyFactories[n.ComponentID]
 		if !ok {
@@ -319,6 +346,16 @@ func (n *BuilderNode) buyer() (core.Buyer, error) {
 
 // seller 递归构建卖出树。
 func (n *BuilderNode) seller() (core.Seller, error) {
+	if n.Type == "factor" {
+		if n.Factor == nil {
+			return nil, fmt.Errorf("因子节点缺少因子定义")
+		}
+		filter, err := n.Factor.build()
+		if err != nil {
+			return nil, err
+		}
+		return ss.A因子过滤{A因子过滤: filter}, nil
+	}
 	if n.Type == "condition" {
 		factory, ok := sellFactories[n.ComponentID]
 		if !ok {

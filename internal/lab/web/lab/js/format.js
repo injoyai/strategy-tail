@@ -192,7 +192,7 @@ export function filterText(f, catalog) {
 }
 
 // 只读冻结快照；未填写的参数明确显示缺省，不用目录的表单默认值替换。
-export function formatBuilderSpec(spec, catalog) {
+export function formatBuilderSpec(spec, catalog, factorCatalog = []) {
   if (!spec) return '';
   const entries = new Map(catalog.map(e => [e.id, e]));
   function rule(node, depth = 1) {
@@ -201,6 +201,10 @@ export function formatBuilderSpec(spec, catalog) {
     if (node.type === 'group') {
       return pad + (node.op === 'and' ? '全部满足（AND）' : '任一满足（OR）') + '\n' +
         node.children.map(child => rule(child, depth + 1)).join('\n');
+    }
+    if (node.type === 'factor') {
+      return pad + '因子条件：' + (node.factor ? filterText(node.factor, factorCatalog) +
+        `（实现版本 ${node.factor.factorVersion || '兼容模式'}）` : '未设置');
     }
     const entry = entries.get(node.componentId);
     const values = new Map((entry?.params || []).map(def => [def.key, {

@@ -114,6 +114,7 @@ const App = {
         done: `${taskName}已完成`,
         error: `${taskName}失败`,
         stopped: `${taskName}已停止`,
+        interrupted: `${taskName}意外中断`,
         'connection-error': '进度读取中断',
       }[st] || taskName;
       let detail = isPortfolio
@@ -124,6 +125,7 @@ const App = {
           ? `${done}/${total} ${s.task === 'data_update' ? '更新单元' : s.config?.account ? '加载与交易日单元' : s.config?.macd ? '股票×年份' : '只股票'}`
           : isUpdate ? updatePhase : '正在准备股票列表';
       if (isUpdate && total > 0) detail += ` · 失败 ${Number(s.failed) || 0}`;
+      if (st === 'interrupted') detail = '未取得本次任务结果';
       const current = isUpdate
         ? st === 'running' ? `${updatePhase}${s.currentCode ? ' · ' + s.currentCode : ''}` : s.message || '数据检查结束'
         : s.currentCode && done > 0
@@ -135,7 +137,7 @@ const App = {
           : connectionError ? '任务可能仍在后台运行'
           : '加载任务范围与数据';
       state.taskDock = {
-        state: connectionError ? 'error' : st,
+        state: connectionError || st === 'interrupted' ? 'error' : st,
         task: s.task,
         title,
         percent: isUpdate && s.skipped ? '无需更新' : determinate ? `${Math.round(progress)}%` : '准备中',
@@ -184,9 +186,10 @@ const App = {
         const s = await Api.status();
         state.status = s;
         const running = s.state === 'running';
+        const interrupted = s.state === 'idle' && runtime.prevRunning && s.task !== runtime.lastTask;
         if (s.state !== 'idle') runtime.lastTask = s.task || runtime.lastTask;
         const visibleStatus = s.state === 'idle' && runtime.prevRunning
-          ? {...s, state: 'stopped', task: runtime.lastTask}
+          ? {...s, state: interrupted ? 'interrupted' : 'stopped', task: runtime.lastTask}
           : s;
         this.renderTaskProgress(visibleStatus);
         state.taskRunning = running || state.dataUpdating;
@@ -220,7 +223,7 @@ const App = {
             }
           }
         } else if (s.state === 'idle' && runtime.prevRunning && runtime.lastTask === 'analysis') {
-          state.factorMsg = {text: '任务已停止', ok: false};
+          state.factorMsg = {text: interrupted ? '后台任务状态已重置，本次分析意外中断，请重新运行' : '任务已停止', ok: false};
           clearInterval(runtime.pollTimer); runtime.pollTimer = null;
         } else if (s.state === 'error' && runtime.lastTask === 'analysis') {
           state.factorMsg = {text: s.error || '分析失败', ok: false};
@@ -245,23 +248,30 @@ const App = {
     <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
   </div>
   <div class="brand-copy">
+    <span class="eyebrow">A-SHARE RESEARCH WORKBENCH</span>
     <h1>策略实验室</h1>
   </div>
+  <div class="header-meta" aria-label="运行环境">
+    <span class="local-badge"><span class="live-dot" aria-hidden="true"></span>本地研究会话</span>
+  </div>
+</header>
+
 <div class="tabs" role="tablist" aria-label="功能区" @keydown="onTabsKeydown">
   <button v-for="t in tabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
     :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
     :tabindex="state.activeTab === t.n ? 0 : -1" @click="switchTab(t.n)">
-    <span class="tab-title">{{ t.title }}</span>
+    <span class="tab-copy"><span class="tab-title">{{ t.title }}</span><span class="tab-desc">{{ t.desc }}</span></span>
   </button>
 </div>
-</header>
 
-<main>
-  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && state.taskDock.task !== 'data_update'" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+<main :class="{'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
+  <data-update />
+  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">
         <span class="status-dot" aria-hidden="true"></span>
+        <span class="status-kicker">BATCH JOB</span>
         <span id="statusState">{{ state.taskDock ? state.taskDock.title : '' }}</span>
       </div>
       <span id="statusPercent">{{ state.taskDock ? state.taskDock.percent : '' }}</span>
@@ -272,8 +282,8 @@ const App = {
     </div>
     <div class="status-foot">
       <div class="status-meta">
-        <span id="statusDetail" class="status-detail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
-        <span id="statusCurrent" class="status-current" v-if="state.taskDock && (state.taskDock.running || state.taskDock.connectionError || state.taskDock.task !== 'data_update')">{{ state.taskDock.current }}</span>
+        <span id="statusDetail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
+        <span id="statusCurrent">{{ state.taskDock ? state.taskDock.current : '' }}</span>
       </div>
       <div class="status-actions">
         <button type="button" class="secondary" v-if="state.taskDock && state.taskDock.connectionError" @click="pollStatus()">重试读取</button>
@@ -298,7 +308,6 @@ const App = {
   </div>
 </main>
 
-<data-update />
 <candidate-save-dlg ref="candSave" />
 <candidate-edit-dlg ref="candEdit" />
 <candidate-evidence-dlg ref="candEv" />

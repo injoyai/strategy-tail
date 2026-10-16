@@ -39,7 +39,7 @@ test('仅确认才提交配置，取消和 Escape 均不改变共享参数', asy
   assert.equal(calls, 0);
 });
 
-test('校验年份、随机数量、空代码以及因子和脚本卖出规则，错误保留输入', async () => {
+test('校验年份、随机数量、空代码以及因子卖出规则，错误保留输入', async () => {
   let calls = 0;
   const ctx = instance('simple', async () => {calls++; return true;});
   const cases = [
@@ -59,7 +59,7 @@ test('校验年份、随机数量、空代码以及因子和脚本卖出规则�
     assert.equal(ctx.open, true);
     assert.equal(ctx.cfg[key], changes[key] ?? state.runCfg[key]);
   }
-  ctx.mode = 'adv'; ctx.cfg = {...state.runCfg, slOn: true, stopLoss: NaN};
+  ctx.cfg = {...state.runCfg, slOn: true, stopLoss: NaN};
   await ctx.confirm(); assert.equal(ctx.errorKey, 'stopLoss');
   ctx.mode = 'builder'; ctx.cfg = {...state.runCfg, startYear: 1989};
   await ctx.confirm(); assert.equal(ctx.errorKey, 'startYear');
@@ -83,7 +83,7 @@ test('确认期间阻止重复、关闭和 Escape；成功保留参数并关闭�
 
 test('提交失败保留选择并可重试，共享任务占用时不启动', async () => {
   let calls = 0;
-  const ctx = instance('adv', async () => {calls++; state.scriptMsg.text = '服务不可用';});
+  const ctx = instance('simple', async () => {calls++; state.scriptMsg.text = '服务不可用';});
   ctx.cfg.sampleMode = 'random'; ctx.cfg.sampleSize = 15;
   await ctx.confirm();
   assert.equal(ctx.error, '服务不可用'); assert.equal(ctx.open, true);

@@ -825,7 +825,8 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	}()
 
 	var mu sync.Mutex
-	var mergedV, mergedR []map[time.Time]map[string]float64 // day → code → 值/收益
+	vals := map[time.Time]map[string]float64{}
+	rets := map[time.Time]map[string]float64{}
 	// OnCodeDone 串行上报（mu 保护），直接汇总无需额外锁
 	coverage := researchrun.Coverage{Requested: len(codes)}
 
@@ -849,8 +850,8 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 			}
 		},
 	}, func(code string, _ int, d researchrun.YearData) {
-		lv := map[time.Time]map[string]float64{}
-		lr := map[time.Time]map[string]float64{}
+		lv := map[time.Time]float64{}
+		lr := map[time.Time]float64{}
 		series := make(extend.Klines, 0, len(d.His)+len(d.Dks))
 		series = append(series, d.His...)
 		series = append(series, d.Dks...)
@@ -869,16 +870,19 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 				continue
 			}
 			day := core.DayOf(d.Dks[i].Time)
-			if lv[day] == nil {
-				lv[day] = map[string]float64{}
-				lr[day] = map[string]float64{}
-			}
-			lv[day][code] = v
-			lr[day][code] = ret
+			lv[day] = v
+			lr[day] = ret
 		}
+		// 每票每年算完即合并，避免保留数百万个单票单日 map 和第二份横截面。
 		mu.Lock()
-		mergedV = append(mergedV, lv)
-		mergedR = append(mergedR, lr)
+		for day, v := range lv {
+			if vals[day] == nil {
+				vals[day] = map[string]float64{}
+				rets[day] = map[string]float64{}
+			}
+			vals[day][code] = v
+			rets[day][code] = lr[day]
+		}
 		mu.Unlock()
 	})
 	if err != nil {
@@ -897,22 +901,6 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	// Failure 按 code/year/stage 排序，保证报告与测试稳定
 	sortFailures(coverage.Failures)
 	sortFailures(yearCoverage.Failures)
-
-	// 合并各票数据（单协程，无竞争）
-	vals := map[time.Time]map[string]float64{}
-	rets := map[time.Time]map[string]float64{}
-	for i, m := range mergedV {
-		for day, cv := range m {
-			if vals[day] == nil {
-				vals[day] = map[string]float64{}
-				rets[day] = map[string]float64{}
-			}
-			for c, v := range cv {
-				vals[day][c] = v
-				rets[day][c] = mergedR[i][day][c]
-			}
-		}
-	}
 
 	// 逐日计算 IC（日期升序输出）
 	days := make([]time.Time, 0, len(vals))

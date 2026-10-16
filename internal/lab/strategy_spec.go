@@ -26,7 +26,7 @@ const strategySpecVersion = 1
 // noBound A因子过滤 的单边无界值（与 A因子过滤 注释一致：不用 0 表示无限制）。
 const noBound = 1e9
 
-// FactorFilterSpec 单项因子区间过滤。Min/Max 用指针保留 null 与 0 的
+// FactorFilterSpec 因子组合与自由搭建共用的单项因子条件。Min/Max 用指针保留 null 与 0 的
 // 区别；0 是合法因子值。gte 只要求 Min，lte 只要求 Max，
 // between 同时要求 Min/Max 且 Min <= Max。
 // FactorVersion 因子实现版本：0=旧配置兼容（按当前注册版本运行）；
@@ -270,14 +270,14 @@ func (s StrategySpec) Variants() ([]core.Variant, error) {
 
 // build 把操作符映射为 A因子过滤：gte→[min,+∞)、lte→(-∞,max]、
 // between→[min,max]；单边用 ±1e9（0 是合法因子值，不用 0 表示无界）。
-// 构建前重复执行版本校验（fail-closed，不允许绕过 validate 直接 build）。
+// 构建前完整校验声明（fail-closed，不允许绕过 validate 直接 build）。
 func (ft *FactorFilterSpec) build() (sb.A因子过滤, error) {
+	if err := ft.validate(); err != nil {
+		return sb.A因子过滤{}, err
+	}
 	fct := f.BuildWithData(ft.Kind, ft.Days, common.ResearchData)
 	if fct == nil {
 		return sb.A因子过滤{}, fmt.Errorf("未知因子类型: %s", ft.Kind)
-	}
-	if err := ft.validateVersion(); err != nil {
-		return sb.A因子过滤{}, err
 	}
 	flt := sb.A因子过滤{Factor: fct}
 	switch ft.Operator {

@@ -4,12 +4,10 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 
@@ -132,6 +130,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/report/latest", s.handleLatestReport)
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)
 	s.mux.HandleFunc("GET /api/report/{id}", s.handleReport)
+	s.mux.HandleFunc("DELETE /api/report/{id}", s.handleDeleteReport)
 	s.mux.HandleFunc("GET /api/kline/{code}", s.handleKline)
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
 	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
@@ -327,8 +326,20 @@ func (s *Server) handleStop(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLatestReport(w http.ResponseWriter, r *http.Request) {
 	rep := s.runner.LatestReport()
 	if rep == nil {
-		writeErr(w, http.StatusNotFound, "暂无完成的报告")
-		return
+		items, err := listReports()
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "读取历史报告失败")
+			return
+		}
+		if len(items) == 0 {
+			writeErr(w, http.StatusNotFound, "暂无完成的报告")
+			return
+		}
+		rep, err = readReport(items[0].ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "读取最新报告失败")
+			return
+		}
 	}
 	writeJSON(w, rep)
 }
@@ -440,58 +451,31 @@ func (s *Server) handleStrategyRun(w http.ResponseWriter, r *http.Request) {
 
 // handleReports 历史报告列表（扫描 output/trades/*/report.json）。
 func (s *Server) handleReports(w http.ResponseWriter, r *http.Request) {
-	type reportItem struct {
-		ID     string `json:"id"`
-		Script string `json:"script"`
-		Time   string `json:"time"`
-		Start  string `json:"startYear"`
-		End    string `json:"endYear"`
-	}
-	entries, err := os.ReadDir(filepath.Join("output", "trades"))
+	items, err := listReports()
 	if err != nil {
-		writeJSON(w, []reportItem{})
+		writeErr(w, http.StatusInternalServerError, "读取历史报告失败")
 		return
 	}
-	items := []reportItem(nil)
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		data, err := os.ReadFile(filepath.Join("output", "trades", e.Name(), "report.json"))
-		if err != nil {
-			continue
-		}
-		var rep Report
-		if json.Unmarshal(data, &rep) != nil {
-			continue
-		}
-		items = append(items, reportItem{
-			ID:     e.Name(),
-			Script: rep.Config.ScriptName,
-			Time:   rep.FinishedAt,
-			Start:  fmt.Sprintf("%d", rep.Config.StartYear),
-			End:    fmt.Sprintf("%d", rep.Config.EndYear),
-		})
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].ID > items[j].ID })
 	writeJSON(w, items)
 }
 
 // handleReport 指定报告（id 为运行目录名）。
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	// 防路径穿越：id 不允许含路径分隔符
-	if strings.ContainsAny(id, `/\`) || strings.HasPrefix(id, ".") {
+	if !validReportID(id) {
 		writeErr(w, http.StatusBadRequest, "非法报告 ID")
 		return
 	}
-	data, err := os.ReadFile(filepath.Join("output", "trades", id, "report.json"))
+	rep, err := readReport(id)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "报告不存在: "+id)
+		if errors.Is(err, os.ErrNotExist) {
+			writeErr(w, http.StatusNotFound, "报告不存在")
+		} else {
+			writeErr(w, http.StatusInternalServerError, "读取报告失败")
+		}
 		return
 	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Write(data)
+	writeJSON(w, rep)
 }
 
 // handleKline 日K 数据（ECharts 格式直出）。
@@ -502,22 +486,24 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Time{}
 	if from != "" {
-		if t, err := time.Parse(time.DateOnly, from); err == nil {
+		if t, err := time.ParseInLocation(time.DateOnly, from, time.Local); err == nil {
 			start = t
 		}
 	}
 	end := time.Now()
 	if to != "" {
-		if t, err := time.Parse(time.DateOnly, to); err == nil {
+		if t, err := time.ParseInLocation(time.DateOnly, to, time.Local); err == nil {
 			end = t.Add(23*time.Hour + 59*time.Minute)
 		}
 	}
 
-	ks, err := commonPullDayKlines(code, start, end)
+	ks, err := commonPullDayKlines(code, time.Time{}, end)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "拉取日K失败: "+err.Error())
 		return
 	}
+	hist := (f.MACD柱值{}).Series(ks)
+	dif := (f.MACDDIF值{}).Series(ks)
 	type klineRow struct {
 		Date   string  `json:"date"`
 		Open   float64 `json:"open"`
@@ -525,9 +511,15 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 		Low    float64 `json:"low"`
 		High   float64 `json:"high"`
 		Volume int64   `json:"volume"`
+		DIF    float64 `json:"dif"`
+		DEA    float64 `json:"dea"`
+		MACD   float64 `json:"macd"`
 	}
 	rows := make([]klineRow, 0, len(ks))
-	for _, k := range ks {
+	for i, k := range ks {
+		if k.Time.Before(start) || k.Time.After(end) {
+			continue
+		}
 		rows = append(rows, klineRow{
 			Date:   k.Time.Format(time.DateOnly),
 			Open:   k.Open.Float64(),
@@ -535,6 +527,7 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 			Low:    k.Low.Float64(),
 			High:   k.High.Float64(),
 			Volume: k.Volume,
+			DIF:    dif[i], DEA: dif[i] - hist[i], MACD: hist[i],
 		})
 	}
 	writeJSON(w, rows)

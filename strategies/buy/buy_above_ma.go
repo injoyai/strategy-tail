@@ -47,18 +47,5 @@ func (s A站上N日均线) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	// 最近 Days 天，每天的收盘价都大于当天的 MA(Period)
-	for i := 0; i < days; i++ {
-		idx := n - 1 - i
-		if idx < 0 {
-			return false
-		}
-		maAtDay := f.A均线(period).Value(code, dks[:idx+1])
-		closePrice := dks[idx].Close.Float64()
-		if closePrice <= maAtDay {
-			return false
-		}
-	}
-
-	return true
+	return (f.MA上方连续天数{Period: period, Days: days}).Value(code, dks) >= float64(days)
 }

@@ -165,7 +165,7 @@ func (s A唐奇安下沿) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	// 近 p 日最低（不含今天，避免恒真）
-	low := dks[len(dks)-1-p : len(dks)-1].LLV(p)
+	low := f.A最低价(p).Price(dks[:len(dks)-1])
 	return dks[len(dks)-1].Close <= low
 }
 

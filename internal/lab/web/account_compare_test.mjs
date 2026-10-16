@@ -81,17 +81,14 @@ test('行情缺失显式披露，空报告无误导指数曲线', () => {
   assert.doesNotThrow(() => render(ctx));
 });
 
-test('因子和高级脚本提交冻结的资金规则，因子研究的样本配置保持独立', async () => {
+test('因子组合提交冻结的资金规则，运行弹窗使用相同规则', async () => {
   const submitted = [];
   const g = globalThis.accountCompareGlobals;
-  g.Api.saveScript = async () => {};
-  g.Api.runBacktest = async cfg => {submitted.push(cfg); return {variants: 1};};
+  g.Api.runStrategy = async spec => {submitted.push(spec); return {variants: 1};};
   state.runCfg = {startYear: 2025, endYear: 2025, sampleMode: 'all', holdingOn: true, holdingDays: 1};
-  const ctx = {script: '', startTask() {}};
-  await Run.methods.runBacktest.call(ctx, 'adv');
-  assert.deepEqual(submitted[0].account, {initialCapital: 100000, maxPositions: 5, orderBudget: 20000});
   state.simpleConds = []; state.specName = ''; state.presetId = '';
-  const spec = Run.methods.buildSpec.call({});
-  assert.deepEqual(spec.run.account, submitted[0].account);
-  assert.deepEqual(Dialog.setup().account, submitted[0].account);
+  const ctx = {buildSpec: () => Run.methods.buildSpec.call({}), startTask() {}};
+  assert.equal(await Run.methods.runSimple.call(ctx), true);
+  assert.deepEqual(submitted[0].run.account, {initialCapital: 100000, maxPositions: 5, orderBudget: 20000});
+  assert.deepEqual(Dialog.setup().account, submitted[0].run.account);
 });

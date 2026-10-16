@@ -6,9 +6,11 @@ import { state } from '../store.js';
 import { factorTypeName, formatBuilderSpec, formatMacdParameters } from '../format.js';
 import { Api } from '../api.js';
 import { mountChart, dropChart, ANNUAL_PALETTE, NAV_COLORS } from '../echarts.js';
+import ReportHistory from './ReportHistory.js';
 
 export default {
   name: 'Tab2Compare',
+  components: {ReportHistory},
   inject: ['switchTab'],
   setup() {
     return { state, factorTypeName };
@@ -31,7 +33,7 @@ export default {
       });
     },
     builderRules() {
-      return formatBuilderSpec(state.currentReport?.config.builder, state.builderCatalog);
+      return formatBuilderSpec(state.currentReport?.config.builder, state.builderCatalog, state.factorCatalog);
     },
     macdParameters() {
       return formatMacdParameters(state.currentReport?.config.macd);
@@ -176,6 +178,7 @@ export default {
     },
   },
   template: `
+<report-history />
 <div class="card">
   <h3>{{ rep?.source === 'macd' ? '回测统计' : '变体汇总' }} <span class="hint">{{ reportMeta }}</span></h3>
 

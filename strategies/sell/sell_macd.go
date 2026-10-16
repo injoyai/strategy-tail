@@ -144,11 +144,5 @@ func (s MACD买入后连跌) Sell(code string, dks extend.Klines, buy core.Buy) 
 		return false
 	}
 
-	for i := n - s.Days; i < n; i++ {
-		if hist[i] >= hist[i-1] {
-			return false
-		}
-	}
-
-	return true
+	return f.FallingStreak(hist) >= s.Days
 }

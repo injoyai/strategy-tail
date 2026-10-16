@@ -118,10 +118,10 @@ func builderCatalog() []ComponentEntry {
 		// ---- 买入：基准与板块 ----
 		{ID: "buy_all", Name: "全部样本买入", Role: roleBuy, Category: "基准",
 			Desc: "显式基准：不做任何过滤，所有样本都买入"},
-		{ID: "buy_board_cyb", Name: "创业板股票", Role: roleBuy, Category: "板块"},
-		{ID: "buy_board_kcb", Name: "科创板股票", Role: roleBuy, Category: "板块"},
-		{ID: "buy_board_bj", Name: "北证股票", Role: roleBuy, Category: "板块"},
-		{ID: "buy_etf", Name: "ETF基金", Role: roleBuy, Category: "板块"},
+		{ID: "buy_board_cyb", Name: "创业板股票", Role: roleBuy, Category: "板块", Desc: "仅保留创业板股票（代码前缀 sz30）"},
+		{ID: "buy_board_kcb", Name: "科创板股票", Role: roleBuy, Category: "板块", Desc: "仅保留科创板股票（代码前缀 sh68）"},
+		{ID: "buy_board_bj", Name: "北证股票", Role: roleBuy, Category: "板块", Desc: "仅保留北交所股票（代码前缀 bj）"},
+		{ID: "buy_etf", Name: "ETF基金", Role: roleBuy, Category: "板块", Desc: "仅保留被行情代码规则识别为 ETF 的标的"},
 
 		// ---- 买入：价格与市值 ----
 		{ID: "buy_price", Name: "价格范围", Role: roleBuy, Category: "价格市值",
@@ -139,6 +139,7 @@ func builderCatalog() []ComponentEntry {
 
 		// ---- 买入：均线趋势 ----
 		{ID: "buy_price_above_ma", Name: "现价高于N日均线", Role: roleBuy, Category: "均线趋势",
+			Desc:   "最新收盘价高于指定周期均线",
 			Params: []ParamDef{intParam("period", "均线周期", 20, 1, 1000, "")}},
 		{ID: "buy_stand_above_ma", Name: "连续站上N日均线", Role: roleBuy, Category: "均线趋势",
 			Desc: "收盘价连续 Days 天高于 Period 日均线",
@@ -147,6 +148,7 @@ func builderCatalog() []ComponentEntry {
 				intParam("days", "连续天数", 5, 1, 100, ""),
 			}},
 		{ID: "buy_close_above_ma", Name: "收盘高于N日均线", Role: roleBuy, Category: "均线趋势",
+			Desc:   "最新收盘价高于指定周期均线",
 			Params: []ParamDef{intParam("period", "均线周期", 20, 1, 1000, "")}},
 		{ID: "buy_ma_up", Name: "均线向上", Role: roleBuy, Category: "均线趋势",
 			Desc: "均线在回看窗口内逐日上行且斜率达标；回看天数 0 使用组件默认 5",
@@ -184,6 +186,7 @@ func builderCatalog() []ComponentEntry {
 				intParam("lookback", "起点回看", 0, 0, 1000, "0=不校验"),
 			)},
 		{ID: "buy_macd_positive", Name: "MACD连续为正", Role: roleBuy, Category: "MACD",
+			Desc:   "MACD 柱连续指定天数大于 0，包含当日",
 			Params: append(macdParams(), intParam("days", "最少天数", 1, 1, 1000, ""))},
 		{ID: "buy_macd_reversal", Name: "MACD反转", Role: roleBuy, Category: "MACD",
 			Desc: "MACD 柱在低位拐头；MaxLookback 0=不限",
@@ -199,13 +202,16 @@ func builderCatalog() []ComponentEntry {
 
 		// ---- 买入：RSI ----
 		{ID: "buy_rsi_low", Name: "RSI低于阈值", Role: roleBuy, Category: "RSI",
+			Desc: "指定周期的 RSI 低于阈值",
 			Params: []ParamDef{
 				intParam("period", "RSI周期", 14, 2, 100, ""),
 				floatParam("threshold", "阈值", "", 20, 1, 99, 1, ""),
 			}},
 		{ID: "buy_rsi_turn_up", Name: "RSI拐头向上", Role: roleBuy, Category: "RSI",
+			Desc:   "今日 RSI 高于昨日 RSI",
 			Params: []ParamDef{intParam("period", "RSI周期", 14, 2, 100, "")}},
 		{ID: "buy_rsi_range", Name: "RSI处于区间", Role: roleBuy, Category: "RSI",
+			Desc: "RSI 处于上下限区间（含边界）；下限为 0 时使用 30，上限为 0 时使用 50",
 			Params: []ParamDef{
 				intParam("period", "RSI周期", 14, 2, 100, ""),
 				floatParam("min", "下限", "", 30, 0, 100, 1, "0=组件默认30"),
@@ -250,6 +256,7 @@ func builderCatalog() []ComponentEntry {
 		{ID: "buy_filter_limit_up", Name: "过滤当日涨停", Role: roleBuy, Category: "K线形态",
 			Desc: "排除当日已涨停的标的（无法买入）"},
 		{ID: "buy_break_high", Name: "突破N日新高", Role: roleBuy, Category: "K线形态",
+			Desc:   "最新收盘价突破前 N 个交易日的最高价，不含当日",
 			Params: []ParamDef{intParam("period", "周期", 20, 1, 1000, "")}},
 		{ID: "buy_solid_bull", Name: "实体阳线", Role: roleBuy, Category: "K线形态",
 			Desc:   "阳线实体占振幅比例达标；0=只要收阳",
@@ -257,14 +264,16 @@ func builderCatalog() []ComponentEntry {
 		{ID: "buy_solid_bear", Name: "实体阴线", Role: roleBuy, Category: "K线形态",
 			Desc:   "阴线实体占振幅比例达标；0=只要收阴（常用于低吸）",
 			Params: []ParamDef{ratioParam("minBodyRatio", "最小实体比例", 0, 0, 100, 1, "0=只要收阴")}},
-		{ID: "buy_close_gt_prev_close", Name: "收盘大于昨收", Role: roleBuy, Category: "K线形态"},
-		{ID: "buy_close_gt_prev_open", Name: "收盘大于昨开", Role: roleBuy, Category: "K线形态"},
+		{ID: "buy_close_gt_prev_close", Name: "收盘大于昨收", Role: roleBuy, Category: "K线形态", Desc: "最新收盘价高于前一交易日收盘价"},
+		{ID: "buy_close_gt_prev_open", Name: "收盘大于昨开", Role: roleBuy, Category: "K线形态", Desc: "最新收盘价高于前一交易日开盘价"},
 		{ID: "buy_recent_gain_below", Name: "近N日涨幅小于", Role: roleBuy, Category: "K线形态",
+			Desc: "近 N 个交易日累计涨幅低于涨幅上限；上限为 0 时使用 15%",
 			Params: []ParamDef{
 				intParam("days", "区间天数", 5, 1, 500, ""),
 				percentParam("max", "涨幅上限", 15, -100, 1000, 0.5, ""),
 			}},
 		{ID: "buy_day_gain_range", Name: "单日涨幅范围", Role: roleBuy, Category: "K线形态",
+			Desc: "当日涨幅处于上下限区间（含边界），0 表示对应方向不限",
 			Params: []ParamDef{
 				percentParam("min", "涨幅下限", 0, -100, 100, 0.5, "0=不限"),
 				percentParam("max", "涨幅上限", 0, -100, 100, 0.5, "0=不限"),
@@ -345,6 +354,7 @@ func builderCatalog() []ComponentEntry {
 				intParam("days", "连续天数", 3, 1, 100, ""),
 			}},
 		{ID: "sell_below_short_ma", Name: "跌破短期均线", Role: roleSell, Category: "均线趋势",
+			Desc:   "最新收盘价低于指定周期的短期均线即卖出",
 			Params: []ParamDef{intParam("period", "均线周期", 10, 1, 1000, "")}},
 		{ID: "sell_ma_dead_cross", Name: "均线死叉", Role: roleSell, Category: "均线趋势",
 			Desc: "短期均线下穿长期均线",
@@ -361,6 +371,7 @@ func builderCatalog() []ComponentEntry {
 
 		// ---- 卖出信号：RSI ----
 		{ID: "sell_rsi_overbought", Name: "RSI超买", Role: roleSell, Category: "RSI",
+			Desc: "指定周期的 RSI 高于超买阈值即卖出",
 			Params: []ParamDef{
 				intParam("period", "RSI周期", 14, 2, 100, ""),
 				floatParam("threshold", "超买阈值", "", 75, 50, 100, 1, ""),
@@ -374,17 +385,21 @@ func builderCatalog() []ComponentEntry {
 
 		// ---- 卖出信号：均值回归 ----
 		{ID: "sell_back_to_boll_mid", Name: "回归布林中轨", Role: roleSell, Category: "均值回归",
+			Desc:   "最新收盘价达到或高于布林中轨（指定周期均线）即卖出",
 			Params: []ParamDef{intParam("period", "布林周期", 20, 2, 500, "")}},
 		{ID: "sell_bias_zero", Name: "乖离归零", Role: roleSell, Category: "均值回归",
 			Desc:   "负乖离修复至 0",
 			Params: []ParamDef{intParam("period", "均线周期", 20, 2, 500, "")}},
 		{ID: "sell_zscore_zero", Name: "Z-Score归零", Role: roleSell, Category: "均值回归",
+			Desc:   "指定统计窗口的 Z-Score 达到或高于 0 即卖出",
 			Params: []ParamDef{intParam("period", "统计窗口", 20, 2, 500, "")}},
 		{ID: "sell_back_to_donchian_mid", Name: "回归唐奇安中轨", Role: roleSell, Category: "均值回归",
+			Desc:   "最新收盘价达到或高于通道中轨（窗口内最高价与最低价的均值）即卖出",
 			Params: []ParamDef{intParam("period", "通道周期", 20, 2, 500, "")}},
 
 		// ---- 卖出信号：K线形态 ----
 		{ID: "sell_big_fall", Name: "单日跌幅大于", Role: roleSell, Category: "K线形态",
+			Desc:   "当日跌幅超过指定百分比即卖出",
 			Params: []ParamDef{percentParam("max", "跌幅阈值", 7, 0.5, 50, 0.5, "")}},
 		{ID: "sell_volume_big_bear", Name: "放量大阴线", Role: roleSell, Category: "K线形态",
 			Desc: "放量下跌出货信号",
@@ -401,6 +416,7 @@ func builderCatalog() []ComponentEntry {
 				ratioParam("stopLoss", "止损比例", 5, 0, 1000, 0.5, "0=不启用"),
 			}},
 		{ID: "risk_fixed_stop", Name: "固定止损", Role: roleRisk, Category: "止损止盈",
+			Desc:   "最新收盘价相对买入价的跌幅达到止损比例即卖出；比例为 0 时使用 5%",
 			Params: []ParamDef{ratioParam("pct", "止损比例", 5, 0, 1000, 0.5, "0=组件默认5%")}},
 		{ID: "risk_trailing_stop", Name: "追踪止损", Role: roleRisk, Category: "止损止盈",
 			Desc:   "从买入后最高点回撤超过阈值卖出",
@@ -415,6 +431,7 @@ func builderCatalog() []ComponentEntry {
 			Desc:   "收盘盈利达到比例即卖出",
 			Params: []ParamDef{ratioParam("pct", "止盈比例", 5, 0, 1000, 0.5, "0=组件默认5%")}},
 		{ID: "risk_fixed_tp", Name: "固定止盈", Role: roleRisk, Category: "止损止盈",
+			Desc:   "最新收盘价相对买入价的涨幅达到止盈比例即卖出；比例为 0 时使用 5%",
 			Params: []ParamDef{ratioParam("pct", "止盈比例", 10, 0, 1000, 0.5, "0=组件默认值")}},
 		{ID: "risk_trailing_takeprofit", Name: "移动止盈", Role: roleRisk, Category: "止损止盈",
 			Desc: "盈利激活后回吐 RetreatPct 比例利润卖出",
@@ -431,6 +448,7 @@ func builderCatalog() []ComponentEntry {
 
 		// ---- 独立风控：持仓期限 ----
 		{ID: "risk_holding_days", Name: "持仓N天强平", Role: roleRisk, Category: "持仓期限",
+			Desc:   "买入后满指定交易日数强制卖出，不含买入当天",
 			Params: []ParamDef{intParam("days", "持仓天数", 5, 1, 1000, "")}},
 		{ID: "risk_holding_days_tail", Name: "持仓N天尾盘卖", Role: roleRisk, Category: "持仓期限",
 			Desc: "持仓第 N 天在指定尾盘时间卖出（需分钟线）",
@@ -481,7 +499,7 @@ func builderUnavailable() []UnavailableComponent {
 		{ID: "buy.A指数多头排列", Name: "指数多头排列", Role: roleBuy, Reason: "需要指数行情数据，Lab 样本回测暂不提供"},
 		{ID: "buy.A指数站上MA", Name: "指数站上MA", Role: roleBuy, Reason: "需要指数行情数据，Lab 样本回测暂不提供"},
 		{ID: "buy.N天前符合", Name: "N天前符合", Role: roleBuy, Reason: "嵌套 Buyer 包装组件；条件树已原生支持分组，无需该包装"},
-		{ID: "buy.A因子过滤", Name: "因子过滤", Role: roleBuy, Reason: "属于「因子组合」模式，不在条件树接入"},
+		{ID: "buy.A因子过滤", Name: "因子过滤（旧组件）", Role: roleBuy, Reason: "请使用「因子条件」节点，买入与卖出共用同一份因子定义"},
 		{ID: "buy.A因子TopN", Name: "因子TopN", Role: roleBuy, Reason: "属于「组合研究」模式，不在条件树接入"},
 		{ID: "sell.SellRSI", Name: "SellRSI", Role: roleSell, Reason: "扩展 Seller 接口（含分钟线回调），不兼容 sell.Or 组合；请用「RSI恢复」"},
 		{ID: "sell.SellAt", Name: "定时卖出", Role: roleRisk, Reason: "扩展 Seller 接口，不兼容组合；请用「持仓N天尾盘卖」"},

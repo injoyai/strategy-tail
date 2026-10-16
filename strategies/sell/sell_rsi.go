@@ -2,8 +2,8 @@ package sell
 
 import (
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/strategies/util"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // SellRSI 是 RSI 强弱恢复卖出策略。
@@ -33,7 +33,7 @@ func (s SellRSI) Sell(code string, history, future extend.Klines, getMinklines f
 			continue
 		}
 
-		rsi := util.CalcRSI(append(history, future[:i+1]...), s.Period)
+		rsi := f.RSI值(s.Period).Value(code, append(history, future[:i+1]...))
 
 		if rsi <= s.Threshold {
 			continue

@@ -179,8 +179,8 @@ func (s A回到唐奇安中轨) Sell(code string, dks extend.Klines, buy core.Bu
 	if len(dks) < p {
 		return false
 	}
-	hhv := dks.HHV(p).Float64()
-	llv := dks.LLV(p).Float64()
+	hhv := f.A最高价(p).Value(code, dks)
+	llv := f.A最低价(p).Value(code, dks)
 	mid := (hhv + llv) / 2
 	if mid <= 0 {
 		return false

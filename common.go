@@ -171,7 +171,7 @@ func newDefaultUniverse() researchdata.Universe {
 func Initialize() error {
 	runtimeOnce.Do(func() {
 		logs.SetFormatter(logs.TimeFormatter)
-			runtimeErr = withRuntimeRoot(func() error {
+		runtimeErr = withRuntimeRoot(func() error {
 			var err error
 			Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
 			if err != nil {
@@ -179,15 +179,16 @@ func Initialize() error {
 			}
 
 			databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", tdx.DefaultDatabaseDir))
+			researchPath := ResolveRuntimePath(cfg.GetString("research.valuation.database", "data/research/valuation.db"))
 			Pull, err = extend.NewPullKline(extend.PullKlineConfig{
-				Types:      cfg.GetStrings("pull.types", []string{extend.Day}),
-				Dir:        databaseDir,
-				Goroutines: cfg.GetInt("pull.goroutines", DefaultGoroutines),
+				Types:             cfg.GetStrings("pull.types", []string{extend.Day}),
+				Dir:               databaseDir,
+				Goroutines:        cfg.GetInt("pull.goroutines", DefaultGoroutines),
+				ValuationDatabase: researchPath,
 			})
 			if err != nil {
 				return err
 			}
-			researchPath := ResolveRuntimePath(cfg.GetString("research.valuation.database", "data/research/valuation.db"))
 			ResearchData, err = researchdata.OpenSQLiteStore(researchPath)
 			if err != nil {
 				return err

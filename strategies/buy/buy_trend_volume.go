@@ -384,7 +384,7 @@ func (b A突破N日高点) Buy(code string, dks extend.Klines) bool {
 	if n < period+1 {
 		return false
 	}
-	prevHigh := dks[n-1-period : n-1].HHV(period).Float64()
+	prevHigh := f.A最高价(period).Value(code, dks[:n-1])
 	return dks[n-1].Close.Float64() > prevHigh
 }
 

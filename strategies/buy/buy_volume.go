@@ -39,9 +39,9 @@ func (b A通达信倍量) Buy(code string, dks extend.Klines) bool {
 	}
 
 	TJ1 := float64(today.Volume)/float64(yesterday.Volume) >= ratio
-	TJ2 := today.Close > yesterday.Close && today.High > today.Close && today.High == dks.HHV(6)
-	TJ3 := dks[n-11:n-1].LLV(10).Float64() >= dks[n-11:n-1].HHV(10).Float64()*0.8
-	TJ4 := dks.LLV(5) > dks.LLV(20)
+	TJ2 := today.Close > yesterday.Close && today.High > today.Close && today.High == f.A最高价(6).Price(dks)
+	TJ3 := f.A最低价(10).Value(code, dks[:n-1]) >= f.A最高价(10).Value(code, dks[:n-1])*0.8
+	TJ4 := f.A最低价(5).Price(dks) > f.A最低价(20).Price(dks)
 
 	if !(TJ1 && TJ2 && TJ3 && TJ4) {
 		return false
@@ -283,45 +283,8 @@ func maUp(dks extend.Klines, period, lookback int, minSlope float64) bool {
 		return false
 	}
 
-	n := len(dks)
-	for x := 0; x < lookback; x++ {
-		maNow := f.A均线(period).Value("", dks[:n-x])
-		maPrev := f.A均线(period).Value("", dks[:n-x-1])
-		if maNow <= maPrev {
-			return false
-		}
-		if maPrev <= 0 {
-			return false
-		}
-		slope := (maNow - maPrev) / maPrev
-		if slope < minSlope {
-			return false
-		}
-	}
-	return true
-}
-
-func maUp2(dks protocol.Klines, period, lookback int, minSlope float64) bool {
-	if period <= 0 || lookback <= 0 || len(dks) < period+lookback {
-		return false
-	}
-
-	n := len(dks)
-	for x := 0; x < lookback; x++ {
-		maNow := dks[:n-x].MA(period).Float64()
-		maPrev := dks[:n-x-1].MA(period).Float64()
-		if maNow <= maPrev {
-			return false
-		}
-		if maPrev <= 0 {
-			return false
-		}
-		slope := (maNow - maPrev) / maPrev
-		if slope < minSlope {
-			return false
-		}
-	}
-	return true
+	slope := (f.MA最弱日斜率{Period: period, Lookback: lookback}).Value("", dks)
+	return slope > 0 && !(slope < minSlope)
 }
 
 // A缩量 是缩量买入条件。

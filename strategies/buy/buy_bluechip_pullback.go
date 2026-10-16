@@ -3,8 +3,8 @@ package buy
 import (
 	"fmt"
 
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A长期均线多头 是长期均线呈多头排列的买入条件（牛股筛选器）。
@@ -40,9 +40,9 @@ func (b A长期均线多头) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < l {
 		return false
 	}
-	ma1 := core.MA(dks, s)
-	ma2 := core.MA(dks, m)
-	ma3 := core.MA(dks, l)
+	ma1 := f.A均线(s).Value(code, dks)
+	ma2 := f.A均线(m).Value(code, dks)
+	ma3 := f.A均线(l).Value(code, dks)
 	return ma1 > ma2 && ma2 > ma3
 }
 
@@ -71,7 +71,7 @@ func (b A收盘价站上长期均线) Buy(code string, dks extend.Klines) bool {
 	if len(dks) < period {
 		return false
 	}
-	ma := core.MA(dks, period)
+	ma := f.A均线(period).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -133,7 +133,7 @@ func (b A浅回调至均线) Buy(code string, dks extend.Klines) bool {
 	closePrice := today.Close.Float64()
 
 	// 统计近期高点
-	highest := dks[n-highLookback : n].HHV(highLookback).Float64()
+	highest := f.A最高价(highLookback).Value(code, dks)
 	if highest <= 0 {
 		return false
 	}
@@ -145,7 +145,7 @@ func (b A浅回调至均线) Buy(code string, dks extend.Klines) bool {
 	}
 
 	// 价格在均线附近（上下 proximity% 之内）
-	ma := core.MA(dks, maPeriod)
+	ma := f.A均线(maPeriod).Value(code, dks)
 	if ma <= 0 {
 		return false
 	}
@@ -192,7 +192,7 @@ func (b A企稳信号) Buy(code string, dks extend.Klines) bool {
 	}
 
 	// 今日最低价 >= 前N日最低价（不创新低）
-	prevLow := dks[n-1-lookback : n-1].LLV(lookback)
+	prevLow := f.A最低价(lookback).Price(dks[:n-1])
 	if today.Low < prevLow {
 		return false
 	}
@@ -227,7 +227,7 @@ func (b A缩量企稳) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	today := dks[n-1]
-	avg := core.AverageVolume(dks[n-1-period : n-1])
+	avg := f.A前N日均量(period).Value(code, dks)
 	if avg <= 0 {
 		return false
 	}
@@ -257,8 +257,8 @@ func (b A年线向上) Buy(code string, dks extend.Klines) bool {
 	if n < period+lookback {
 		return false
 	}
-	maNow := core.MA(dks, period)
-	maPrev := core.MA(dks[:n-lookback], period)
+	maNow := f.A均线(period).Value(code, dks)
+	maPrev := f.A均线(period).Value(code, dks[:n-lookback])
 	if maNow <= maPrev || maPrev <= 0 {
 		return false
 	}

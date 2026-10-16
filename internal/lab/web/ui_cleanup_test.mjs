@@ -24,37 +24,40 @@ function elements(v, type) {
   return [...(v.type === type ? [v] : []), ...elements(v.children, type)];
 }
 
-test('默认自由搭建，配置模式只保留三个入口', () => {
+test('默认自由搭建，配置模式只保留自由搭建和因子组合，移除脚本编辑器', () => {
   assert.equal(state.runMode, 'builder');
   const ctx = {state, ...Run.data(), ...Run.setup(), ...Run.methods};
   for (const [key, fn] of Object.entries(Run.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
   const tree = compile(Run.template)(ctx, []);
   const [modeGroup] = elements(tree, 'div').filter(v => v.props?.role === 'group');
   const buttons = elements(modeGroup, 'button');
-  assert.deepEqual(buttons.map(v => v.children), ['自由搭建', '因子组合', '高级脚本']);
-  assert.deepEqual(buttons.map(v => v.props['aria-pressed']), ['true', 'false', 'false']);
+  assert.deepEqual(buttons.map(v => v.children), ['自由搭建', '因子组合']);
+  assert.deepEqual(buttons.map(v => v.props['aria-pressed']), ['true', 'false']);
+  for (const mode of ['builder', 'simple']) {
+    state.runMode = mode;
+    assert.equal(elements(compile(Run.template)(ctx, []), 'textarea').length, 0);
+  }
+  state.runMode = 'builder';
 });
 
-test('因子与脚本入口只打开运行配置，确认回调固定对应模式', async () => {
+test('因子入口只打开运行配置，切换模式后确认仍运行因子组合', async () => {
   const previous = state.runMode;
   const calls = [];
   let mode, confirm;
   const ctx = {buildSpec: () => ({}), openRunConfig: (m, run) => {mode = m; confirm = run;},
-    runBacktest: async m => {calls.push(m);}};
+    runSimple: async () => {calls.push('simple');}};
   try {
     state.taskRunning = false;
-    for (const m of ['simple', 'adv']) {
-      state.runMode = m;
-      Run.methods.requestRun.call(ctx);
-      assert.equal(mode, m);
-      assert.equal(calls.length, m === 'simple' ? 0 : 1);
-      state.runMode = 'builder';
-      await confirm();
-      assert.equal(calls.at(-1), m);
-    }
+    state.runMode = 'simple';
+    Run.methods.requestRun.call(ctx);
+    assert.equal(mode, 'simple');
+    assert.equal(calls.length, 0);
+    state.runMode = 'builder';
+    await confirm();
+    assert.deepEqual(calls, ['simple']);
     confirm = null; ctx.buildSpec = () => null; state.runMode = 'simple';
     Run.methods.requestRun.call(ctx); assert.equal(confirm, null);
-    state.taskRunning = true; state.runMode = 'adv';
+    state.taskRunning = true;
     Run.methods.requestRun.call(ctx); assert.equal(confirm, null);
   } finally {state.runMode = previous; state.taskRunning = false;}
 });

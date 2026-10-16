@@ -11,7 +11,7 @@ import (
 // A收盘跌破均线 是收盘价连续N日跌破指定均线的卖出条件。
 // Period 表示均线周期，默认 20。
 // Days 表示连续跌破的天数，默认 3。
-// 当最近 Days 天收盘价都低于均线时返回卖出信号。
+// 当最近 Days 天收盘价都低于或等于均线时返回卖出信号。
 type A收盘跌破均线 struct {
 	Period int
 	Days   int
@@ -42,13 +42,7 @@ func (s A收盘跌破均线) Sell(code string, dks extend.Klines, buy core.Buy) 
 	if n < period+days {
 		return false
 	}
-	for i := n - days; i < n; i++ {
-		ma := f.A均线(period).Value(code, dks[:i+1])
-		if dks[i].Close.Float64() > ma {
-			return false
-		}
-	}
-	return true
+	return (f.MA下方连续天数{Period: period, Days: days}).Value(code, dks) >= float64(days)
 }
 
 // A_RSI超买 是 RSI 大于指定阈值的卖出条件。

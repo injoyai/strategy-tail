@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
 // A阴线收回 是上升趋势中的"阴线洗盘收回"买入条件。
@@ -60,14 +61,14 @@ func (s A阴线收回) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	if s.MinBodyRatio > 0 {
-		rangeVal := today.High.Float64() - low
-		if rangeVal <= 0 || (open-close)/rangeVal < s.MinBodyRatio {
+		body := (f.A实体振幅占比{}).Value(code, dks)
+		if !(body >= s.MinBodyRatio) {
 			return false
 		}
 	}
 
 	// 条件2/3：盘中跌破支撑均线，收盘收回
-	ma := core.MA(dks, period)
+	ma := f.A均线(period).Value(code, dks)
 	if low >= ma || close < ma {
 		return false
 	}
@@ -78,7 +79,7 @@ func (s A阴线收回) Buy(code string, dks extend.Klines) bool {
 		if maxRise == 0 {
 			maxRise = 1.0
 		}
-		if today.RiseRate() > maxRise {
+		if (f.A单日涨幅{}).Value(code, dks) > maxRise {
 			return false
 		}
 	}
