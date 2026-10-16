@@ -2,8 +2,8 @@ package common
 
 import (
 	"fmt"
-	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/injoyai/strategy-tail/researchdata"
@@ -33,31 +33,56 @@ func (m Market) LocalCodes() ([]string, error) {
 	return codes, nil
 }
 
-// localUniverse 包含本地保留的退市代码；没有逐日成员关系，仍只用于探索。
-type localUniverse struct{}
-
-func (localUniverse) Codes(_ time.Time) ([]string, error) {
-	return MarketAll.LocalCodes()
+// localUniverse 包含本地保留的退市代码；Codes 每轮枚举刷新只读成员集合，逐票查询不访问目录。
+type localUniverse struct {
+	members atomic.Pointer[map[string]bool]
 }
 
-func (u localUniverse) CodesBetween(_, end time.Time) ([]string, error) {
+func (u *localUniverse) Codes(_ time.Time) ([]string, error) {
+	codes, err := MarketAll.LocalCodes()
+	if err != nil {
+		return nil, err
+	}
+	members := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		members[code] = true
+	}
+	u.members.Store(&members)
+	return codes, nil
+}
+
+func (u *localUniverse) CodesBetween(_, end time.Time) ([]string, error) {
 	return u.Codes(end)
 }
 
-func (u localUniverse) Contains(code string, asOf time.Time) (bool, error) {
-	codes, err := u.Codes(asOf)
-	return slices.Contains(codes, code), err
+func (u *localUniverse) Contains(code string, asOf time.Time) (bool, error) {
+	members := u.members.Load()
+	if members == nil {
+		if _, err := u.Codes(asOf); err != nil {
+			return false, err
+		}
+		members = u.members.Load()
+	}
+	return (*members)[code], nil
 }
 
-func (u localUniverse) Snapshot() researchdata.UniverseSnapshot {
+func (u *localUniverse) Snapshot() researchdata.UniverseSnapshot {
 	// 快照接口没有错误返回值；实际读取失败由 Codes/Contains 传递给执行器。
-	codes, _ := u.Codes(time.Time{})
+	members := u.members.Load()
+	if members == nil {
+		_, _ = u.Codes(time.Time{})
+		members = u.members.Load()
+	}
+	size := 0
+	if members != nil {
+		size = len(*members)
+	}
 	return researchdata.UniverseSnapshot{
 		ID:              "local_klines",
 		Source:          "tdx_local",
 		Mode:            researchdata.UniverseModeCurrentStatic,
 		IncludeDelisted: true,
 		MembershipPIT:   researchdata.UniversePITUnverified,
-		Size:            len(codes),
+		Size:            size,
 	}
 }

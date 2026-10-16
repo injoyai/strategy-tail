@@ -154,11 +154,11 @@ func newDefaultUniverse() researchdata.Universe {
 	u, fallback, err := researchdata.LoadUniverseOrDefault(path, researchdata.FileUniverseConfig{}, false, nil)
 	if err != nil {
 		logs.Warnf("universe 文件加载失败，使用本地日线股票池: path=%s err=%v", path, err)
-		return localUniverse{}
+		return &localUniverse{}
 	}
 	if fallback {
 		logs.Warnf("universe 文件不存在，使用本地日线股票池（成员历史未验证，仅 exploratory）: %s", path)
-		return localUniverse{}
+		return &localUniverse{}
 	}
 	return u
 }

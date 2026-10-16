@@ -79,3 +79,30 @@ func TestEventCountFiltersAnnouncementType(t *testing.T) {
 		t.Fatalf("count after delayed event publication = %v, want 2", got)
 	}
 }
+
+// TestDividendYieldBindsTDXValuation 股息率因子经 BuildWithData 绑定
+// tdx.valuation.daily（通达信口径，百分数），并遵守 AvailableAt 可见性。
+func TestDividendYieldBindsTDXValuation(t *testing.T) {
+	store := dataStore(t)
+	if err := store.RegisterDataset(researchdata.DatasetSpec{
+		ID: "tdx.valuation.daily", Kind: researchdata.KindFundamental, Source: "test", Version: "1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Ingest([]researchdata.Record{{
+		Dataset: "tdx.valuation.daily", Code: "sh600000", Key: "d1", Source: "test",
+		EventAt: dataTime(1), AvailableAt: dataTime(2), Values: map[string]float64{"dividend_yield": 4.05},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	bound := BuildWithData("dividend_yield", 0, store)
+	if bound == nil {
+		t.Fatal("BuildWithData(dividend_yield) 失败")
+	}
+	// K线时间早于 AvailableAt → 不可见 → NaN
+	early := closes(time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local), 10, 10.5)
+	wantNaN(t, "发布前", bound.Value("sh600000", early))
+	// K线时间晚于 AvailableAt → 可见
+	late := closes(time.Date(2025, 1, 3, 0, 0, 0, 0, time.Local), 10, 10.5)
+	wantVal(t, "发布后", bound.Value("sh600000", late), 4.05, 1e-9)
+}

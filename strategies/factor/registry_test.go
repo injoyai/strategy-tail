@@ -15,6 +15,9 @@ var wantKinds = [...]string{
 	"position", "high_distance", "close_pct", "kvalue", "vp_corr",
 	"pe_ttm", "pe_static", "pb_mrq", "ps_ttm", "pcf_ocf_ttm", "peg",
 	"macd_negative_shrinking_streak", "macd_same_sign_reversals", "macd_same_sign_max_change",
+	"downside_vol", "return_skew", "parkinson_vol",
+	"turnover_mean", "turnover_pct", "volume_cv", "volume_up_ratio", "volume_down_ratio",
+	"range_ratio", "bar_center", "dividend_yield",
 }
 
 func TestAll(t *testing.T) {
@@ -59,7 +62,7 @@ func TestRegistryMetadata(t *testing.T) {
 		"规模与流动性": true, "K线形态": true, "位置": true, "相关性": true, "估值": true,
 	}
 	wantUnit := map[string]bool{
-		"ratio": true, "multiple": true, "score": true, "correlation": true,
+		"ratio": true, "multiple": true, "score": true, "correlation": true, "percent": true,
 	}
 	for _, e := range All() {
 		if !wantCategory[e.Category] {
@@ -72,7 +75,7 @@ func TestRegistryMetadata(t *testing.T) {
 			t.Fatalf("%s: defaultDays = %d, 应为正", e.Kind, e.DefaultDays)
 		}
 		if !wantUnit[e.Unit] {
-			t.Fatalf("%s: unit %q 非法（ratio|multiple|score|correlation）", e.Kind, e.Unit)
+			t.Fatalf("%s: unit %q 非法（ratio|multiple|score|correlation|percent）", e.Kind, e.Unit)
 		}
 		if e.Example == "" || !strings.ContainsAny(e.Example, "0123456789") {
 			t.Fatalf("%s: example 未解释原始值: %q", e.Kind, e.Example)
@@ -155,6 +158,10 @@ func TestBuild(t *testing.T) {
 	// 单根K线因子显式传正数 days 也被忽略
 	if _, ok := Build("body", 5).(*实体幅度); !ok {
 		t.Fatalf("body 应忽略 days")
+	}
+	// 上下文因子不支持 Build（只支持 BuildContext/BuildWithData）
+	if f := Build("dividend_yield", 0); f != nil {
+		t.Fatalf("上下文因子 Build 应返回 nil, got %v", f)
 	}
 	// 未知 kind → nil
 	if f := Build("no_such", 5); f != nil {

@@ -1,5 +1,5 @@
 // 展示层格式化助手：只影响显示，JSON/提交始终用原始值。
-// unit 取值见 strategies/factor/registry.go（ratio / multiple / 其他原值）。
+// unit 取值见 strategies/factor/registry.go（ratio / multiple / percent / 其他原值）。
 
 // 参数模式已下线，历史报告仍显示当时启用的条件与参数。
 export function formatMacdParameters(p) {
@@ -29,11 +29,12 @@ export const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&l
 export const sig3 = v => String(Number(v.toPrecision(3)));
 
 // fmtFactorVal 因子值展示（unit 感知）：ratio ×100 加 %、multiple 加 ×、
-// 其余原值。
+// percent 原值即百分数直接加 %、其余原值。
 export function fmtFactorVal(v, unit) {
   if (v == null || !isFinite(v)) return '—';
   if (unit === 'ratio') return sig3(v * 100) + '%';
   if (unit === 'multiple') return sig3(v) + '×';
+  if (unit === 'percent') return sig3(v) + '%';
   return sig3(v);
 }
 
@@ -62,7 +63,8 @@ export function groupChartCategories(gs, unit, showRange) {
 }
 
 // factorAxisNumber / factorAxisLabel 只改变展示单位：ratio 用百分比横轴，
-// 报告和策略条件仍保留原始小数；multiple 显示 ×，其他因子保持原值。
+// 报告和策略条件仍保留原始小数；multiple 显示 ×；percent 原值即百分数，
+// 轴值保持原值只补 %；其他因子保持原值。
 export function factorAxisNumber(v, unit) {
   return unit === 'ratio' ? v * 100 : v;
 }
@@ -71,6 +73,7 @@ export function factorAxisLabel(v, unit) {
   if (v == null || !isFinite(v)) return '—';
   if (unit === 'ratio') return sig3(+v) + '%';
   if (unit === 'multiple') return sig3(+v) + '×';
+  if (unit === 'percent') return sig3(+v) + '%';
   return sig3(+v);
 }
 
@@ -176,13 +179,15 @@ export function groupFactors(catalog) {
   return groups;
 }
 
-// filterText 区间条件的显示文案：API/存储用原始比例，显示层 ×100。
-// catalog 为因子目录（state.factorCatalog），用于反查 unit 与真实参数名。
+// filterText 区间条件的显示文案：API/存储用原始比例，显示层 ×100（percent
+// 原值即百分数，不再乘 100）。catalog 为因子目录（state.factorCatalog），
+// 用于反查 unit 与真实参数名。
 export function filterText(f, catalog) {
   if (!f) return '';
   const fent = (catalog || []).find(x => x.kind === f.kind);
   const unit = fent ? fent.unit : '';
-  const fmt = v => v == null ? '—' : (unit === 'ratio' ? sig3(v * 100) + '%' : sig3(v));
+  const fmt = v => v == null ? '—'
+    : (unit === 'ratio' ? sig3(v * 100) + '%' : unit === 'percent' ? sig3(v) + '%' : sig3(v));
   // 因子名显示类型名 + 实际参数（days 是真实分析参数），不用目录默认实例名
   const nm = fent ? factorInstanceName(fent, f.days) : `${f.kind}(${f.days})`;
   if (f.operator === 'gte') return nm + '≥' + fmt(f.min);
