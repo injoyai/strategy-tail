@@ -81,7 +81,7 @@ func mirrorICStats(x ExtendedICStats) ICStats {
 }
 
 // dailyGroupMembers 按与 aggregateSet 相同的中点公式 (i+j)*g/(2n) 重建指定组
-//（groupIdx 0 基）的每日成员集合序列，供换手序列与切组严格同口径。
+// （groupIdx 0 基）的每日成员集合序列，供换手序列与切组严格同口径。
 // aggregateSet.membersOut 输出的是全区间按组索引累积的并集（组维度），无法
 // 表达按日维度的成员关系，故基于排序缓存二次线性扫描（无重复排序）。
 func (c *quantileCache) dailyGroupMembers(g, groupIdx int) []map[string]struct{} {
@@ -186,6 +186,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		}
 	}
 	r.totalCodes.Store(int64(len(codes)))
+	r.setTaskProgress("analysis", "stocks", researchrun.Progress{Phase: "observations", Total: len(codes)})
 	years := cfg.RunConfig.years()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -220,6 +221,8 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		GetDayKlines: common.Pull.DayKlines,
 		ForwardDays:  maxH,
 		OnCodeDone: func(progress researchrun.Progress) {
+			progress.Phase = "observations"
+			r.setTaskProgress("analysis", "stocks", progress)
 			r.doneCodes.Store(int64(progress.Done))
 			current := progress.Code
 			r.currentCode.Store(&current)
@@ -287,6 +290,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	// historical_membership：按交易日历史成员关系过滤截面（fail closed：
 	// 查询失败视为非成员并记录失败明细，不静默假设在池内）。收益截面与
 	// 因子值截面保持同键。
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "aligning"})
 	if histMembership {
 		for day, cv := range vals {
 			for code := range cv {
@@ -326,16 +330,17 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	// 已保证声明合法，后续扩展承载字段时在此接入 neutralizeCrossSection。
 
 	type hResult struct {
-		analysis      HorizonAnalysis
-		daily         []DailyIC
-		first, last   string
-		quintiles     []float64
+		analysis    HorizonAnalysis
+		daily       []DailyIC
+		first, last string
+		quintiles   []float64
 	}
 	results := make([]hResult, len(horizons))
 	statsByH := make(map[int]ExtendedICStats, len(horizons))
 	spreadsByH := make(map[int]*float64, len(horizons))
 
 	for hi, h := range horizons {
+		r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "ic", Code: fmt.Sprintf("%d 日收益周期", h)})
 		select {
 		case <-stop:
 			finishTrial(TrialStatusCanceled, "运行被停止")
@@ -382,6 +387,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		}
 		icStats := extendedICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
 		statsByH[h] = icStats
+		r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "grouping", Code: fmt.Sprintf("%d 日收益周期", h)})
 
 		var groups []FactorGroupStats
 		var qs []float64
@@ -409,7 +415,13 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		spreadsByH[h] = summary.Spread
 
 		yresults := make([]YearHorizonResult, 0, len(years))
-		for _, gd := range groupDaysByYear(days) {
+		yearDays := groupDaysByYear(days)
+		for i, gd := range yearDays {
+			r.setTaskProgress("analysis", "years", researchrun.Progress{Phase: "yearly", Done: i, Total: len(yearDays), Code: fmt.Sprintf("%d 日收益周期 · %d 年", h, gd[0].Year())})
+			if stopped(stop) {
+				finishTrial(TrialStatusCanceled, "运行被停止")
+				return nil, errStopped
+			}
 			yr := YearHorizonResult{
 				Year:        gd[0].Year(),
 				IC:          icOf(gd),
@@ -424,6 +436,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 				yr.Groups, yr.Summary = yset.Stats, yset.Summary
 			}
 			yresults = append(yresults, yr)
+			r.setTaskProgress("analysis", "years", researchrun.Progress{Phase: "yearly", Done: i + 1, Total: len(yearDays), Code: fmt.Sprintf("%d 日收益周期 · %d 年", h, gd[0].Year())})
 		}
 
 		first, last := "", ""
@@ -449,6 +462,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		}
 	}
 
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "diagnostics"})
 	analyses := make([]HorizonAnalysis, len(results))
 	hdaily := make(map[int][]DailyIC, len(results))
 	for i, res := range results {
@@ -488,18 +502,18 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		},
 		AnalysisVersion: 4,
 		Factor:          snapshot,
-		Grouping:      grouping,
-		Groups:        main.analysis.Groups,
-		Years:         yearly,
-		Stats:         mirrorICStats(main.analysis.IC),
-		Summary:       main.analysis.Summary,
-		Coverage:      coverage,
-		YearCoverage:  yearCoverage,
-		FirstDataDate: main.first,
-		LastDataDate:  main.last,
-		Daily:         main.daily,
-		StartedAt:     started.Format(time.RFC3339),
-		FinishedAt:    time.Now().Format(time.RFC3339),
+		Grouping:        grouping,
+		Groups:          main.analysis.Groups,
+		Years:           yearly,
+		Stats:           mirrorICStats(main.analysis.IC),
+		Summary:         main.analysis.Summary,
+		Coverage:        coverage,
+		YearCoverage:    yearCoverage,
+		FirstDataDate:   main.first,
+		LastDataDate:    main.last,
+		Daily:           main.daily,
+		StartedAt:       started.Format(time.RFC3339),
+		FinishedAt:      time.Now().Format(time.RFC3339),
 
 		Protocol:        &proto,
 		ProtocolHash:    hash,
@@ -526,6 +540,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		trialStatus, trialMsg = TrialStatusInsufficient, "运行成功但无有效标签样本"
 	}
 
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "reporting"})
 	store := r.store
 	if store == nil {
 		// 直接构造的 Runner（旧测试路径）使用 cwd 相对默认根；

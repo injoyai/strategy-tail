@@ -132,7 +132,7 @@ func TestDataUpdateSharedTaskStatus(t *testing.T) {
 	s := NewServer()
 	gate, ready := make(chan struct{}), make(chan struct{})
 	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(t.TempDir(), "settings.json"), func(_ bool, progress func(extend.UpdateProgress)) error {
-		progress(extend.UpdateProgress{Stage: extend.Minute, Done: 2, Total: 4, Code: "sh600000", Failed: 1, Message: "更新分钟线"})
+		progress(extend.UpdateProgress{Stage: extend.Minute, Done: 2, Total: 4, StageDone: 1, StageTotal: 2, Code: "sh600000", Failed: 1, Message: "更新分钟线"})
 		close(ready)
 		<-gate
 		return errors.New("one code failed")

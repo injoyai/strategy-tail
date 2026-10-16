@@ -75,6 +75,40 @@ func nearAccount(t *testing.T, got, want float64) {
 	}
 }
 
+func TestAccountBacktestProgressByPhase(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
+	cfg := accountTestConfig(map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101, 102),
+		"sh600001": accountBars(dates, 10, 11, 12),
+	}, accountBuyer{}, accountNeverSell{})
+	// 重复代码不多计，缺失股票仍计入已处理数量。
+	cfg.Codes = []string{"sh600001", "600001", "sh600002"}
+	var progress []researchrun.Progress
+	cfg.OnCodeDone = func(p researchrun.Progress) { progress = append(progress, p) }
+	_, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(progress) != 7 {
+		t.Fatalf("unexpected progress: %+v", progress)
+	}
+	for i, p := range progress {
+		phase, done, total := "loading", i, 2
+		if i >= 3 {
+			phase, done, total = "simulating", i-3, 3
+		}
+		if p.Phase != phase || p.Done != done || p.Total != total {
+			t.Fatalf("progress[%d] = %+v, want %s %d/%d", i, p, phase, done, total)
+		}
+		if i > 3 && p.Code != dates[i-4] {
+			t.Fatalf("simulation date: %+v", p)
+		}
+	}
+	if progress[1].Failure == nil && progress[2].Failure == nil {
+		t.Fatal("missing stock failure was lost")
+	}
+}
+
 func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 	dates := []string{"2025-01-02", "2025-01-03"}
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}

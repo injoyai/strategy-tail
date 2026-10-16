@@ -312,6 +312,16 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status["failed"] = update.Failed
 		status["skipped"] = update.Skipped
 		status["message"] = update.Message
+		status["unit"] = "symbols"
+		status["currentCode"] = update.Code
+		status["done"], status["total"], status["progress"] = -1, -1, -1
+		if update.StageTotal > 0 {
+			status["done"], status["total"] = update.StageDone, update.StageTotal
+			status["progress"] = float64(update.StageDone) / float64(update.StageTotal) * 100
+		}
+		if update.State == "done" {
+			status["progress"] = 100.0
+		}
 	}
 	writeJSON(w, status)
 }

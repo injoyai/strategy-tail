@@ -1,6 +1,32 @@
 // 展示层格式化助手：只影响显示，JSON/提交始终用原始值。
 // unit 取值见 strategies/factor/registry.go（ratio / multiple / percent / 其他原值）。
 
+// 所有任务共用阶段口径；没有可度量工作量的阶段保持不定进度。
+export function taskProgress(s = {}) {
+  const total = Number(s.total ?? s.totalCodes) || 0;
+  const done = Math.max(0, Math.min(total, Number(s.done ?? s.doneCodes) || 0));
+  const phase = s.phase || s.stage || (total > 0
+    ? s.task === 'analysis' ? 'observations' : s.task === 'data_update' ? 'updating' : 'backtesting'
+    : s.task === 'portfolio' || s.task === 'portfolio_validation' ? 'queued' : 'preparing');
+  const label = {
+    preparing: '准备数据', loading: '加载行情', simulating: '模拟交易', backtesting: '执行回测',
+    observations: '计算因子与收益标签', aligning: '对齐数据', ic: '计算 IC 统计',
+    grouping: '计算分组收益', yearly: '计算年度结果', diagnostics: '汇总诊断结果', reporting: '生成报告', reading_results: '读取结果',
+    queued: '准备任务', loading_data: '加载数据与因子', transform: '截面变换', combine: '合成分数',
+    target: '构建目标组合', execute: '模拟交易', metrics: '计算组合指标', attribution: '计算收益归因', finalize: '保存结果',
+    checking: '检查行情', day: '更新日线', minute: '更新分钟线', valuation: '更新估值快照', updating: '更新行情',
+  }[phase] || '处理任务';
+  const unit = s.unit || (phase === 'simulating' || phase === 'execute' ? 'trading_days'
+    : phase === 'yearly' ? 'years' : s.task === 'data_update' ? 'symbols'
+    : s.config?.macd && phase === 'backtesting' ? 'stock_years' : 'stocks');
+  const unitLabel = {stocks: '只股票', symbols: '个标的', trading_days: '个交易日', years: '个年份', stock_years: '股票×年份', snapshots: '个快照'}[unit] || '项';
+  const currentLabel = unit === 'trading_days' && !String(s.currentCode || '').startsWith('窗口') ? '当前日期'
+    : unit === 'stocks' && /^(sh|sz|bj)\d+$/.test(s.currentCode || '') ? '当前股票' : '当前';
+  return {phase, label, done, total, percent: total > 0 ? Math.round(done / total * 100) : null,
+    counts: total > 0 ? `${done}/${total} ${unitLabel}` : '',
+    current: s.currentCode ? `${currentLabel} ${s.currentCode}` : ''};
+}
+
 // 参数模式已下线，历史报告仍显示当时启用的条件与参数。
 export function formatMacdParameters(p) {
   if (!p) return [];

@@ -324,6 +324,8 @@ type Runner struct {
 	totalCodes  atomic.Int64
 	doneCodes   atomic.Int64
 	currentCode atomic.Pointer[string]
+	// 阶段、数量与当前项作为一个快照发布，避免轮询读到跨阶段混合计数。
+	stageProgress atomic.Pointer[taskProgress]
 
 	state        atomic.Pointer[string] // idle/running/error/done
 	errMsg       atomic.Pointer[string]
@@ -434,6 +436,7 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 	r.doneCodes.Store(0)
 	r.totalCodes.Store(0)
 	r.currentCode.Store(nil)
+	r.setTaskProgress("backtest", "", researchrun.Progress{Phase: "preparing"})
 	// task 先于 state 写入：读侧见 state=running 必见当前 task
 	task := "backtest"
 	r.task.Store(&task)
@@ -508,7 +511,19 @@ func (r *Runner) Status() map[string]any {
 		task = *p
 		m["task"] = task
 	}
-	if task == "portfolio" || task == "portfolio_validation" {
+	if p := r.stageProgress.Load(); p != nil && p.Task == task {
+		m["phase"] = p.Phase
+		m["unit"] = p.Unit
+		m["currentCode"] = p.Code
+		m["done"], m["total"], m["progress"] = -1, -1, -1
+		if p.Total > 0 {
+			m["done"], m["total"] = p.Done, p.Total
+			m["progress"] = float64(p.Done) / float64(p.Total) * 100
+		}
+		if st == "done" {
+			m["progress"] = 100.0
+		}
+	} else if task == "portfolio" || task == "portfolio_validation" {
 		// 组合任务进度契约（Task 9）：总量未知时返回不确定进度（done/total=-1），
 		// 已知后报告 done/total 与阶段；精确终态以持久 Store 为准（/api/status
 		// 只表达任务已结束 + 进度语义）。
@@ -523,11 +538,13 @@ func (r *Runner) Status() map[string]any {
 		if p := r.phase.Load(); p != nil {
 			m["phase"] = *p
 		}
+	} else if total := r.totalCodes.Load(); total > 0 {
+		m["progress"] = float64(r.doneCodes.Load()) / float64(total) * 100
+	}
+	if task == "portfolio" || task == "portfolio_validation" {
 		if id := r.portfolioRun.Load(); id != nil {
 			m["runId"] = *id
 		}
-	} else if total := r.totalCodes.Load(); total > 0 {
-		m["progress"] = float64(r.doneCodes.Load()) / float64(total) * 100
 	}
 	if cfg := r.lastRun.Load(); cfg != nil {
 		m["config"] = *cfg
@@ -567,6 +584,7 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	r.doneCodes.Store(0)
 	r.totalCodes.Store(0)
 	r.currentCode.Store(nil)
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "preparing"})
 	// task 先于 state 写入：读侧见 state=running 必见当前 task
 	task := "analysis"
 	r.task.Store(&task)
@@ -676,6 +694,13 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if cfg.MACD != nil {
 		execute = runMACDYears
 	}
+	if cfg.Account == nil {
+		unit := "stocks"
+		if cfg.MACD != nil {
+			unit = "stock_years"
+		}
+		r.setTaskProgress("backtest", unit, researchrun.Progress{Phase: "backtesting", Total: int(r.totalCodes.Load())})
+	}
 	runCfg := researchrun.Config{
 		Codes:         codes,
 		Years:         years,
@@ -688,6 +713,16 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		GetDayKlines:  common.Pull.DayKlines,
 		GetMinKlines:  common.Pull.MinKlines,
 		OnCodeDone: func(progress researchrun.Progress) {
+			if progress.Phase == "" {
+				progress.Phase = "backtesting"
+			}
+			unit := "stocks"
+			if progress.Phase == "simulating" {
+				unit = "trading_days"
+			} else if cfg.MACD != nil && cfg.Account == nil {
+				unit = "stock_years"
+			}
+			r.setTaskProgress("backtest", unit, progress)
 			r.totalCodes.Store(int64(progress.Total))
 			r.doneCodes.Store(int64(progress.Done))
 			current := progress.Code
@@ -708,6 +743,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if err != nil {
 		return nil, err
 	}
+	r.setTaskProgress("backtest", "", researchrun.Progress{Phase: "reporting"})
 	researchrun.LogCoverage(run.Coverage)
 
 	// 汇总报告（变体顺序保持脚本返回顺序，页面按需排序）

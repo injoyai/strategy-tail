@@ -100,13 +100,15 @@ func (this *PullKline) Run(m *tdx.Manage, spec string) error {
 // UpdateProgress counts completed code/type jobs after their final retry.
 // Callbacks are serialized; Failed jobs never mark the batch as up to date.
 type UpdateProgress struct {
-	Stage   string `json:"stage"`
-	Done    int    `json:"done"`
-	Total   int    `json:"total"`
-	Code    string `json:"code"`
-	Failed  int    `json:"failed"`
-	Skipped bool   `json:"skipped"`
-	Message string `json:"message,omitempty"`
+	Stage      string `json:"stage"`
+	Done       int    `json:"done"`
+	Total      int    `json:"total"`
+	Code       string `json:"code"`
+	Failed     int    `json:"failed"`
+	Skipped    bool   `json:"skipped"`
+	Message    string `json:"message,omitempty"`
+	StageDone  int    `json:"stageDone"`
+	StageTotal int    `json:"stageTotal"`
 }
 
 func (this *PullKline) Update(m *tdx.Manage, must ...bool) error {
@@ -187,9 +189,11 @@ func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report fun
 	var updateErrors []error
 	for _, kind := range types {
 		progress.Stage, progress.Code = kind, ""
+		progress.StageDone, progress.StageTotal = 0, len(codes)
 		emit()
 		onCode := func(code string, err error) {
 			progress.Done++
+			progress.StageDone++
 			progress.Code = code
 			if err != nil {
 				progress.Failed++
@@ -215,6 +219,9 @@ func (this *PullKline) UpdateWithProgress(m *tdx.Manage, manual bool, report fun
 		emit()
 		return fmt.Errorf("%s: %w", progress.Message, errors.Join(updateErrors...))
 	}
+	progress.Stage, progress.Code = "finalize", ""
+	progress.StageDone, progress.StageTotal = 0, 0
+	emit()
 	return this.Updated.Update("pull")
 }
 

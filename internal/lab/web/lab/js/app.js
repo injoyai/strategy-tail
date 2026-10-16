@@ -6,7 +6,8 @@
 import { createApp, watch } from './vendor/vue.esm-browser.prod.js';
 import { state, runtime } from './store.js';
 import { Api } from './api.js';
-import { TABS, TAB_SLUG, TAB_NUM, TASK_LABEL, PF_PHASE } from './constants.js';
+import { TABS, TAB_SLUG, TAB_NUM, TASK_LABEL } from './constants.js';
+import { taskProgress } from './format.js';
 import { animatePanel, animateStatus, initMotion } from './motion.js';
 import Tab1Run from './components/Tab1Run.js';
 import DataUpdate from './components/DataUpdate.js';
@@ -95,58 +96,41 @@ const App = {
       const st = s.state || 'idle';
       if (st === 'idle') { state.taskDock = null; return; }
       const taskName = TASK_LABEL[s.task] || '批量任务';
-      const isPortfolio = s.task === 'portfolio' || s.task === 'portfolio_validation';
       const isUpdate = s.task === 'data_update';
-      const updatePhase = {checking: '检查是否需要更新', day: '更新日线', minute: '更新分钟线'}[s.phase] || '准备更新';
-      let done = Number(s.doneCodes) || 0;
-      let total = Number(s.totalCodes) || 0;
-      if (isPortfolio) {
-        done = Number(s.done) || 0;
-        total = Number(s.total) || 0;
-        if (Number(s.done) === -1 || Number(s.total) === -1) { done = 0; total = 0; }
-      }
-      const rawProgress = Number(s.progress);
-      const progress = Number.isFinite(rawProgress) ? Math.max(0, Math.min(100, rawProgress)) : 0;
+      const p = taskProgress(s);
       const connectionError = st === 'connection-error';
-      const determinate = st !== 'running' || total > 0;
+      const determinate = !connectionError && (st === 'done' || p.percent != null);
       const title = {
-        running: `${taskName}进行中`,
+        running: `${taskName} · ${p.label}`,
         done: `${taskName}已完成`,
         error: `${taskName}失败`,
         stopped: `${taskName}已停止`,
         interrupted: `${taskName}意外中断`,
-        'connection-error': '进度读取中断',
+        'connection-error': s.resultReadError ? '结果读取失败' : '进度读取中断',
       }[st] || taskName;
-      let detail = isPortfolio
-        ? (total > 0 && (done > 0 || st !== 'running')
-          ? `${done}/${total} 单元`
-          : PF_PHASE[s.phase] || '正在准备组合任务')
-        : total > 0 && (done > 0 || st !== 'running')
-          ? `${done}/${total} ${s.task === 'data_update' ? '更新单元' : s.config?.account ? '加载与交易日单元' : s.config?.macd ? '股票×年份' : '只股票'}`
-          : isUpdate ? updatePhase : '正在准备股票列表';
-      if (isUpdate && total > 0) detail += ` · 失败 ${Number(s.failed) || 0}`;
+      let detail = st === 'done' ? '结果已就绪' : p.counts || (st === 'running' ? `正在${p.label}…` : p.label);
+      if (isUpdate && p.total > 0) detail += ` · 失败 ${Number(s.failed) || 0}`;
+      if (connectionError) detail = s.resultReadError ? '结果尚未载入' : '无法确认当前阶段与进度';
       if (st === 'interrupted') detail = '未取得本次任务结果';
-      const current = isUpdate
-        ? st === 'running' ? `${updatePhase}${s.currentCode ? ' · ' + s.currentCode : ''}` : s.message || '数据检查结束'
-        : s.currentCode && done > 0
-        ? `当前 ${s.currentCode}`
-        : isPortfolio && st === 'running'
-          ? (PF_PHASE[s.phase] || '组合任务进行中')
-          : st === 'done' ? '结果已就绪'
-          : st === 'stopped' ? '已保留当前表单配置'
-          : connectionError ? '任务可能仍在后台运行'
-          : '加载任务范围与数据';
+      const current = connectionError ? s.resultReadError ? '后台任务已完成，请重试读取结果' : '任务可能仍在后台运行'
+        : st === 'stopped' ? '已保留当前表单配置'
+        : st === 'done' ? '' : p.current;
       state.taskDock = {
         state: connectionError || st === 'interrupted' ? 'error' : st,
         task: s.task,
         title,
-        percent: isUpdate && s.skipped ? '无需更新' : determinate ? `${Math.round(progress)}%` : '准备中',
-        value: determinate ? (st === 'done' && !s.skipped ? 100 : progress) : null,
-        indeterminate: !determinate,
+        percent: isUpdate && s.skipped ? '无需更新'
+          : st === 'done' ? '100%'
+          : connectionError ? '状态未知'
+          : determinate ? `本阶段 ${p.percent}%`
+          : st === 'error' ? '失败' : st === 'stopped' ? '已停止' : '进行中',
+        value: determinate ? (st === 'done' && !s.skipped ? 100 : p.percent) : st === 'running' ? null : 0,
+        indeterminate: !determinate && st === 'running',
         detail,
         current,
         error: s.error || '',
         running: st === 'running',
+        readingResults: p.phase === 'reading_results',
         connectionError,
       };
     },
@@ -191,8 +175,11 @@ const App = {
         const visibleStatus = s.state === 'idle' && runtime.prevRunning
           ? {...s, state: interrupted ? 'interrupted' : 'stopped', task: runtime.lastTask}
           : s;
-        this.renderTaskProgress(visibleStatus);
-        state.taskRunning = running || state.dataUpdating;
+        const readingResults = s.state === 'done' && s.task !== 'data_update';
+        this.renderTaskProgress(readingResults
+          ? {...s, state: 'running', phase: 'reading_results', done: -1, total: -1, progress: -1, currentCode: ''}
+          : visibleStatus);
+        state.taskRunning = running || state.dataUpdating || readingResults;
         if (running && !runtime.pollTimer) runtime.pollTimer = setInterval(() => this.pollStatusOnce(), 2000);
         if (s.state === 'done') {
           clearInterval(runtime.pollTimer); runtime.pollTimer = null;
@@ -222,6 +209,8 @@ const App = {
               state.scriptMsg = {text: '已载入高级脚本多变体报告。', ok: true};
             }
           }
+          this.renderTaskProgress(s);
+          state.taskRunning = !!state.dataUpdating;
         } else if (s.state === 'idle' && runtime.prevRunning && runtime.lastTask === 'analysis') {
           state.factorMsg = {text: interrupted ? '后台任务状态已重置，本次分析意外中断，请重新运行' : '任务已停止', ok: false};
           clearInterval(runtime.pollTimer); runtime.pollTimer = null;
@@ -234,10 +223,13 @@ const App = {
         runtime.prevRunning = running;
       } catch (e) {
         clearInterval(runtime.pollTimer); runtime.pollTimer = null;
-        state.taskRunning = runtime.prevRunning || state.dataUpdating;
+        const resultReadError = state.status?.state === 'done';
+        state.taskRunning = (!resultReadError && runtime.prevRunning) || state.dataUpdating;
         this.renderTaskProgress({
           state: 'connection-error', task: runtime.lastTask, progress: 0,
-          error: `无法读取任务进度：${e.message}。请重试；后台任务状态尚未确认。`,
+          resultReadError,
+          error: resultReadError ? `任务已完成，结果读取失败：${e.message}。请重试读取。`
+            : `无法读取任务进度：${e.message}。请重试；后台任务状态尚未确认。`,
         });
       }
     },
@@ -271,23 +263,24 @@ const App = {
     <div class="status-head">
       <div class="status-title-wrap">
         <span class="status-dot" aria-hidden="true"></span>
-        <span class="status-kicker">BATCH JOB</span>
         <span id="statusState">{{ state.taskDock ? state.taskDock.title : '' }}</span>
       </div>
-      <span id="statusPercent">{{ state.taskDock ? state.taskDock.percent : '' }}</span>
+      <span id="statusPercent" class="status-percent">{{ state.taskDock ? state.taskDock.percent : '' }}</span>
     </div>
     <div class="progress-outer">
       <progress class="progress-inner" :class="{indeterminate: state.taskDock && state.taskDock.indeterminate}"
-        :max="100" :value="state.taskDock ? state.taskDock.value : 0" aria-label="批量任务进度">{{ state.taskDock ? state.taskDock.percent : '' }}</progress>
+        :max="100" :value="state.taskDock ? state.taskDock.value : 0"
+        :aria-label="state.taskDock ? state.taskDock.title + '进度' : '批量任务进度'"
+        :aria-valuetext="state.taskDock ? state.taskDock.detail + '，' + state.taskDock.percent : ''">{{ state.taskDock ? state.taskDock.percent : '' }}</progress>
     </div>
     <div class="status-foot">
       <div class="status-meta">
-        <span id="statusDetail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
-        <span id="statusCurrent">{{ state.taskDock ? state.taskDock.current : '' }}</span>
+        <span id="statusDetail" class="status-detail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
+        <span id="statusCurrent" class="status-current">{{ state.taskDock ? state.taskDock.current : '' }}</span>
       </div>
       <div class="status-actions">
         <button type="button" class="secondary" v-if="state.taskDock && state.taskDock.connectionError" @click="pollStatus()">重试读取</button>
-        <button type="button" class="danger" v-if="state.taskDock && state.taskDock.running && state.taskDock.task !== 'data_update'" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
+        <button type="button" class="danger" v-if="state.taskDock && state.taskDock.running && !state.taskDock.readingResults && state.taskDock.task !== 'data_update'" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
         <button type="button" class="secondary" v-if="state.taskDock && !state.taskDock.running" @click="dismissTaskDock()">关闭</button>
       </div>
     </div>

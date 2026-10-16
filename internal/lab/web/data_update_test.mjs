@@ -5,9 +5,11 @@ import test from 'node:test';
 const read = path => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 const moduleURL = source => 'data:text/javascript;base64,' + Buffer.from(source).toString('base64');
 const Vue = await import(moduleURL(read('./lab/js/vendor/vue.esm-browser.prod.js')));
+globalThis.dataUpdateTestFormat = await import(moduleURL(read('./lab/js/format.js')));
 const api = globalThis.dataUpdateTestApi = {};
 const source = read('./lab/js/components/DataUpdate.js')
   .replace("import { state } from '../store.js';", 'const state = {};')
+  .replace("import { taskProgress } from '../format.js';", 'const {taskProgress} = globalThis.dataUpdateTestFormat;')
   .replace("import { Api } from '../api.js';", 'const Api = globalThis.dataUpdateTestApi;');
 const {default: DataUpdate, isMarketDataFresh} = await import(moduleURL(source));
 function instance(status, loading = false) {
@@ -24,6 +26,25 @@ function text(v) {
 const render = ctx => Vue.compile(DataUpdate.template, {decodeEntities: s => s, hoistStatic: false})(ctx, []);
 const success = '2026-10-12T08:00:00Z';
 const finished = '2026-10-14T07:49:26Z';
+
+test('日线、分钟线独立计数，估值和保存期间使用不定进度', () => {
+  const ctx = instance({state: 'running', stage: 'day', done: 2, total: 5, stageDone: 2, stageTotal: 2, config: {}});
+  assert.equal(ctx.progressPercent, 100);
+  assert.equal(ctx.bubbleText, '日线更新');
+  ctx.status = {...ctx.status, stage: 'minute', stageDone: 0};
+  assert.equal(ctx.progressPercent, 0);
+  assert.equal(ctx.progressInfo.counts, '0/2 个标的');
+  assert.equal(ctx.bubbleText, '分钟更新');
+  for (const stage of ['valuation', 'finalize']) {
+    ctx.status = {...ctx.status, stage, done: 5, stageDone: 0, stageTotal: 0};
+    assert.equal(ctx.progressPercent, null);
+    assert.ok(!text(render(ctx)).includes('100%'));
+    const nodes = v => Array.isArray(v) ? v.flatMap(nodes) : v && typeof v === 'object' ? [v, ...nodes(v.children)] : [];
+    const progress = nodes(render(ctx)).find(v => v.type === 'progress');
+    assert.equal(progress.props.value, null);
+    assert.ok(progress.props.class.includes('indeterminate'));
+  }
+});
 
 test('完整更新时间覆盖加载、无记录、读取失败和成功状态', () => {
   for (const [status, loading, expected] of [
@@ -137,7 +158,8 @@ test('气泡显示真实更新进度、失败与读取异常，详情保持默�
   assert.equal(ctx.bubbleText, '未更新');
   assert.ok(ctx.bubbleLabel.includes('2026/10/12 16:00:00'));
   ctx.status = {state: 'running', total: 6400, done: 1600, startedAt: finished, finishedAt: success, config: {}};
-  assert.equal(ctx.bubbleText, '25%');
+  assert.equal(ctx.bubbleText, '更新中');
+  assert.ok(ctx.bubbleLabel.includes('本阶段 25%'));
   assert.ok(!text(render(ctx)).includes('最近检查结束'));
   ctx.status.total = 0;
   assert.equal(ctx.bubbleText, '更新中');

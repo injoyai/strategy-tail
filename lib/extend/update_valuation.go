@@ -19,6 +19,8 @@ func (this *PullKline) updateValuation(m *tdx.Manage, progress UpdateProgress, r
 	if fresh {
 		if !progress.Skipped {
 			progress.Done++
+			progress.Stage, progress.Code = "valuation", ""
+			progress.StageDone, progress.StageTotal = 1, 1
 			if report != nil {
 				report(progress)
 			}
@@ -29,6 +31,7 @@ func (this *PullKline) updateValuation(m *tdx.Manage, progress UpdateProgress, r
 		progress.Total = 1
 	}
 	progress.Stage, progress.Code, progress.Skipped = "valuation", "", false
+	progress.StageDone, progress.StageTotal = 0, 0
 	progress.Message = "正在采集沪深主板PE、静态PE和股息率"
 	if report != nil {
 		report(progress)
@@ -46,6 +49,7 @@ func (this *PullKline) updateValuation(m *tdx.Manage, progress UpdateProgress, r
 		err = this.Updated.Update("valuation")
 	}
 	progress.Done++
+	progress.StageDone, progress.StageTotal = 1, 1
 	if err != nil {
 		progress.Failed++
 		err = fmt.Errorf("估值快照更新失败: %w", err)

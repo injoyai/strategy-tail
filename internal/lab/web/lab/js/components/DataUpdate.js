@@ -1,5 +1,6 @@
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { taskProgress } from '../format.js';
 
 export function isMarketDataFresh(status, now = Date.now()) {
   if (!status) return false;
@@ -28,17 +29,22 @@ export default {
       return s?.state === 'error' && !s.skipped && s.total > 0 && s.done === s.total && s.failed > 0 && s.failed < s.total;
     },
     running() { return this.status?.state === 'running'; },
+    progressInfo() {
+      const s = this.status || {};
+      return taskProgress({task: 'data_update', phase: s.stage, unit: s.stage === 'valuation' ? 'snapshots' : 'symbols',
+        done: s.stageDone ?? s.done, total: s.stageTotal ?? s.total, currentCode: s.code});
+    },
     progressPercent() {
-      return this.status?.total > 0 ? Math.max(0, Math.min(100, Math.round(this.status.done / this.status.total * 100))) : null;
+      return this.progressInfo.percent;
     },
     bubbleText() {
       if (this.error || this.status?.lastSuccessError) return '异常';
       if (this.loading) return '读取中';
-      if (this.running) return this.progressPercent == null ? '更新中' : this.progressPercent + '%';
+      if (this.running) return {checking: '检查中', day: '日线更新', minute: '分钟更新', valuation: '估值更新', finalize: '保存中'}[this.progressInfo.phase] || '更新中';
       if (!this.status) return '异常';
       return this.fresh ? '已更新' : '未更新';
     },
-    bubbleLabel() { return `行情数据：${this.bubbleText}。${this.status?.finishedAt ? '最近检查：' + this.checkResult + '。' : ''}最后完整更新（上海时间）：${this.lastUpdateText}。点击展开详情`; },
+    bubbleLabel() { return `行情数据：${this.bubbleText}。${this.running && this.progressPercent != null ? '本阶段 ' + this.progressPercent + '%。' : ''}${this.status?.finishedAt ? '最近检查：' + this.checkResult + '。' : ''}最后完整更新（上海时间）：${this.lastUpdateText}。点击展开详情`; },
     lastUpdateText() {
       if (!this.status) return this.loading ? '读取中…' : '读取失败';
       if (this.status.lastSuccessError) return '读取失败';
@@ -70,7 +76,7 @@ export default {
       const wasRunning = state.dataUpdating;
       this.status = s;
       state.dataUpdating = s.state === 'running';
-      state.taskRunning = state.dataUpdating || state.status?.state === 'running';
+      state.taskRunning = state.dataUpdating || state.status?.state === 'running' || !!state.taskDock?.readingResults;
       if (!this.initialized) { this.enabled = s.config.enabled; this.time = s.config.time; this.initialized = true; }
       if (state.dataUpdating && !wasRunning) this.startTask('data_update');
     },
@@ -121,15 +127,17 @@ export default {
   </div>
   <div class="hint data-update-time" role="status">最后完整更新（上海时间）<br><time v-if="status?.lastSuccess && !status?.lastSuccessError" :datetime="status.lastSuccess">{{ lastUpdateText }}</time><span v-else>{{ lastUpdateText }}</span></div>
   <div class="data-update-toolbar">
-    <span v-if="running" class="hint">{{ progressPercent == null ? '正在检查行情…' : '更新中 · ' + progressPercent + '%' }}</span>
+    <span v-if="running" class="hint" role="status">{{ progressInfo.label }}{{ progressPercent == null ? '…' : ' · 本阶段 ' + progressPercent + '%' }}</span>
     <span v-else class="hint">{{ status?.finishedAt ? checkResult : '尚无检查记录' }}</span>
     <button type="button" class="secondary" @click="update" :disabled="loading || !status || submitting || state.taskRunning || running" :aria-busy="String(submitting || running)">{{ running ? '更新中…' : '手动更新' }}</button>
   </div>
   <div v-if="running && status?.startedAt" class="hint data-update-time">本次开始：<time :datetime="status.startedAt">{{ displayTime(status.startedAt) }}</time></div>
   <div v-else-if="status?.finishedAt" class="hint data-update-time" role="status">最近检查结束：<time :datetime="status.finishedAt">{{ displayTime(status.finishedAt) }}</time></div>
-  <div v-if="status?.total > 0" class="data-update-progress">
-    <progress v-if="running" class="progress-inner" :max="status.total" :value="status.done" aria-label="行情更新进度"></progress>
-    <span class="hint">{{ status.done }}/{{ status.total }} · 失败 {{ status.failed || 0 }}</span>
+  <div v-if="running || status?.total > 0" class="data-update-progress">
+    <progress v-if="running" class="progress-inner" :class="{indeterminate: progressPercent == null}" :max="100" :value="progressPercent"
+      :aria-label="progressInfo.label + '进度'" :aria-valuetext="progressInfo.counts || progressInfo.label + '进行中'"></progress>
+    <span v-if="running" class="hint">{{ [progressInfo.counts, progressInfo.current, '累计失败 ' + (status.failed || 0)].filter(Boolean).join(' · ') }}</span>
+    <span v-else class="hint">{{ status.done }}/{{ status.total }} · 失败 {{ status.failed || 0 }}</span>
   </div>
   <div v-if="status?.lastSuccessError" class="msg err" role="alert">{{ status.lastSuccessError }}</div>
   <div v-if="error" class="msg err" role="alert">{{ error }} <button type="button" class="secondary" @click="poll">重新读取</button></div>

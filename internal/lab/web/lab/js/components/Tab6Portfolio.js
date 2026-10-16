@@ -6,7 +6,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName } from '../format.js';
+import { esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 
 const PF_EVIDENCE = {exploratory: '探索性', retrospective: '回溯', prospective: '前瞻'};
@@ -404,6 +404,14 @@ export default {
     dropChart(this.navC);
   },
   methods: {
+    progressText(run) {
+      const s = state.status;
+      if (run.status === 'completed') return '已完成';
+      if (run.status !== 'running') return PF_RUNSTATE[run.status] || '—';
+      if (s?.state !== 'running' || s.runId !== run.experimentId) return '运行中';
+      const p = taskProgress(s);
+      return p.label + (p.percent == null ? '…' : ` · 本阶段 ${p.percent}%`);
+    },
     // —— 通用 ——
     pfNode(title, st, stateText, ver, degrade, target) {
       return {title, state: st, stateText, ver, degrade, target};
@@ -1331,7 +1339,7 @@ export default {
                 <td><span class="pf-num">v{{ exp.modelRevision }}</span></td>
                 <td><span class="pf-num">{{ exp.studyRange && exp.studyRange.start ? exp.studyRange.start + '~' + exp.studyRange.end : '—' }}</span></td>
                 <td v-html="pfEvidenceChip(exp.evidenceClass)"></td>
-                <td><span class="pf-num">{{ (exp.progress || 0) + '%' }}</span></td>
+                <td><span>{{ progressText(exp) }}</span></td>
                 <td><span class="pf-num">{{ (exp.createdAt || '').replace('T', ' ').slice(0, 16) }}</span></td>
               </tr>
             </tbody>
@@ -1397,7 +1405,7 @@ export default {
     <h3 id="pfRunTitle" tabindex="-1">运行详情 · {{ selectedRunId }}<span class="pf-stale-tag" v-if="state.pfStale && state.activeTab===6">数据可能已过期</span></h3>
     <div class="pf-runstate" v-if="selectedRun">
       <span class="st-chip" :class="runStateCls">{{ runStateText }}</span>
-      <span v-if="selectedRunStatus==='running'" class="pf-num">{{ selectedRun.progress || 0 }}%</span>
+      <span v-if="selectedRunStatus==='running'">{{ progressText(selectedRun) }}</span>
       <span v-if="selectedRunMessage" class="hint" style="margin:0">{{ selectedRunMessage }}</span>
       <div v-if="selectedRunError" class="msg err">{{ selectedRunError }}</div>
       <span style="display:inline-flex;gap:8px;margin-left:10px">

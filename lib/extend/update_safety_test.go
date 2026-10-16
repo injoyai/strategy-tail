@@ -152,7 +152,9 @@ func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 	pull := &PullKline{Config: PullKlineConfig{Dir: dir, Codes: []string{"sh600000", "sz000001"}, Goroutines: 1}, Types: []string{Day, Minute}, Updated: updated}
 	jobs := map[string]int{}
 	var last UpdateProgress
+	var phases []UpdateProgress
 	err = pull.UpdateWithProgress(&tdx.Manage{}, true, func(p UpdateProgress) {
+		phases = append(phases, p)
 		if p.Done > last.Done {
 			jobs[p.Stage+":"+p.Code]++
 		}
@@ -160,6 +162,18 @@ func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 	})
 	if err == nil || last.Done != 4 || last.Total != 4 || last.Failed != 4 || last.Stage != Minute || len(jobs) != 4 {
 		t.Fatalf("batch stopped early: progress=%+v jobs=%v err=%v", last, jobs, err)
+	}
+	if len(phases) != 8 {
+		t.Fatalf("unexpected stage events: %+v", phases)
+	}
+	for i, p := range phases[1 : len(phases)-1] {
+		stage := Day
+		if i >= 3 {
+			stage = Minute
+		}
+		if p.Stage != stage || p.StageDone != i%3 || p.StageTotal != 2 {
+			t.Fatalf("phase did not reset: %+v", phases)
+		}
 	}
 	for job, count := range jobs {
 		if count != 1 {

@@ -14,16 +14,3 @@ export const TABS = [
 ];
 
 export const TASK_LABEL = {backtest: '策略回测', data_update: '数据更新', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证'};
-
-// 组合任务阶段文案（/api/status phase；Task 9 契约）
-export const PF_PHASE = {
-  queued: '排队中',
-  loading_data: '加载数据',
-  transform: '截面变换',
-  combine: '合成分数',
-  target: '目标组合',
-  execute: '组合执行',
-  metrics: '组合指标',
-  attribution: '收益归因',
-  finalize: '发布产物',
-};

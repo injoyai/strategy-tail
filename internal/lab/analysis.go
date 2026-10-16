@@ -811,6 +811,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 		return nil, err
 	}
 	r.totalCodes.Store(int64(len(codes)))
+	r.setTaskProgress("analysis", "stocks", researchrun.Progress{Phase: "observations", Total: len(codes)})
 	years := cfg.RunConfig.years()
 	fct := f.BuildContext(cfg.Kind, cfg.Days)
 
@@ -839,6 +840,8 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 		DataMode:     researchrun.DailyClose,
 		GetDayKlines: common.Pull.DayKlines,
 		OnCodeDone: func(progress researchrun.Progress) {
+			progress.Phase = "observations"
+			r.setTaskProgress("analysis", "stocks", progress)
 			r.doneCodes.Store(int64(progress.Done))
 			current := progress.Code
 			r.currentCode.Store(&current)
@@ -898,6 +901,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	default:
 	}
 
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "ic"})
 	// Failure 按 code/year/stage 排序，保证报告与测试稳定
 	sortFailures(coverage.Failures)
 	sortFailures(yearCoverage.Failures)
@@ -912,6 +916,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	// 全区间：逐日 IC 与分组统计均按交易日等权。禁止先算年度均值再加权——
 	// 那样交易日较少的年份会获得过高权重。
 	overall := aggregateIC(days, vals, rets)
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "grouping"})
 	isBins := cfg.Grouping.Mode == "bins"
 	// quantile 预算 2-20 全档（前端切组零重算），请求档直接从对应档位取，
 	// 避免再跑一遍单档聚合（每天只排序一次）；bins 断点固定，只算请求档。
@@ -930,7 +935,12 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	// 年度拆分：同一批逐日观测按自然年切段、以与全区间相同的口径重算，
 	// 使跨周期汇总无法掩盖某些年份失效或反向。
 	yearly := make([]YearAnalysis, 0, len(years))
-	for _, gd := range groupDaysByYear(days) {
+	yearDays := groupDaysByYear(days)
+	for i, gd := range yearDays {
+		r.setTaskProgress("analysis", "years", researchrun.Progress{Phase: "yearly", Done: i, Total: len(yearDays), Code: fmt.Sprint(gd[0].Year())})
+		if stopped(stop) {
+			return nil, errStopped
+		}
 		yic := aggregateIC(gd, vals, rets)
 		var yqs []float64
 		var ysum QuintileSummary
@@ -952,6 +962,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 			TradingDays:  len(gd),
 			AllGroupings: yaAll,
 		})
+		r.setTaskProgress("analysis", "years", researchrun.Progress{Phase: "yearly", Done: i + 1, Total: len(yearDays), Code: fmt.Sprint(gd[0].Year())})
 	}
 
 	// 实际有效日期：成功生成标签的首末交易日，数据不足时短于配置区间
@@ -1008,6 +1019,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 	// 分析 ID 在导出前完成赋值：不可变历史与候选证据追溯以此为准。
 	rep.AnalysisID = id
 
+	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "reporting"})
 	store := r.store
 	if store == nil {
 		// 直接构造的 Runner（旧测试路径）使用 cwd 相对默认根；

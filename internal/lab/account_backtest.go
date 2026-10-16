@@ -135,12 +135,15 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	var mu sync.Mutex
 	loadCfg := cfg
 	loadCfg.Codes, loadCfg.Years, loadCfg.DataMode = codes, years, researchrun.DailyClose
+	if cfg.OnCodeDone != nil {
+		cfg.OnCodeDone(researchrun.Progress{Phase: "loading", Total: len(codes)})
+	}
 	loadCfg.OnCodeDone = func(p researchrun.Progress) {
 		if p.Failure != nil {
 			result.Coverage.Failures = append(result.Coverage.Failures, *p.Failure)
 		}
 		if cfg.OnCodeDone != nil {
-			p.Total = len(codes) + len(index)
+			p.Phase = "loading"
 			cfg.OnCodeDone(p)
 		}
 	}
@@ -182,6 +185,9 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	}
 	cursors := map[string]int{}
 	minutes := map[string]accountMinutes{}
+	if cfg.OnCodeDone != nil {
+		cfg.OnCodeDone(researchrun.Progress{Phase: "simulating", Total: len(index)})
+	}
 	for day, k := range index {
 		if err := ctx.Err(); err != nil {
 			return result, nil, nil, err
@@ -343,7 +349,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 			}
 		}
 		if cfg.OnCodeDone != nil {
-			cfg.OnCodeDone(researchrun.Progress{Done: len(codes) + day + 1, Total: len(codes) + len(index), Code: date})
+			cfg.OnCodeDone(researchrun.Progress{Phase: "simulating", Done: day + 1, Total: len(index), Code: date})
 		}
 	}
 	for i, s := range states {

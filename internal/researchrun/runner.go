@@ -79,8 +79,10 @@ type YearCoverage struct {
 	Failures           []Failure `json:"failures"`
 }
 
-// Progress is emitted serially after each requested code finishes or is skipped.
+// Progress is emitted serially after each requested code finishes or is skipped,
+// or when a phased execution starts a stage or completes a trading day.
 type Progress struct {
+	Phase   string // 可选执行阶段；分阶段回测的 Done/Total 只计当前阶段。
 	Done    int
 	Total   int
 	Code    string

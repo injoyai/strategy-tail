@@ -67,6 +67,11 @@ func (r *Runner) ConfigurePortfolio(modelStore *FactorModelStore, experimentStor
 // setPortfolioPhase 更新组合任务阶段（/api/status phase 字段）。
 func (r *Runner) setPortfolioPhase(phase string) {
 	r.phase.Store(&phase)
+	task := taskPortfolioExperiment
+	if p := r.task.Load(); p != nil {
+		task = *p
+	}
+	r.setTaskProgress(task, "", researchrun.Progress{Phase: phase})
 }
 
 // setPortfolioRun 记录当前组合任务 ID（/api/status runId 字段）。
@@ -135,6 +140,8 @@ func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan str
 	r.totalCodes.Store(0)
 	r.currentCode.Store(nil)
 	r.task.Store(&task)
+	r.setPortfolioRun(id)
+	r.setPortfolioPhase(portfolioPhaseQueued)
 	state := "running"
 	r.state.Store(&state)
 
@@ -255,10 +262,14 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) error {
 	}
 	_ = r.experimentStore.UpdateProgress(id, 55, "多因子合成完成")
 
-	r.setPortfolioPhase(portfolioPhaseTarget)
+	r.setPortfolioPhase(portfolioPhaseExecute)
 	r.doneCodes.Store(0)
+	r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Total: len(data.dates)})
 	ledgers, usedTargets, err := runPortfolioDays(m, scores, data, data.dates, portfolioNotional, stop,
-		func(done, total int) { r.doneCodes.Store(int64(done)) })
+		func(done, total int) {
+			r.doneCodes.Store(int64(done))
+			r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Done: done, Total: total, Code: data.dates[done-1]})
+		})
 	if err != nil {
 		if errors.Is(err, errStopped) {
 			return r.cancelExperiment(id, "运行被停止")
@@ -397,10 +408,15 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 	r.doneCodes.Store(0)
 
 	for i, plan := range plans {
+		window := fmt.Sprintf("窗口 %d/%d", i+1, len(plans))
+		setWindowPhase := func(phase string) {
+			r.phase.Store(&phase)
+			r.setTaskProgress(taskPortfolioValidation, "", researchrun.Progress{Phase: phase, Code: window})
+		}
 		if stopped(stop) {
 			return errStopped
 		}
-		r.setPortfolioPhase(portfolioPhaseCombine)
+		setWindowPhase(portfolioPhaseCombine)
 		trainDates, err := portfolioresearch.TrainingDatesForWindow(data.dates, plan)
 		if err != nil {
 			if serr := r.validationStore.SaveWindow(id, portfolioresearch.ValidationWindowOutcome{
@@ -424,8 +440,11 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 		}
 		testDates := datesBetween(data.dates, plan.TestStart, plan.TestEnd)
 
-		r.setPortfolioPhase(portfolioPhaseExecute)
-		ledgers, _, err := runPortfolioDays(m, scores, data, testDates, portfolioNotional, stop, nil)
+		setWindowPhase(portfolioPhaseExecute)
+		r.setTaskProgress(taskPortfolioValidation, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Total: len(testDates), Code: window})
+		ledgers, _, err := runPortfolioDays(m, scores, data, testDates, portfolioNotional, stop, func(done, total int) {
+			r.setTaskProgress(taskPortfolioValidation, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Done: done, Total: total, Code: window + " · " + testDates[done-1]})
+		})
 		if err != nil {
 			if errors.Is(err, errStopped) {
 				return errStopped
@@ -456,7 +475,7 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 			continue
 		}
 
-		r.setPortfolioPhase(portfolioPhaseMetrics)
+		setWindowPhase(portfolioPhaseMetrics)
 		wm, err := windowMetrics(ledgers)
 		if err != nil {
 			return err
@@ -499,6 +518,7 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 // saveValidationInsufficient 保存一个 insufficient 窗口并 Complete，使结论
 // 可生成（Evaluate 对无有效窗口给出 insufficient，不伪装统计失败）。
 func (r *Runner) saveValidationInsufficient(id, evidenceClass, msg string) error {
+	r.setPortfolioPhase(portfolioPhaseFinalize)
 	if err := r.validationStore.SaveWindow(id, portfolioresearch.ValidationWindowOutcome{
 		ValidationID: id,
 		Index:        1,
@@ -581,6 +601,11 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 	}
 
 	var mu sync.Mutex
+	task := taskPortfolioExperiment
+	if p := r.task.Load(); p != nil {
+		task = *p
+	}
+	r.setTaskProgress(task, "stocks", researchrun.Progress{Phase: portfolioPhaseLoadingData, Total: len(codes)})
 	coverage, err := researchrun.ForEachCodeYearData(ctx, researchrun.Config{
 		Codes:        codes,
 		Years:        years,
@@ -590,6 +615,8 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 		ForwardDays:  maxH,
 		OnCodeDone: func(progress researchrun.Progress) {
 			r.doneCodes.Store(int64(progress.Done))
+			progress.Phase = portfolioPhaseLoadingData
+			r.setTaskProgress(task, "stocks", progress)
 		},
 	}, func(code string, _ int, d researchrun.YearData) {
 		localClose := map[string]float64{}
@@ -650,6 +677,7 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 		return nil, coverage, errStopped
 	}
 
+	r.setPortfolioPhase("aligning")
 	set := map[string]bool{}
 	for d := range data.close {
 		set[d] = true
