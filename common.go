@@ -137,8 +137,8 @@ var (
 
 	// DefaultUniverse 默认只读股票池：优先加载本地成员文件（路径仅来自本地
 	// 配置 research.universe，HTTP 请求不得指定），文件缺失或加载失败时显式
-	// 降级 current_static——静态池存在生存者偏差、PIT 恒为 unverified，只支撑
-	// exploratory 证据等级，不阻塞旧探索流程。
+	// 降级本地日线股票池——含本地保留的退市代码，但没有逐日成员关系，
+	// PIT 恒为 unverified，只支撑 exploratory 证据等级。
 	DefaultUniverse researchdata.Universe
 )
 
@@ -148,20 +148,17 @@ func UniverseFile() string {
 }
 
 // newDefaultUniverse 构造默认股票池；宽松模式加载（非法行跳过并计数披露），
-// 失败一律降级 current_static 并告警。
+// 失败一律降级本地日线股票池并告警。
 func newDefaultUniverse() researchdata.Universe {
 	path := UniverseFile()
-	u, fallback, err := researchdata.LoadUniverseOrDefault(path, researchdata.FileUniverseConfig{}, false, GetAllCodes)
+	u, fallback, err := researchdata.LoadUniverseOrDefault(path, researchdata.FileUniverseConfig{}, false, nil)
 	if err != nil {
-		logs.Warnf("universe 文件加载失败，降级 current_static: path=%s err=%v", path, err)
-		return researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{
-			ID:     "current_static",
-			Source: "tdx_local",
-			Codes:  GetAllCodes,
-		})
+		logs.Warnf("universe 文件加载失败，使用本地日线股票池: path=%s err=%v", path, err)
+		return localUniverse{}
 	}
 	if fallback {
-		logs.Warnf("universe 文件不存在，降级 current_static（生存者偏差，仅 exploratory）: %s", path)
+		logs.Warnf("universe 文件不存在，使用本地日线股票池（成员历史未验证，仅 exploratory）: %s", path)
+		return localUniverse{}
 	}
 	return u
 }
@@ -234,8 +231,11 @@ func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int,
 	return
 }
 
+// GetNoPriceLimitCodes 返回本地主板日线代码，供历史回测与历史筛选使用。
 func GetNoPriceLimitCodes() []string {
-	return Market沪深主板.Codes()
+	codes, err := Market沪深主板.LocalCodes()
+	logs.PanicErr(err)
+	return codes
 }
 
 func Get沪深Codes() []string {

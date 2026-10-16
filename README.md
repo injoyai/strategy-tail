@@ -79,6 +79,10 @@ type Seller interface {
 | 历史筛选页面 | `go run ./cmd/screen-kline` | 启动指定日期的本地筛选页面 |
 | 前向收益研究 | `go run ./cmd/future` | 运行当前代码中配置的前向收益分析 |
 
+回测与实验室“全量/随机”样本从 `pull.database` 下的 `day-kline/*.db` 枚举本地主板股票，保留已有日线库的退市代码，排除指数与临时文件；本地目录缺失或没有股票时直接报错。显式指定代码的行为不变，实时选股与行情更新仍使用当前在市列表。
+
+组合研究优先使用 `research.universe` 配置的历史成员文件；缺失或加载失败时退回本地日线股票池。本地池仅覆盖已保存的数据，不保证退市数据完整，也没有逐日成员关系，PIT 仍为 `unverified`，只支持探索级证据。
+
 ### Docker 部署策略实验室
 
 策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（需已安装 Docker、Python 3，且 `docker` 在 PATH 中）：

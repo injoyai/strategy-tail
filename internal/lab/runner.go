@@ -751,10 +751,10 @@ func (r *Runner) resolveCodes(cfg RunConfig, stop chan struct{}) ([]string, erro
 	case "codes":
 		return cfg.SampleCodes, nil
 	case "all", "random":
-		if common.Manage == nil {
-			return nil, fmt.Errorf("运行时未初始化")
+		all, err := common.Market沪深主板.LocalCodes()
+		if err != nil {
+			return nil, err
 		}
-		all := common.GetNoPriceLimitCodes()
 		if cfg.SampleMode == "all" {
 			return all, nil
 		}
