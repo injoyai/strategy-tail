@@ -11,7 +11,7 @@ import (
 // BuyCost 计算买入总支出（元）。
 // 买入支出 = 成交价 × 数量 + 佣金 + 过户费
 // 成交价 = 原始价 + 滑点（买入向上滑点）
-// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/code-review-2026-10-17.md 第 4 节）
+// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/reviews/code-review-2026-10-17.md 第 4 节）
 func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, totalCost float64) {
 	execPrice = rawPrice + c.Slippage
 	turnover := execPrice.Float64() * float64(quantity)
@@ -30,7 +30,7 @@ func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol
 // SellIncome 计算卖出总收入（元）。
 // 卖出收入 = 成交价 × 数量 - 佣金 - 印花税 - 过户费
 // 成交价 = 原始价 - 滑点（卖出向下滑点）
-// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/code-review-2026-10-17.md 第 4 节）
+// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/reviews/code-review-2026-10-17.md 第 4 节）
 func (c Cost) SellIncome(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, netIncome float64) {
 	execPrice = rawPrice - c.Slippage
 	turnover := execPrice.Float64() * float64(quantity)

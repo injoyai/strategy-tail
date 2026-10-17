@@ -144,7 +144,7 @@ func validateCandidateUse(use CandidateUse) error {
 		if use.Filter == nil {
 			return fmt.Errorf("区间模式必须提供 filter")
 		}
-		return use.Filter.validate()
+		return use.Filter.Validate()
 	default:
 		return fmt.Errorf("使用方式无效: %s（应为 observe/range）", use.Mode)
 	}

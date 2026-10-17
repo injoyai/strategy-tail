@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 )
 
 // builder_server.go 搭建器（自由组合策略）REST API（设计文档 §5）。
@@ -24,7 +25,7 @@ const builderDataDir = "data/lab/strategies"
 
 // handleBuilderComponents 组件目录：前端条件编辑器的唯一事实来源。
 func (s *Server) handleBuilderComponents(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, builderCatalogAll())
+	writeJSON(w, builder.Catalog())
 }
 
 // handleBuilderTemplates 内置模板列表。

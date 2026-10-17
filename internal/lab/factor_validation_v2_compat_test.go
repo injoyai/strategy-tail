@@ -15,7 +15,7 @@ import (
 //     成交标签、四态终态、证据等级不可升格），v2 组合层可直接消费；
 //  2. 为每个夹具记录七项元数据（candidate revision、factor instance、
 //     implementation version、direction、evidence class、data snapshot、hash），
-//     形成逐项准入表（docs/superpowers/plans/2026-09-18-multifactor-portfolio-v2-task0-admission.md）；
+//     形成逐项准入表（docs/plans/2026-09-18-multifactor-portfolio-v2-task0-admission.md）；
 //  3. 旧版本/缺字段路径返回明确 unsupported/insufficient 错误，不 panic、
 //     不补造事实（exploratory 夹具的拒绝路径即准入条件 6 的反向验证）。
 //

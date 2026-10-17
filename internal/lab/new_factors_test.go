@@ -65,12 +65,12 @@ func TestNewFactorsInResearchAndBuilder(t *testing.T) {
 			if tt.kind == "return_skew" {
 				old := ft
 				old.FactorVersion = 1
-				if err := old.validate(); err == nil {
+				if err := old.Validate(); err == nil {
 					t.Fatal("旧版偏度阈值不能静默复用新版实现")
 				}
 			}
 			spec := BuilderSpec{Version: 1, Name: "新增因子接入", Buy: factorNode(ft), SellSignal: factorNode(ft)}
-			if err := spec.validate("run"); err != nil {
+			if err := spec.Validate("run"); err != nil {
 				t.Fatal(err)
 			}
 			store := NewBuilderStore(t.TempDir())
@@ -153,7 +153,7 @@ func TestDividendYieldContextFactorIntegration(t *testing.T) {
 	}
 	ft := FactorFilterSpec{Kind: "dividend_yield", Days: 1, FactorVersion: 1, Operator: "lte", Max: fptr(5)}
 	spec := BuilderSpec{Version: 1, Name: "股息率接入", Buy: factorNode(ft), SellSignal: factorNode(ft)}
-	if err := spec.validate("run"); err != nil {
+	if err := spec.Validate("run"); err != nil {
 		t.Fatal(err)
 	}
 	buyer, err := spec.Buyer()

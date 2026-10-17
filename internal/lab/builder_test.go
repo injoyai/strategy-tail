@@ -51,141 +51,49 @@ func nestedGroups(depth int) *BuilderNode {
 	return node
 }
 
-// defaultParamsAsJSON 组件目录默认参数经 JSON round-trip（模拟前端提交形态）。
-func defaultParamsAsJSON(t *testing.T, entry ComponentEntry) map[string]any {
-	t.Helper()
-	m := map[string]any{}
-	for _, def := range entry.Params {
-		if def.Default != nil {
-			m[def.Key] = def.Default
-		}
-	}
-	buf, err := json.Marshal(m)
-	if err != nil {
-		t.Fatalf("组件 %s 默认参数序列化失败: %v", entry.ID, err)
-	}
-	var out map[string]any
-	if err := json.Unmarshal(buf, &out); err != nil {
-		t.Fatalf("组件 %s 默认参数反序列化失败: %v", entry.ID, err)
-	}
-	return out
-}
-
 // ---- 目录与工厂一致性 ----
-
-// TestBuilderCatalogFactoryCoverage 目录条目均有工厂且默认参数可构造；
-// 工厂 ID 全部在目录中（防目录与工厂漂移）；默认参数通过参数校验。
-func TestBuilderCatalogFactoryCoverage(t *testing.T) {
-	catalog := builderCatalog()
-	if len(catalog) == 0 {
-		t.Fatal("组件目录为空")
-	}
-	buyIDs := map[string]bool{}
-	sellIDs := map[string]bool{}
-	for _, entry := range catalog {
-		if entry.ID == "" || entry.Name == "" {
-			t.Fatalf("组件缺少 ID/名称: %+v", entry)
-		}
-		switch entry.Role {
-		case roleBuy:
-			buyIDs[entry.ID] = true
-		case roleSell, roleRisk:
-			sellIDs[entry.ID] = true
-		default:
-			t.Fatalf("组件 %s 角色未知: %s", entry.ID, entry.Role)
-		}
-	}
-	for id := range buyFactories {
-		if !buyIDs[id] {
-			t.Fatalf("买入工厂 %s 不在目录中", id)
-		}
-	}
-	for id := range sellFactories {
-		if !sellIDs[id] {
-			t.Fatalf("卖出工厂 %s 不在目录中", id)
-		}
-	}
-	for _, entry := range catalog {
-		params := defaultParamsAsJSON(t, entry)
-		if err := validateParams(entry, params); err != nil {
-			t.Fatalf("组件 %s 默认参数未通过校验: %v", entry.ID, err)
-		}
-		var err error
-		if entry.Role == roleBuy {
-			_, err = buyFactories[entry.ID](params)
-		} else {
-			_, err = sellFactories[entry.ID](params)
-		}
-		if err != nil {
-			t.Fatalf("组件 %s 默认参数构造失败: %v", entry.ID, err)
-		}
-		// 缺省参数（零值语义）也必须可构造
-		if entry.Role == roleBuy {
-			if _, err = buyFactories[entry.ID](map[string]any{}); err != nil {
-				t.Fatalf("组件 %s 空参数构造失败: %v", entry.ID, err)
-			}
-		} else {
-			if _, err = sellFactories[entry.ID](map[string]any{}); err != nil {
-				t.Fatalf("组件 %s 空参数构造失败: %v", entry.ID, err)
-			}
-		}
-	}
-	// 不可用清单条目不能与可运行目录重复
-	seen := map[string]bool{}
-	for _, entry := range catalog {
-		seen[entry.ID] = true
-	}
-	for _, u := range builderUnavailable() {
-		if u.Reason == "" {
-			t.Fatalf("不可用组件 %s 缺少原因说明", u.ID)
-		}
-		if seen[u.ID] {
-			t.Fatalf("组件 %s 同时出现在可运行目录与不可用清单", u.ID)
-		}
-	}
-}
 
 // ---- 条件树校验 ----
 
 // TestBuilderSpecValidateMode 运行/保存两种校验模式（验收场景：空侧拒绝、草稿允许）。
 func TestBuilderSpecValidateMode(t *testing.T) {
 	spec := baseSpec()
-	if err := spec.validate("run"); err != nil {
+	if err := spec.Validate("run"); err != nil {
 		t.Fatalf("合法 spec run 校验失败: %v", err)
 	}
-	if err := spec.validate("save"); err != nil {
+	if err := spec.Validate("save"); err != nil {
 		t.Fatalf("合法 spec save 校验失败: %v", err)
 	}
 
 	// 版本与名称
 	bad := baseSpec()
 	bad.Version = 2
-	if err := bad.validate("run"); err == nil || !strings.Contains(err.Error(), "版本") {
+	if err := bad.Validate("run"); err == nil || !strings.Contains(err.Error(), "版本") {
 		t.Fatalf("未知版本应被拒绝: %v", err)
 	}
 	bad = baseSpec()
 	bad.Name = " "
-	if err := bad.validate("run"); err == nil || !strings.Contains(err.Error(), "名称") {
+	if err := bad.Validate("run"); err == nil || !strings.Contains(err.Error(), "名称") {
 		t.Fatalf("空名称应被拒绝: %v", err)
 	}
 
 	// 空买入：run 拒绝、save 允许（草稿）
 	bad = baseSpec()
 	bad.Buy = nil
-	if err := bad.validate("run"); err == nil || !strings.Contains(err.Error(), "买入条件为空") {
+	if err := bad.Validate("run"); err == nil || !strings.Contains(err.Error(), "买入条件为空") {
 		t.Fatalf("空买入 run 应拒绝: %v", err)
 	}
-	if err := bad.validate("save"); err != nil {
+	if err := bad.Validate("save"); err != nil {
 		t.Fatalf("空买入 save（草稿）应允许: %v", err)
 	}
 
 	// 卖出侧全空：run 拒绝、save 允许
 	bad = baseSpec()
 	bad.SellSignal = nil
-	if err := bad.validate("run"); err == nil || !strings.Contains(err.Error(), "卖出侧为空") {
+	if err := bad.Validate("run"); err == nil || !strings.Contains(err.Error(), "卖出侧为空") {
 		t.Fatalf("卖出侧全空 run 应拒绝: %v", err)
 	}
-	if err := bad.validate("save"); err != nil {
+	if err := bad.Validate("save"); err != nil {
 		t.Fatalf("卖出侧全空 save 应允许: %v", err)
 	}
 
@@ -193,7 +101,7 @@ func TestBuilderSpecValidateMode(t *testing.T) {
 	ok := baseSpec()
 	ok.SellSignal = nil
 	ok.HoldToEnd = true
-	if err := ok.validate("run"); err != nil {
+	if err := ok.Validate("run"); err != nil {
 		t.Fatalf("持有至期末 run 应通过: %v", err)
 	}
 
@@ -201,7 +109,7 @@ func TestBuilderSpecValidateMode(t *testing.T) {
 	ok = baseSpec()
 	ok.SellSignal = nil
 	ok.Risks = []*BuilderNode{bCond("risk_fixed_stop", map[string]any{"pct": 5.0})}
-	if err := ok.validate("run"); err != nil {
+	if err := ok.Validate("run"); err != nil {
 		t.Fatalf("仅独立风控 run 应通过: %v", err)
 	}
 }
@@ -214,7 +122,9 @@ func TestBuilderSpecValidateTree(t *testing.T) {
 		wantErr string
 	}{
 		{"空分组", func(s *BuilderSpec) { s.Buy = bGroup("and") }, "空条件分组"},
-		{"分组缺 op", func(s *BuilderSpec) { s.Buy = &BuilderNode{Type: "group", Children: []*BuilderNode{bCond("buy_all", nil)}} }, "组合方式无效"},
+		{"分组缺 op", func(s *BuilderSpec) {
+			s.Buy = &BuilderNode{Type: "group", Children: []*BuilderNode{bCond("buy_all", nil)}}
+		}, "组合方式无效"},
 		{"分组带组件", func(s *BuilderSpec) {
 			g := bGroup("and", bCond("buy_all", nil))
 			g.ComponentID = "buy_all"
@@ -262,7 +172,7 @@ func TestBuilderSpecValidateTree(t *testing.T) {
 	for _, tc := range cases {
 		spec := baseSpec()
 		tc.mutate(&spec)
-		err := spec.validate("run")
+		err := spec.Validate("run")
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Fatalf("%s: 期望错误含 %q，实际: %v", tc.name, tc.wantErr, err)
 		}
@@ -271,7 +181,7 @@ func TestBuilderSpecValidateTree(t *testing.T) {
 	// 边界：8 层嵌套与 64 节点恰好通过
 	ok := baseSpec()
 	ok.Buy = nestedGroups(8)
-	if err := ok.validate("run"); err != nil {
+	if err := ok.Validate("run"); err != nil {
 		t.Fatalf("8 层嵌套应通过: %v", err)
 	}
 	children := make([]*BuilderNode, 0, 63)
@@ -282,7 +192,7 @@ func TestBuilderSpecValidateTree(t *testing.T) {
 	ok.SellSignal = nil // 节点计数跨整棵树（含卖出侧），用持有至期末隔离
 	ok.HoldToEnd = true
 	ok.Buy = bGroup("and", children...) // 1 + 63 = 64 节点
-	if err := ok.validate("run"); err != nil {
+	if err := ok.Validate("run"); err != nil {
 		t.Fatalf("64 节点应通过: %v", err)
 	}
 }
@@ -300,7 +210,7 @@ func TestBuilderCombinatorSemantics(t *testing.T) {
 		),
 		SellSignal: bGroup("or", bCond("sell_macd_reversal", map[string]any{"lookback": 10.0})),
 	}
-	if err := spec.validate("run"); err != nil {
+	if err := spec.Validate("run"); err != nil {
 		t.Fatalf("组合 spec 校验失败: %v", err)
 	}
 	buyer, err := spec.Buyer()
@@ -486,8 +396,8 @@ func TestBuilderStoreFailClosed(t *testing.T) {
 // 且经 JSON round-trip（API 传输形态）后仍等价（验收场景 1）。
 func TestBuilderTemplateMACDEquivalent(t *testing.T) {
 	cfg := defaultMACDConfig()
-	tpl := macdTemplateSpec()
-	if err := tpl.validate("run"); err != nil {
+	tpl := BuilderTemplates()[0].Spec
+	if err := tpl.Validate("run"); err != nil {
 		t.Fatalf("模板 spec 未通过运行校验: %v", err)
 	}
 
@@ -542,7 +452,7 @@ func TestBuilderTemplatesCatalog(t *testing.T) {
 		if tpl.ID == "" || tpl.Name == "" {
 			t.Fatalf("模板缺少 ID/名称: %+v", tpl)
 		}
-		if err := tpl.Spec.validate("run"); err != nil {
+		if err := tpl.Spec.Validate("run"); err != nil {
 			t.Fatalf("模板 %s spec 未通过运行校验: %v", tpl.ID, err)
 		}
 	}
@@ -674,10 +584,10 @@ func TestBuilderAPI(t *testing.T) {
 // runReq 构造搭建器运行请求体（年度/样本默认合法）。
 func runReq(spec BuilderSpec) map[string]any {
 	return map[string]any{
-		"startYear":  2023,
-		"endYear":    2023,
-		"sampleMode": "codes",
+		"startYear":   2023,
+		"endYear":     2023,
+		"sampleMode":  "codes",
 		"sampleCodes": []string{"sh600000"},
-		"builder":    spec,
+		"builder":     spec,
 	}
 }

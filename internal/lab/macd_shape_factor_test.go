@@ -52,7 +52,7 @@ func TestMACDShapeFactorsInResearchAndBuilder(t *testing.T) {
 				ft.Min = fptr(1)
 			}
 			spec := BuilderSpec{Version: 1, Name: "MACD形态", Buy: factorNode(ft), SellSignal: factorNode(ft)}
-			if err := spec.validate("run"); err != nil {
+			if err := spec.Validate("run"); err != nil {
 				t.Fatal(err)
 			}
 			store := NewBuilderStore(t.TempDir())

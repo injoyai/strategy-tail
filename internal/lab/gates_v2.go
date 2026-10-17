@@ -8,7 +8,7 @@ package lab
 //
 // 门禁评估是只读检查：不写产物、不改变任何状态；release 测试失败 = 发布被
 // 阻止，但已写产物与已发布状态不受影响（该语义文档化在
-// doc/v2-multifactor-portfolio.md §发布门禁语义）。
+// docs/guides/v2-multifactor-portfolio.md §发布门禁语义）。
 
 import (
 	"crypto/sha256"
@@ -117,7 +117,7 @@ var releaseGateDefs = []ReleaseGateDef{
 	{Category: GateCategoryPerformance, Name: "benchmark_recorded",
 		Purpose: "性能：记录基准绝对值（时长/峰值内存/产物大小）+ 机器环境（无预设阈值仅记录）"},
 	{Category: GateCategoryDocs, Name: "docs_complete",
-		Purpose: "文档：UX-CONTRACT.md、DESIGN.md §7、doc/v2-multifactor-portfolio.md 存在且记录限制"},
+		Purpose: "文档：UX-CONTRACT.md、DESIGN.md §7、docs/guides/v2-multifactor-portfolio.md 存在且记录限制"},
 }
 
 // ReleaseGateDefs 返回发布门禁规范清单副本（供文档/测试呈现）。

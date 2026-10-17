@@ -10,7 +10,7 @@ package lab
 //   - 发布候选冻结字段齐全（候选 hash/门禁表/限制/建议决定）。
 //
 // 门禁评估是只读检查（不写产物、不改变状态）；本测试失败 = 发布被阻止，
-// 但已写产物与已发布状态不受影响（见 doc/v2-multifactor-portfolio.md
+// 但已写产物与已发布状态不受影响（见 docs/guides/v2-multifactor-portfolio.md
 // §发布门禁语义）。
 
 import (
@@ -28,7 +28,7 @@ import (
 // releaseKeyFiles 发布候选 hash 关键文件清单（相对仓库根；v2 交付核心 + 契约
 // 文档。候选 hash 随代码冻结：任一文件变更 → hash 变化。
 //
-// 注意：doc/v2-multifactor-portfolio.md（本文档）不参与候选 hash——发布文档
+// 注意：docs/guides/v2-multifactor-portfolio.md（本文档）不参与候选 hash——发布文档
 // 描述候选并记录 hash，若 hash 覆盖文档自身会形成自引用环；代码与契约变更会
 // 反映在 hash 中，文档变更不改变代码候选身份。
 var releaseKeyFiles = []string{
@@ -306,7 +306,7 @@ func collectPerformanceInput(t *testing.T) ReleaseCheckInput {
 }
 
 // collectDocsInput 文档门禁：UX-CONTRACT.md、DESIGN.md §7、
-// doc/v2-multifactor-portfolio.md 存在且记录限制。
+// docs/guides/v2-multifactor-portfolio.md 存在且记录限制。
 func collectDocsInput(t *testing.T) ReleaseCheckInput {
 	root := repoRootDir(t)
 	checks := []struct {
@@ -316,7 +316,7 @@ func collectDocsInput(t *testing.T) ReleaseCheckInput {
 	}{
 		{name: "UX-CONTRACT.md", path: filepath.Join(root, "UX-CONTRACT.md"), need: ""},
 		{name: "DESIGN.md §7", path: filepath.Join(root, "DESIGN.md"), need: "## 7. 06 组合研究页"},
-		{name: "doc/v2-multifactor-portfolio.md", path: filepath.Join(root, "doc", "v2-multifactor-portfolio.md"), need: "## 3. 限制与已接受剩余风险"},
+		{name: "docs/guides/v2-multifactor-portfolio.md", path: filepath.Join(root, "docs", "guides", "v2-multifactor-portfolio.md"), need: "## 3. 限制与已接受剩余风险"},
 	}
 	var missing []string
 	for _, c := range checks {
@@ -329,7 +329,7 @@ func collectDocsInput(t *testing.T) ReleaseCheckInput {
 			missing = append(missing, c.name+"（缺少必需章节 "+c.need+"）")
 		}
 	}
-	ev := "UX-CONTRACT.md（06 组合研究 UI 契约，根目录）+ DESIGN.md §7（06 组合研究页设计上下文）+ doc/v2-multifactor-portfolio.md（Task 12 发布文档，含 §限制 与已接受剩余风险）"
+	ev := "UX-CONTRACT.md（06 组合研究 UI 契约，根目录）+ DESIGN.md §7（06 组合研究页设计上下文）+ docs/guides/v2-multifactor-portfolio.md（Task 12 发布文档，含 §限制 与已接受剩余风险）"
 	if len(missing) > 0 {
 		return ReleaseCheckInput{Name: "docs_complete", Check: CheckFail, Evidence: ev, Notes: "缺失：" + strings.Join(missing, "；")}
 	}

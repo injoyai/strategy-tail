@@ -78,7 +78,7 @@ func (c RunConfig) Validate() error {
 		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
 			return fmt.Errorf("搭建器模式的卖出规则由条件树管理，请勿混入持仓天数/止盈/止损")
 		}
-		return c.Builder.validate("run")
+		return c.Builder.Validate("run")
 	}
 	if c.MACD != nil {
 		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {

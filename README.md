@@ -2,7 +2,7 @@
 
 本项目是面向 A 股的本地策略研究与回测工具。当前主线是组合式 `Buyer` / `Seller` 策略、历史回测、因子研究、结果分析和策略实验室。本项目不是实盘交易系统。
 
-概念说明见[因子研究与回测搭建](doc/research-and-backtest-concepts.md)，统一术语见[业务词汇表](CONTEXT.md)。
+概念说明见[因子研究与回测搭建](docs/guides/research-and-backtest-concepts.md)，统一术语见[业务词汇表](CONTEXT.md)。完整资料见[文档导航](docs/README.md)，代码入口与运行目录见[项目目录说明](docs/guides/project-layout.md)。
 
 回测条件的底层数值计算复用 `strategies/factor` 中的因子，条件组件保留比较、时序和组合规则；拆分范围与兼容口径见上述概念文档。
 
@@ -38,9 +38,16 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `researchdata/` | 供应商无关的数据目录、PIT 记录、注册路由和只读视图 |
 | `internal/researchrun/` | 多变体回测的数据加载、并发、取消、隔离和覆盖率 |
 | `internal/lab/` | 本地 Web 策略实验室及 Yaegi 脚本执行 |
+| `internal/lab/builder/` | 搭建器组件目录、条件树与共用因子条件的校验和构建 |
+| `internal/lab/factorstats/` | IC/HAC、衰减、分组换手与中性化的纯计算 |
+| `internal/lab/script/` | 独立的 Yaegi 加载、编译校验和项目符号表；Lab 保留原调用入口 |
 | `cmd/` | 可执行入口；只应定义具体任务和展示，不再复制公共回测循环 |
 | `config/` | 数据更新、成本、仓位、默认年份和基准配置 |
+| `docs/` | 使用与开发指南、设计、实施计划和审查记录；从 `docs/README.md` 检索 |
+| `tests/` | 部署等外围测试；Go 测试与被测包放在一起 |
+| `data/` | 本地行情数据库和 Lab 持久状态，不进入 Git |
 | `output/` | CSV、HTML、PDF 等生成产物，不进入 Git |
+| `bin/` | 本地编译产物，不进入 Git |
 
 ## 核心契约
 
@@ -141,9 +148,9 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 node --test internal/lab/web/*.mjs
 python3 tests/deploy_test.py
 # Linux / Go 1.25.4+；macOS 使用已有 golang:1.25-alpine 镜像
-TZ=Asia/Shanghai go test ./internal/lab ./strategies/buy ./strategies/sell ./internal/researchrun
+TZ=Asia/Shanghai go test ./internal/lab/... ./strategies/buy ./strategies/sell ./internal/researchrun
 go build ./...
-go vet ./internal/lab
+go vet ./internal/lab/...
 ```
 
 部署测试使用 Docker 替身，不操作真实容器；Go 测试使用临时行情与报告目录。自动化检查不代替桌面、窄屏和键盘的浏览器验收。
@@ -214,7 +221,7 @@ go vet ./internal/lab
 
 ## 因子框架状态
 
-新增因子前阅读[因子开发与接入规范](doc/factor-development.md)，按其中的接口、注册、版本和测试清单交付。
+新增因子前阅读[因子开发与接入规范](docs/guides/factor-development.md)，按其中的接口、注册、版本和测试清单交付。
 
 收益偏度 `return_skew` 当前实现版本为 2：将恒定收益的浮点舍入噪声视为无效值；版本 1 的策略条件须重新分析并确认阈值后使用当前版本。
 

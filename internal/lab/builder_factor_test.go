@@ -25,7 +25,7 @@ func TestBuilderFactorConditionsShareStrategyRules(t *testing.T) {
 	} {
 		t.Run(ft.Operator, func(t *testing.T) {
 			spec := BuilderSpec{Version: 1, Name: "统一因子规则", Buy: factorNode(ft), SellSignal: factorNode(ft)}
-			if err := spec.validate("run"); err != nil {
+			if err := spec.Validate("run"); err != nil {
 				t.Fatal(err)
 			}
 			buyer, err := spec.Buyer()
@@ -77,7 +77,7 @@ func TestBuilderFactorValidation(t *testing.T) {
 			spec := BuilderSpec{Version: 1, Name: "测试", Buy: factorNode(valid), HoldToEnd: true}
 			tt.mutate(&spec)
 			for _, mode := range []string{"save", "run"} {
-				if err := spec.validate(mode); err == nil {
+				if err := spec.Validate(mode); err == nil {
 					t.Fatal("必须拒绝无效因子节点")
 				}
 			}
@@ -86,10 +86,10 @@ func TestBuilderFactorValidation(t *testing.T) {
 	// 直接构建也校验阈值，不能因为绕过 Validate 而触发空指针或执行旧版本。
 	invalid := valid
 	invalid.Min = nil
-	if _, err := factorNode(invalid).buyer(); err == nil {
+	if _, err := factorNode(invalid).Buyer(); err == nil {
 		t.Fatal("直接构建必须校验阈值")
 	}
-	if _, err := (&BuilderNode{Type: "factor"}).seller(); err == nil {
+	if _, err := (&BuilderNode{Type: "factor"}).Seller(); err == nil {
 		t.Fatal("直接构建必须校验声明存在")
 	}
 }

@@ -341,7 +341,7 @@ func TestStrategySpecFactorVersion(t *testing.T) {
 	// 只允许从已校验路径进入：直接 build() 也必须校验版本（fail-closed）
 	s = validSpec()
 	s.FactorFilters[0].FactorVersion = curVer + 1
-	if _, err := s.FactorFilters[0].build(); err == nil {
+	if _, err := s.FactorFilters[0].Build(); err == nil {
 		t.Fatal("绕过 Validate 直接 build() 也应拒绝版本漂移")
 	}
 }

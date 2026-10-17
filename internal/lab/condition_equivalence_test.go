@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
@@ -26,16 +27,16 @@ func TestConditionFactorEquivalence(t *testing.T) {
 	if err := json.Unmarshal(raw, &baseline); err != nil {
 		t.Fatal(err)
 	}
-	for _, entry := range builderCatalog() {
+	for _, entry := range builder.Catalog().Components {
 		t.Run(entry.ID, func(t *testing.T) {
 			hash := sha256.New()
 			for _, params := range []map[string]any{nil, defaultParamsAsJSON(t, entry)} {
 				var buyer core.Buyer
 				var seller core.Seller
-				if entry.Role == roleBuy {
-					buyer, err = buyFactories[entry.ID](params)
+				if entry.Role == "buy" {
+					buyer, err = (&BuilderNode{Type: "condition", ComponentID: entry.ID, Params: params}).Buyer()
 				} else {
-					seller, err = sellFactories[entry.ID](params)
+					seller, err = (&BuilderNode{Type: "condition", ComponentID: entry.ID, Params: params}).Seller()
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -158,4 +159,24 @@ func TestBuyRecentGainBelowValidityBoundary(t *testing.T) {
 	if buyer.Buy("sh600000", hot) {
 		t.Fatal("涨幅 30% ≥ 15% 不应买入")
 	}
+}
+
+// defaultParamsAsJSON 组件目录默认参数经 JSON round-trip（模拟前端提交形态）。
+func defaultParamsAsJSON(t *testing.T, entry ComponentEntry) map[string]any {
+	t.Helper()
+	m := map[string]any{}
+	for _, def := range entry.Params {
+		if def.Default != nil {
+			m[def.Key] = def.Default
+		}
+	}
+	buf, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("组件 %s 默认参数序列化失败: %v", entry.ID, err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(buf, &out); err != nil {
+		t.Fatalf("组件 %s 默认参数反序列化失败: %v", entry.ID, err)
+	}
+	return out
 }

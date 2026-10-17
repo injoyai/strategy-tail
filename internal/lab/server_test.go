@@ -2,6 +2,7 @@ package lab
 
 import (
 	"bytes"
+	_ "embed"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -26,6 +27,9 @@ import (
 // 数据隔离：chdir 到临时目录（ScriptPath 与 output/ 均为相对路径），
 // 并将 common.Pull 临时替换为指向伪造日K sqlite 的实例（MinKlines 无文件返回空，
 // 引擎 Do() 自动回退日线卖出判定），全程不依赖网络。
+
+//go:embed script/testdata/strategy.go
+var sampleScript string
 
 // lifecycleScript 全天触发买入的极简脚本（A价格+A过滤涨停 对恒价数据恒真），
 // 配合 A持仓N天{1} 产生稳定交易序列。

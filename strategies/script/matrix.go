@@ -3,7 +3,7 @@
 // 策略实验室脚本（页面编辑器直接读写本文件，服务端 Yaegi 解释执行）。
 //
 // 契约：package main + func Strategy() []core.Variant
-// 可 import：core、strategies/buy、strategies/sell（见 internal/lab/symbols.go 注册的组件）。
+// 可 import：core、strategies/buy、strategies/sell（见 internal/lab/script/symbols.go 注册的组件）。
 // 重逻辑请组合现有组件，内联循环会被解释执行变慢。
 package main
 

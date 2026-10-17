@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+
+	"github.com/injoyai/strategy-tail/internal/lab/factorstats"
 )
 
 // 研究协议（ResearchProtocol）：v4 因子分析的研究合同。协议随报告冻结保存，
@@ -55,16 +57,16 @@ const (
 	hacLagFixed           = "fixed"             // 固定 lag，0~60
 
 	// NeutralizationSpec.Mode
-	neutralizationNone         = "none"
-	neutralizationIndustrySize = "industry_size"
+	neutralizationNone         = factorstats.NeutralizationNone
+	neutralizationIndustrySize = factorstats.NeutralizationIndustrySize
 
 	// NeutralizationSpec.Winsorization
-	winsorizationNone = "none"
-	winsorizationMAD  = "mad"
+	winsorizationNone = factorstats.WinsorizationNone
+	winsorizationMAD  = factorstats.WinsorizationMAD
 
 	// NeutralizationSpec.Standardization
-	standardizationRank   = "rank"
-	standardizationZScore = "zscore"
+	standardizationRank   = factorstats.StandardizationRank
+	standardizationZScore = factorstats.StandardizationZScore
 )
 
 // 证据等级（分析报告层）：prospective 仅属于验证层（冻结后新数据），不在
@@ -140,15 +142,6 @@ type DiagnosticSpec struct {
 	HACLag          int                `json:"hacLag,omitempty"`
 	TurnoverPeriods []int              `json:"turnoverPeriods,omitempty"`
 	Neutralization  NeutralizationSpec `json:"neutralization"`
-}
-
-// NeutralizationSpec 可选中性化；industry_size 需要行业与市值数据集标识。
-type NeutralizationSpec struct {
-	Mode            string `json:"mode"`
-	IndustryDataset string `json:"industryDataset,omitempty"`
-	SizeDataset     string `json:"sizeDataset,omitempty"`
-	Winsorization   string `json:"winsorization"`
-	Standardization string `json:"standardization"`
 }
 
 // TrialSpec 试验账本归属：家族与变体用于后续多重检验校正。

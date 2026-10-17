@@ -8,7 +8,7 @@ package lab
 // 文件。当前实现先把 ValidationStore 封装为 ValidationInput；Task 1 将按
 // 相同契约把适配层迁移到 portfolioresearch 包内。
 //
-// 与正式契约的边界见 docs/superpowers/plans/2026-09-18-multifactor-portfolio-v2-task0-admission.md：
+// 与正式契约的边界见 docs/plans/2026-09-18-multifactor-portfolio-v2-task0-admission.md：
 // 冻结记录（ValidationRequest）、验证报告（FactorValidationReport）、窗口
 // 报告（ValidationWindowReport）与摘要（ValidationSummary）为正式契约；
 // 存储目录布局、request.json/report.json/windows/NNNN.json 等文件名是当前

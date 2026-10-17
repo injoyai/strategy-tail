@@ -11,6 +11,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/factorstats"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
@@ -376,7 +377,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 					ics = append(ics, *d.IC)
 				}
 			}
-			return extendedICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
+			return factorstats.ComputeICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
 		}
 		overall := aggregateIC(days, hv, rets)
 		ics := make([]float64, 0, len(overall.Daily))
@@ -385,7 +386,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 				ics = append(ics, *d.IC)
 			}
 		}
-		icStats := extendedICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
+		icStats := factorstats.ComputeICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
 		statsByH[h] = icStats
 		r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "grouping", Code: fmt.Sprintf("%d 日收益周期", h)})
 
@@ -409,7 +410,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 				for i, d := range cache.days {
 					dates[i] = d.Format("2006-01-02")
 				}
-				turnover = groupTurnoverSeries(dates, members, periods[0])
+				turnover = factorstats.GroupTurnoverSeries(dates, members, periods[0])
 			}
 		}
 		spreadsByH[h] = summary.Spread
@@ -469,7 +470,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		analyses[i] = res.analysis
 		hdaily[horizons[i]] = res.daily
 	}
-	decay := buildDecayCurve(horizons, statsByH, spreadsByH)
+	decay := factorstats.BuildDecayCurve(horizons, statsByH, spreadsByH)
 
 	// 10. 报告组装：canonical 数据在 Horizons/HorizonAnalyses/DecayCurve；
 	// 旧字段只镜像主周期（deprecated），历史报告与旧页面继续可用。

@@ -133,7 +133,7 @@
 ## 7. 06 组合研究页（2026-09-19，多因子组合 v2 Task 10）
 
 > UI 契约见 `UX-CONTRACT.md`；业务规则与 API 见
-> `docs/superpowers/specs/2026-09-18-multifactor-portfolio-v2-design.md` §5-§12 与
+> `docs/specs/2026-09-18-multifactor-portfolio-v2-design.md` §5-§12 与
 > `internal/lab/portfolio_handlers.go`。本页只做“把已有验证证据组装成冻结模型，并检查
 > 其样本外组合表现”，不展示脱离证据的“魔法总分”。
 
@@ -223,7 +223,7 @@ loading / empty / no-results / running / partial / stale / error / done 均以�
 
 因子条件编辑沿用原生 Select、`.bnode-param` 字段、现有错误样式与系统焦点，不新增视觉令牌。`FactorCondition` 是条件树内因子选择、单位转换与字段错误的共享控件；空树可直接添加因子条件，组内保留添加、删除、排序和键盘操作。比例输入标注 `%`，目录分类与参数名沿用因子研究；窄屏自然换行，不固定编辑器高度。
 
-来源：`docs/superpowers/specs/2026-10-13-strategy-builder-design.md`。
+来源：`docs/specs/2026-10-13-strategy-builder-design.md`。
 沿用 §8.1 的运行时令牌与原生 Select；编辑区复用外层卡片，避免套入第二层卡片。条件名称、各参数、删除和问号说明入口采用紧凑横排，标签与输入成组；三个及以上参数使用上方标签以尽量保持单行，宽度不足时整组换行，窄屏按可用空间排成列，嵌套节点允许收缩。分组规则只在组头显示，不在条件间重复 AND／OR。列表参数使用较宽的文本输入，实例通过 Vue `useId()` 生成独立控件标识；错误保留在对应输入下方并与控件关联，验证失败聚焦首错。此布局由共用 `BuilderNodeEdit` 统一覆盖买入、卖出信号和风控。条件说明采用问号悬停提示，键盘聚焦或触屏点击同样可查看；原生 Popover 进入 top layer、在视口边缘避让，移出且无焦点时收起，Escape 可关闭，不扩展条件行高度。
 
 保存或加载期间禁止重复提交和切换策略身份；仍可修改参数，晚到的保存响应不覆盖新草稿。新建或载入其他策略之前，未保存修改使用既有原生 `<dialog>` 行为确认替换，默认焦点在保留草稿。报告以只读文本树展示冻结参数，不引用当前编辑内容；Virtual 与真实成交同时有文字标签。

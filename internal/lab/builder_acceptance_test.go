@@ -52,14 +52,14 @@ func TestBuilderRiskAndListValidation(t *testing.T) {
 	for _, mode := range []string{"save", "run"} {
 		spec := baseSpec()
 		spec.Risks = []*BuilderNode{bGroup("and", bCond("risk_fixed_stop", nil), bCond("risk_fixed_tp", nil))}
-		if err := spec.validate(mode); err == nil {
+		if err := spec.Validate(mode); err == nil {
 			t.Fatalf("%s accepted risk group", mode)
 		}
 	}
 	for _, periods := range [][]any{{0.0, 20.0}, {-1.0, 20.0}, {5.0, 1001.0}, {5.0}, {5.5, 20.0}} {
 		spec := baseSpec()
 		spec.Buy = bCond("buy_ma_bull", map[string]any{"periods": periods})
-		if err := spec.validate("run"); err == nil {
+		if err := spec.Validate("run"); err == nil {
 			t.Fatalf("accepted periods %v", periods)
 		}
 	}
@@ -76,7 +76,7 @@ func builderBars(n int) extend.Klines {
 }
 
 func TestBuilderTemplateTradesMatchCLI(t *testing.T) {
-	spec := macdTemplateSpec()
+	spec := BuilderTemplates()[0].Spec
 	buyer, err := spec.Buyer()
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ func TestBuilderGroupingAndIndependentStop(t *testing.T) {
 	}
 	bars[1].Close = protocol.Yuan(9)
 	bars[2].Close = protocol.Yuan(8)
-	signal, _ := spec.SellSignal.seller()
+	signal, _ := spec.SellSignal.Seller()
 	if signal.Sell("sh600000", bars[:2], core.Buy{Price: protocol.Yuan(10)}) {
 		t.Fatal("fixture must leave MACD signal false")
 	}
