@@ -47,7 +47,8 @@ func (b 近N天符合) Buy(code string, dks extend.Klines) bool {
 	if days == 0 {
 		days = 10
 	}
-	for i := len(dks); i >= len(dks)-days && i >= 1; i-- {
+	// i > len(dks)-days 使扫描恰为最近 Days 个交易日（含今天），避免多扫一天
+	for i := len(dks); i > len(dks)-days && i >= 1; i-- {
 		if b.Buyer.Buy(code, dks[:i]) {
 			return true
 		}
@@ -57,11 +58,11 @@ func (b 近N天符合) Buy(code string, dks extend.Klines) bool {
 
 // N天前符合 是组合型买入条件。
 // 当且仅当被包裹的 Buyer 在 [From, To] 个交易日前（含两端）的任意一天评估返回 true 时触发。
-// From 默认 5；To 默认 0 表示上界不限（一直回溯到数据起点）。
+// From 非正时默认 5；To 默认 0 表示上界不限（一直回溯到数据起点）。
 // 当 To > From 时，扫描范围为 [len-To, len-From]；To <= From 时退化为无上界约束。
 // 例如 buy.N天前符合{From: 10, To: 20, Buyer: buy.A倍量{}} 表示"10~20 个交易日前出现过倍量买点"。
 type N天前符合 struct {
-	From  int // 起点：最近第几天前（含），默认 5
+	From  int // 起点：最近第几天前（含），非正时默认 5
 	To    int // 终点：最远第几天前（含），0 表示不限
 	Buyer core.Buyer
 }
@@ -89,6 +90,11 @@ func (b N天前符合) Buy(code string, dks extend.Klines) bool {
 	if from == 0 {
 		from = 5
 	}
+	if from < 0 {
+		// 负 From 属无效配置：与“近N天符合”对负 Days 的拒绝行为一致，直接不触发，
+		// 不静默回退默认窗口掩盖配置错误。
+		return false
+	}
 	n := len(dks)
 	end := n - from
 	if end < 1 {
@@ -99,7 +105,8 @@ func (b N天前符合) Buy(code string, dks extend.Klines) bool {
 	if b.To > from && n-b.To > low {
 		low = n - b.To
 	}
-	for i := end; i >= low+1; i-- {
+	// i >= low 取闭区间包含 To 端点；i >= 1 防止 low 为 0 时把空切片传给内部 Buyer
+	for i := end; i >= low && i >= 1; i-- {
 		if b.Buyer.Buy(code, dks[:i]) {
 			return true
 		}

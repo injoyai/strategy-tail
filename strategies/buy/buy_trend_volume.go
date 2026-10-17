@@ -292,18 +292,18 @@ func (b A成交额大于) Buy(code string, dks extend.Klines) bool {
 	return (f.A成交额{}).Value(code, dks) >= min
 }
 
-// riseRateNDays 计算最近N日累计涨幅百分比
-func riseRateNDays(dks extend.Klines, days int) float64 {
+// riseRateNDays 计算最近N日累计涨幅百分比；数据不足或起点价格非正时 ok 为 false
+func riseRateNDays(dks extend.Klines, days int) (float64, bool) {
 	n := len(dks)
 	if n < days+1 {
-		return 0
+		return 0, false
 	}
 	startPrice := dks[n-1-days].Close.Float64()
 	endPrice := dks[n-1].Close.Float64()
 	if startPrice <= 0 {
-		return 0
+		return 0, false
 	}
-	return (endPrice - startPrice) / startPrice * 100
+	return (endPrice - startPrice) / startPrice * 100, true
 }
 
 // defaultMACDParams 返回默认的 MACD 参数（12, 26, 9）

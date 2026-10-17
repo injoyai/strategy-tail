@@ -453,6 +453,45 @@ func TestServerStrategyRunBusy(t *testing.T) {
 	}
 }
 
+// TestServerStopSameOrigin /api/stop 属于写操作，必须过同源检查：
+// 跨站来源（Origin host/scheme 不符或 Sec-Fetch-Site=cross-site）一律 403
+// 拒绝，不得关闭任务通道；同源请求正常放行（无任务运行也返回 200）。
+func TestServerStopSameOrigin(t *testing.T) {
+	handler := NewServer().Handler()
+
+	newStopReq := func(headers map[string]string) *http.Request {
+		req := httptest.NewRequest(http.MethodPost, "/api/stop", nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		return req
+	}
+	doStop := func(headers map[string]string) int {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, newStopReq(headers))
+		return rec.Code
+	}
+
+	// 跨站 Origin：拒绝。
+	for _, tc := range []struct{ name, origin string }{
+		{"跨站host", "http://evil.example.com"},
+		{"跨站scheme", "https://example.com"},
+		{"跨站端口", "http://example.com:9999"},
+	} {
+		if code := doStop(map[string]string{"Origin": tc.origin}); code != http.StatusForbidden {
+			t.Fatalf("%s: Origin=%q 应拒绝 403，实际 %d", tc.name, tc.origin, code)
+		}
+	}
+	// 跨站 Sec-Fetch-Site：拒绝。
+	if code := doStop(map[string]string{"Sec-Fetch-Site": "cross-site"}); code != http.StatusForbidden {
+		t.Fatalf("Sec-Fetch-Site=cross-site 应拒绝 403，实际 %d", code)
+	}
+	// 同源：放行（无任务运行也返回 200）。
+	if code := doStop(map[string]string{"Origin": "http://example.com"}); code != http.StatusOK {
+		t.Fatalf("同源 Origin 应放行 200，实际 %d", code)
+	}
+}
+
 // writeFakeDayDB 写入伪造日K sqlite（与 updateDayKline 相同的表结构）。
 // 每天开10收10.5（+5%，不触发涨停过滤），恒价保证买入条件每日为真。
 func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {

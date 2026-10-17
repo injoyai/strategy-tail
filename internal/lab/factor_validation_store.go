@@ -489,7 +489,9 @@ type ValidationSummary struct {
 }
 
 // List 返回验证摘要列表。筛选：候选、状态（含 frozen）、证据等级。
-// 排序：FrozenAt 倒序（最新在前），ID 升序兜底稳定。损坏记录 fail closed。
+// SupersededBy 在筛选前由全部记录派生：替代记录可能因状态或证据等级不同
+// 被筛掉，先筛后派生会让旧记录丢失替代关系。排序：FrozenAt 倒序（最新在
+// 前），ID 升序兜底稳定。损坏记录 fail closed。
 func (s *ValidationStore) List(filter ValidationFilter) ([]ValidationSummary, error) {
 	if err := filter.validate(); err != nil {
 		return nil, err
@@ -523,15 +525,6 @@ func (s *ValidationStore) List(filter ValidationFilter) ([]ValidationSummary, er
 			}
 			state = rep.State
 		}
-		if filter.CandidateID != "" && vr.Protocol.CandidateID != filter.CandidateID {
-			continue
-		}
-		if filter.State != "" && state != filter.State {
-			continue
-		}
-		if filter.EvidenceClass != "" && vr.Protocol.EvidenceClass != filter.EvidenceClass {
-			continue
-		}
 		items = append(items, loaded{
 			vr:    vr,
 			state: state,
@@ -549,7 +542,7 @@ func (s *ValidationStore) List(filter ValidationFilter) ([]ValidationSummary, er
 			},
 		})
 	}
-	// SupersededBy 由全部记录的 Supersedes 派生。
+	// SupersededBy 由全部记录（含将被筛掉者）的 Supersedes 派生。
 	for i := range items {
 		for _, other := range items {
 			if other.vr.Supersedes == items[i].vr.ID {
@@ -558,14 +551,28 @@ func (s *ValidationStore) List(filter ValidationFilter) ([]ValidationSummary, er
 		}
 		sort.Strings(items[i].summary.SupersededBy)
 	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].vr.FrozenAt != items[j].vr.FrozenAt {
-			return items[i].vr.FrozenAt > items[j].vr.FrozenAt
-		}
-		return items[i].vr.ID < items[j].vr.ID
-	})
-	out := make([]ValidationSummary, 0, len(items))
+	// 派生完成后再按候选、状态、证据等级筛选输出。
+	selected := make([]loaded, 0, len(items))
 	for _, it := range items {
+		if filter.CandidateID != "" && it.vr.Protocol.CandidateID != filter.CandidateID {
+			continue
+		}
+		if filter.State != "" && it.state != filter.State {
+			continue
+		}
+		if filter.EvidenceClass != "" && it.vr.Protocol.EvidenceClass != filter.EvidenceClass {
+			continue
+		}
+		selected = append(selected, it)
+	}
+	sort.Slice(selected, func(i, j int) bool {
+		if selected[i].vr.FrozenAt != selected[j].vr.FrozenAt {
+			return selected[i].vr.FrozenAt > selected[j].vr.FrozenAt
+		}
+		return selected[i].vr.ID < selected[j].vr.ID
+	})
+	out := make([]ValidationSummary, 0, len(selected))
+	for _, it := range selected {
 		out = append(out, it.summary)
 	}
 	return out, nil

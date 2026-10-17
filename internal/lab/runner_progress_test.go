@@ -3,6 +3,8 @@ package lab
 import (
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/injoyai/strategy-tail/internal/researchrun"
@@ -99,5 +101,44 @@ func TestTaskProgressClearsCountsBetweenStages(t *testing.T) {
 				t.Fatalf("%s/%s inherited completed counts: %+v", task, phase, st)
 			}
 		}
+	}
+}
+
+// TestRunnerStopIdempotent 并发重复 Stop 不 panic（runControl.once 幂等
+// close），且能正确关闭当前任务的 stop 通道。
+func TestRunnerStopIdempotent(t *testing.T) {
+	r := NewRunner()
+	r.running.Store(true)
+	ctl := &runControl{stop: make(chan struct{})}
+	r.control.Store(ctl)
+	var wg sync.WaitGroup
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r.Stop()
+		}()
+	}
+	wg.Wait()
+	select {
+	case <-ctl.stop:
+	default:
+		t.Fatal("stop 通道应已关闭")
+	}
+}
+
+// TestRecoverTaskPanic 任务 goroutine 的 panic 被 recover 后置 error 态并
+// 记录错误消息，进程不被击穿。
+func TestRecoverTaskPanic(t *testing.T) {
+	r := NewRunner()
+	func() {
+		defer r.recoverTaskPanic()
+		panic("boom")
+	}()
+	if st := *r.state.Load(); st != "error" {
+		t.Fatalf("state = %s, want error", st)
+	}
+	if msg := r.errMsg.Load(); msg == nil || !strings.Contains(*msg, "boom") {
+		t.Fatalf("errMsg = %v, 应包含 panic 值", msg)
 	}
 }

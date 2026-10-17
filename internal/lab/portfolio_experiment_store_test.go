@@ -806,3 +806,49 @@ func replaceJSONValue(raw, key, newValue string) string {
 }
 
 var _ = strings.Repeat // 防止误删 import 时编译错误（replaceJSONValue 使用）
+
+// TestExperimentStore_RecoverStaleRunning 启动路径恢复：孤儿 running（进程
+// 退出遗留）标记为 failed 并保留元数据与诊断；queued / completed 记录不受
+// 影响；恢复幂等（再次恢复返回 0）。
+func TestExperimentStore_RecoverStaleRunning(t *testing.T) {
+	f := newExperimentFixture(t)
+	// 孤儿 running：创建 → Start，模拟进程退出后遗留。
+	orphan := f.startAndRun(t)
+	// queued 记录：未启动，不应被动。
+	queued := f.createOne(t)
+	// completed 记录：不应被动。
+	completed := f.markCompleted(t)
+
+	n, err := f.store.RecoverStaleRunning("进程退出导致任务中断")
+	if err != nil {
+		t.Fatalf("RecoverStaleRunning: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("恢复条数 = %d, want 1", n)
+	}
+	got, err := f.store.Get(orphan.ExperimentID)
+	if err != nil {
+		t.Fatalf("Get orphan: %v", err)
+	}
+	if got.Status != portfolioresearch.RunStateFailed {
+		t.Fatalf("孤儿 running 应转为 failed，实际 %q", got.Status)
+	}
+	if got.Error != "进程退出导致任务中断" {
+		t.Fatalf("诊断信息异常: %q", got.Error)
+	}
+	if got.ModelID != orphan.ModelID || got.FamilyID != orphan.FamilyID {
+		t.Fatalf("恢复不得丢失元数据")
+	}
+	// 幂等：再次恢复返回 0。
+	n2, err := f.store.RecoverStaleRunning("再次恢复")
+	if err != nil || n2 != 0 {
+		t.Fatalf("二次恢复 = (%d, %v), want (0, nil)", n2, err)
+	}
+	// queued / completed 不受影响。
+	if q, err := f.store.Get(queued.ExperimentID); err != nil || q.Status != portfolioresearch.RunStateQueued {
+		t.Fatalf("queued 记录不得被动: %v/%q", err, q.Status)
+	}
+	if c, err := f.store.Get(completed.ExperimentID); err != nil || c.Status != portfolioresearch.RunStateCompleted {
+		t.Fatalf("completed 记录不得被动: %v/%q", err, c.Status)
+	}
+}

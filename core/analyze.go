@@ -30,7 +30,7 @@ type AnalyzeResult struct {
 	Beta            float64 // 贝塔
 	// 阶段二新增指标
 	MaxDrawdownPct   float64 // 最大回撤率（%）
-	DrawdownDuration int     // 最大回撤持续天数（交易日）
+	DrawdownDuration int     // 最大回撤持续天数（按卖出日之间的日历天数计）
 	UnderwaterMax    float64 // 水下曲线最大深度（%）
 	WinStreakMax     int     // 最大连胜笔数
 	LossStreakMax    int     // 最大连亏笔数
@@ -107,17 +107,35 @@ func formatPercent(v float64) string {
 	return fmt.Sprintf("%.2f%%", v)
 }
 
+// settledTrades 为同一结算时刻补充确定性顺序，避免并发收集顺序改变回撤与连胜连亏。
+func settledTrades(all []Trade) []Trade {
+	trades := append([]Trade(nil), all...)
+	sort.Slice(trades, func(i, j int) bool {
+		a, b := trades[i], trades[j]
+		if !a.SellTime.Equal(b.SellTime) {
+			return a.SellTime.Before(b.SellTime)
+		}
+		if !a.BuyTime.Equal(b.BuyTime) {
+			return a.BuyTime.Before(b.BuyTime)
+		}
+		if a.Code != b.Code {
+			return a.Code < b.Code
+		}
+		if x, y := tradeProfitAmount(a), tradeProfitAmount(b); x != y {
+			return x < y
+		}
+		return tradeReturnRate(a) < tradeReturnRate(b)
+	})
+	return trades
+}
+
 // Analyze 计算单年度回测统计指标，不执行文件或报告写入。
 // getDayKlines 与 cost 为兼容既有调用保留；成交成本已固化在 Trade 中，不再
 // 由分析阶段重新计算。benchmarkKlines 为基准（指数/ETF）日线，可为 nil，
 // pos 用于兼容旧记录的所需本金估算。
 func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend.Klines, _ Cost, pos PositionConfig) AnalyzeResult {
 
-	// 按买入时间排序副本，为了计算资金曲线和回撤且不修改调用方切片。
-	trades := append([]Trade(nil), allTrades...)
-	sort.Slice(trades, func(i, j int) bool {
-		return trades[i].BuyTime.Before(trades[j].BuyTime)
-	})
+	trades := settledTrades(allTrades)
 
 	stats := Stats(trades)
 	totalTrades := stats.Total
@@ -125,14 +143,18 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 
 	// 资金曲线（按实际成本口径；旧记录缺成本字段时兼容回退价格差）
 	var equityCurve []float64
+	// sellDates[i] 为资金曲线第 i 个点的卖出日期：首元素无对应交易日，为零值
+	var sellDates []time.Time
 	currentEquity := 0.0
 	equityCurve = append(equityCurve, currentEquity)
+	sellDates = append(sellDates, time.Time{})
 
 	for _, t := range trades {
 		profit := tradeProfitAmount(t)
 		totalProfit += profit
 		currentEquity += profit
 		equityCurve = append(equityCurve, currentEquity)
+		sellDates = append(sellDates, t.SellTime)
 	}
 
 	// 计算最大回撤
@@ -153,7 +175,19 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 		}
 	}
 
-	drawdownDuration := maxDDEndIdx - maxDDStartIdx
+	// 回撤时长按卖出日之间的日历天数计，而非回撤覆盖的笔数
+	drawdownDuration := 0
+	if maxDDEndIdx > 0 && maxDDStartIdx < len(sellDates) {
+		startDate := sellDates[maxDDStartIdx]
+		if startDate.IsZero() {
+			// 回撤起点落在初始零值点时，以首笔卖出日为起算日期
+			startDate = sellDates[1]
+		}
+		endDate := sellDates[maxDDEndIdx]
+		if !startDate.IsZero() && !endDate.IsZero() && endDate.After(startDate) {
+			drawdownDuration = int(math.Round(endDate.Sub(startDate).Hours() / 24))
+		}
+	}
 
 	requiredCapital := calculateRequiredCapital(trades, pos)
 	annualReturn := 0.0

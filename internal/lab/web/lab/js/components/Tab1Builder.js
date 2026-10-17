@@ -156,7 +156,11 @@ export const NodeEdit = {
     moveSelf(offset) { this.moveNode(this.node, this.index + offset); },
     moveNode(node, to) {
       const focused = this.$el?.ownerDocument.activeElement;
-      if (!reorderNode(this.parent, node, to)) return;
+      if (!reorderNode(this.parent, node, to)) {
+        // 非法落点（越界或与当前位置相同）：轻量提示，不改变顺序
+        state.builderMsg = {text: '未调整顺序：目标位置无效或与当前位置相同。', ok: true};
+        return;
+      }
       this.$nextTick(() => {
         if (focused?.isConnected) {
           const control = focused.disabled ? focused.parentElement.querySelector('.bnode-drag-handle') : focused;

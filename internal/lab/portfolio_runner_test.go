@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -849,5 +850,108 @@ func TestRollingICModelMissingIcFailsClosed(t *testing.T) {
 	_, err = f.models.Get(m.ModelID, 1)
 	if err == nil || !strings.Contains(err.Error(), "rollingIc") {
 		t.Fatalf("rollingIc 缺失模型读取应返回明确错误而非 panic: %v", err)
+	}
+}
+
+// TestPortfolioExperimentPanicConvergesToFailedPersisted 端到端：任务内部
+// panic 时持久化记录必须收敛为 failed（不得停留 running），全局状态 error。
+// 注入 panic universe：resolvePortfolioCodes 在 Start（记录已持久化 running）
+// 之后调用 StaticUniverse 的 Codes 函数，panic 恰从持久化窗口内穿出，
+// 覆盖 runPortfolioExperiment 的 panic 收敛 defer 与 recoverTaskPanic 协作。
+func TestPortfolioExperimentPanicConvergesToFailedPersisted(t *testing.T) {
+	f := newPortfolioRunFixture(t)
+	exp, created, err := f.experiments.Create(portfolioExperimentRequest(f.model, testUUID1))
+	if err != nil || !created {
+		t.Fatalf("创建实验 = %v/%v", created, err)
+	}
+	f.runner.universe = researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{
+		ID: "panic-static", Source: "test",
+		Codes: func() []string { panic("boom") },
+	})
+	if err := f.runner.StartPortfolioExperiment(exp.ExperimentID); err != nil {
+		t.Fatalf("启动: %v", err)
+	}
+	st := waitPortfolioDone(t, f.runner)
+	if st["state"] != "error" {
+		t.Fatalf("组合任务应收敛为 error: %v", st)
+	}
+	got, err := f.experiments.Get(exp.ExperimentID)
+	if err != nil {
+		t.Fatalf("读取实验: %v", err)
+	}
+	if got.Status != portfolioresearch.RunStateFailed {
+		t.Fatalf("持久化终态 = %q, want failed（panic 后不得停留 running）", got.Status)
+	}
+	if !strings.Contains(got.Error, "panic") {
+		t.Fatalf("诊断信息应包含 panic 原因: %q", got.Error)
+	}
+	if got.Manifest != nil {
+		t.Fatal("失败不得发布正式产物清单")
+	}
+}
+
+func TestPortfolioRecoverySkipsLiveExperiment(t *testing.T) {
+	f := newPortfolioRunFixture(t)
+	exp, _, err := f.experiments.Create(portfolioExperimentRequest(f.model, testUUID1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	started, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	f.runner.universe = researchdata.NewStaticUniverse(researchdata.StaticUniverseConfig{
+		ID: "blocked-static", Source: "test", Codes: func() []string {
+			once.Do(func() {
+				close(started)
+				<-release
+			})
+			return []string{"sh600001", "sh600002"}
+		},
+	})
+	if err := f.runner.StartPortfolioExperiment(exp.ExperimentID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		close(release)
+		if st := waitPortfolioDone(t, f.runner); st["state"] != "done" {
+			t.Errorf("live experiment failed after recovery: %v", st)
+		}
+	})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("experiment did not start")
+	}
+	other := NewPortfolioExperimentStore(f.expRecords, f.expArtifacts)
+	NewRunner().ConfigurePortfolio(f.models, other, f.validations)
+	got, err := other.Get(exp.ExperimentID)
+	if err != nil || got.Status != portfolioresearch.RunStateRunning {
+		t.Fatalf("live experiment changed to %q: %v", got.Status, err)
+	}
+}
+
+type cancelOnContainsUniverse struct {
+	researchdata.Universe
+	cancel func()
+}
+
+func (u cancelOnContainsUniverse) Contains(code string, asOf time.Time) (bool, error) {
+	u.cancel()
+	return u.Universe.Contains(code, asOf)
+}
+
+func TestPortfolioCancelDuringTransform(t *testing.T) {
+	f := newPortfolioRunFixture(t)
+	exp, _, err := f.experiments.Create(portfolioExperimentRequest(f.model, testUUID1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.runner.universe = cancelOnContainsUniverse{Universe: f.runner.universe, cancel: f.runner.Stop}
+	if err := f.runner.StartPortfolioExperiment(exp.ExperimentID); err != nil {
+		t.Fatal(err)
+	}
+	waitPortfolioDone(t, f.runner)
+	got, err := f.experiments.Get(exp.ExperimentID)
+	if err != nil || got.Status != portfolioresearch.RunStateCancelled {
+		t.Fatalf("transform cancellation became %q (%s): %v", got.Status, got.Error, err)
 	}
 }

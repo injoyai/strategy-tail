@@ -337,14 +337,19 @@ func TestValidationStoreListFilterAndSupersede(t *testing.T) {
 	if got, err := f.Store.List(ValidationFilter{CandidateID: fcFreezeTestID}); err != nil || len(got) != 0 {
 		t.Fatalf("未知候选过滤应空: %d/%v", len(got), err)
 	}
-	// 状态过滤
+	// 状态过滤；替代记录 B（frozen）被状态筛掉时，旧记录 A 的 SupersededBy
+	// 必须保留（派生先于筛选），反向过滤不应凭空引入替代关系。
 	if got, err := f.Store.List(ValidationFilter{State: ValidationStatePassed}); err != nil ||
 		len(got) != 1 || got[0].ID != a.ID {
 		t.Fatalf("passed 过滤 = %v/%v", got, err)
+	} else if len(got[0].SupersededBy) != 1 || got[0].SupersededBy[0] != b.ID {
+		t.Fatalf("替代记录被状态筛掉后旧记录仍应保留 SupersededBy: %v", got[0].SupersededBy)
 	}
 	if got, err := f.Store.List(ValidationFilter{State: ValidationStateFrozen}); err != nil ||
 		len(got) != 1 || got[0].ID != b.ID {
 		t.Fatalf("frozen 过滤 = %v/%v", got, err)
+	} else if len(got[0].SupersededBy) != 0 {
+		t.Fatalf("frozen 过滤不应携带替代关系: %v", got[0].SupersededBy)
 	}
 	// 证据等级过滤
 	if got, err := f.Store.List(ValidationFilter{EvidenceClass: validationEvidenceProspective}); err != nil || len(got) != 0 {

@@ -9,6 +9,8 @@ let diagChart = null;       // 当前图表实例
 let diagVolumeSeries = null;
 let diagCandleSeries = null;
 let diagStrategies = [];    // 策略列表(从全局获取)
+let diagResizeObserver = null; // 图表尺寸监听单例：重建前 disconnect，避免重复创建不释放
+let diagLoadSeq = 0;        // 诊断加载请求序列号：快速切换时旧响应丢弃
 
 // ── 打开诊断弹窗 ──
 
@@ -44,6 +46,8 @@ function openDiagnose(code, strategy) {
 // ── 关闭诊断弹窗 ──
 
 function closeDiagnose() {
+  // 使在途 loadDiagnose 请求失效：关闭后迟到的响应会被序号检查丢弃，不再重建已隐藏的图表
+  diagLoadSeq++;
   const overlay = document.getElementById('diagOverlay');
   overlay.style.display = 'none';
   if (diagChart) {
@@ -52,11 +56,16 @@ function closeDiagnose() {
     diagCandleSeries = null;
     diagVolumeSeries = null;
   }
+  if (diagResizeObserver) {
+    diagResizeObserver.disconnect();
+    diagResizeObserver = null;
+  }
 }
 
 // ── 加载诊断数据 ──
 
 async function loadDiagnose(code, strategy) {
+  const seq = ++diagLoadSeq;
   const chartWrap = document.getElementById('diagChart');
   const explainEl = document.getElementById('diagExplain');
   const treeEl = document.getElementById('diagTree');
@@ -73,9 +82,10 @@ async function loadDiagnose(code, strategy) {
     const url = `/api/diagnose?code=${encodeURIComponent(code)}&strategy=${encodeURIComponent(strategy || '')}`;
     const resp = await fetch(url);
     const data = await resp.json();
+    if (seq !== diagLoadSeq) return;
 
     if (data.error) {
-      chartWrap.innerHTML = `<div class="empty-state"><div class="icon">!</div><div>${data.error}</div></div>`;
+      chartWrap.innerHTML = `<div class="empty-state"><div class="icon">!</div><div>${esc(data.error)}</div></div>`;
       return;
     }
 
@@ -103,7 +113,8 @@ async function loadDiagnose(code, strategy) {
     renderDiagnosisTree(data.diagnosis, treeEl);
 
   } catch (e) {
-    chartWrap.innerHTML = `<div class="empty-state"><div class="icon">!</div><div>加载失败: ${e.message}</div></div>`;
+    if (seq !== diagLoadSeq) return;
+    chartWrap.innerHTML = `<div class="empty-state"><div class="icon">!</div><div>加载失败: ${esc(e.message)}</div></div>`;
   }
 }
 
@@ -117,6 +128,10 @@ function renderChart(data) {
   if (diagChart) {
     diagChart.remove();
     diagChart = null;
+  }
+  if (diagResizeObserver) {
+    diagResizeObserver.disconnect();
+    diagResizeObserver = null;
   }
 
   const chart = LightweightCharts.createChart(chartWrap, {
@@ -294,14 +309,14 @@ function renderChart(data) {
     }
   }
 
-  // 自适应大小
-  const resizeObserver = new ResizeObserver(() => {
+  // 自适应大小（单例复用，避免重复创建不释放）
+  diagResizeObserver = new ResizeObserver(() => {
     chart.applyOptions({
       width: chartWrap.clientWidth,
       height: chartWrap.clientHeight,
     });
   });
-  resizeObserver.observe(chartWrap);
+  diagResizeObserver.observe(chartWrap);
 
   // 设置默认可见K线数量: 手机约60根,桌面约120根
   const totalBars = (data.klines || []).length;

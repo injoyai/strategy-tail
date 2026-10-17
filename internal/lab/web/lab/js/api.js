@@ -5,7 +5,11 @@ export async function api(method, url, body) {
   if (body !== undefined) opt.body = JSON.stringify(body);
   const resp = await fetch(url, opt);
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || resp.statusText);
+  if (!resp.ok) {
+    const err = new Error(data.error || resp.statusText);
+    err.status = resp.status;
+    throw err;
+  }
   return data;
 }
 

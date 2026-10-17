@@ -171,8 +171,9 @@ func (b A近N日涨幅小于) Buy(code string, dks extend.Klines) bool {
 	if max == 0 {
 		max = 15
 	}
-	rise := riseRateNDays(dks, days)
-	return rise < max
+	// 数据不足或起点价格异常时无法计算涨幅，保守不买入
+	rise, ok := riseRateNDays(dks, days)
+	return ok && rise < max
 }
 
 type A单日涨幅范围 struct {

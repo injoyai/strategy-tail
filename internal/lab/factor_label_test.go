@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
@@ -131,6 +132,51 @@ func TestLabelReturnMissingEntryPriceOnZeroOpen(t *testing.T) {
 	}
 }
 
+// 入场日无成交（停牌）记 untradableEntry；即使开盘价存在也不可成交。
+func TestLabelReturnUntradableEntryOnZeroVolume(t *testing.T) {
+	suspended := labelKline(labelDay(1), 11, 11.1)
+	suspended.Volume = 0
+	dks := extend.Klines{
+		labelKline(labelDay(0), 10, 10.1),
+		suspended,
+		labelKline(labelDay(2), 12, 12.1),
+	}
+	_, reason, ok := labelReturn(dks, nil, 0, 1, labelKindNextOpenToClose)
+	if ok || reason != LabelSkipUntradableEntry {
+		t.Fatalf("got ok=%v reason=%q, want untradableEntry", ok, reason)
+	}
+}
+
+// 停牌日开盘价也缺失（OHLC 全 0）时优先归因 untradableEntry。
+func TestLabelReturnUntradableEntryPrecedesMissingPrice(t *testing.T) {
+	suspended := labelKline(labelDay(1), 0, 0)
+	suspended.Volume = 0
+	dks := extend.Klines{
+		labelKline(labelDay(0), 10, 10.1),
+		suspended,
+		labelKline(labelDay(2), 12, 12.1),
+	}
+	_, reason, ok := labelReturn(dks, nil, 0, 1, labelKindNextOpenToClose)
+	if ok || reason != LabelSkipUntradableEntry {
+		t.Fatalf("got ok=%v reason=%q, want untradableEntry before missingEntryPrice", ok, reason)
+	}
+}
+
+// legacy 标签：信号日无成交（停牌）同样记 untradableEntry。
+func TestLabelReturnLegacyUntradableEntryOnZeroVolume(t *testing.T) {
+	suspended := labelKline(labelDay(0), 10, 10.5)
+	suspended.Volume = 0
+	dks := extend.Klines{
+		suspended,
+		labelKline(labelDay(1), 11, 11.1),
+		labelKline(labelDay(2), 12, 12.1),
+	}
+	_, reason, ok := labelReturn(dks, nil, 0, 2, labelKindSameCloseToCloseLegacy)
+	if ok || reason != LabelSkipUntradableEntry {
+		t.Fatalf("got ok=%v reason=%q, want untradableEntry", ok, reason)
+	}
+}
+
 // 退出日收盘价为 0 记 missingExitPrice。
 func TestLabelReturnMissingExitPriceOnZeroClose(t *testing.T) {
 	dks := extend.Klines{
@@ -220,5 +266,42 @@ func TestLabelCoverageRecordAlignsSum(t *testing.T) {
 	if cov.LabeledSignals != 2 || cov.MissingEntryPrice != 1 || cov.MissingExitPrice != 1 ||
 		cov.UntradableEntry != 1 || cov.InsufficientHorizon != 1 || cov.NonFiniteReturn != 1 {
 		t.Fatalf("unexpected buckets: %+v", cov)
+	}
+}
+
+// 观察层覆盖计数（复核报告 No.35）：入场日零成交量（有价无成交）的信号日
+// 不产生标签，披露到 untradableEntry 桶且保持对齐不变式——标签样本集合
+// 剔除停牌入场是设计行为；零成交量先于价格缺失归因，该桶必须有产出路径。
+func TestBuildObservationsUntradableEntryCoverage(t *testing.T) {
+	suspended := labelKline(labelDay(1), 11, 11.1) // 有价但无成交
+	suspended.Volume = 0
+	data := researchrun.YearData{
+		Dks: extend.Klines{
+			labelKline(labelDay(0), 10, 10.1),
+			suspended,
+			labelKline(labelDay(2), 12, 12.1),
+		},
+		Future: extend.Klines{labelKline(labelDay(3), 13, 13.1)},
+	}
+	res := buildObservations("sh600000", data, stubFactor{value: 1}, []int{1}, labelKindNextOpenToClose, nil)
+	cov := res.Coverage[1]
+	if cov.EligibleSignals != 3 {
+		t.Fatalf("EligibleSignals = %d, want 3", cov.EligibleSignals)
+	}
+	if cov.UntradableEntry != 1 || cov.LabeledSignals != 2 {
+		t.Fatalf("coverage = %+v, want untradableEntry=1 labeled=2", cov)
+	}
+	skips := cov.MissingEntryPrice + cov.MissingExitPrice + cov.UntradableEntry +
+		cov.InsufficientHorizon + cov.NonFiniteReturn
+	if cov.LabeledSignals+skips != cov.EligibleSignals {
+		t.Fatalf("alignment broken: %+v", cov)
+	}
+	if len(res.Labeled[1]) != 2 {
+		t.Fatalf("labeled = %d, want 2", len(res.Labeled[1]))
+	}
+	for _, obs := range res.Labeled[1] {
+		if obs.Date.Equal(labelDay(0)) {
+			t.Fatalf("停牌入场的信号日不应产生标签: %+v", obs)
+		}
 	}
 }

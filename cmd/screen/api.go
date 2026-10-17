@@ -3,10 +3,15 @@ package main
 import (
 	_ "embed"
 	"os"
+	"regexp"
 	"sort"
 
 	"github.com/injoyai/frame/fbr"
+	"github.com/injoyai/logs"
 )
+
+// codeFormat A股代码格式校验,防止任意字符串流入文件路径拼接等下游逻辑。
+var codeFormat = regexp.MustCompile(`^(sh|sz|bj)?\d{6}$`)
 
 //go:embed web/index.html
 var indexHTML string
@@ -93,9 +98,15 @@ func Api(port int, useLocal bool, svc *ScreenService) error {
 		fbr.WithGET("/api/diagnose", func(c fbr.Ctx) {
 			code := c.Query("code")
 			strategy := c.Query("strategy")
+			if !codeFormat.MatchString(code) {
+				c.Status(400).JSON(map[string]any{"error": "无效的股票代码"})
+				return
+			}
 			resp, err := svc.Diagnose(code, strategy)
 			if err != nil {
-				c.JSON(map[string]any{"error": err.Error()})
+				// 底层错误可能含路径等实现细节,仅记录日志,前端返回通用提示。
+				logs.Errf("[诊断] %s 失败: %v", code, err)
+				c.Status(500).JSON(map[string]any{"error": "诊断失败,请稍后重试"})
 				return
 			}
 			c.JSON(resp)

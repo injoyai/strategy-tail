@@ -68,6 +68,8 @@ func (this *ScreenService) updateRealtime(first bool) error {
 	}
 
 	realtimeKlinesMap := map[string]extend.Klines{}
+	// historyDayKlines 由写侧在锁内原地更新,读侧必须持读锁遍历,避免并发读写 map 竞态。
+	this.mu.RLock()
 	for _, code := range this.Codes {
 		ks := extend.Klines{}
 		for _, v := range this.historyDayKlines[code] {
@@ -96,6 +98,7 @@ func (this *ScreenService) updateRealtime(first bool) error {
 		}
 		realtimeKlinesMap[code] = ks
 	}
+	this.mu.RUnlock()
 
 	this.mu.Lock()
 	this.realtimeDayKlines = realtimeKlinesMap
@@ -226,14 +229,12 @@ func (this *ScreenService) init() error {
 	}
 
 	if this.update == nil {
-		db, err := xorms.NewSqlite(screenDBPath())
+		// 复用 this.DB,避免同一 trade.db 被两个独立 engine 同时打开并发访问(各自连接池可能互相锁库)。
+		update, err := tdx.NewUpdated(this.DB, 15, 31)
 		if err != nil {
 			return err
 		}
-		this.update, err = tdx.NewUpdated(db, 15, 31)
-		if err != nil {
-			return err
-		}
+		this.update = update
 	}
 
 	//===================================================//

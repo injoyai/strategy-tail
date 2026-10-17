@@ -126,3 +126,16 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **验证编码**：`git log` 输出经 console GBK 解码必乱码；字节级验证用 `.git/fx/_verify.ps1 -Sha <commit>`（解压对象搜 UTF-8 字节）。
 - **备份基线**：commit `7205a4d`「备份：因子框架实施前的完整工作区基线」（157 文件，含 docs 强制 add 的 spec/plan），parent `4b0aa34`。
 - **`go test -race` 本机不可用（2026-09-15）**：任何包（含仓库外最小独立 module，已复现定性）用 `-race` 运行均 `exit status 0xc0000139`（STATUS_ENTRYPOINT_NOT_FOUND，race 测试二进制启动即失败，Go 1.25.5）；疑与 360 注入或系统 DLL 不兼容，非本项目问题。因子框架各 Task 任务书中含 `-race` 的验证步骤按"非 race 运行全绿 + 逻辑审查（本例为 RWMutex 读写锁）"降级执行并在报告披露；后续若杀软/系统环境变化可重试。
+
+## 代码审查复核修复（2026-10-17）
+- **依据**：docs/code-review-2026-10-17.md 为 51 条原始问题的复核报告，须区分误报、已修复与遗留项，不能以逐项记录代替修复验证。
+- **逐笔结算顺序**：年度统计与逐笔 HTML 曲线共用确定性结算顺序（卖出时间、买入时间、代码，完全同身份时再按盈亏和收益率），避免并发汇总顺序影响回撤及连胜连亏；这不等同于每日账户净值口径。
+- **Yaegi 超时边界**：`EvalWithContext` 返回取消不代表阻塞宿主调用已经退出，当前无公开退出通知。脚本执行超时后保留全局加载令牌直到重启，不能在请求超时或包装协程返回时直接释放。普通搭建器不走脚本加载。
+- **实验恢复边界**：执行和启动恢复共用每实验 OS 文件锁；恢复持锁后重新读取状态，只回收无执行者的 running 记录。锁文件不能删除，否则可能出现不同 inode 各自持锁。升级前先停止未实现该锁的旧版实例；此锁不代表所有 Store 操作都支持多实例并发写。
+- **/api/stop 同源策略（勿回退）**：/api/stop 有副作用，已挂 withSameOrigin（跨站 403，见 TestServerStopSameOrigin / TestScriptCheckAcceptRemoteOriginStopRejects）；/api/script/check 只读豁免保留、另行评估。与"0.0.0.0 默认绑定、不加全局来源拦截"约定不冲突——仅端点级校验，非全局中间件。
+- **lab 审计打印禁令**：TestAuditLogSensitiveInfo 禁止 portfolio_*、factor_model* 等 16 个文件出现 log.Print/fmt.Print 字面量，错误一律经 error 返回；生命周期级日志统一走 runner.go 的 log 通道（recoverTaskPanic、recoverStalePortfolioRunning），portfolio_runner.go 不得直接 import log。
+- **Go recover 纪律**：recover() 必须在 defer 函数体内直接调用，经辅助函数中转一层返回 nil（researchrun 工作协程 recover 即被测试抓到）。正确模式是 defer 里把 recover() 作实参传入处理函数，如 `defer func() { ... recoverWorkerPanic(code, year, recover()) }()`。
+- **测试失败注入勿耦合实现细节**：预占固定临时文件名的注入方式对"os.CreateTemp 唯一临时文件"实现会静默失效变假绿；TestFactorModelStoreAtomicWriteFailure 已改为预占 rename 落点目录。新注入点应针对实现的关键路径（落点、权限、关闭失败），不依赖内部命名。
+- **条件基线回填规则**：策略行为变更先加行为测试锁定语义，再同步 condition_baseline.json 哈希（No.12 预热判断改动了 sell_long_ma_down / buy_recent_gain_below，已回填）；禁止直接换哈希求绿。
+- **遗留未修（复核报告范围外，勿误认为已修）**：No.32 `底部抬升.Name()` 把 MaxGainMultiple=20 误显示为"涨幅20.0%"；data_update 后台 goroutine 无 panic 兜底；factor_validation_store.Latest() 吞错（No.26 裁决不修）；No.48/51 前端竞态无 .mjs 测试基建，需浏览器手验。
+- **Trae IDE 写入通道故障兜底**：Edit/Write 可能报 IDE Command timeout 或误报 String not found（内容实际存在）；python3 heredoc validate-then-apply（先断言锚点唯一计数再替换落盘）是可靠写入路径，且天然零部分写入风险。本机 go 工具链不可用时测试走 docker golang:1.25-alpine（见"约定与坑点"标准命令）。

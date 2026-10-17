@@ -57,11 +57,15 @@ const portfolioNotional = 1_000_000.0
 const portfolioValidationLoadYears = 5
 
 // ConfigurePortfolio 注入组合研究依赖（模型/实验/验证存储）。Server 在构造时
-// 调用；nil 时组合任务 fail closed。
+// 调用；nil 时组合任务 fail closed。恢复时通过每实验文件锁跳过存活执行者。
 func (r *Runner) ConfigurePortfolio(modelStore *FactorModelStore, experimentStore *PortfolioExperimentStore, validationStore *PortfolioValidationStore) {
 	r.modelStore = modelStore
 	r.experimentStore = experimentStore
 	r.validationStore = validationStore
+	if experimentStore != nil && !r.running.Load() {
+		// 日志经 runner.go 的生命周期通道输出（portfolio_* 文件按审计约定不直接打印）。
+		r.recoverStalePortfolioRunning(experimentStore)
+	}
 }
 
 // setPortfolioPhase 更新组合任务阶段（/api/status phase 字段）。
@@ -133,8 +137,8 @@ func (r *Runner) StartPortfolioValidation(id string) error {
 // startPortfolioGoroutine 组合任务公共启动骨架：写任务类型（先于 state）、
 // 启动 goroutine，终态统一收敛（errStopped → 全局 done，精确终态在 Store）。
 func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan struct{}) error) {
-	stop := make(chan struct{})
-	r.stopCh = stop
+	ctl := &runControl{stop: make(chan struct{})}
+	r.control.Store(ctl)
 	r.running.Store(true)
 	r.doneCodes.Store(0)
 	r.totalCodes.Store(0)
@@ -148,7 +152,8 @@ func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan str
 	go func() {
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
-		err := run(stop)
+		defer r.recoverTaskPanic()
+		err := run(ctl.stop)
 		if err != nil {
 			if errors.Is(err, errStopped) {
 				// 取消：终态（cancelled）已由 Store 持久化；全局状态置 done，
@@ -171,7 +176,24 @@ func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan str
 // ---- 实验执行 ----
 
 // runPortfolioExperiment 组合实验执行链（阶段进度 + 取消检查 + 终态发布）。
-func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) error {
+// panic 收敛兜底：panic 会越过下方全部常规错误返回路径，若不在协程内就地
+// 恢复并落库，持久化记录将永远停留 running。先收敛持久化终态为 failed，再
+// 以原值继续 panic，由 startPortfolioGoroutine 的 recoverTaskPanic 恢复全局
+// 内存状态。
+func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err error) {
+	unlock, err := r.experimentStore.lockRun(id)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	defer func() {
+		if p := recover(); p != nil {
+			if r.experimentStore != nil {
+				_ = r.markExperimentFailed(id, fmt.Sprintf("任务内部异常(panic): %v", p))
+			}
+			panic(p)
+		}
+	}()
 	exp, err := r.experimentStore.Get(id)
 	if err != nil {
 		return err
@@ -242,6 +264,9 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) error {
 	r.setPortfolioPhase(portfolioPhaseTransform)
 	transformed, err := r.transformFactors(m, data, stop)
 	if err != nil {
+		if errors.Is(err, errStopped) {
+			return r.cancelExperiment(id, "运行被停止")
+		}
 		return r.markExperimentFailed(id, "截面变换失败: "+err.Error())
 	}
 	_ = r.experimentStore.UpdateProgress(id, 45, "截面变换完成")

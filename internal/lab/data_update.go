@@ -139,7 +139,9 @@ func (u *DataUpdater) Start(manual bool) error {
 		u.status.LastAutoDay = time.Now().In(u.location).Format(time.DateOnly)
 	}
 	r := u.runner
-	r.stopCh = make(chan struct{})
+	// 数据更新不经 stop 通道停止（Stop 对该任务提前返回，按数据库事务
+	// 完整落库），control 仅占位保持与其他任务一致的结构。
+	r.control.Store(&runControl{stop: make(chan struct{})})
 	r.totalCodes.Store(0)
 	r.doneCodes.Store(0)
 	r.currentCode.Store(nil)

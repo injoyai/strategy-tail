@@ -314,13 +314,20 @@ func (this ForwardReturnAnalysis) scanYear(year int) []ForwardReturn {
 			}
 
 			his := []*extend.Kline(nil)
+			// cut 标记是否发生过 his/dks 切分：当数据全部早于 start 时切分不会发生，
+			// 此时不存在当年区间数据，必须置空 dks，避免历史段被当作当年区间参与计算
+			cut := false
 			for i, v := range dks {
 				if v.Time.Before(start) {
 					his = append(his, v)
 				} else {
 					dks = dks[i:]
+					cut = true
 					break
 				}
+			}
+			if !cut && len(his) > 0 {
+				dks = nil
 			}
 
 			frs := this.Scan(code, his, dks)

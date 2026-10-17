@@ -253,14 +253,16 @@ func quantileAssign(obs []factorObs, g int) []int {
 }
 
 // binGroup 固定区间分组：断点值归左侧组，即 v≤b1→B1、b1<v≤b2→B2、…、
-// v>b4→B5；调用方保证 cuts 为 4 个严格递增有限值。
+// v>b(n-1)→Bn（n=len(cuts)+1，返回 len(cuts) 兜底）。正常入口由
+// GroupingConfig.Validate 保证 len(cuts)==组数-1；直接构造配置调用时
+// aggregateGroups 负责把返回值钳制到合法组号，避免索引越界。
 func binGroup(v float64, cuts []float64) int {
 	for i, c := range cuts {
 		if v <= c {
 			return i
 		}
 	}
-	return 4
+	return len(cuts)
 }
 
 // percentileSorted Type-7 线性插值百分位（输入须升序）：h=(n-1)p，
@@ -580,7 +582,13 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 		assign := make([]int, len(obs))
 		if isBins {
 			for i, o := range obs {
-				assign[i] = binGroup(o.Value, grouping.Cuts)
+				k := binGroup(o.Value, grouping.Cuts)
+				// Validate 保证 len(Cuts)==g-1；绕过 Validate 的直接调用
+				// （如测试构造）可能 len(Cuts)>g-1，钳制到最高组防止越界。
+				if k >= g {
+					k = g - 1
+				}
+				assign[i] = k
 			}
 		} else {
 			assign = quantileAssign(obs, g)
@@ -610,11 +618,15 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 		gs := FactorGroupStats{Index: k + 1}
 		if isBins {
 			gs.Label = fmt.Sprintf("B%d", k+1)
-			if k > 0 {
-				gs.Lower = f64p(grouping.Cuts[k-1])
-			}
-			if k < g-1 {
-				gs.Upper = f64p(grouping.Cuts[k])
+			// 断点数与组数不匹配时跳过边界标注，避免 Cuts 索引越界；
+			// 正常路径 Validate 保证 len(Cuts)==g-1。
+			if len(grouping.Cuts) == g-1 {
+				if k > 0 {
+					gs.Lower = f64p(grouping.Cuts[k-1])
+				}
+				if k < g-1 {
+					gs.Upper = f64p(grouping.Cuts[k])
+				}
 			}
 		} else {
 			gs.Label = fmt.Sprintf("Q%d", k+1)

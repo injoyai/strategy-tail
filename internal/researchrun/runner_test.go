@@ -3,6 +3,7 @@ package researchrun
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -708,5 +709,137 @@ func TestForEachCodeYearDataDecemberSignalCanUseNextYearPrice(t *testing.T) {
 	}
 	if !lastDks.Time.Before(data.Future[0].Time) {
 		t.Fatalf("Future must follow Dks tail: last=%v future[0]=%v", lastDks.Time, data.Future[0].Time)
+	}
+}
+
+// panicOnBuyer 在处理 target 代码时 panic，用于验证 worker 协程边界恢复。
+type panicOnBuyer struct{ target string }
+
+func (b panicOnBuyer) Name() string { return "panic" }
+func (b panicOnBuyer) Buy(code string, _ extend.Klines) bool {
+	if code == b.target {
+		panic("boom")
+	}
+	return true
+}
+
+// TestRunRecoversCallbackPanic 回调 panic 在 worker 协程边界恢复为
+// Stage "panic" 的覆盖率失败与返回错误；其余代码照常完成出交易。
+func TestRunRecoversCallbackPanic(t *testing.T) {
+	report, err := Run(context.Background(), Config{
+		Codes:         []string{"bad", "good"},
+		Years:         []int{2024},
+		Variants:      []Variant{{Name: "v", Buyer: panicOnBuyer{target: "bad"}}},
+		DefaultSeller: nextDaySeller{},
+		Position:      core.DefaultPositionConfig(),
+		Workers:       2,
+		DataMode:      DailyClose,
+		GetDayKlines:  func(string, time.Time, time.Time) (extend.Klines, error) { return testKlines(), nil },
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected panic error, got %v", err)
+	}
+	if report.Coverage.Requested != 2 || report.Coverage.Completed != 1 || report.Coverage.Skipped != 1 {
+		t.Fatalf("unexpected coverage: %+v", report.Coverage)
+	}
+	if len(report.Coverage.Failures) != 1 || report.Coverage.Failures[0].Code != "bad" ||
+		report.Coverage.Failures[0].Stage != "panic" {
+		t.Fatalf("unexpected failures: %+v", report.Coverage.Failures)
+	}
+	if len(report.Results[0].Trades) == 0 {
+		t.Fatalf("good code must still produce trades: %+v", report.Results)
+	}
+}
+
+// TestForEachCodeDataRecoversCallbackPanic fn 的 panic 恢复为 Stage "panic"
+// Failure 并随进度上报；bad 与 good 各被访问一次，同批处理不中断。
+func TestForEachCodeDataRecoversCallbackPanic(t *testing.T) {
+	var mu sync.Mutex
+	visited := map[string]int{}
+	progress := []Progress(nil)
+	err := ForEachCodeData(context.Background(), Config{
+		Codes:        []string{"bad", "good"},
+		Years:        []int{2024},
+		Workers:      2,
+		DataMode:     DailyClose,
+		GetDayKlines: func(string, time.Time, time.Time) (extend.Klines, error) { return testKlines(), nil },
+		OnCodeDone:   func(p Progress) { mu.Lock(); progress = append(progress, p); mu.Unlock() },
+	}, func(code string, _ []YearData) {
+		mu.Lock()
+		visited[code]++
+		mu.Unlock()
+		if code == "bad" {
+			panic("boom")
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected panic error, got %v", err)
+	}
+	if visited["good"] != 1 || visited["bad"] != 1 {
+		t.Fatalf("unexpected visits: %+v", visited)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(progress) != 2 {
+		t.Fatalf("unexpected progress count: %d", len(progress))
+	}
+	var panicFailure *Failure
+	for _, p := range progress {
+		if p.Code == "bad" {
+			panicFailure = p.Failure
+		}
+	}
+	if panicFailure == nil || panicFailure.Stage != "panic" {
+		t.Fatalf("bad code progress must carry panic failure: %+v", progress)
+	}
+}
+
+// TestForEachCodeYearDataRecoversCallbackPanic panic 年份计入
+// SkippedCodeYears 并披露 Stage "panic" Failure，该股票剩余年份中止，
+// 其他股票照常完成。
+func TestForEachCodeYearDataRecoversCallbackPanic(t *testing.T) {
+	type codeYear struct {
+		code string
+		year int
+	}
+	var mu sync.Mutex
+	visited := map[codeYear]int{}
+	all := extend.Klines{
+		klineOn(time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), 10),
+		klineOn(time.Date(2024, 1, 2, 0, 0, 0, 0, time.Local), 10.1),
+		klineOn(time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local), 10.2),
+	}
+	store := &dayStore{all: all}
+	coverage, err := ForEachCodeYearData(context.Background(), Config{
+		Codes:        []string{"bad", "good"},
+		Years:        []int{2024, 2025},
+		Workers:      2,
+		DataMode:     DailyClose,
+		GetDayKlines: store.get,
+	}, func(code string, year int, _ YearData) {
+		mu.Lock()
+		visited[codeYear{code, year}]++
+		mu.Unlock()
+		if code == "bad" && year == 2024 {
+			panic("boom")
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("expected panic error, got %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if visited[codeYear{"good", 2024}] != 1 || visited[codeYear{"good", 2025}] != 1 {
+		t.Fatalf("good code years must complete: %+v", visited)
+	}
+	if visited[codeYear{"bad", 2025}] != 0 {
+		t.Fatalf("panic must abort remaining years of the code: %+v", visited)
+	}
+	if coverage.CompletedCodeYears != 2 || coverage.SkippedCodeYears != 1 {
+		t.Fatalf("unexpected coverage: %+v", coverage)
+	}
+	if len(coverage.Failures) != 1 || coverage.Failures[0].Code != "bad" ||
+		coverage.Failures[0].Year != 2024 || coverage.Failures[0].Stage != "panic" {
+		t.Fatalf("unexpected failures: %+v", coverage.Failures)
 	}
 }

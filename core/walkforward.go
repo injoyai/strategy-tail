@@ -75,11 +75,13 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 		// ---- 训练期回测：逐年回测后取均值 ----
 		var trainReturnSum, trainSharpeSum, trainWinRateSum float64
 		trainTradesTotal := 0
+		trainN := 0
 		for _, y := range trainWindow {
 			trades, err := bt._backtest(bt.Codes, y)
 			if err != nil {
 				continue
 			}
+			trainN++
 			ar := Analyze(y, trades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
 			trainReturnSum += ar.AnnualReturn
 			trainSharpeSum += ar.Sharpe
@@ -87,8 +89,7 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 			trainTradesTotal += ar.TotalTrades
 		}
 
-		// 训练期指标取均值
-		trainN := len(trainWindow)
+		// 训练期指标取均值（分母为成功完成回测的年份数，失败年份不计入）
 		trainReturn := 0.0
 		trainSharpe := 0.0
 		trainWinRate := 0.0

@@ -60,11 +60,14 @@ export default {
   },
   methods: {
     async loadCandidates() {
+      const seq = ++state.candSeq;
       this.loadErr = '';
       try {
         const d = await Api.candidates(state.showCandidatesArchived);
+        if (seq !== state.candSeq) return;
         state.candidates = d.candidates || [];
       } catch (e) {
+        if (seq !== state.candSeq) return;
         this.loadErr = '候选列表加载失败：' + e.message + '，可点击“刷新”重试。';
       }
     },

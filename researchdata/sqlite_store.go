@@ -12,6 +12,7 @@ import (
 	"time"
 
 	_ "github.com/glebarez/go-sqlite"
+	"github.com/injoyai/logs"
 )
 
 // SQLiteStore is a persistent View for full-market historical research data.
@@ -231,6 +232,8 @@ WHERE dataset = ? AND code = ? AND event_at <= ? AND available_at <= ?`
 	query += ` ORDER BY event_at ASC, available_at ASC, record_key ASC`
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
+		logs.Warnf("researchdata: Range 查询失败, 返回空结果: dataset=%s code=%s start=%s end=%s err=%v",
+			dataset, code, start, end, err)
 		return nil
 	}
 	defer rows.Close()
@@ -238,6 +241,7 @@ WHERE dataset = ? AND code = ? AND event_at <= ? AND available_at <= ?`
 	for rows.Next() {
 		record, err := scanRecord(rows)
 		if err != nil {
+			logs.Warnf("researchdata: Range 扫描记录失败, 返回空结果: dataset=%s code=%s err=%v", dataset, code, err)
 			return nil
 		}
 		old, ok := latest[record.Key]
@@ -246,6 +250,7 @@ WHERE dataset = ? AND code = ? AND event_at <= ? AND available_at <= ?`
 		}
 	}
 	if err := rows.Err(); err != nil {
+		logs.Warnf("researchdata: Range 遍历记录失败, 返回空结果: dataset=%s code=%s err=%v", dataset, code, err)
 		return nil
 	}
 	out := make([]Record, 0, len(latest))

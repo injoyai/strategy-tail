@@ -71,9 +71,19 @@ func (this Backtest) Run() {
 		// 拉取当年基准日线
 		var benchKlines extend.Klines
 		if this.Benchmark != "" {
-			benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
-			benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
-			benchKlines, _ = this.GetDayKlines(this.Benchmark, benchStart, benchEnd)
+			// 基准为可选依赖：缺失数据源或拉取失败只告警降级，不中断回测
+			if this.GetDayKlines == nil {
+				logs.Warnf("已配置基准 %s 但未设置 GetDayKlines，跳过基准对比", this.Benchmark)
+			} else {
+				benchStart := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
+				benchEnd := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
+				ks, err := this.GetDayKlines(this.Benchmark, benchStart, benchEnd)
+				if err != nil {
+					logs.Warnf("拉取基准 %s 日线失败，跳过基准对比: %v", this.Benchmark, err)
+				} else {
+					benchKlines = ks
+				}
+			}
 		}
 
 		result := Analyze(year, ls, this.GetDayKlines, benchKlines, this.Cost, this.Position)
@@ -113,6 +123,12 @@ func (this Backtest) Run() {
 
 func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 
+	// 空数据源在入口统一拦截：无 GetDayKlines 时无法回测，直接报错，
+	// 避免协程内调用 nil 函数 panic（行情读取返回错误由下方逐票跳过，nil 切片不是错误）
+	if this.GetDayKlines == nil {
+		return nil, fmt.Errorf("回测 %d 年失败: 未设置 GetDayKlines 数据源", year)
+	}
+
 	hisStart := time.Date(year-2, 6, 1, 0, 0, 0, 0, time.Local)
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
@@ -137,13 +153,20 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 			}
 
 			his := []*extend.Kline(nil)
+			// cut 标记是否发生过 his/dks 切分：当数据全部早于 start 时切分不会发生，
+			// 此时不存在当年区间数据，必须置空 dks，避免历史段被当作当年区间参与回测
+			cut := false
 			for i, v := range dks {
 				if v.Time.Before(start) {
 					his = append(his, v)
 				} else {
 					dks = dks[i:]
+					cut = true
 					break
 				}
+			}
+			if !cut && len(his) > 0 {
+				dks = nil
 			}
 
 			var mks protocol.Klines

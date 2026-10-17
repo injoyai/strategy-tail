@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -314,11 +316,24 @@ func buildComparison(spec StrategySpec, variants []VariantReport) *ComparisonSum
 	return cmp
 }
 
+// runControl 单个任务的停止控制：stop 关闭即请求停止；once 保证并发 Stop
+// 下只 close 一次（裸字段的 select-default 判重无法防住并发重复 close 的
+// panic）。每个任务启动时新建并存入 Runner.control，任务间互不干扰。
+type runControl struct {
+	stop chan struct{}
+	once sync.Once
+}
+
+// requestStop 幂等请求停止当前任务。
+func (c *runControl) requestStop() {
+	c.once.Do(func() { close(c.stop) })
+}
+
 // Runner 单任务回测执行器。
 type Runner struct {
 	mu      sync.Mutex // 互斥：同时只允许 1 个任务
 	running atomic.Bool
-	stopCh  chan struct{} // 关闭即请求停止（只允许运行方 close 一次）
+	control atomic.Pointer[runControl] // 当前任务停止控制（启动时替换；Stop 经其幂等关闭）
 
 	// 进度上报（atomic，无锁读）
 	totalCodes  atomic.Int64
@@ -430,8 +445,8 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 		return fmt.Errorf("已有回测任务在运行")
 	}
 
-	stop := make(chan struct{})
-	r.stopCh = stop
+	ctl := &runControl{stop: make(chan struct{})}
+	r.control.Store(ctl)
 	r.running.Store(true)
 	r.doneCodes.Store(0)
 	r.totalCodes.Store(0)
@@ -448,8 +463,10 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 	go func() {
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
+		// panic 兜底注册在复位 defer 之后：panic 时先恢复为 error 态再释放锁。
+		defer r.recoverTaskPanic()
 
-		report, err := r.run(cfg, variants, spec, stop)
+		report, err := r.run(cfg, variants, spec, ctl.stop)
 		if err != nil {
 			if err == errStopped {
 				st := "idle"
@@ -474,16 +491,45 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 // errStopped 用户主动停止。
 var errStopped = fmt.Errorf("已停止")
 
+// recoverTaskPanic 后台任务 goroutine 的 panic 兜底：不捕获会击穿整个进程。
+// 捕获后复用常规失败路径把任务置为 error 态并记日志（含堆栈）。须在任务
+// goroutine 内 defer 本方法；注册在 running/mu 复位 defer 之后，panic 时
+// 先恢复状态再依次释放，锁与互斥量不受影响。
+func (r *Runner) recoverTaskPanic() {
+	if p := recover(); p != nil {
+		log.Printf("[lab] 任务 panic: %v\n%s", p, debug.Stack())
+		msg := fmt.Sprintf("任务内部异常(panic): %v", p)
+		r.errMsg.Store(&msg)
+		st := "error"
+		r.state.Store(&st)
+	}
+}
+
+// recoverStalePortfolioRunning 启动时的孤儿实验恢复：进程上次退出遗留的
+// running 记录收敛为 failed。日志走本文件的 log 通道（portfolio_* 文件按
+// 审计约定不直接打印）。
+func (r *Runner) recoverStalePortfolioRunning(store *PortfolioExperimentStore) {
+	n, err := store.RecoverStaleRunning("进程退出导致任务中断")
+	if err != nil {
+		log.Printf("[lab] 恢复孤儿 running 实验失败: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("[lab] 已将 %d 条中断实验标记为 failed", n)
+	}
+}
+
 // Stop 请求停止当前任务（无任务时为空操作）。
 func (r *Runner) Stop() {
 	if task := r.task.Load(); task != nil && *task == "data_update" {
 		return // 数据更新按数据库事务完成，避免留下半批更新状态。
 	}
 	if r.running.Load() {
-		select {
-		case <-r.stopCh:
-		default:
-			close(r.stopCh)
+		// 启动路径先存 control 再置 running，读到 running=true 时 control 必已
+		// 发布；requestStop 幂等，并发 Stop 不会重复 close，误持旧任务的
+		// control 也只影响已结束的通道，不会波及新任务。
+		if ctl := r.control.Load(); ctl != nil {
+			ctl.requestStop()
 		}
 	}
 }
@@ -578,8 +624,8 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 		return fmt.Errorf("生成分析 ID 失败: %w", err)
 	}
 
-	stop := make(chan struct{})
-	r.stopCh = stop
+	ctl := &runControl{stop: make(chan struct{})}
+	r.control.Store(ctl)
 	r.running.Store(true)
 	r.doneCodes.Store(0)
 	r.totalCodes.Store(0)
@@ -596,8 +642,9 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	go func() {
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
+		defer r.recoverTaskPanic()
 
-		rep, err := r.runAnalysis(id, cfg, stop)
+		rep, err := r.runAnalysis(id, cfg, ctl.stop)
 		if err != nil {
 			if err == errStopped {
 				st := "idle"
@@ -839,16 +886,12 @@ func saveReport(rep *Report, raw ...[]researchrun.Result) error {
 		return err
 	}
 
-	// report.json 临时文件 + rename 防半写
+	// report.json 原子写（tmp + fsync + rename，复用 atomicWrite）
 	buf, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp := filepath.Join(dir, ".report.json.tmp")
-	if err := os.WriteFile(tmp, buf, 0644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(dir, "report.json")); err != nil {
+	if err := atomicWrite(filepath.Join(dir, "report.json"), buf); err != nil {
 		return err
 	}
 

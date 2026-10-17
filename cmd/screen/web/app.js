@@ -84,7 +84,10 @@ function matchAll(item) {
 async function loadStrategies() {
   try {
     const resp = await fetch('/api/strategies');
-    strategies = await resp.json();
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (!Array.isArray(data)) throw new Error('策略列表响应格式异常');
+    strategies = data;
   } catch (e) {
     console.error('加载策略列表失败', e);
     strategies = [];
@@ -126,9 +129,13 @@ function renderStrategyBar() {
 
   let html = '';
   for (const st of strategies) {
+    // key 不再拼进内联事件（onclick 内插字符串无法用 esc() 防注入，HTML 实体会先解码再
+    // 执行 JS），改为 data 属性 + document 级事件委托（见文件末尾）；白名单校验保留，
+    // 非法 key 不输出 data-strategy 属性，点击无效果
+    const safeKey = /^[A-Za-z0-9_-]+$/.test(st.key || '') ? st.key : '';
     const s = statsForKey(st.key);
     html += `
-      <div class="strategy-card ${currentStrategy === st.key ? 'active' : ''}" onclick="selectStrategy('${st.key}')">
+      <div class="strategy-card ${currentStrategy === st.key ? 'active' : ''}"${safeKey ? ` data-strategy="${safeKey}"` : ''}>
         <div class="strategy-name">${esc(st.name)}</div>
         <div class="strategy-count">买点 ${s.buys} · 历史 ${s.histCount} · 盈亏比 ${s.pf} · 胜率 ${s.winRate}</div>
       </div>
@@ -246,7 +253,7 @@ function renderBuyResults() {
   </tr></thead><tbody>`;
   for (const item of filtered) {
     const riseCls = numClass(item.buy_rise);
-    html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
+    html += `<tr data-code="${esc(item.code)}" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
@@ -276,7 +283,7 @@ function renderSellResults() {
   </tr></thead><tbody>`;
   for (const item of filtered) {
     const profitCls = numClass(item.income);
-    html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
+    html += `<tr data-code="${esc(item.code)}" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${item.buy_price ? item.buy_price.toFixed(2) : '--'}</td>
@@ -316,7 +323,7 @@ function ensureHistoryTagFilters() {
   for (const t of tags) {
     const active = historyFilter.tags.has(t) ? ' active' : '';
     const label = t === NO_TAG_KEY ? '无标签' : t;
-    html += `<button class="filter-btn${active}" onclick="toggleTag('${esc(t)}')">${esc(label)}</button>`;
+    html += `<button class="filter-btn${active}" data-tag="${esc(t)}">${esc(label)}</button>`;
   }
   wrap.innerHTML = html;
 }
@@ -399,7 +406,7 @@ function renderHistoryResults() {
     const statusHTML = item.sold
       ? `<span class="tag-sold">已卖出</span>`
       : `<span class="tag-holding">持有中</span>`;
-    html += `<tr onclick="openDiagnose('${esc(item.code)}')" style="cursor:pointer">
+    html += `<tr data-code="${esc(item.code)}" style="cursor:pointer">
       <td><a class="stock-code">${esc(item.code)}</a></td>
       <td><a class="stock-name-link">${esc(item.name)}</a></td>
       <td>${buyTime}</td>
@@ -534,6 +541,18 @@ function renderTagBadges(arr) {
 function emptyHTML(text) {
   return `<div class="empty-state"><div class="icon">○</div><div>${esc(text)}</div></div>`;
 }
+
+// ── 事件委托（替代内联 onclick）──
+// 动态渲染元素的点击参数统一经 data-* 属性传递，在 document 上委托绑定：
+// 内联事件里的字符串无法用 esc() 防注入（HTML 实体会先解码再执行 JS），故不再拼接
+document.addEventListener('click', (e) => {
+  const card = e.target.closest('[data-strategy]');
+  if (card) { selectStrategy(card.dataset.strategy); return; }
+  const tagBtn = e.target.closest('[data-tag]');
+  if (tagBtn) { toggleTag(tagBtn.dataset.tag); return; }
+  const row = e.target.closest('tr[data-code]');
+  if (row) openDiagnose(row.dataset.code);
+});
 
 // ── 初始化 ──
 

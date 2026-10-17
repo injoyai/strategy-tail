@@ -31,6 +31,9 @@ const (
 	updateCloseMinute = 0
 )
 
+// ErrNotEnoughKline K线数据不足,无法按指定序号取值
+var ErrNotEnoughKline = errors.New("k线数据不足")
+
 // 主板前缀 默认仅拉取沪深主板股票（与 common.go 中 Market沪深主板.Prefixes 保持一致）。
 // 北交所/科创板/创业板/ETF 数据已清理，不再拉取，避免定时任务重新下载。
 var 主板前缀 = []string{"sh60", "sz00"}
@@ -240,13 +243,13 @@ func (this *PullKline) DayKline(code string, n ...int) (*Kline, error) {
 	if _n >= 0 {
 		//数量不满足
 		if len(ks) <= _n {
-			return nil, err
+			return nil, ErrNotEnoughKline
 		}
 		return ks[_n], nil
 	}
 
 	if len(ks) < -_n {
-		return nil, err
+		return nil, ErrNotEnoughKline
 	}
 
 	return ks[len(ks)+_n], nil
@@ -524,7 +527,11 @@ func (this *PullKline) updateMinuteKlineYear(m *tdx.Manage, code string, year in
 	}
 
 	err = db.SessionFunc(func(session *xorm.Session) error {
-		if _, err := session.Where("Time=?", last.Time.UTC().Format(time.DateTime)).Delete(new(protocol.Kline)); err != nil {
+		// xorm SQLite 方言按 DatabaseTZ(默认 UTC)将 time.Time 列格式化为 datetime 字符串落库,
+		// 删除条件必须用 UTC 格式化才能命中落库字面量,否则永远匹配不上;
+		// 只删除 last 边界一条再重插 >= last 的数据,
+		// 既避免 last 边界重复插入,又能刷新盘中尚在形成中的最后一根K线。
+		if _, err := session.Where("Time = ?", last.Time.UTC().Format(time.DateTime)).Delete(new(protocol.Kline)); err != nil {
 			return err
 		}
 		for _, v := range ks {

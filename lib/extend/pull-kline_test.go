@@ -169,3 +169,58 @@ func TestKlineUpdatesReturnDataDirectoryError(t *testing.T) {
 		})
 	}
 }
+
+// 验证分钟线增量更新以 UTC 命中落库的边界数据,刷新最后一根K线且不产生重复行、不误删更早数据。
+func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
+	dir := t.TempDir()
+	const code = "sz001381"
+	year := time.Now().Year()
+	last := time.Date(year, 1, 2, 10, 0, 0, 0, time.Local)
+
+	db, err := xorms.NewSqlite(filepath.Join(dir, DirMinute, code, code+"-"+strconv.Itoa(year)+".db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := db.Sync2(new(protocol.Kline)); err != nil {
+		t.Fatal(err)
+	}
+	// 预置 last 前一分钟与 last 两条已有数据。
+	if _, err := db.Insert(&protocol.Kline{Time: last.Add(-time.Minute), Close: 99}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Insert(&protocol.Kline{Time: last, Close: 100}); err != nil {
+		t.Fatal(err)
+	}
+
+	// 模拟服务端返回:同一时间的最新K线(刷新边界)与下一分钟新K线。
+	ks := protocol.Klines{
+		{Time: last, Close: 110},
+		{Time: last.Add(time.Minute), Close: 111},
+	}
+	pull := &PullKline{Config: PullKlineConfig{Dir: dir}}
+	if _, err := pull.updateMinuteKlineYear(nil, code, year, ks); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := protocol.Klines{}
+	if err := db.Find(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("boundary bar duplicated: got %d rows, want 3", len(rows))
+	}
+	for _, v := range rows {
+		if v.Time.Equal(last) && v.Close != 110 {
+			t.Fatalf("boundary bar not refreshed: close=%v", v.Close)
+		}
+	}
+}
+
+// 验证K线数据不足时 DayKline 返回哨兵错误,而非静默返回 nil。
+func TestDayKlineNotEnoughError(t *testing.T) {
+	pull := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
+	if _, err := pull.DayKline("sz001381", 0); err != ErrNotEnoughKline {
+		t.Fatalf("err = %v, want ErrNotEnoughKline", err)
+	}
+}

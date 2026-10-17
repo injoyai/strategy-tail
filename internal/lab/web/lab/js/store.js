@@ -73,6 +73,7 @@ export const state = reactive({
   editCandidate: null,               // 编辑对话框目标（null=新建）
   editExpectedRevision: null,        // 乐观锁：打开编辑时的 revision
   candidatesDirty: 0,                // 候选数据版本号：保存/编辑成功后递增，05 页监听刷新
+  candSeq: 0,                        // 候选列表加载请求序列号：多入口触发时旧响应丢弃
 
   // —— 06 组合研究 ——
   pfModels: [],                      // 模型列表（服务端当前页，最新 revision）
@@ -97,17 +98,21 @@ export const state = reactive({
   pfExpPageSize: 8,
   pfExpFilterModel: '',
   pfExpFilterStatus: '',
+  pfExpSeq: 0,                       // 实验列表加载请求序列号：快速切换筛选/翻页时旧响应丢弃
   pfValidations: null,               // PortfolioValidationPage
   pfValPage: 1,
   pfValPageSize: 8,
   pfValFilterModel: '',
   pfValFilterVerdict: '',
+  pfValListSeq: 0,                   // 验证列表加载请求序列号：快速切换筛选/翻页时旧响应丢弃
   pfSelectedRun: null,               // 选中的实验（详情）
   pfSelectedRunReport: null,
   pfSelectedVal: null,               // 选中的验证（详情）
   pfSelectedValId: '',
   pfStale: false,                    // 后台刷新期间旧内容标记 stale
-  pfSeq: 0,                          // 详情请求序列号：快速连点时旧响应丢弃
+  pfModelSeq: 0,                     // 模型详情请求序列号：快速连点时旧响应丢弃
+  pfRunSeq: 0,                       // 运行详情请求序列号
+  pfValSeq: 0,                       // 验证详情请求序列号
   pfTaskRunning: false,              // 组合任务运行中（06 页按钮禁用）
   pfExpRequestId: null,              // 实验创建幂等
   pfValRequestId: null,              // 验证创建幂等

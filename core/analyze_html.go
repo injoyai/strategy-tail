@@ -181,10 +181,7 @@ func buildTradeVisualHTML(charts []map[string]any, results []AnalyzeResult, year
 	equityData := make([]map[string]any, 0)
 	monthlyData := make(map[string][]float64)
 	for year := range yearlyTrades {
-		trades := yearlyTrades[year]
-		sort.Slice(trades, func(i, j int) bool {
-			return trades[i].BuyTime.Before(trades[j].BuyTime)
-		})
+		trades := settledTrades(yearlyTrades[year])
 		cumEquity := 0.0
 		for _, t := range trades {
 			profit := tradeProfitAmount(t)

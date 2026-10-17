@@ -6,9 +6,11 @@ package researchrun
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
+	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
@@ -117,9 +119,10 @@ type YearData struct {
 }
 
 type codeResult struct {
-	code    string
-	trades  [][]core.Trade
-	failure *Failure
+	code     string
+	trades   [][]core.Trade
+	failure  *Failure
+	panicErr error
 }
 
 // Run executes all variants against every requested code. A code is excluded
@@ -167,7 +170,7 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 					if !ok {
 						return
 					}
-					result := runCode(ctx, cfg, code)
+					result := runCodeSafe(ctx, cfg, code)
 					select {
 					case <-ctx.Done():
 						return
@@ -194,8 +197,12 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 	}()
 
 	done := 0
+	var firstErr error
 	for result := range results {
 		done++
+		if result.panicErr != nil && firstErr == nil {
+			firstErr = result.panicErr
+		}
 		if result.failure != nil {
 			report.Coverage.Skipped++
 			report.Coverage.Failures = append(report.Coverage.Failures, *result.failure)
@@ -213,6 +220,9 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 	}
 	if err := ctx.Err(); err != nil {
 		return report, err
+	}
+	if firstErr != nil {
+		return report, firstErr
 	}
 	return report, nil
 }
@@ -252,6 +262,7 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	done := 0
+	var firstErr error
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
@@ -264,23 +275,11 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 					if !ok {
 						return
 					}
-					datas := make([]YearData, 0, len(cfg.Years))
-					var fail *Failure
-					for _, year := range cfg.Years {
-						if ctx.Err() != nil {
-							break
-						}
-						data, failure := loadYear(cfg, code, year)
-						if failure != nil {
-							fail = failure
-							break
-						}
-						datas = append(datas, data)
-					}
-					if fail == nil && ctx.Err() == nil {
-						fn(code, datas)
-					}
+					fail, err := runCodeData(ctx, cfg, code, fn)
 					mu.Lock()
+					if err != nil && firstErr == nil {
+						firstErr = err
+					}
 					done++
 					if cfg.OnCodeDone != nil {
 						cfg.OnCodeDone(Progress{
@@ -305,7 +304,10 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 	}()
 	wg.Wait()
 
-	return ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return firstErr
 }
 
 // ForEachCodeYearData 逐“股票×年份”加载数据，与 ForEachCodeData 的整票
@@ -344,6 +346,7 @@ func ForEachCodeYearData(ctx context.Context, cfg Config, fn func(code string, y
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	done := 0
+	var firstErr error
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 		go func() {
@@ -356,24 +359,14 @@ func ForEachCodeYearData(ctx context.Context, cfg Config, fn func(code string, y
 					if !ok {
 						return
 					}
-					okYears, fails, cancelled := 0, []Failure(nil), false
-					for _, year := range cfg.Years {
-						if ctx.Err() != nil {
-							cancelled = true
-							break
-						}
-						data, failure := loadYear(cfg, code, year)
-						if failure != nil {
-							fails = append(fails, *failure)
-							continue
-						}
-						fn(code, year, data)
-						okYears++
-					}
+					okYears, fails, cancelled, err := runCodeYears(ctx, cfg, code, fn)
 					if cancelled {
 						return // 取消：覆盖率与进度不再变更，由 ctx.Err() 表达
 					}
 					mu.Lock()
+					if err != nil && firstErr == nil {
+						firstErr = err
+					}
 					coverage.CompletedCodeYears += okYears
 					coverage.SkippedCodeYears += len(fails)
 					if okYears > 0 {
@@ -409,7 +402,10 @@ func ForEachCodeYearData(ctx context.Context, cfg Config, fn func(code string, y
 	}()
 	wg.Wait()
 
-	return coverage, ctx.Err()
+	if err := ctx.Err(); err != nil {
+		return coverage, err
+	}
+	return coverage, firstErr
 }
 
 // validateLoading 校验加载类入口（ForEachCodeData/ForEachCodeYearData）的
@@ -494,6 +490,99 @@ func runCode(ctx context.Context, cfg Config, code string) codeResult {
 		}
 	}
 	return codeResult{code: code, trades: variantTrades}
+}
+
+// runCodeSafe 在 worker 协程边界执行 runCode。策略回调（Buyer/Seller）或数据
+// provider 的 panic 无法被任务外层的 recover 捕获（Go 的 recover 不能跨协程），
+// 只能在此就地恢复，转为 Stage 为 panic 的 Failure 与错误随结果传回任务。
+func runCodeSafe(ctx context.Context, cfg Config, code string) codeResult {
+	result := codeResult{code: code}
+	func() {
+		defer func() {
+			if fail, err := recoverWorkerPanic(code, 0, recover()); fail != nil {
+				result.failure, result.panicErr = fail, err
+			}
+		}()
+		result = runCode(ctx, cfg, code)
+	}()
+	return result
+}
+
+// runCodeData 执行 ForEachCodeData 单只股票的加载与回调，并在 worker 协程
+// 边界恢复 panic：加载或 fn 的 panic 转为 Stage 为 panic 的 Failure 与错误
+// 返回，不再向调用方扩散；同批其他股票继续处理。
+func runCodeData(ctx context.Context, cfg Config, code string, fn func(code string, datas []YearData)) (*Failure, error) {
+	var (
+		fail *Failure
+		err  error
+	)
+	func() {
+		defer func() {
+			if pfail, perr := recoverWorkerPanic(code, 0, recover()); pfail != nil {
+				fail, err = pfail, perr
+			}
+		}()
+		datas := make([]YearData, 0, len(cfg.Years))
+		for _, year := range cfg.Years {
+			if ctx.Err() != nil {
+				break
+			}
+			data, failure := loadYear(cfg, code, year)
+			if failure != nil {
+				fail = failure
+				break
+			}
+			datas = append(datas, data)
+		}
+		if fail == nil && ctx.Err() == nil {
+			fn(code, datas)
+		}
+	}()
+	return fail, err
+}
+
+// runCodeYears 执行 ForEachCodeYearData 单只股票的逐年加载与回调，并在
+// worker 协程边界恢复 panic：panic 年份以 Stage 为 panic 的 Failure 记入
+// fails（由调用方计入 SkippedCodeYears），该股票剩余年份中止，panic 错误
+// 随返回值传回任务。
+func runCodeYears(ctx context.Context, cfg Config, code string, fn func(code string, year int, data YearData)) (okYears int, fails []Failure, cancelled bool, err error) {
+	curYear := 0
+	func() {
+		defer func() {
+			if pfail, perr := recoverWorkerPanic(code, curYear, recover()); pfail != nil {
+				fails = append(fails, *pfail)
+				err = perr
+			}
+		}()
+		for _, year := range cfg.Years {
+			if ctx.Err() != nil {
+				cancelled = true
+				return
+			}
+			curYear = year
+			data, failure := loadYear(cfg, code, year)
+			if failure != nil {
+				fails = append(fails, *failure)
+				continue
+			}
+			fn(code, year, data)
+			okYears++
+		}
+	}()
+	return
+}
+
+// recoverWorkerPanic 就地处理 worker 协程内的 panic 并记录堆栈；返回 nil
+// 表示未发生 panic。year 为 panic 发生时正在处理的年份（整票入口传 0）。
+// recover() 必须在 defer 函数体内直接调用才能生效，故由各 defer 以
+// recover() 实参传入，不能在本函数内再包一层。
+func recoverWorkerPanic(code string, year int, p any) (*Failure, error) {
+	if p == nil {
+		return nil, nil
+	}
+	logs.Warnf("[researchrun] %s 回调 panic: %v\n%s", code, p, debug.Stack())
+	err := fmt.Errorf("researchrun: %s panic: %v", code, p)
+	return failure(code, year, "panic", err.Error()), err
 }
 
 func loadYear(cfg Config, code string, year int) (YearData, *Failure) {

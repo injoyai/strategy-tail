@@ -377,6 +377,91 @@ func TestBinsAssign(t *testing.T) {
 	}
 }
 
+// TestBinsAggregateGroups bins 模式聚合：覆盖 Groups=2/4/20（Validate 允许
+// 的组数边界），断言组数、观测守恒、占比合计、B 组边界与组收益；另验证
+// 绕过 Validate 的"断点数 > 组数-1"配置被钳制到最高组而不越界。
+func TestBinsAggregateGroups(t *testing.T) {
+	day := analysisDays(2024, 1, 1)[0]
+	vals := map[time.Time]map[string]float64{day: {}}
+	rets := map[time.Time]map[string]float64{day: {}}
+	for i := 1; i <= 20; i++ {
+		code := fmt.Sprintf("sh%06d", 600000+i)
+		vals[day][code] = float64(i)
+		rets[day][code] = float64(i) // 收益=因子值，组均值好手算
+	}
+	cuts20 := make([]float64, 19) // Groups=20 需要 19 个断点
+	for i := range cuts20 {
+		cuts20[i] = float64(i) + 1.5
+	}
+	want20 := make([]int, 20)
+	for i := range want20 {
+		want20[i] = 1
+	}
+	cases := []struct {
+		name string
+		cfg  GroupingConfig
+		want []int // 各组观测数
+	}{
+		{"g2", GroupingConfig{Mode: "bins", Groups: 2, Cuts: []float64{10.5}}, []int{10, 10}},
+		{"g4", GroupingConfig{Mode: "bins", Groups: 4, Cuts: []float64{5.5, 10.5, 15.5}}, []int{5, 5, 5, 5}},
+		{"g20", GroupingConfig{Mode: "bins", Groups: 20, Cuts: cuts20}, want20},
+	}
+	for _, c := range cases {
+		groups, _, summary := aggregateGroups([]time.Time{day}, vals, rets, c.cfg)
+		if len(groups) != len(c.want) {
+			t.Fatalf("%s: 组数 = %d, want %d", c.name, len(groups), len(c.want))
+		}
+		total, pct := 0, 0.0
+		for k, gs := range groups {
+			if gs.Observations != c.want[k] {
+				t.Fatalf("%s: 组 %d 观测数 = %d, want %d", c.name, k+1, gs.Observations, c.want[k])
+			}
+			if gs.Index != k+1 || gs.Label != fmt.Sprintf("B%d", k+1) {
+				t.Fatalf("%s: 组 %d 编号/标签 = %d/%s", c.name, k+1, gs.Index, gs.Label)
+			}
+			total += gs.Observations
+			pct += gs.CountPct
+		}
+		if total != 20 {
+			t.Fatalf("%s: 观测合计 = %d, want 20", c.name, total)
+		}
+		if !nearlyEq(pct, 1) {
+			t.Fatalf("%s: CountPct 合计 = %v, want 1", c.name, pct)
+		}
+		if summary.Direction != "ascending" {
+			t.Fatalf("%s: 方向 = %s, want ascending", c.name, summary.Direction)
+		}
+	}
+
+	// g2 边界：B1 无下界、上界 10.5；B2 相反；组收益为单日组均值。
+	groups, _, _ := aggregateGroups([]time.Time{day}, vals, rets, cases[0].cfg)
+	if groups[0].Lower != nil || groups[0].Upper == nil || *groups[0].Upper != 10.5 {
+		t.Fatalf("g2 B1 边界 = %v/%v, want nil/10.5", groups[0].Lower, groups[0].Upper)
+	}
+	if groups[1].Lower == nil || *groups[1].Lower != 10.5 || groups[1].Upper != nil {
+		t.Fatalf("g2 B2 边界 = %v/%v, want 10.5/nil", groups[1].Lower, groups[1].Upper)
+	}
+	for k, want := range []float64{5.5, 15.5} {
+		if groups[k].ForwardReturn == nil || *groups[k].ForwardReturn != want {
+			t.Fatalf("g2 组 %d ForwardReturn = %v, want %v", k+1, groups[k].ForwardReturn, want)
+		}
+	}
+
+	// 防御路径：断点数 > 组数-1（正常入口被 Validate 拦截）时钳制到最高组。
+	bad := GroupingConfig{Mode: "bins", Groups: 2, Cuts: []float64{5, 10, 15}}
+	groups, _, _ = aggregateGroups([]time.Time{day}, vals, rets, bad)
+	if len(groups) != 2 {
+		t.Fatalf("错误配置组数 = %d, want 2", len(groups))
+	}
+	// v≤5→B1；5<v≤10→B2；v>10 的组号 2/3 均钳到 B2。
+	if groups[0].Observations != 5 || groups[1].Observations != 15 {
+		t.Fatalf("错误配置观测数 = %d/%d, want 5/15", groups[0].Observations, groups[1].Observations)
+	}
+	if groups[0].Lower != nil || groups[0].Upper != nil || groups[1].Lower != nil || groups[1].Upper != nil {
+		t.Fatalf("错误配置不应标注边界")
+	}
+}
+
 // TestPercentileType7 Type-7 线性插值百分位手算用例（输入须已升序）。
 func TestPercentileType7(t *testing.T) {
 	cases := []struct {

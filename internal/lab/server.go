@@ -115,6 +115,11 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 }
 
 // registerRoutes 注册全部 REST 路由。
+//
+// 写端点同源校验约定：非 GET 请求默认经 withSameOrigin 防 CSRF；仅豁免
+// /api/script/check（无副作用的纯校验，供外部工具调用；该豁免是否保留另行
+// 评估）。以下端点已在 handler 内嵌校验、不重复包装：macd/run、
+// data-update/config、data-update/run、report/{id} DELETE 与 builder 四个写端点。
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/macd/config", s.handleMACDConfig)
 	s.mux.HandleFunc("POST /api/macd/run", s.handleMACDRun)
@@ -122,29 +127,29 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/data-update/config", s.handleDataUpdateConfig)
 	s.mux.HandleFunc("POST /api/data-update/run", s.handleDataUpdateRun)
 	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
-	s.mux.HandleFunc("PUT /api/script", s.handlePutScript)
+	s.mux.HandleFunc("PUT /api/script", withSameOrigin(s.handlePutScript))
 	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)
-	s.mux.HandleFunc("POST /api/run", s.handleRun)
+	s.mux.HandleFunc("POST /api/run", withSameOrigin(s.handleRun))
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
-	s.mux.HandleFunc("POST /api/stop", s.handleStop)
+	s.mux.HandleFunc("POST /api/stop", withSameOrigin(s.handleStop))
 	s.mux.HandleFunc("GET /api/report/latest", s.handleLatestReport)
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)
 	s.mux.HandleFunc("GET /api/report/{id}", s.handleReport)
 	s.mux.HandleFunc("DELETE /api/report/{id}", s.handleDeleteReport)
 	s.mux.HandleFunc("GET /api/kline/{code}", s.handleKline)
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
-	s.mux.HandleFunc("POST /api/analyze", s.handleAnalyze)
+	s.mux.HandleFunc("POST /api/analyze", withSameOrigin(s.handleAnalyze))
 	s.mux.HandleFunc("GET /api/analysis/latest", s.handleLatestAnalysis)
 	s.mux.HandleFunc("GET /api/analyses", s.handleAnalyses)
 	s.mux.HandleFunc("GET /api/analysis/{analysisId}", s.handleAnalysis)
 	s.mux.HandleFunc("GET /api/strategy-presets", s.handleStrategyPresets)
-	s.mux.HandleFunc("POST /api/strategy/run", s.handleStrategyRun)
-	s.mux.HandleFunc("POST /api/factor-candidates", s.handleCreateCandidate)
+	s.mux.HandleFunc("POST /api/strategy/run", withSameOrigin(s.handleStrategyRun))
+	s.mux.HandleFunc("POST /api/factor-candidates", withSameOrigin(s.handleCreateCandidate))
 	s.mux.HandleFunc("GET /api/factor-candidates", s.handleListCandidates)
 	s.mux.HandleFunc("GET /api/factor-candidates/{id}", s.handleGetCandidate)
-	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", s.handleUpdateCandidate)
+	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", withSameOrigin(s.handleUpdateCandidate))
 
-	// 搭建器：自由组合策略（设计文档 §5）。
+	// 搭建器：自由组合策略（设计文档 §5）。写端点已在 handler 内校验同源。
 	s.mux.HandleFunc("GET /api/builder/components", s.handleBuilderComponents)
 	s.mux.HandleFunc("GET /api/builder/templates", s.handleBuilderTemplates)
 	s.mux.HandleFunc("GET /api/builder/strategies", s.handleBuilderListStrategies)
@@ -155,20 +160,31 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/builder/run", s.handleBuilderRun)
 
 	// 多因子组合研究 v2（Task 9，设计 §12.2）。
-	s.mux.HandleFunc("POST /api/factor-models", s.handleCreateFactorModel)
+	s.mux.HandleFunc("POST /api/factor-models", withSameOrigin(s.handleCreateFactorModel))
 	s.mux.HandleFunc("GET /api/factor-models", s.handleListFactorModels)
 	s.mux.HandleFunc("GET /api/factor-models/{modelId}", s.handleGetFactorModel)
-	s.mux.HandleFunc("POST /api/portfolio-experiments", s.handleCreateExperiment)
+	s.mux.HandleFunc("POST /api/portfolio-experiments", withSameOrigin(s.handleCreateExperiment))
 	s.mux.HandleFunc("GET /api/portfolio-experiments", s.handleListExperiments)
 	s.mux.HandleFunc("GET /api/portfolio-experiments/{id}", s.handleGetExperiment)
 	s.mux.HandleFunc("GET /api/portfolio-experiments/{id}/artifacts/{name}", s.handleExperimentArtifact)
-	s.mux.HandleFunc("POST /api/portfolio-validations", s.handleCreateValidation)
+	s.mux.HandleFunc("POST /api/portfolio-validations", withSameOrigin(s.handleCreateValidation))
 	s.mux.HandleFunc("GET /api/portfolio-validations", s.handleListValidations)
 	s.mux.HandleFunc("GET /api/portfolio-validations/{id}", s.handleGetValidation)
-	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/start", s.handleStartPortfolioRun)
-	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/stop", s.handleStopPortfolioRun)
+	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/start", withSameOrigin(s.handleStartPortfolioRun))
+	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/stop", withSameOrigin(s.handleStopPortfolioRun))
 	s.mux.HandleFunc("GET /api/portfolio-runs/{id}", s.handleGetPortfolioRun)
 	s.mux.HandleFunc("GET /", s.handleIndex)
+}
+
+// withSameOrigin 非 GET 写端点的同源校验包装：无鉴权的本地 Lab 防跨站
+// 触发写操作（CSRF），规则复用 requireSameOrigin（Origin 与 Host 一致、
+// 拒绝 Sec-Fetch-Site: cross-site）。
+func withSameOrigin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if requireSameOrigin(w, r) {
+			next(w, r)
+		}
+	}
 }
 
 // Handler 返回 http.Handler（测试用 httptest 直连）。
@@ -236,7 +252,7 @@ func (s *Server) handlePutScript(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := os.WriteFile(ScriptPath, []byte(req.Content), 0644); err != nil {
+	if err := atomicWrite(ScriptPath, []byte(req.Content)); err != nil {
 		writeErr(w, http.StatusInternalServerError, "保存脚本失败: "+err.Error())
 		return
 	}

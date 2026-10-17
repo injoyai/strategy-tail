@@ -83,6 +83,27 @@ func TestTradeProfit含成本口径(t *testing.T) {
 	}
 }
 
+func TestCost过户费沪深统一收取(t *testing.T) {
+	c := core.Cost{TransferFeeRate: 0.00001}
+
+	// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见复核报告第 4 节）：
+	// 1000 元成交额 × 0.00001 = 0.01 元，买卖两侧同额计费
+	_, shBuy := c.BuyCost(protocol.Yuan(10.00), 100)
+	_, shSell := c.SellIncome(protocol.Yuan(10.00), 100)
+	_, szBuy := c.BuyCost(protocol.Yuan(10.00), 100)
+	_, szSell := c.SellIncome(protocol.Yuan(10.00), 100)
+
+	if math.Abs(shBuy-szBuy) > 1e-9 || math.Abs(shSell-szSell) > 1e-9 {
+		t.Fatalf("沪深两市费用应完全一致: shBuy=%v szBuy=%v shSell=%v szSell=%v", shBuy, szBuy, shSell, szSell)
+	}
+	if math.Abs(shBuy-1000.01) > 1e-9 {
+		t.Fatalf("买入应含过户费 0.01 元, got %v", shBuy)
+	}
+	if math.Abs(shSell-999.99) > 1e-9 {
+		t.Fatalf("卖出应扣除过户费 0.01 元, got %v", shSell)
+	}
+}
+
 // ============================================================================
 // 回测引擎测试（卖出统一走 Seller 组合）
 // ============================================================================

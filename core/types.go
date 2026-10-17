@@ -123,13 +123,14 @@ func (s *Sell) String() string {
 type Cost struct {
 	CommissionRate  float64        // 佣金费率（买/卖双边）
 	StampDutyRate   float64        // 印花税率（仅卖出）
-	TransferFeeRate float64        // 过户费率（沪市双边，深市为0）
+	TransferFeeRate float64        // 过户费率（沪深两市统一，买卖双边收取）
 	Slippage        protocol.Price // 滑点（每股绝对值，单边加减）
 	MinCommission   float64        // 最低佣金（元），不足按此收取
 }
 
 // DefaultCost 返回 A 股常见成本参数。
-// 佣金万三双边、印花税千一卖出、滑点 0.01 元、最低佣金 5 元。
+// 佣金万一双边、印花税 0.05%（仅卖出）、过户费万0.1（沪深两市统一收取）、
+// 滑点 0.01 元、最低佣金不设下限。
 func DefaultCost() Cost {
 	return Cost{
 		CommissionRate:  0.0001,              //佣金费率,万一

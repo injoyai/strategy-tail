@@ -31,6 +31,7 @@ export default {
       runCardOpen: false,
       valCardOpen: false,
       runLoadingText: '',
+      modelErr: '',
       runErr: '',
       expErr: '',
       valErr: '',
@@ -601,6 +602,10 @@ export default {
       const e = m.execution || {};
       const cost = e.cost || {};
       const f = this.form;
+      // 服务端缺失字段回退表单默认值。注意：PortfolioPolicy 多数字段带 omitempty，合法零值
+      // 序列化后整个字段缺失，缺失语义须逐字段确认（minHoldings 缺失按 0 解释，见下）；
+      // CostSpec 各字段无 omitempty，显式零值会正常输出，缺失即可安全回退默认值。
+      const pick = (v, dflt) => (v == null ? dflt : v);
       f.createdBy = m.createdBy || '';
       f.researchQuestion = m.researchQuestion || '';
       f.hypothesis = m.hypothesis || '';
@@ -613,29 +618,31 @@ export default {
       f.standardize = t.standardize || 'rank';
       f.combineMethod = c.method || 'equal_weight_rank';
       const ri = c.rollingIc;
-      f.icWindow = ri ? ri.windowYears : 3;
-      f.icShrink = ri ? ri.shrinkage : 0.5;
-      f.icMax = ri ? ri.maxAbsWeight : 0.5;
+      f.icWindow = pick(ri && ri.windowYears, 3);
+      f.icShrink = pick(ri && ri.shrinkage, 0.5);
+      f.icMax = pick(ri && ri.maxAbsWeight, 0.5);
       f.icFallback = ri ? ri.fallback : 'equal_weight';
       f.selection = p.selection || 'top_n';
-      f.topN = p.topN || 20;
-      f.topQuantile = p.topQuantile || 0.2;
+      f.topN = pick(p.topN, 20);
+      f.topQuantile = pick(p.topQuantile, 0.2);
       f.maxStockWeight = p.maxStockWeight || 0;
       f.maxIndustryWeight = p.maxIndustryWeight || 0;
       f.maxTurnover = p.maxTurnover || 0;
-      f.minHoldings = p.minHoldings || 0;
+      // minHoldings 带 omitempty：合法零值 0 序列化后字段缺失，缺失须按 0 解释（回填 5 会在
+      // 再次保存时悄悄改写模型约束）；新建表单的默认 5 由 pfDefaultForm 单独维护
+      f.minHoldings = p.minHoldings == null ? 0 : p.minHoldings;
       f.cashBuffer = p.cashBuffer || 0;
       f.rebalance = e.rebalance || 'daily';
       f.fillAt = e.fillAt || 'next_open';
       f.sellFirst = e.sellFirst !== false;
       f.t1 = e.t1Restriction !== false;
       f.carryUnfilled = !!e.carryUnfilled;
-      f.lotSize = e.lotSize || 100;
-      f.commission = cost.commissionRate || 0;
-      f.stampDuty = cost.stampDutyRate || 0;
+      f.lotSize = pick(e.lotSize, 100);
+      f.commission = pick(cost.commissionRate, 0.0003);
+      f.stampDuty = pick(cost.stampDutyRate, 0.001);
       f.transferFee = cost.transferFeeRate || 0;
-      f.slippage = cost.slippage || 0;
-      f.minCommission = cost.minCommission || 0;
+      f.slippage = pick(cost.slippage, 0.01);
+      f.minCommission = pick(cost.minCommission, 5);
       state.pfSelectedValidationIds = (m.validatedFactors || []).map(x => x.validationId).filter(Boolean);
     },
     pfDefaultForm() {
@@ -674,13 +681,13 @@ export default {
       });
     },
     async selectPfModel(modelId, revision) {
-      const seq = ++state.pfSeq;
+      const seq = ++state.pfModelSeq;
       state.pfSelectedModelId = modelId;
       try {
         let url = modelId;
         if (revision) url += '?revision=' + revision;
         const d = await Api.factorModel(url);
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfModelSeq) return;
         const m = d.model;
         state.pfEditModel = m;
         this.fillPfForm(m);
@@ -699,7 +706,7 @@ export default {
           if (t) t.focus();
         });
       } catch (e) {
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfModelSeq) return;
         this.editMsg = {text: '模型加载失败：' + pfErrMsg(e), ok: false};
       }
     },
@@ -857,14 +864,17 @@ export default {
     },
     // —— 运行列表 ——
     async loadPfExperiments(silent) {
+      const seq = ++state.pfExpSeq;
       try {
         const p = new URLSearchParams({page: String(state.pfExpPage), pageSize: String(state.pfExpPageSize)});
         if (state.pfExpFilterModel) p.set('modelId', state.pfExpFilterModel);
         if (state.pfExpFilterStatus) p.set('status', state.pfExpFilterStatus);
         const d = await Api.portfolioExperiments('?' + p.toString());
+        if (seq !== state.pfExpSeq) return;
         state.pfExperiments = d.experiments;
         if (!silent) this.expErr = '';
       } catch (e) {
+        if (seq !== state.pfExpSeq) return;
         this.expErr = '运行列表加载失败：' + pfErrMsg(e);
       }
     },
@@ -882,14 +892,17 @@ export default {
     pfExpFilterStatusChange() { state.pfExpPage = 1; this.loadPfExperiments(false); },
     // —— 验证列表 ——
     async loadPfValidations(silent) {
+      const seq = ++state.pfValListSeq;
       try {
         const p = new URLSearchParams({page: String(state.pfValPage), pageSize: String(state.pfValPageSize)});
         if (state.pfValFilterModel) p.set('modelId', state.pfValFilterModel);
         if (state.pfValFilterVerdict) p.set('verdict', state.pfValFilterVerdict);
         const d = await Api.portfolioValidations('?' + p.toString());
+        if (seq !== state.pfValListSeq) return;
         state.pfValidations = d.validations;
         if (!silent) this.valErr = '';
       } catch (e) {
+        if (seq !== state.pfValListSeq) return;
         this.valErr = '验证列表加载失败：' + pfErrMsg(e);
       }
     },
@@ -937,7 +950,7 @@ export default {
     },
     // —— 运行详情 ——
     async openPfRun(id) {
-      const seq = ++state.pfSeq;
+      const seq = ++state.pfRunSeq;
       state.pfSelectedRun = null;
       state.pfSelectedRunReport = null;
       this.runCardOpen = true;
@@ -946,7 +959,7 @@ export default {
       this.pfUpdateUrl();
       try {
         const d = await Api.experiment(id);
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfRunSeq) return;
         const exp = d.experiment;
         state.pfSelectedRun = exp;
         let rep = null;
@@ -955,7 +968,7 @@ export default {
             rep = await Api.experimentArtifact(id, 'report.json');
           } catch (e) { /* 报告读取失败时仍展示状态与产物入口 */ }
         }
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfRunSeq) return;
         state.pfSelectedRunReport = rep;
         this.pfUpdateUrl();
         if (rep) {
@@ -974,7 +987,7 @@ export default {
           if (t) t.focus();
         });
       } catch (e) {
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfRunSeq) return;
         state.pfSelectedRun = null;
         this.runErr = '运行详情加载失败：' + pfErrMsg(e);
       }
@@ -1004,7 +1017,7 @@ export default {
     },
     // —— 验证详情 ——
     async openPfValDetail(id) {
-      const seq = ++state.pfSeq;
+      const seq = ++state.pfValSeq;
       state.pfSelectedVal = null;
       state.pfSelectedValId = id;
       this.valCardOpen = true;
@@ -1012,7 +1025,7 @@ export default {
       this.pfUpdateUrl();
       try {
         const d = await Api.validation(id);
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfValSeq) return;
         state.pfSelectedVal = d.validation;
         this.$nextTick(() => {
           const card = document.getElementById('pfValDetailCard');
@@ -1021,7 +1034,7 @@ export default {
           if (t) t.focus();
         });
       } catch (e) {
-        if (seq !== state.pfSeq) return;
+        if (seq !== state.pfValSeq) return;
         this.valDetailErr = '验证详情加载失败：' + pfErrMsg(e);
       }
     },

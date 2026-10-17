@@ -91,6 +91,7 @@ func labelReturn(dks, future extend.Klines, signalIdx, horizon int, kind string)
 		return 0, LabelSkipInsufficientHorizon, false
 	}
 	var entry protocol.Price
+	entryVolume := int64(0)
 	switch kind {
 	case labelKindNextOpenToClose:
 		entryK, ok := at(signalIdx + 1)
@@ -98,8 +99,15 @@ func labelReturn(dks, future extend.Klines, signalIdx, horizon int, kind string)
 			return 0, LabelSkipInsufficientHorizon, false
 		}
 		entry = entryK.Open
+		entryVolume = entryK.Volume
 	case labelKindSameCloseToCloseLegacy:
 		entry = dks[signalIdx].Close
+		entryVolume = dks[signalIdx].Volume
+	}
+	// 停牌日（无成交）不可成交；停牌日 OHLC 常全为 0，须先于价格缺失归因，
+	// 否则该桶永远为空，LabelCoverage 无法披露 7.3 节要求的不可交易日。
+	if entryVolume <= 0 {
+		return 0, LabelSkipUntradableEntry, false
 	}
 	if entry <= 0 {
 		return 0, LabelSkipMissingEntryPrice, false

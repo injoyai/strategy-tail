@@ -106,14 +106,38 @@ func withinRoot(root, path string) bool {
 	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
-// atomicWrite 同目录临时文件 + rename 原子写。
+// atomicWrite 同目录唯一临时文件 + fsync + rename 原子写：崩溃或断电后目标
+// 要么是完整旧内容要么是完整新内容；失败路径清理 tmp 残留，避免污染目录
+// 扫描。临时文件由 os.CreateTemp 保证并发下唯一，各调用方无需再自行串行
+// 化同一目标。注意：这里只同步了文件本身，未同步父目录，不宣称完整的
+// 断电持久性保证。
 func atomicWrite(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	tmp := filepath.Join(dir, ".tmp-"+filepath.Base(path))
-	if err := os.WriteFile(tmp, data, 0644); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), ".tmp-*")
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, path)
+	tmp := f.Name()
+	_, err = f.Write(data)
+	if err == nil {
+		// rename 前落盘：保证 rename 后目标内容已持久化。
+		err = f.Sync()
+	}
+	if err == nil {
+		// CreateTemp 默认 0600，恢复与旧实现一致的常规读写权限。
+		err = f.Chmod(0644)
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // analysisLatest latest 指针内容：全局与每 kind 共用结构。

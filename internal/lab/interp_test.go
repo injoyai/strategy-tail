@@ -1,6 +1,9 @@
 package lab
 
 import (
+	"context"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -107,6 +110,63 @@ func TestLoadScript_WrongReturnType(t *testing.T) {
 	_, err := LoadScript("package main\nfunc Strategy() int { return 1 }")
 	if err == nil {
 		t.Fatal("返回类型错误未报出")
+	}
+}
+
+// TestLoadScriptSerializesConcurrentLoads 并发加载经信号量串行排队，全部
+// 正常完成（验证并发 1 限制不破坏正确性）。
+func TestLoadScriptSerializesConcurrentLoads(t *testing.T) {
+	src := `package main
+
+import "github.com/injoyai/strategy-tail/core"
+
+func Strategy() []core.Variant {
+	return []core.Variant{{Name: "demo"}}
+}
+`
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := LoadScript(src)
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("并发加载失败: %v", err)
+		}
+	}
+}
+
+func TestLoadScriptTimeoutKeepsGate(t *testing.T) {
+	for _, body := range []string{"for {}", "time.Sleep(300 * time.Millisecond)"} {
+		t.Run(body, func(t *testing.T) {
+			gate := make(chan struct{}, 1)
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
+			src := `package main
+import "time"
+import "github.com/injoyai/strategy-tail/core"
+func Strategy() []core.Variant { _ = time.Second; ` + body + `; return nil }`
+			if _, err := loadScript(ctx, src, gate); err == nil || !strings.Contains(err.Error(), "超时") {
+				t.Fatalf("expected timeout, got %v", err)
+			}
+			// 即使宿主调用随后返回，也不能把未提供完成通知的取消当作安全退出。
+			time.Sleep(350 * time.Millisecond)
+			if len(gate) != 1 {
+				t.Fatal("timeout must retain the execution token")
+			}
+			next, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+			defer stop()
+			if _, err := loadScript(next, sampleScript, gate); err == nil {
+				t.Fatal("another script ran after an unconfirmed timeout")
+			}
+		})
 	}
 }
 

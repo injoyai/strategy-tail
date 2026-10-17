@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/injoyai/logs"
@@ -23,21 +24,39 @@ const (
 	pdfPageH     = 297.0
 	pdfContentW  = pdfPageW - pdfMarginX*2 // 186mm
 	pdfFont      = "simhei"
-	pdfFontPath  = `C:\Windows\Fonts\simhei.ttf`
 )
+
+// pdfFontCandidates 按 GOOS 列出常见中文字体候选路径（gopdf 仅支持单字体 TTF，
+// 不支持 .ttc 集合文件），运行时逐个探测，取第一个存在的，不假定任一候选必然存在。
+var pdfFontCandidates = map[string][]string{
+	"windows": {`C:\Windows\Fonts\simhei.ttf`, `C:\Windows\Fonts\Deng.ttf`, `C:\Windows\Fonts\simkai.ttf`},
+	"darwin":  {"/System/Library/Fonts/Supplemental/Arial Unicode.ttf", "/Library/Fonts/Arial Unicode.ttf"},
+	"linux":   {"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallback.ttf"},
+}
+
+// resolvePDFFontPath 返回第一个存在的候选字体路径；全部缺失时返回明确错误。
+func resolvePDFFontPath() (string, error) {
+	candidates := pdfFontCandidates[runtime.GOOS]
+	for _, path := range candidates {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("未找到可用的中文字体文件, 以下候选路径均不存在: %v", candidates)
+}
 
 // 颜色（A 股惯例：红涨绿跌）
 var (
-	colRed   = [3]uint8{220, 38, 38}
-	colGreen = [3]uint8{22, 163, 74}
-	colInk   = [3]uint8{26, 26, 46}
-	colMuted = [3]uint8{107, 114, 128}
-	colAccent= [3]uint8{59, 130, 246}
-	colHead  = [3]uint8{249, 250, 251}
-	colLine  = [3]uint8{229, 231, 235}
-	colCard  = [3]uint8{248, 249, 251}
-	colAmber = [3]uint8{245, 158, 11}
-	colWhite = [3]uint8{255, 255, 255}
+	colRed    = [3]uint8{220, 38, 38}
+	colGreen  = [3]uint8{22, 163, 74}
+	colInk    = [3]uint8{26, 26, 46}
+	colMuted  = [3]uint8{107, 114, 128}
+	colAccent = [3]uint8{59, 130, 246}
+	colHead   = [3]uint8{249, 250, 251}
+	colLine   = [3]uint8{229, 231, 235}
+	colCard   = [3]uint8{248, 249, 251}
+	colAmber  = [3]uint8{245, 158, 11}
+	colWhite  = [3]uint8{255, 255, 255}
 )
 
 // ExportPDF 导出 PDF 报告到 output/market-regime/report.pdf。
@@ -50,10 +69,14 @@ func ExportPDF(r *AnalysisResult) error {
 		PageSize: gopdf.Rect{W: pdfPageW, H: pdfPageH},
 		Unit:     gopdf.UnitMM,
 	})
-	if err := pdf.AddTTFFontWithOption(pdfFont, pdfFontPath, gopdf.TtfOption{
+	fontPath, err := resolvePDFFontPath()
+	if err != nil {
+		return err
+	}
+	if err := pdf.AddTTFFontWithOption(pdfFont, fontPath, gopdf.TtfOption{
 		UseKerning: true,
 	}); err != nil {
-		return fmt.Errorf("加载字体 %s: %w", pdfFontPath, err)
+		return fmt.Errorf("加载字体 %s: %w", fontPath, err)
 	}
 
 	pdf.AddPage()

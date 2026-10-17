@@ -720,7 +720,9 @@ func validateFreezeEvidenceClass(class string, evidence AnalysisReport, now time
 		if evidence.LastDataDate == "" {
 			return fmt.Errorf("发现期证据缺少最后数据日期，无法冻结前瞻验证")
 		}
-		lastDate, err := time.Parse("2006-01-02", evidence.LastDataDate)
+		// xorm 按 TZLocation（time.Local）落库日历日；time.Parse 默认 UTC 会使
+		// 日期边界随宿主时区偏移（如 Asia/Shanghai 偏 8 小时），须固定本地时区。
+		lastDate, err := time.ParseInLocation("2006-01-02", evidence.LastDataDate, time.Local)
 		if err != nil {
 			return fmt.Errorf("发现期最后数据日期非法: %q", evidence.LastDataDate)
 		}

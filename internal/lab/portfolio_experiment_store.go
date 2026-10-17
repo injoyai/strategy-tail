@@ -247,6 +247,71 @@ func (s *PortfolioExperimentStore) markTerminal(id, target, message string) erro
 	return err
 }
 
+// RecoverStaleRunning 扫描全部持久化记录，把仍处于 running 的孤儿记录标记
+// 为 failed（附带诊断信息）。持有运行文件锁的执行者仍存活，跳过该记录。
+func (s *PortfolioExperimentStore) RecoverStaleRunning(message string) (int, error) {
+	if n := runeLen(message); n > DefaultExperimentLimits().MaxErrorRunes {
+		return 0, fmt.Errorf("诊断信息过长: %d（最多 %d 个字符）", n, DefaultExperimentLimits().MaxErrorRunes)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entries, err := os.ReadDir(s.recordsRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	recovered := 0
+	for _, e := range entries {
+		if e.IsDir() || strings.HasPrefix(e.Name(), ".tmp-") {
+			continue
+		}
+		id := strings.TrimSuffix(e.Name(), ".json")
+		if !validExperimentID(id) {
+			continue
+		}
+		rec, err := s.readRecordRawLocked(id)
+		if err != nil {
+			if errors.Is(err, errExperimentNotFound) {
+				continue
+			}
+			return recovered, err // 损坏 fail closed
+		}
+		if rec.Status != portfolioresearch.RunStateRunning {
+			continue
+		}
+		unlock, err := s.lockRun(id)
+		if errors.Is(err, errPortfolioRunLocked) {
+			continue
+		}
+		if err != nil {
+			return recovered, err
+		}
+		err = func() error {
+			defer unlock()
+			// 获取锁之前原执行者可能刚完成，必须重新读取后再决定是否恢复。
+			rec, err := s.readRecordRawLocked(id)
+			if err != nil || rec.Status != portfolioresearch.RunStateRunning {
+				return err
+			}
+			_, err = s.saveLocked(id, func(rec *PortfolioExperiment) error {
+				rec.Status = portfolioresearch.RunStateFailed
+				rec.Error = message
+				return nil
+			})
+			if err == nil {
+				recovered++
+			}
+			return err
+		}()
+		if err != nil {
+			return recovered, err
+		}
+	}
+	return recovered, nil
+}
+
 // ExperimentFilter 列表筛选（全部可选；FamilyID/ModelID/Status 白名单校验）。
 type ExperimentFilter struct {
 	FamilyID string

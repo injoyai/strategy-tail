@@ -2,11 +2,9 @@ package buy
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // A通达信倍量 是按通达信"倍量"公式翻写的买入策略。
@@ -525,24 +523,6 @@ type VolumeShrink = A缩量
 //
 //	return &core.Buy{Code: code, Time: today.Time, Price: today.Close}
 //}
-
-// HHV 返回最近 i 根 K 线中的最高价。
-// 注意：该函数会对切片进行排序，调用时会改变传入切片尾部窗口的顺序。
-// 目前策略中主要用于快速判断近期最高价。
-func HHV(dks extend.Klines, i int) protocol.Price {
-	ls := dks[len(dks)-i:]
-	sort.Slice(ls, func(i, j int) bool { return ls[i].High > ls[j].High })
-	return ls[0].High
-}
-
-// LLV 返回最近 i 根 K 线中的最低价。
-// 注意：该函数会对切片进行排序，调用时会改变传入切片尾部窗口的顺序。
-// 目前策略中主要用于快速判断近期最低价。
-func LLV(dks extend.Klines, i int) protocol.Price {
-	ls := dks[len(dks)-i:]
-	sort.Slice(ls, func(i, j int) bool { return ls[i].Low < ls[j].Low })
-	return ls[0].Low
-}
 
 // A阳线 是阳线买入条件。
 // 要求最新交易日收盘价大于开盘价。

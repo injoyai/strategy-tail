@@ -91,7 +91,7 @@ export default {
         state.candidatesDirty++; // 通知 05 页刷新
       } catch (e) {
         // 409：保留输入，重新加载服务端记录并提示比较，不自动覆盖
-        if (e.message && e.message.indexOf('重新加载') >= 0) {
+        if (e.status === 409) {
           this.msg = {text: '该候选已被其他人更新：保留你的输入，请比较服务端最新版本后重试', ok: false};
           try {
             const d = await Api.candidate(c.id);

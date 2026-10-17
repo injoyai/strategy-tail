@@ -9,6 +9,7 @@ import (
 // LongMADown 是 250 日或 60 日均线不再同时向上时卖出的策略。
 // Lookback 表示连续向上比较的交易日数量，默认 5。
 // 当 250 日均线或 60 日均线在最近 Lookback 个交易日中出现走平或走弱时返回卖出信号。
+// K 线数量不足（少于 250+Lookback 根）时无法判断均线趋势，不触发卖出。
 // 该策略与 buy.LongMAUp 对应，用于在中长期趋势过滤条件失效时退出持仓。
 type LongMADown struct {
 	Lookback int
@@ -21,6 +22,11 @@ func (s LongMADown) Name() string {
 func (s LongMADown) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if s.Lookback == 0 {
 		s.Lookback = 5
+	}
+	// 250 是较长周期，满足它必然满足 60；数据不足时 maUp 返回 false，
+	// 直接取反会把“无法判断”当成“转弱”导致恒卖，因此先拦截，保守不卖出。
+	if len(dks) < 250+s.Lookback {
+		return false
 	}
 	return !maUp(dks, 250, s.Lookback) || !maUp(dks, 60, s.Lookback)
 }

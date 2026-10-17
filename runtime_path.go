@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 )
@@ -93,9 +94,8 @@ func withRuntimeRoot(fn func() error) (err error) {
 		return err
 	}
 	defer func() {
-		if restoreErr := os.Chdir(cwd); err == nil && restoreErr != nil {
-			err = restoreErr
-		}
+		// fn 失败时恢复目录的错误也不能被吞掉,用 Join 同时保留两侧错误。
+		err = errors.Join(err, os.Chdir(cwd))
 	}()
 	return fn()
 }

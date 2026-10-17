@@ -469,13 +469,18 @@ func TestFactorModelStoreAtomicWriteFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 把追加 revision 的 .tmp 路径预先占为目录，迫使原子写失败。
-	tmpDir := filepath.Join(f.Root, m1.ModelID, ".tmp-000002.json")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	// 临时文件名由 os.CreateTemp 随机生成，无法预占；改为把追加 revision 的
+	// rename 落点预先占为目录，迫使原子替换失败。
+	target := filepath.Join(f.Root, m1.ModelID, "000002.json")
+	if err := os.MkdirAll(target, 0755); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := f.Store.Create(appendReq(m1, testUUID2), f.Input); err == nil {
 		t.Fatal("原子写失败应返回错误")
+	}
+	// 清除预占目录后确认：失败路径未写入半成品 revision。
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
 	}
 	latest, err := f.Store.GetLatest(m1.ModelID)
 	if err != nil || latest.Revision != 1 {

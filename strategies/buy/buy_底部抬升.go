@@ -13,8 +13,8 @@ import (
 // 适合捕捉震荡上行趋势中的回调低点。
 //
 // 字段说明：
-//   - Window          : 顶底判断窗口大小（前后各 Window 根 K 线），默认 8
-//   - MaxGainMultiple : 高点涨幅与低点涨幅的最大差距，默认 5%
+//   - Window          : 顶底判断窗口大小（前后各 Window 根 K 线），默认 12
+//   - MaxGainMultiple : 高点涨幅与低点涨幅的允许差距（倍数，非百分比），默认 20 倍
 type A底顶部抬升 struct {
 	Window          int
 	MaxGainMultiple float64

@@ -232,15 +232,15 @@ Hist = DIF - DEA      ← 注意：不乘 2
 type Cost struct {
     CommissionRate  float64        // 佣金费率（双边，万三=0.0003）
     StampDutyRate   float64        // 印花税率（仅卖出，千一=0.001）
-    TransferFeeRate float64        // 过户费率（沪市双边，默认0）
+    TransferFeeRate float64        // 过户费率（沪深统一，买卖双边）
     Slippage        protocol.Price // 滑点（每股绝对值，默认0.01元）
     MinCommission   float64        // 最低佣金（元，默认5）
 }
 ```
 
-* `Cost.BuyCost(price, qty)` → (实际成交价, 含佣金总支出)
+* `Cost.BuyCost(price, qty)` → (实际成交价, 含佣金与过户费的总支出)；按配置费率对沪深两市统一计费
 
-* `Cost.SellIncome(price, qty)` → (实际成交价, 扣费后净收入)
+* `Cost.SellIncome(price, qty)` → (实际成交价, 扣费后净收入)；按配置费率对沪深两市统一计费
 
 * 新增成本维度时扩展 `Cost` 结构体，不要在 Seller 内自己加。
 

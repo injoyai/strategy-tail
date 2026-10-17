@@ -11,6 +11,7 @@ import (
 // BuyCost 计算买入总支出（元）。
 // 买入支出 = 成交价 × 数量 + 佣金 + 过户费
 // 成交价 = 原始价 + 滑点（买入向上滑点）
+// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/code-review-2026-10-17.md 第 4 节）
 func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, totalCost float64) {
 	execPrice = rawPrice + c.Slippage
 	turnover := execPrice.Float64() * float64(quantity)
@@ -29,6 +30,7 @@ func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol
 // SellIncome 计算卖出总收入（元）。
 // 卖出收入 = 成交价 × 数量 - 佣金 - 印花税 - 过户费
 // 成交价 = 原始价 - 滑点（卖出向下滑点）
+// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/code-review-2026-10-17.md 第 4 节）
 func (c Cost) SellIncome(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, netIncome float64) {
 	execPrice = rawPrice - c.Slippage
 	turnover := execPrice.Float64() * float64(quantity)
@@ -45,8 +47,8 @@ func (c Cost) SellIncome(rawPrice protocol.Price, quantity int) (execPrice proto
 	return
 }
 
-// TransferFeeForCode 根据代码判断是否收取过户费。
-// 沪市（sh688/sh60）收取过户费，深市不收。
+// TransferFeeForCode 根据代码判断是否为沪市股票（sh60 主板/sh688 科创板）。
+// 仅为市场识别辅助函数；当前成本模型对沪深两市统一收取过户费，未按市场区分费率。
 func TransferFeeForCode(code string) bool {
 	pref := protocol.AddPrefix(code)
 	if len(pref) < 4 {
