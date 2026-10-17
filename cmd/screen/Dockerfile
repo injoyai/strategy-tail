@@ -1,3 +1,4 @@
+# 从项目根目录构建：docker build -f cmd/screen/Dockerfile .
 FROM alpine:latest
 
 LABEL maintainer="injoy"

@@ -1,3 +1,7 @@
+# 公共运行配置；相对路径以 RuntimeRoot() 为基准（可用 STRATEGY_TAIL_ROOT 指定）。
+# Lab 监听地址使用 LAB_ADDR，自动更新设置保存于 data/lab/data-update.json。
+
+# 行情存储与显式更新（cmd/update、Lab 手动更新及启用后的自动更新共用）。
 pull:
   # 相对路径会按项目根目录解析；也可填写绝对路径把大型行情库放到仓库外。
   database: "./data/database"
@@ -5,54 +9,47 @@ pull:
     - day
     - minute
 
-  goroutines: 10
-  spec: "0 15 15 * * *"
+  goroutines: 10                 # 更新并发数；不控制回测或选股并发
 
+# 研究数据
 research:
   valuation:
     # 历史估值及每日TDX主板PE、股息率快照的本地持久库。
     database: "./data/research/valuation.db"
 
+# 实时筛选服务（仅 cmd/screen 使用；Lab 不读取本节）。
 screen:
   port: 9090
-  lookback: 60
-  interval: 5s
-  goroutines: 10
+  lookback: 60                   # 历史买点回看交易日数
+  interval: 5s                  # 实时筛选刷新间隔
 
   html:
-    local: true
+    local: true                 # 优先读取 cmd/screen/web，文件缺失时使用嵌入资源
 
-# 回测引擎配置
+# 回测公共配置（命令可覆盖；Lab 的年份、卖出条件及账户资金由运行请求指定）。
 backtest:
-  # 成本模型（与原版一致：仅滑点，无佣金/印花税）
+  # 当前研究口径仅计滑点，其他费用均为 0；以下费率是比例，滑点单位为元/股。
   cost:
-    commission_rate: 0.0       # 佣金费率（原版为0）
-    stamp_duty_rate: 0.0       # 印花税率（原版为0）
-    transfer_fee_rate: 0.0     # 过户费率
-    slippage: 0.01             # 滑点（每股绝对值，元）
-    min_commission: 0.0        # 最低佣金（元）
+    commission_rate: 0.0        # 双边佣金费率
+    stamp_duty_rate: 0.0        # 卖出印花税率
+    transfer_fee_rate: 0.0      # 双边过户费率
+    slippage: 0.01              # 买入加、卖出减的每股滑点
+    min_commission: 0.0         # 单笔最低佣金（元）
 
-  # 仓位管理（按笔数模型）
+  # 逐股回测的按笔数模型；Lab 账户模式另行约束资金、最多 5 只及单票单仓。
   position:
-    max_positions: 0          # 全局最大同时持仓股票数（0=不限）
-    max_per_code: 0           # 单票最大同时持仓笔数（0=不限，与原版一致）
-    shares_per_lot: 100       # 每笔买入股数（A股一手=100股）
+    max_positions: 0           # 兼容字段；逐股引擎不执行跨股票的全局持仓限制
+    max_per_code: 0            # 单票最大同时持仓笔数，0=不限
+    shares_per_lot: 100        # 每笔买入股数，A 股一手=100 股
 
-  # 风控层
-  risk:
-    stop_loss: 0.08           # 单笔止损比例（8%）
-    take_profit: 0.15         # 单笔止盈比例（15%）
-    max_holding_days: 20      # 最大持仓交易日数
-    trailing_stop: 0.0        # 追踪止损比例（0=关闭）
-
-  # 回测年份
+  # LoadBacktestConfig 返回的候选年份；cmd/backtest 当前使用代码中的 years。
   years:
     - 2024
     - 2025
     - 2026
 
-  # 基准代码（沪深300指数）
+  # 逐股回测基准；Lab 账户对比使用上证指数 sh000001。
   benchmark: "sh000300"
 
-  # 蒙特卡洛模拟次数
+  # 标准 Backtest.Run 的蒙特卡洛模拟次数
   monte_carlo_iterations: 1000

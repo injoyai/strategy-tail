@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # 部署 Lab；保留旧容器及原数据挂载，新服务失败时恢复旧容器。
-# 用法：./deploy.sh；默认绑定 0.0.0.0，可通过 BIND 覆盖。
+# 用法：./deploy.sh；默认绑定 0.0.0.0:80，可通过 BIND、PORT 覆盖。
 # 需要 Docker 与 Python 3。脚本不清理旧容器或数据。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE="strategy-lab"
 CONTAINER="strategy-lab"
-HOST_PORT="${PORT:-8765}"
+HOST_PORT="${PORT:-80}"
 BIND="${BIND:-0.0.0.0}"
 BACKUP="${CONTAINER}-previous-$(date +%Y%m%dT%H%M%S)-$$"
 FAILED="${CONTAINER}-failed-$(date +%Y%m%dT%H%M%S)-$$"

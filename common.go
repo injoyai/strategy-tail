@@ -8,7 +8,6 @@ import (
 
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
-	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 	"github.com/injoyai/strategy-tail/strategies/buy"
@@ -207,28 +206,6 @@ func Update() error {
 		return err
 	}
 	return Pull.Update(Manage, true)
-}
-
-// LoadBacktestConfig 从 config.yaml 读取回测引擎配置（成本/仓位/基准）。
-// 未配置的字段使用 DefaultXxx() 填充。
-// 风控参数不在此读取——由 cmd/backtest 入口构造为 Seller（见 loadRiskSeller）。
-func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int, benchmark string, mcIterations int) {
-	cost = core.Cost{
-		CommissionRate:  cfg.GetFloat64("backtest.cost.commission_rate", 0.0001),
-		StampDutyRate:   cfg.GetFloat64("backtest.cost.stamp_duty_rate", 0.0005),
-		TransferFeeRate: cfg.GetFloat64("backtest.cost.transfer_fee_rate", 0.00001),
-		Slippage:        protocol.Yuan(cfg.GetFloat64("backtest.cost.slippage", 0.01)),
-		MinCommission:   cfg.GetFloat64("backtest.cost.min_commission", 0),
-	}
-	pos = core.PositionConfig{
-		MaxPositions: cfg.GetInt("backtest.position.max_positions", 0),
-		MaxPerCode:   cfg.GetInt("backtest.position.max_per_code", 1),
-		SharesPerLot: cfg.GetInt("backtest.position.shares_per_lot", 100),
-	}
-	years = cfg.GetInts("backtest.years", []int{2020, 2021, 2022, 2023, 2024, 2025, 2026})
-	benchmark = cfg.GetString("backtest.benchmark", "sh000300")
-	mcIterations = cfg.GetInt("backtest.monte_carlo_iterations", 1000)
-	return
 }
 
 // GetNoPriceLimitCodes 返回本地主板日线代码，供历史回测与历史筛选使用。

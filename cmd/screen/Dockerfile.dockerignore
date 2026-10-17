@@ -1,0 +1,8 @@
+# Screen 镜像只需要预编译程序和统一配置；覆盖根目录排除 bin 的规则。
+**
+!bin/
+bin/**
+!bin/screen-stock
+!config/
+config/**
+!config/config.yaml

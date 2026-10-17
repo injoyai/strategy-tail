@@ -81,10 +81,9 @@ type Seller interface {
 | 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `0.0.0.0:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
 | 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
-| 单次实时筛选 | `go run ./cmd/screen-realtime` | 命令行输出匹配结果 |
-| 单股条件诊断 | `go run ./cmd/diagnoser` | 检查代码中配置的 Buyer 是否命中 |
-| 历史筛选页面 | `go run ./cmd/screen-kline` | 启动指定日期的本地筛选页面 |
-| 前向收益研究 | `go run ./cmd/future` | 运行当前代码中配置的前向收益分析 |
+| 同步历史估值 | `go run ./cmd/valuation-sync -codes sh600519 -start 2020-01-01` | 写入本地估值库；`-all` 显式选择全部股票 |
+
+`cmd/` 仅保留以上五个入口，参数、配置归属和副作用见[命令说明](cmd/README.md)。原 `diagnoser`、`screen-realtime`、`screen-kline`、`future`、`market-regime` 为固定参数的诊断、演示或专项研究命令，已移除；通用的 `core.Diagnoser`、`core.Screen` 和 `core.ForwardReturnAnalysis` 保留，已有数据与报告不迁移。
 
 回测与实验室“全量/随机”样本从 `pull.database` 下的 `day-kline/*.db` 枚举本地主板股票，保留已有日线库的退市代码，排除指数与临时文件；本地目录缺失或没有股票时直接报错。显式指定代码的行为不变，实时选股与行情更新仍使用当前在市列表。
 
@@ -102,6 +101,7 @@ macOS / Linux：
 
 - `deploy.sh` 在构建前和切换前检查 `/api/status`；任务运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，原数据挂载保持不变；新容器通过 `/api/builder/components` 自检后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
+- Docker 默认映射宿主机 `80` 到容器 `8765`，本机访问 `http://localhost/`；可用 `PORT=8765 ./deploy.sh` 指定其他宿主机端口。本地 `go run ./cmd/lab` 仍默认使用 8765。
 - `./data`、`./output`、`./strategies/script` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
 ### Lab 策略搭建与行情更新
@@ -156,18 +156,11 @@ go vet ./internal/lab/...
 部署测试使用 Docker 替身，不操作真实容器；Go 测试使用临时行情与报告目录。自动化检查不代替桌面、窄屏和键盘的浏览器验收。
 
 
-以下目录是带固定研究假设的实验入口，不是通用产品命令：
-
-- `cmd/market-regime`
-- `cmd/future`
-
-运行这些命令前必须先阅读文件头部，确认年份、数据截止日、是否调用 `common.Update()`、日线/分钟线成交口径和输出目录。不要把某个实验入口的硬编码参数提升为项目默认值。
-
 ## 多变体研究执行
 
 新增矩阵实验应将策略差异声明为 `researchrun.Variant`，然后调用 `researchrun.Run()`；调用方继续负责结果排序、业务文案和具体报告。
 
-`cmd/market-regime` 与 `internal/lab` 已使用该执行层。跨年入口按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径；大盘状态报告同时披露按股票×年份统计的数据覆盖。
+`internal/lab` 使用该执行层。旧逐股回测按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径。
 
 执行报告始终包含数据覆盖：
 
@@ -181,6 +174,8 @@ go vet ./internal/lab/...
 ## 配置与数据
 
 `common.LoadBacktestConfig()` 从 `config/config.yaml` 读取成本、仓位、默认年份、基准和蒙特卡洛次数。具体实验可以显式覆盖年份或卖出规则，但必须在入口注释和报告中披露。
+
+公共配置由根包固定从 `RuntimeRoot()/config/config.yaml` 加载，启动目录不会改变配置来源。沿用文件优先、同名环境变量补缺的顺序；Lab 地址仍由 `LAB_ADDR` 控制。配置中已移除无读取方的 `pull.spec`、`screen.goroutines` 和 `backtest.risk.*`：Lab 自动更新在页面单独设置，卖出和风控在策略或运行请求中配置。
 
 回测统计默认使用扣除滑点、佣金、印花税后的净收益：完整交易按
 `(SellIncome-BuyCost)/BuyCost` 计算；只有缺少成本字段的历史记录才兼容回退到
@@ -197,12 +192,13 @@ go vet ./internal/lab/...
 放在仓库之外。
 
 命令自身的运行文件也遵循同一边界：`cmd/screen` 的交易数据库和本地 Web
-资源、`cmd/market-regime` 的 HTML/PDF 报告都按运行时根目录解析，从命令子目录
-启动不会在源码目录中生成额外的 `data/` 或 `output/`。
+资源按运行时根目录解析，从命令子目录启动不会在源码目录中生成额外的
+`data/` 或 `output/`。
 
-导入根包不会打开数据库。所有 `cmd/*` 可执行入口在 `main()` 开始时调用
-`common.MustInitialize()`；把根包作为库使用时，应先调用可返回错误的
-`common.Initialize()`。`common.Update()` 会兜底初始化后再执行显式行情更新。
+导入根包只读取配置，不会打开数据库。需要行情的命令显式调用
+`common.MustInitialize()`；把根包作为库访问行情时，应先调用可返回错误的
+`common.Initialize()`。`valuation-sync -codes` 只打开目标估值库，不初始化
+TDX；`-all` 通过行情运行时取得股票列表。`common.Update()` 会兜底初始化后再执行显式行情更新。
 
 数据更新已经是显式操作。仅 `common.Update()` 或主动调用它的命令会更新行情；导入根包不会自动更新。部分历史实验为了复现实验数据截止日会刻意跳过更新。
 

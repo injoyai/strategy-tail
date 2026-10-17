@@ -60,7 +60,7 @@
 | No.25 | [runtime_path.go](../../runtime_path.go)，`withRuntimeRoot` | **成立。** 主操作和恢复 cwd 同时失败时，原代码丢失恢复错误。 | 已使用 `errors.Join` 保留两者。 |
 | No.26 | [sqlite_store.go](../../researchdata/sqlite_store.go)，`Range`；[contract.go](../../researchdata/contract.go)，`View` | **成立。** 查询、扫描、遍历错误被转成空结果；View 返回值没有错误通道，上层无法区分无数据与数据库失败。 | 当前仍存在。日志只改善可观测性，不能解决调用方区分失败的契约；是否扩接口需单独评估影响，不能静默扩大修改。 |
 | No.27 | [model_kline.go](../../lib/extend/model_kline.go)，`REF` / `HHV` / `LLV` | **降为健壮性建议。** 越界输入可 panic，但已查当前 HHV/LLV 调用方有窗口检查，REF 无实际调用，缺少产品流程可达的越界案例。 | 先明确前置条件和无效返回语义，不盲目返回 0 掩盖调用错误。 |
-| No.28 | [report_pdf.go](../../cmd/market-regime/report_pdf.go)，`pdfFontPath` | **成立。** 硬编码 Windows 字体路径限制其他平台 PDF 导出。 | 仍存在。最小修复需有明确可用字体和缺失错误处理，不假定候选字体在所有系统上都存在。 |
+| No.28 | `cmd/market-regime/report_pdf.go`（历史入口，现已移除），`pdfFontPath` | **成立。** 硬编码 Windows 字体路径限制其他平台 PDF 导出。 | 仍存在。最小修复需有明确可用字体和缺失错误处理，不假定候选字体在所有系统上都存在。 |
 | No.29 | [buy_price.go](../../strategies/buy/buy_price.go)，`A近N日涨幅小于.Buy`；[buy_trend_volume.go](../../strategies/buy/buy_trend_volume.go)，辅助函数 | **成立。** 数据不足或起始价无效时原函数返回 0，被阈值条件当成合法涨幅，放行买入。 | 已改为显式有效性返回；Lab 的 `buy_recent_gain_below` 条件基线失败，需补行为断言后同步预期。 |
 | No.30 | [buy_trend_volume.go](../../strategies/buy/buy_trend_volume.go)，`riseRateNDays` | **合并到 No.29，不独立计数。** 这是该条件的同一辅助函数和同一根因，没有第二条独立调用链。 | 随 No.29 一次修复与验证。 |
 | No.31 | [buy_volume.go](../../strategies/buy/buy_volume.go)，包级 `HHV` / `LLV` | **行为属实，运行影响未证实。** 辅助函数原排序确实改变输入顺序，但当前仓库无实际调用。 | 已改成复制后排序；优先评估删除未使用重复辅助函数，不将其列作已发生的数据污染。 |

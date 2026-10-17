@@ -36,7 +36,7 @@ strategy-tail/
 └── bin/                       # 编译产物
 ```
 
-根包的 [common.go](../../common.go) 负责配置和公共装配，[runtime_path.go](../../runtime_path.go) 负责运行时根目录，[local_codes.go](../../local_codes.go) 负责枚举本地行情代码。命令及启动方式见[项目 README](../../README.md#推荐入口)。
+根包的 [common.go](../../common.go) 负责公共装配，[config.go](../../config.go) 负责统一配置加载与回测配置读取，[runtime_path.go](../../runtime_path.go) 负责运行时根目录，[local_codes.go](../../local_codes.go) 负责枚举本地行情代码。当前保留的五个命令及启动方式见[命令说明](../../cmd/README.md)。
 
 ## Lab 模块入口
 

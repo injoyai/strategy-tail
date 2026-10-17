@@ -5,6 +5,7 @@
 ## 使用与开发指南
 
 - [项目目录与代码入口](guides/project-layout.md)
+- [命令入口与配置归属](../cmd/README.md)
 - [因子研究与回测搭建：概念与关系](guides/research-and-backtest-concepts.md)
 - [因子开发与接入规范](guides/factor-development.md)
 - [v2 多因子组合研究发布文档](guides/v2-multifactor-portfolio.md)（2026-09-19 冻结快照，保留当时的 hash、门禁结果和限制）
