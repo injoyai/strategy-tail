@@ -109,7 +109,7 @@ go test ./internal/lab -run 'Test(ServerFactorsAPI|ServerAnalysisAPI)'
 git diff --check
 ```
 
-此外运行新增接入测试；上下文因子运行 `go test ./researchdata`。修改共享算法或公共契约时，按项目要求扩大到 `go test ./...` 和相应买卖条件回归；格式化本次修改的 Go 文件。本机 macOS 的依赖 `goutil/oss` 缺少 darwin 实现，相关测试应在项目现有 Linux/Docker 环境执行，不能仅做交叉编译就报告测试通过。
+此外运行新增接入测试；上下文因子运行 `go test ./researchdata`。修改共享算法或公共契约时，按项目要求扩大到 `go test ./...` 和相应买卖条件回归；格式化本次修改的 Go 文件。macOS 已可原生编译并运行 Go 测试，日期相关回归统一设置 `TZ=Asia/Shanghai`；Linux/Docker 仍可用于验证，不能仅做交叉编译就报告测试通过。
 
 交付时列明：因子定义、文件与目录项、版本、测试命令及结果、数据覆盖或性能限制。没有真实研究证据时，不宣称因子有效。
 

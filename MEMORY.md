@@ -123,7 +123,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
   - 搭建器 ratio 参数在界面和策略／报告快照中都保存百分数，仅工厂构造时除以 100；旧 MACD 参数契约则保存比例，勿混用。缺省参数不能用目录的表单 Default 填补，否则会改变历史规则。
   - `decodeStrict` 只负责解码与大小限制；已有搭建器等处理函数自行调用 `requireSameOrigin`，`Server.Handler()` 不添加全局来源拦截。脚本校验用 Yaegi `Compile`，不得改回会执行初始化的 `Eval`。独立风控只接受单个条件，不能把风险规则藏进 AND 子树。
   - Go JSON 的 `omitempty` 会省略空 `risks`／`params`；前端编辑须容忍字段缺失，不把缺省参数替换为表单默认值。
-  - lab 测试必须 docker `golang:1.25-alpine` + `TZ=Asia/Shanghai`（goutil/oss 无 darwin 实现，本机跑不了）；快速静态检查用 `GOOS=linux go build/vet`。前端改动须 `./deploy.sh` 重建镜像才生效（go:embed 编译期嵌入）。
+  - macOS 可原生执行 Go 构建与测试，日期相关回归仍须 `TZ=Asia/Shanghai`；Docker `golang:1.25-alpine` 可作 Linux 验证。goutil v1.2.34 补齐 Darwin 实现，要求 conv v1.2.8；conv 将 `cfg.Default` 从变量改为函数，tdx 至少需 v0.0.87 才兼容。根 go.mod 的 base 本地 replace 仍须保留，require 版本提升不代表替换目录已升级。前端改动须 `./deploy.sh` 重建镜像才生效（go:embed 编译期嵌入）。
 
 ## 环境坑点：360 拦截 git 写对象（2026-09-15，因子框架 16 Task 执行期间的提交必须走此流程）
 - **现象**：360 安全卫士按内容指纹拦截 git.exe 写 `.git/objects`（Permission denied，重试无效，加入信任区仍拦新对象）；PS 直接写同一路径不拦。index 写入不受影响。

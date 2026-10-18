@@ -147,7 +147,7 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 ```bash
 node --test internal/lab/web/*.mjs
 python3 tests/deploy_test.py
-# Linux / Go 1.25.4+；macOS 使用已有 golang:1.25-alpine 镜像
+# macOS / Linux，Go 1.25.4+
 TZ=Asia/Shanghai go test ./internal/lab/... ./strategies/buy ./strategies/sell ./internal/researchrun
 go build ./...
 go vet ./internal/lab/...
