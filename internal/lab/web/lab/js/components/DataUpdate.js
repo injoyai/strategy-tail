@@ -2,19 +2,22 @@ import { state } from '../store.js';
 import { Api } from '../api.js';
 import { taskProgress } from '../format.js';
 
-export function isMarketDataFresh(status, now = Date.now()) {
-  if (!status) return false;
+export function marketDataState(status, now = Date.now()) {
+  if (!status) return '待确认';
   // 上海为 UTC+8；使用 UTC 字段计算日界线，避免浏览器本地时区影响。
   const hour = 3600000, offset = 8 * hour;
   const local = new Date(now + offset);
   const midnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - offset;
-  const open = midnight + 9.5 * hour, close = midnight + 15 * hour;
-  if (now >= open && now < close) return false;
-  const since = now < open ? close - 24 * hour : close;
-  return [!status.lastSuccessError && status.lastSuccess, status.lastPartialSuccess].some(value => {
+  if ([0, 6].includes(local.getUTCDay())) return '休市';
+  if (status.tradingDate !== local.toISOString().slice(0, 10) || typeof status.isTradingDay !== 'boolean') return '待确认';
+  if (!status.isTradingDay) return '休市';
+  const close = midnight + 15.5 * hour;
+  if (now < close) return '未收盘';
+  const fresh = [!status.lastSuccessError && status.lastSuccess, status.lastPartialSuccess].some(value => {
     const updated = Date.parse(value);
-    return updated >= since && updated <= now;
+    return updated >= close && updated <= now;
   });
+  return fresh ? '已更新' : '未更新';
 }
 
 export default {
@@ -23,7 +26,8 @@ export default {
   setup() { return {state}; },
   data() { return {status: null, now: Date.now(), loading: true, submitting: false, saving: false, error: '', notice: '', timeError: false, enabled: false, time: '15:45', initialized: false, timer: null, disposed: false}; },
   computed: {
-    fresh() { return isMarketDataFresh(this.status, this.now); },
+    marketState() { return marketDataState(this.status, this.now); },
+    fresh() { return this.marketState === '已更新' ? true : this.marketState === '未更新' ? false : null; },
     partialSuccess() {
       const s = this.status;
       return s?.state === 'error' && !s.skipped && s.total > 0 && s.done === s.total && s.failed > 0 && s.failed < s.total;
@@ -42,7 +46,7 @@ export default {
       if (this.loading) return '读取中';
       if (this.running) return {checking: '检查中', day: '日线更新', minute: '分钟更新', valuation: '估值更新', finalize: '保存中'}[this.progressInfo.phase] || '更新中';
       if (!this.status) return '异常';
-      return this.fresh ? '已更新' : '未更新';
+      return this.marketState;
     },
     bubbleLabel() { return `行情数据：${this.bubbleText}。${this.running && this.progressPercent != null ? '本阶段 ' + this.progressPercent + '%。' : ''}${this.status?.finishedAt ? '最近检查：' + this.checkResult + '。' : ''}最后完整更新（上海时间）：${this.lastUpdateText}。点击展开详情`; },
     lastUpdateText() {

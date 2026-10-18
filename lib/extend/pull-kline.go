@@ -28,7 +28,7 @@ const (
 	DirMinute         = "min-kline"
 	DirDay            = "day-kline"
 	updateCloseHour   = 15
-	updateCloseMinute = 0
+	updateCloseMinute = 30
 )
 
 // ErrNotEnoughKline K线数据不足,无法按指定序号取值
@@ -73,7 +73,7 @@ func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
 		return nil, err
 	}
 
-	// A complete update after the 15:00 close satisfies today's batch.
+	// A complete update after the configured 15:30 cutoff satisfies today's batch.
 	updated, err := tdx.NewUpdated(db, updateCloseHour, updateCloseMinute)
 	if err != nil {
 		return nil, err

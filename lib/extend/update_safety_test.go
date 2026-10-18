@@ -108,7 +108,7 @@ func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Now()
-	close := time.Date(now.Year(), now.Month(), now.Day(), 15, 0, 0, 0, time.Local)
+	close := time.Date(now.Year(), now.Month(), now.Day(), 15, 30, 0, 0, time.Local)
 	if !now.After(close) {
 		close = close.AddDate(0, 0, -1)
 	}
@@ -118,7 +118,8 @@ func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 		fresh bool
 	}{
 		{"before close", close.Add(-time.Minute), false},
-		{"after close before former 15:31 window", close.Add(5 * time.Minute), true},
+		{"at cutoff", close, true},
+		{"after cutoff", close.Add(time.Second), true},
 		{"prior batch", close.AddDate(0, 0, -1).Add(time.Hour), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -43,6 +43,8 @@ type DataUpdateStatus struct {
 	LastAutoDay        string `json:"lastAutoDay,omitempty"`
 	Error              string `json:"error,omitempty"`
 	ScheduleNote       string `json:"scheduleNote,omitempty"`
+	TradingDate        string `json:"tradingDate,omitempty"`
+	IsTradingDay       *bool  `json:"isTradingDay,omitempty"`
 }
 
 func (s DataUpdateStatus) partialSuccess() bool {
@@ -245,8 +247,26 @@ func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+func dataUpdateTradingDay(now time.Time, isTradingDay func(time.Time) bool) (string, *bool) {
+	now = now.In(time.FixedZone("Asia/Shanghai", 8*60*60))
+	date := now.Format(time.DateOnly)
+	trading := false
+	if now.Weekday() != time.Saturday && now.Weekday() != time.Sunday {
+		if isTradingDay == nil {
+			return date, nil
+		}
+		trading = isTradingDay(now)
+	}
+	return date, &trading
+}
+
 func (s *Server) handleDataUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	status := s.dataUpdater.Status()
+	var isTradingDay func(time.Time) bool
+	if common.Manage != nil && common.Manage.Workday != nil {
+		isTradingDay = common.Manage.Workday.Is
+	}
+	status.TradingDate, status.IsTradingDay = dataUpdateTradingDay(time.Now(), isTradingDay)
 	if common.Pull != nil {
 		status.LastSuccess = ""
 		last, err := common.Pull.LastSuccessfulUpdate()

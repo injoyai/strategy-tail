@@ -19,6 +19,32 @@ import (
 	"github.com/injoyai/tdx/lib/xorms"
 )
 
+func TestDataUpdateTradingDay(t *testing.T) {
+	for _, tc := range []struct {
+		name, at, date string
+		calendar       func(time.Time) bool
+		want           string
+	}{
+		{"Saturday", "2026-10-17T08:00:00Z", "2026-10-17", nil, "false"},
+		{"Shanghai Sunday", "2026-10-17T16:00:00Z", "2026-10-18", func(time.Time) bool { t.Fatal("weekend queried calendar"); return true }, "false"},
+		{"holiday", "2026-10-01T08:00:00Z", "2026-10-01", func(time.Time) bool { return false }, "false"},
+		{"trading day", "2026-10-14T08:00:00Z", "2026-10-14", func(at time.Time) bool { return at.Hour() == 16 }, "true"},
+		{"calendar unavailable", "2026-10-14T08:00:00Z", "2026-10-14", nil, "null"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at, err := time.Parse(time.RFC3339, tc.at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			date, trading := dataUpdateTradingDay(at, tc.calendar)
+			value, err := json.Marshal(trading)
+			if err != nil || date != tc.date || string(value) != tc.want {
+				t.Fatalf("date=%s trading=%s err=%v", date, value, err)
+			}
+		})
+	}
+}
+
 func TestDataUpdateStatusReadsSharedSuccessMarker(t *testing.T) {
 	dir := t.TempDir()
 	filename := filepath.Join(dir, "update.db")
@@ -53,6 +79,9 @@ func TestDataUpdateStatusReadsSharedSuccessMarker(t *testing.T) {
 		return status
 	}
 	status := read()
+	if status.TradingDate == "" {
+		t.Fatal("status omitted market calendar date")
+	}
 	if status.LastSuccess != last.Format(time.RFC3339) || status.State != "error" || status.Failed != 2 || status.FinishedAt == "" {
 		t.Fatalf("shared success or failed attempt missing: %+v", status)
 	}

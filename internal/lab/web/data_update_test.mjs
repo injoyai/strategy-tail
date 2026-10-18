@@ -11,9 +11,9 @@ const source = read('./lab/js/components/DataUpdate.js')
   .replace("import { state } from '../store.js';", 'const state = {};')
   .replace("import { taskProgress } from '../format.js';", 'const {taskProgress} = globalThis.dataUpdateTestFormat;')
   .replace("import { Api } from '../api.js';", 'const Api = globalThis.dataUpdateTestApi;');
-const {default: DataUpdate, isMarketDataFresh} = await import(moduleURL(source));
+const {default: DataUpdate, marketDataState} = await import(moduleURL(source));
 function instance(status, loading = false) {
-  const ctx = {...DataUpdate.data(), status, loading, now: Date.parse('2026-10-14T20:00:00+08:00'), state: {}, startTask() {}};
+  const ctx = {...DataUpdate.data(), status: status && {tradingDate: '2026-10-14', isTradingDay: true, ...status}, loading, now: Date.parse('2026-10-14T20:00:00+08:00'), state: {}, startTask() {}};
   for (const [key, fn] of Object.entries(DataUpdate.methods)) ctx[key] = fn.bind(ctx);
   for (const [key, fn] of Object.entries(DataUpdate.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
   return ctx;
@@ -71,53 +71,70 @@ test('部分成功显示结束时间和失败数，同时保留上次完整更�
   assert.equal(ctx.bubbleText, '已更新');
 });
 
-test('上海收盘后至自然日次日开盘前，只有该窗口内更新才显示已更新', () => {
+test('先判断交易日，15:30 后才判断当日行情是否更新', () => {
   const cases = [
-    ['2026-10-14T15:00:00+08:00', '2026-10-14T15:00:00+08:00', true],
-    ['2026-10-14T14:59:59+08:00', '2026-10-14T20:00:00+08:00', false],
-    ['2026-10-14T16:00:00+08:00', '2026-10-14T23:59:59+08:00', true],
-    ['2026-10-14T16:00:00+08:00', '2026-10-15T00:00:00+08:00', true],
-    ['2026-10-15T02:00:00+08:00', '2026-10-15T09:29:59+08:00', true],
-    ['2026-10-14T16:00:00+08:00', '2026-10-15T09:30:00+08:00', false],
-    ['2026-10-15T10:00:00+08:00', '2026-10-15T14:00:00+08:00', false],
-    ['2026-10-14T16:00:00+08:00', '2026-10-15T15:00:00+08:00', false],
-    ['2026-10-14T16:00:00+08:00', '2026-10-14T15:59:59+08:00', false],
-    ['2026-12-31T16:00:00+08:00', '2027-01-01T09:29:59+08:00', true],
-    ['2026-10-14T08:00:00Z', '2026-10-15T01:29:59Z', true],
+    ['2026-10-17T20:00:00+08:00', true, finished, '休市'],
+    ['2026-10-18T20:00:00+08:00', true, finished, '休市'],
+    ['2026-10-01T20:00:00+08:00', false, finished, '休市'],
+    ['2026-10-14T08:00:00+08:00', true, success, '未收盘'],
+    ['2026-10-14T09:30:00+08:00', true, success, '未收盘'],
+    ['2026-10-14T15:29:59+08:00', true, finished, '未收盘'],
+    ['2026-10-14T15:30:00+08:00', true, '2026-10-14T15:30:00+08:00', '已更新'],
+    ['2026-10-14T20:00:00+08:00', true, '2026-10-14T15:29:59+08:00', '未更新'],
+    ['2026-10-14T23:59:59+08:00', true, finished, '已更新'],
+    ['2026-10-15T00:00:00+08:00', true, finished, '未收盘'],
+    ['2026-10-15T15:30:00+08:00', true, finished, '未更新'],
+    ['2026-10-14T15:59:59+08:00', true, '2026-10-14T16:00:00+08:00', '未更新'],
   ];
-  for (const [lastSuccess, now, expected] of cases) {
-    assert.equal(isMarketDataFresh({lastSuccess}, Date.parse(now)), expected, `${lastSuccess} / ${now}`);
+  for (const [now, isTradingDay, lastSuccess, expected] of cases) {
+    const tradingDate = now.slice(0, 10);
+    const status = {tradingDate, isTradingDay, lastSuccess};
+    assert.equal(marketDataState(status, Date.parse(now)), expected, now);
+    const ctx = instance(status); ctx.now = Date.parse(now);
+    assert.equal(ctx.bubbleText, expected);
+    const neutral = ['休市', '未收盘'].includes(expected);
+    assert.equal(ctx.fresh, neutral ? null : expected === '已更新');
+    assert.equal(ctx.bubbleLabel.includes(expected), true);
+    if (neutral) assert.equal(ctx.fresh, null, '中性状态不使用未更新的警告色');
   }
 });
 
-test('部分成功可单独满足新鲜度；跳过、失败结束时间、无效或未来记录不能冒充更新', () => {
+test('缺少或跨日失效的交易日信息显示待确认，不猜测工作日就是交易日', () => {
   const now = Date.parse('2026-10-14T20:00:00+08:00');
-  assert.equal(isMarketDataFresh({lastPartialSuccess: finished}, now), true);
-  assert.equal(isMarketDataFresh({lastSuccess: success, lastPartialSuccess: finished}, now), true);
-  assert.equal(isMarketDataFresh({state: 'done', skipped: true, finishedAt: finished}, now), false);
-  assert.equal(isMarketDataFresh({state: 'error', finishedAt: finished}, now), false);
-  assert.equal(isMarketDataFresh({lastSuccess: 'invalid', lastPartialSuccess: 'invalid'}, now), false);
-  assert.equal(isMarketDataFresh({lastSuccess: finished, lastSuccessError: '无法读取'}, now), false);
-  assert.equal(isMarketDataFresh({lastSuccessError: '无法读取', lastPartialSuccess: finished}, now), true);
-  assert.equal(isMarketDataFresh({lastPartialSuccess: '2026-10-14T21:00:00+08:00'}, now), false);
-  assert.equal(isMarketDataFresh(null, now), false);
-  const ctx = instance({lastPartialSuccess: finished, config: {}});
-  ctx.now = Date.parse('2026-10-15T09:29:59+08:00');
-  assert.equal(ctx.bubbleText, '已更新');
-  ctx.now = Date.parse('2026-10-15T09:30:00+08:00');
-  assert.equal(ctx.bubbleText, '未更新');
+  for (const status of [null, {}, {tradingDate: '2026-10-13', isTradingDay: true},
+    {tradingDate: '2026-10-14'}, {tradingDate: '2026-10-14', isTradingDay: null}]) {
+    assert.equal(marketDataState(status, now), '待确认');
+  }
 });
 
-test('即使状态读取失败，现有轮询仍推进时钟，让开盘后的颜色及时失效', async () => {
+test('部分成功可满足更新条件；跳过、失败结束时间、无效或未来记录不能冒充更新', () => {
+  const now = Date.parse('2026-10-14T20:00:00+08:00');
+  const cases = [
+    [{lastPartialSuccess: finished}, '已更新'],
+    [{lastSuccess: success, lastPartialSuccess: finished}, '已更新'],
+    [{state: 'done', skipped: true, finishedAt: finished}, '未更新'],
+    [{state: 'error', finishedAt: finished}, '未更新'],
+    [{lastSuccess: 'invalid', lastPartialSuccess: 'invalid'}, '未更新'],
+    [{lastSuccess: finished, lastSuccessError: '无法读取'}, '未更新'],
+    [{lastSuccessError: '无法读取', lastPartialSuccess: finished}, '已更新'],
+    [{lastPartialSuccess: '2026-10-14T21:00:00+08:00'}, '未更新'],
+  ];
+  for (const [status, expected] of cases) {
+    assert.equal(marketDataState({tradingDate: '2026-10-14', isTradingDay: true, ...status}, now), expected);
+  }
+});
+
+test('状态读取失败仍推进时钟，跨日后不沿用昨天的交易日及更新状态', async () => {
   const ctx = instance({lastPartialSuccess: finished, config: {}});
-  ctx.now = Date.parse('2026-10-15T09:29:59+08:00');
+  ctx.now = Date.parse('2026-10-14T23:59:59+08:00');
   assert.equal(ctx.fresh, true);
   const originalNow = Date.now;
-  Date.now = () => Date.parse('2026-10-15T09:30:00+08:00');
+  Date.now = () => Date.parse('2026-10-15T00:00:00+08:00');
   api.dataUpdateStatus = async () => {throw new Error('offline');};
   try {
     await ctx.poll();
-    assert.equal(ctx.fresh, false);
+    assert.equal(ctx.fresh, null);
+    assert.equal(ctx.marketState, '待确认');
     assert.ok(ctx.error.includes('offline'));
   } finally {
     clearTimeout(ctx.timer);
@@ -163,7 +180,7 @@ test('气泡显示真实更新进度、失败与读取异常，详情保持默�
   assert.ok(!text(render(ctx)).includes('最近检查结束'));
   ctx.status.total = 0;
   assert.equal(ctx.bubbleText, '更新中');
-  ctx.status = {state: 'error', failed: 2, total: 6400, done: 6400, lastSuccess: success, lastPartialSuccess: finished, config: {}};
+  ctx.status = {tradingDate: '2026-10-14', isTradingDay: true, state: 'error', failed: 2, total: 6400, done: 6400, lastSuccess: success, lastPartialSuccess: finished, config: {}};
   assert.equal(ctx.bubbleText, '已更新');
   assert.equal(ctx.fresh, true);
   ctx.error = '无法读取更新状态：离线';
@@ -183,7 +200,7 @@ test('气泡显示真实更新进度、失败与读取异常，详情保持默�
   assert.equal(ctx.bubbleText, '读取中');
   ctx.loading = false; assert.equal(ctx.bubbleText, '异常');
   ctx.status = {state: 'idle', config: {}};
-  assert.equal(ctx.bubbleText, '未更新');
+  assert.equal(ctx.bubbleText, '待确认');
 });
 
 test('长错误详情默认收起，失败结果仍可见', () => {
