@@ -61,7 +61,7 @@
 | v2 准入与兼容夹具 | [2026-09-18 Task 0](plans/2026-09-18-multifactor-portfolio-v2-task0-admission.md) |
 | 多因子组合研究 v2 | [2026-09-18](plans/2026-09-18-multifactor-portfolio-v2.md) |
 | 前瞻纸面交易与模型治理 v3 | [2026-09-18](plans/2026-09-18-prospective-paper-trading-v3.md) |
-| 因子驱动的统一规则层迁移 | [2026-10-17](plans/2026-10-17-factor-rule-unification.md)（合成样本功能与全仓竞态复验通过，本地依赖、分钟性能与期末估值修复见[迁移台账](plans/2026-10-17-factor-rule-migration-ledger.md) §10–§13） |
+| 因子驱动的统一规则层迁移 | [2026-10-17](plans/2026-10-17-factor-rule-unification.md)（代码与本地部署冒烟通过，本地依赖、性能、估值修复与真实行情小样本见[迁移台账](plans/2026-10-17-factor-rule-migration-ledger.md) §10–§14） |
 
 ## 审查与复核
 
