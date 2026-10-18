@@ -321,6 +321,7 @@ func buildComparison(spec StrategySpec, variants []VariantReport) *ComparisonSum
 // panic）。每个任务启动时新建并存入 Runner.control，任务间互不干扰。
 type runControl struct {
 	stop chan struct{}
+	task string
 	once sync.Once
 }
 
@@ -445,46 +446,18 @@ func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *Str
 		return fmt.Errorf("已有回测任务在运行")
 	}
 
-	ctl := &runControl{stop: make(chan struct{})}
-	r.control.Store(ctl)
-	r.running.Store(true)
-	r.doneCodes.Store(0)
-	r.totalCodes.Store(0)
-	r.currentCode.Store(nil)
-	r.setTaskProgress("backtest", "", researchrun.Progress{Phase: "preparing"})
-	// task 先于 state 写入：读侧见 state=running 必见当前 task
-	task := "backtest"
-	r.task.Store(&task)
-	state := "running"
-	r.state.Store(&state)
 	rc := cfg
-	r.lastRun.Store(&rc)
-
-	go func() {
-		defer r.mu.Unlock()
-		defer r.running.Store(false)
-		// panic 兜底注册在复位 defer 之后：panic 时先恢复为 error 态再释放锁。
-		defer r.recoverTaskPanic()
-
-		report, err := r.run(cfg, variants, spec, ctl.stop)
+	ctl := r.beginTask(taskStart{kind: "backtest", phase: "preparing", config: &rc})
+	r.launchTask(ctl, "idle", func(stop chan struct{}) error {
+		report, err := r.run(cfg, variants, spec, stop)
 		if err != nil {
-			if err == errStopped {
-				st := "idle"
-				r.state.Store(&st)
-				return
-			}
-			msg := err.Error()
-			r.errMsg.Store(&msg)
-			st := "error"
-			r.state.Store(&st)
-			return
+			return err
 		}
 		r.lastReport.Store(report)
 		id := report.RunID()
 		r.runID.Store(&id)
-		st := "done"
-		r.state.Store(&st)
-	}()
+		return nil
+	})
 	return nil
 }
 
@@ -521,16 +494,13 @@ func (r *Runner) recoverStalePortfolioRunning(store *PortfolioExperimentStore) {
 
 // Stop 请求停止当前任务（无任务时为空操作）。
 func (r *Runner) Stop() {
-	if task := r.task.Load(); task != nil && *task == "data_update" {
+	// 先取得本次停止令牌；后续即使任务切换，也只能关闭这一令牌。
+	ctl := r.control.Load()
+	if ctl == nil || ctl.task == "data_update" {
 		return // 数据更新按数据库事务完成，避免留下半批更新状态。
 	}
 	if r.running.Load() {
-		// 启动路径先存 control 再置 running，读到 running=true 时 control 必已
-		// 发布；requestStop 幂等，并发 Stop 不会重复 close，误持旧任务的
-		// control 也只影响已结束的通道，不会波及新任务。
-		if ctl := r.control.Load(); ctl != nil {
-			ctl.requestStop()
-		}
+		ctl.requestStop()
 	}
 }
 
@@ -624,43 +594,16 @@ func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 		return fmt.Errorf("生成分析 ID 失败: %w", err)
 	}
 
-	ctl := &runControl{stop: make(chan struct{})}
-	r.control.Store(ctl)
-	r.running.Store(true)
-	r.doneCodes.Store(0)
-	r.totalCodes.Store(0)
-	r.currentCode.Store(nil)
-	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "preparing"})
-	// task 先于 state 写入：读侧见 state=running 必见当前 task
-	task := "analysis"
-	r.task.Store(&task)
-	state := "running"
-	r.state.Store(&state)
 	rc := cfg.RunConfig
-	r.lastRun.Store(&rc)
-
-	go func() {
-		defer r.mu.Unlock()
-		defer r.running.Store(false)
-		defer r.recoverTaskPanic()
-
-		rep, err := r.runAnalysis(id, cfg, ctl.stop)
+	ctl := r.beginTask(taskStart{kind: "analysis", phase: "preparing", config: &rc})
+	r.launchTask(ctl, "idle", func(stop chan struct{}) error {
+		rep, err := r.runAnalysis(id, cfg, stop)
 		if err != nil {
-			if err == errStopped {
-				st := "idle"
-				r.state.Store(&st)
-				return
-			}
-			msg := err.Error()
-			r.errMsg.Store(&msg)
-			st := "error"
-			r.state.Store(&st)
-			return
+			return err
 		}
 		r.lastAnalysis.Store(rep)
-		st := "done"
-		r.state.Store(&st)
-	}()
+		return nil
+	})
 	return nil
 }
 

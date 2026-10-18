@@ -137,40 +137,9 @@ func (r *Runner) StartPortfolioValidation(id string) error {
 // startPortfolioGoroutine 组合任务公共启动骨架：写任务类型（先于 state）、
 // 启动 goroutine，终态统一收敛（errStopped → 全局 done，精确终态在 Store）。
 func (r *Runner) startPortfolioGoroutine(id, task string, run func(stop chan struct{}) error) {
-	ctl := &runControl{stop: make(chan struct{})}
-	r.control.Store(ctl)
-	r.running.Store(true)
-	r.doneCodes.Store(0)
-	r.totalCodes.Store(0)
-	r.currentCode.Store(nil)
-	r.task.Store(&task)
-	r.setPortfolioRun(id)
-	r.setPortfolioPhase(portfolioPhaseQueued)
-	state := "running"
-	r.state.Store(&state)
-
-	go func() {
-		defer r.mu.Unlock()
-		defer r.running.Store(false)
-		defer r.recoverTaskPanic()
-		err := run(ctl.stop)
-		if err != nil {
-			if errors.Is(err, errStopped) {
-				// 取消：终态（cancelled）已由 Store 持久化；全局状态置 done，
-				// 精确终态由 /api/portfolio-runs/{id} 从 Store 恢复。
-				st := "done"
-				r.state.Store(&st)
-				return
-			}
-			msg := err.Error()
-			r.errMsg.Store(&msg)
-			st := "error"
-			r.state.Store(&st)
-			return
-		}
-		st := "done"
-		r.state.Store(&st)
-	}()
+	ctl := r.beginTask(taskStart{kind: task, phase: portfolioPhaseQueued, runID: id})
+	// cancelled 等精确终态已由 Store 持久化，全局只表达本任务结束。
+	r.launchTask(ctl, "done", run)
 }
 
 // ---- 实验执行 ----

@@ -139,28 +139,10 @@ func (u *DataUpdater) Start(manual bool) error {
 		u.status.LastAutoDay = time.Now().In(u.location).Format(time.DateOnly)
 	}
 	r := u.runner
-	// 数据更新不经 stop 通道停止（Stop 对该任务提前返回，按数据库事务
-	// 完整落库），control 仅占位保持与其他任务一致的结构。
-	r.control.Store(&runControl{stop: make(chan struct{})})
-	r.totalCodes.Store(0)
-	r.doneCodes.Store(0)
-	r.currentCode.Store(nil)
-	task, state := "data_update", "running"
-	r.task.Store(&task)
-	r.running.Store(true)
-	r.state.Store(&state)
-	go func() {
-		defer r.mu.Unlock()
-		defer r.running.Store(false)
-		err := u.run(manual, func(p extend.UpdateProgress) {
-			u.mu.Lock()
-			u.status.UpdateProgress = p
-			u.mu.Unlock()
-			r.totalCodes.Store(int64(p.Total))
-			r.doneCodes.Store(int64(p.Done))
-			code := p.Code
-			r.currentCode.Store(&code)
-		})
+	ctl := r.beginTask(taskStart{kind: "data_update"})
+	// 更新按数据库事务完成，Stop 仍不关闭该任务的通道。
+	r.launchTask(ctl, "idle", func(chan struct{}) error {
+		err := u.runUpdate(manual)
 		u.mu.Lock()
 		defer u.mu.Unlock()
 		u.status.FinishedAt = time.Now().Format(time.RFC3339)
@@ -173,7 +155,6 @@ func (u *DataUpdater) Start(manual bool) error {
 			state = "error"
 			message := err.Error()
 			u.status.Error = message
-			r.errMsg.Store(&message)
 		} else if !u.status.Skipped {
 			u.status.LastSuccess = u.status.FinishedAt
 			u.status.Message = "数据更新完成"
@@ -185,9 +166,31 @@ func (u *DataUpdater) Start(manual bool) error {
 		if saveErr := u.persistLocked(); saveErr != nil {
 			u.status.Error = "保存更新状态失败: " + saveErr.Error()
 		}
-		r.state.Store(&state)
-	}()
+		if state == "idle" {
+			return errStopped
+		}
+		return err
+	})
 	return nil
+}
+
+// runUpdate 将更新器异常转为常规失败，使更新状态也能持久化收尾。
+func (u *DataUpdater) runUpdate(manual bool) (err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			err = fmt.Errorf("数据更新内部异常(panic): %v", p)
+		}
+	}()
+	return u.run(manual, func(p extend.UpdateProgress) {
+		u.mu.Lock()
+		u.status.UpdateProgress = p
+		u.mu.Unlock()
+		r := u.runner
+		r.totalCodes.Store(int64(p.Total))
+		r.doneCodes.Store(int64(p.Done))
+		code := p.Code
+		r.currentCode.Store(&code)
+	})
 }
 
 // When another task holds the lock, retry on the next tick rather than enqueueing

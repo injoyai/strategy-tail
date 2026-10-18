@@ -49,7 +49,7 @@ strategy-tail/
 | 工作内容 | 主要入口 |
 |---|---|
 | HTTP 路由、静态资源与服务装配 | [server.go](../../internal/lab/server.go) |
-| 任务互斥、停止、状态与报告 | [runner.go](../../internal/lab/runner.go)、[reports.go](../../internal/lab/reports.go) |
+| 任务初始化与收尾、互斥、停止、状态与报告 | [task.go](../../internal/lab/task.go)、[runner.go](../../internal/lab/runner.go)、[reports.go](../../internal/lab/reports.go) |
 | 账户回测与多变体加载 | [account_backtest.go](../../internal/lab/account_backtest.go)、[researchrun/runner.go](../../internal/researchrun/runner.go) |
 | 自由搭建器目录、规则与模板 | [builder/catalog.go](../../internal/lab/builder/catalog.go)、[builder/spec.go](../../internal/lab/builder/spec.go)、[builder/filter.go](../../internal/lab/builder/filter.go)、[builder/template.go](../../internal/lab/builder/template.go) |
 | 搭建器存储与 HTTP 接口 | [builder_store.go](../../internal/lab/builder_store.go)、[builder_server.go](../../internal/lab/builder_server.go) |
@@ -66,7 +66,26 @@ strategy-tail/
 
 搭建器工厂覆盖测试、统计诊断手算与边界测试随实现归入子包；存储、候选接入、完整回测与报告快照测试保留在父包。条件基线继续逐前缀对比已有哈希，目录整理不更新其预期值。
 
-候选、实验、验证存储与执行编排共享研究协议、证据与状态机，继续由父包装配；组合算法已在 `internal/portfolioresearch/`，多变体数据执行已在 `internal/researchrun/`。本轮按这些现有职责完成归属，不为目录分类增加存储接口或任务回调。
+候选、实验、验证存储与执行编排共享研究协议、证据与状态机，继续由父包装配；组合算法已在 `internal/portfolioresearch/`，多变体数据执行已在 `internal/researchrun/`。功能由父包显式装配，不按文件前缀强拆包。
+
+## 任务生命周期与回归边界
+
+回测、因子分析、组合实验、组合验证和行情更新通过 `task.go` 统一初始化和收尾；各功能只执行自身工作、发布自身结果。调用方取得任务互斥锁后，初始化本次配置、计数、阶段、错误和停止令牌，后台回调结束或 panic 后统一释放互斥锁。新任务不清空已完成的回测或分析报告；组合和更新任务的 `/api/status` 不再携带上一项回测的 `config`。
+
+停止策略保留原语义：回测和因子分析主动停止后为 `idle`；组合任务为 `done`，精确终态从对应持久记录读取；行情更新按数据库事务完成，不能用 `/api/stop` 中断。停止请求先固定当前任务令牌及其任务类型，后续任务使用独立令牌。行情更新回调 panic 转为失败状态并持久化，在存储可用时可重启读取或手动重试。
+
+[模块依赖检查](../../internal/lab/module_boundary_test.go)约束七个独立模块的生产代码导入方向：`factorstats`、`portfolioresearch` 只依赖标准库；`builder`、`script` 不反向依赖 Lab；`factor`、`rule`、`researchrun` 不依赖应用编排。新增跨层依赖会使测试失败，需要先评估职责归属，不能仅为通过检查扩充允许列表。`builder` 暂时保留已有的根包数据注入依赖。
+
+| 修改范围 | 必需回归 |
+|---|---|
+| 单个功能的计算或规则 | 对应包行为测试及调用方集成测试 |
+| Lab 任务生命周期、停止、进度或结果发布 | `go test ./internal/lab/...`，含跨任务状态隔离、失败重试与并发停止；任务控制改动还需竞态检查 |
+| `core`、共用因子、规则、数据加载或公共契约 | `go test ./... -count=1`、`go build ./...`、`go vet ./...` |
+| 前端共享状态、任务状态契约 | `node --test internal/lab/web/*.mjs`，以及受影响流程的浏览器验证 |
+
+模块化用于缩小变更影响、让越界依赖及回归可被发现；共享算法仍会影响全部调用方，不能据此省略其回归测试。
+
+2026-10-18 本轮验证：Linux / Go 1.25 全仓测试、构建、vet 通过；任务切换、取消、行情更新与失败恢复的定向 `-race` 检查通过；前端 67 项及部署脚本 7 项测试通过。未重新部署或运行真实行情任务，前端共享状态未在本轮拆分。
 
 ## 运行目录与维护边界
 

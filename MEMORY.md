@@ -61,6 +61,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 
 ## 约定与坑点
 - **Lab 目录边界**：`builder/` 维护组件目录、条件树、模板与共用 `FactorFilterSpec`，父包 `builder.go` 和 `strategy_spec.go` 通过类型别名保留 JSON 合同；校验改用导出的 `Validate`，避免跨包复制规则。`factorstats/` 承载 IC/HAC、换手、中性化纯计算，统计结果与中性化配置同样用别名保持报告格式。三子包（含 `script/`）不导入父包；存储、HTTP、候选证据与实验执行继续在父包装配。Lab 检查须使用 `./internal/lab/...`。
+- **Lab 任务边界**：所有任务经 `task.go` 初始化与收尾；初始化须持有 Runner.mu，后台收尾后才释放。任务状态与已完成报告分开保留；组合／更新任务不继承回测配置。停止策略绑定每任务不可变令牌，更新仍不可中断；回测／分析取消为 idle，组合取消为 done、精确终态在 Store。独立模块的导入方向由 `TestModuleDependencyBoundaries` 约束，不能为求绿放宽边界；具体回归范围见项目目录指南。
 - **Lab 脚本模块边界**：解释器与符号表位于 `internal/lab/script/`，不得导入父包；父包仅保留 `LoadScript`、`CheckScript`、`ProjectSymbols` 转发入口。加载令牌仅在子包中持有，不能为兼容入口另建一套并发控制。HTTP 测试与脚本单元测试共用子包 `testdata/strategy.go` 嵌入夹具；检查 Lab 时使用 `go test ./internal/lab/...`，只测父包会漏掉解释器测试。
 - **文档归属与导航**：`docs/README.md` 为统一入口；指南、设计、实施计划、审查分别归入 `docs/guides/`、`docs/specs/`、`docs/plans/`、`docs/reviews/`，新增文档同步登记。历史设计/计划与发布候选保留原日期、状态和冻结 hash，不能当作当前实现验收。根目录协作及设计入口保持原位；Lab 模块入口见 `docs/guides/project-layout.md`，不按文件前缀直接拆包。
 - `core.DayOf` 保留原 Location（截断到当日 0 点），time.Time 作 map 键按 Location 比较：横截面快照写入与查询的 day 必须同源。Task 9 `internal/lab fillCrossSection` 预填 TopN 快照时，day 必须从 K 线 Time 派生（`core.DayOf(dks[len-1].Time)`），独立构造的 UTC day 即使日历日相同也会静默 miss（无报错、策略恒 false）。
