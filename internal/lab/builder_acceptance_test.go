@@ -75,6 +75,23 @@ func builderBars(n int) extend.Klines {
 	return bars
 }
 
+func TestBuilderLargeWindowInsufficientHistory(t *testing.T) {
+	spec := BuilderSpec{
+		Version: 1, Name: "大窗口边界", HoldToEnd: true,
+		Buy: bCond("buy_bottom_up", map[string]any{"window": 500.0}),
+	}
+	if err := spec.Validate("run"); err != nil {
+		t.Fatal(err)
+	}
+	buyer, err := spec.Buyer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if buyer.Buy("sh600001", builderBars(60)) {
+		t.Fatal("insufficient history must not trigger a buy")
+	}
+}
+
 func TestBuilderTemplateTradesMatchCLI(t *testing.T) {
 	spec := BuilderTemplates()[0].Spec
 	buyer, err := spec.Buyer()

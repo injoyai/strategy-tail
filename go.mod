@@ -2,6 +2,9 @@ module github.com/injoyai/strategy-tail
 
 go 1.25.4
 
+// Preserve v1.2.20 with the async wait race fix; see third_party/README.md.
+replace github.com/injoyai/base => ./third_party/injoyai-base
+
 require (
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/injoyai/bar v0.0.12

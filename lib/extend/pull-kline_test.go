@@ -63,7 +63,14 @@ func emptyKlineManager(t *testing.T) *tdx.Manage {
 		t.Fatal(err)
 	}
 	ready <- c
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() {
+		c.Close()
+		select {
+		case <-c.Done():
+		case <-time.After(time.Second):
+			t.Error("TDX test client did not stop")
+		}
+	})
 	pool, err := tdx.NewPool(func() (*tdx.Client, error) { return c, nil }, 1)
 	if err != nil {
 		t.Fatal(err)

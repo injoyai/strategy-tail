@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -42,19 +43,26 @@ func (b A价格) Name() string {
 }
 
 func (b A价格) Buy(code string, dks extend.Klines) bool {
-	if len(dks) == 0 {
-		return false
+	// 参数归一（唯一来源）：Min/Max<=0 表示该侧不限制，映射为结构性无界。
+	var minV, maxV *rule.Value
+	if b.Min > 0 {
+		v := rule.FloatValue(b.Min)
+		minV = &v
 	}
-
-	price := f.A价格("close").Value(code, dks)
-	if b.Min > 0 && price < b.Min {
-		return false
+	if b.Max > 0 {
+		v := rule.FloatValue(b.Max)
+		maxV = &v
 	}
-	if b.Max > 0 && price > b.Max {
-		return false
+	if minV == nil && maxV == nil {
+		// 旧退化语义：两侧均不限时，有行情即通过（显式常量谓词）。
+		return rule.Const(len(dks) > 0).Eval(rule.NewInput(code, dks, nil, nil))
 	}
-
-	return true
+	// 主体判断经共用内核：今收（浮点元）落在 [Min,Max]（含端点）。
+	rng, err := rule.NewRange(rule.CloseFloat(), minV, maxV, true, true)
+	if err != nil {
+		return false // Max<Min 的历史退化为恒不触发
+	}
+	return rng.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // A过滤涨停 是过滤涨停买入条件。
@@ -77,13 +85,28 @@ func (b A过滤涨停) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
+	threshold, ok := p2涨停阈值(code)
+	if !ok {
+		return false
+	}
+	// 涨幅百分比比较经共用内核：单日涨幅 < 板块阈值。
+	c, err := rule.NewCompare(rule.RiseRate(), rule.Lt, rule.Literal(rule.FloatValue(threshold)))
+	if err != nil {
+		return false
+	}
+	return c.Eval(rule.NewInput(code, dks, nil, nil))
+}
+
+// p2涨停阈值 按代码板块返回涨停判定阈值（%）：主板 9.8，创业/科创/北证 19.8；
+// 其余代码不属于可判定板块，ok 为 false。代码前缀分类是原生谓词，保留在门面。
+func p2涨停阈值(code string) (float64, bool) {
 	switch code[:4] {
 	case "sh60", "sz00":
-		return (f.A单日涨幅{}).Value(code, dks) < 9.8
+		return 9.8, true
 	case "sh68", "sz30", "bj92":
-		return (f.A单日涨幅{}).Value(code, dks) < 19.8
+		return 19.8, true
 	default:
-		return false
+		return 0, false
 	}
 }
 
@@ -107,14 +130,16 @@ func (b A涨停) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 
-	switch code[:4] {
-	case "sh60", "sz00":
-		return (f.A单日涨幅{}).Value(code, dks) >= 9.8
-	case "sh68", "sz30", "bj92":
-		return (f.A单日涨幅{}).Value(code, dks) >= 19.8
-	default:
+	threshold, ok := p2涨停阈值(code)
+	if !ok {
 		return false
 	}
+	// 涨幅百分比比较经共用内核：单日涨幅 >= 板块阈值。
+	c, err := rule.NewCompare(rule.RiseRate(), rule.Ge, rule.Literal(rule.FloatValue(threshold)))
+	if err != nil {
+		return false
+	}
+	return c.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // A单日涨幅小于 是当日涨幅小于指定值的买入条件。
@@ -171,9 +196,20 @@ func (b A近N日涨幅小于) Buy(code string, dks extend.Klines) bool {
 	if max == 0 {
 		max = 15
 	}
-	// 数据不足或起点价格异常时无法计算涨幅，保守不买入
-	rise, ok := riseRateNDays(dks, days)
-	return ok && rise < max
+	// 判断委托共用内核：GainPercent 与旧 riseRateNDays 公式逐位一致
+	// （(今收-起点收盘)/起点收盘*100，起点取 len-1-days 位置收盘），
+	// 数据不足或起点收盘非正时无效值不触发，与旧 ok=false 保守口径
+	// 一致；差异注记：旧 days<=-2 会索引越界 panic，此处构造期校验
+	// 返回 false。
+	gain, err := rule.GainPercent(days)
+	if err != nil {
+		return false
+	}
+	cond, err := rule.NewCompare(gain, rule.Lt, rule.Literal(rule.FloatValue(max)))
+	if err != nil {
+		return false
+	}
+	return cond.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 type A单日涨幅范围 struct {
@@ -195,19 +231,29 @@ func (b A单日涨幅范围) Name() string {
 }
 
 func (b A单日涨幅范围) Buy(code string, dks extend.Klines) bool {
-	if len(dks) == 0 {
-		return false
+	// 参数归一（唯一来源）：Min/Max 为 0 表示该侧不限制（`!=0` 才判，
+	// 负下限/上限均生效），映射为结构性无界 ±1e9 等价。
+	var minV, maxV *rule.Value
+	if b.Min != 0 {
+		v := rule.FloatValue(b.Min)
+		minV = &v
 	}
-
-	rise := (f.A单日涨幅{}).Value(code, dks)
-	if b.Min != 0 && rise < b.Min {
-		return false
+	if b.Max != 0 {
+		v := rule.FloatValue(b.Max)
+		maxV = &v
 	}
-	if b.Max != 0 && rise > b.Max {
-		return false
+	if minV == nil && maxV == nil {
+		// 旧退化语义：两侧均不限时，有行情即通过（显式常量谓词）。
+		return rule.Const(len(dks) > 0).Eval(rule.NewInput(code, dks, nil, nil))
 	}
-
-	return true
+	// 主体判断经共用内核：当日涨幅（f.A单日涨幅 同源）落在 [Min,Max]
+	//（含端点）。计划 §3.4 非有限值不触发：Last=0 且 Open=0 的畸形
+	// 数据下涨幅为 NaN/+Inf，旧实现回 true，迁移后为 false。
+	rng, err := rule.NewRange(rule.RiseRate(), minV, maxV, true, true)
+	if err != nil {
+		return false // Max<Min 的历史退化为恒不触发
+	}
+	return rng.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // A突破N天新高 是当日最高价创近 N 个交易日新高的买入条件。

@@ -138,16 +138,14 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 	b := bar.NewCoroutine(
 		len(codes),
 		this.Goroutines,
-		bar.WithPrefix(fmt.Sprintf("[%d][%s]", year, "xx000000")),
+		bar.WithPrefix(fmt.Sprintf("[%d]", year)),
 	)
 	defer b.Close()
 	for _, code := range codes {
 		b.Go(func() {
-			b.SetPrefix(fmt.Sprintf("[%d][%s]", year, code))
-
 			dks, err := this.GetDayKlines(code, hisStart, end)
 			if err != nil {
-				b.Logf("[错误] %s", err)
+				b.Logf("[错误][%s] %s", code, err)
 				b.Flush()
 				return
 			}
@@ -173,7 +171,7 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 			if this.GetMinKlines != nil {
 				mks, err = this.GetMinKlines(code, start, end)
 				if err != nil {
-					b.Logf("[错误] %s", err)
+					b.Logf("[错误][%s] %s", code, err)
 					b.Flush()
 					return
 				}
@@ -208,11 +206,8 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		m[key] = append(m[key], mk)
 	}
 
-	// full = his + dks 一次性合并缓冲，策略每轮只读取前缀切片 full[:len(his)+i+1]，
-	// 与原先逐日 joinKlines(his, dks[:i]..., today) 的内容完全一致（元素为指针，共享同一 Kline），
-	// 但避免了每个交易日 O(n) 的重复分配，整体从 O(n²) 降为 O(n)。
-	// 注意：元素指针共享意味着 today.Kline 的分钟级覆写会实时反映到 full 中，
-	// 这与原版行为一致（原版 joinKlines 同样复制指针）。
+	// 一次性缓冲和前缀切片避免逐日 O(n) 复制。每日改用私有快照，
+	// 保留原版历史快照口径，但不把分钟级覆写泄漏到调用方的行情。
 	full := make(extend.Klines, 0, len(his)+len(dks))
 	full = append(full, his...)
 	full = append(full, dks...)
@@ -222,7 +217,10 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 	for i := 0; i < len(dks); i++ {
 
-		today := dks[i]
+		todayCopy := *dks[i]
+		today := &todayCopy
+		tradingDay := DayOf(today.Time)
+		full[len(his)+i] = today
 		// ls = his + dks[:i] + today，即截至今日（含）的全部K线
 		ls := full[:len(his)+i+1]
 
@@ -250,8 +248,8 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 		remaining := make([]Buy, 0, len(currentBuys))
 		for _, currentBuy := range currentBuys {
-			if currentBuy.Time.Equal(today.Time) {
-				// T+1：买入当天不卖出
+			if DayOf(currentBuy.Time).Equal(tradingDay) {
+				// T+1 使用固定交易日，不受其他持仓分钟快照的时间覆写影响。
 				remaining = append(remaining, currentBuy)
 				continue
 			}
@@ -259,8 +257,6 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 			for ii := range todayMinuteKlines {
 				minuteKlines := todayMinuteKlines[:ii+1]
 				lastMinuteKline := todayMinuteKlines[ii]
-				// 与原版一致：直接修改 today.Kline（today = dks[i] 是指针）
-				// 这会影响后续交易日的 _his，是原版行为，不可更改
 				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
 
 				// lsSell 与买入阶段共享同一前缀（末元素即 today 指针，覆写实时可见）
@@ -278,7 +274,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		currentBuys = remaining
 	}
 
-	// ---- 3. 期末未平仓：按最后收盘价生成虚拟成交 ----
+	// ---- 3. 期末未平仓：按原始末日日线生成虚拟成交 ----
 	if len(currentBuys) > 0 && len(dks) > 0 {
 		last := dks[len(dks)-1]
 		for _, currentBuy := range currentBuys {

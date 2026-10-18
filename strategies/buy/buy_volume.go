@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A通达信倍量 是按通达信"倍量"公式翻写的买入策略。
@@ -136,23 +137,25 @@ func (b A倍量) Buy(code string, dks extend.Klines) bool {
 	if base == 0 {
 		base = 1
 	}
-	n := len(dks)
-	if n < base+1 {
+	// 保留除法顺序：55/50 == 1.1，但 50*1.1 > 55，乘法会漏掉边界。
+	input := rule.NewInput(code, dks, nil, nil)
+	ratio := rule.VolumeRatio(base)
+	lower, err := rule.NewCompare(ratio, rule.Ge, rule.Literal(rule.FloatValue(min)))
+	if err != nil {
 		return false
 	}
-	today := dks[n-1]
-	baseline := f.A前N日均量(base).Value(code, dks)
-	if baseline <= 0 {
+	if !(max > 0 && max > min) {
+		return lower.Eval(input)
+	}
+	upper, err := rule.NewCompare(ratio, rule.Le, rule.Literal(rule.FloatValue(max)))
+	if err != nil {
 		return false
 	}
-	actualRatio := float64(today.Volume) / baseline
-	if actualRatio < min {
+	bounded, err := rule.NewAnd(lower, upper)
+	if err != nil {
 		return false
 	}
-	if max > 0 && max > min && actualRatio > max {
-		return false
-	}
-	return true
+	return bounded.Eval(input)
 }
 
 // BuyCloseAboveMA 是 A收盘高于均线 的兼容包装器。
@@ -183,14 +186,14 @@ func (b A现价大于N日均线) Buy(code string, dks extend.Klines) bool {
 	if day == 0 {
 		day = 20
 	}
-	if len(dks) < day {
+	// 判断委托共用内核：今收(浮点元) > N日均线(浮点元)。旧实现即浮点
+	// 比较且无 ma<=0 守卫（台账行待修正）；均线缺数据（len<day，含
+	// day<0 时因子按 20 日口径缺数据）为无效值不触发，等价旧预热守卫。
+	cond, err := rule.NewCompare(rule.CloseFloat(), rule.Gt, rule.MAValue(day))
+	if err != nil {
 		return false
 	}
-
-	today := dks[len(dks)-1]
-	ma := f.A均线(day).Value(code, dks)
-
-	return today.Close.Float64() > ma
+	return cond.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // BuyCloseBelowMA 是收盘价低于指定均线的买入条件。
@@ -273,7 +276,36 @@ func (b MAUp) Buy(code string, dks extend.Klines) bool {
 	if b.Lookback == 0 {
 		b.Lookback = 5
 	}
-	return maUp(dks, b.Period, b.Lookback, b.MinSlope)
+	// 判断委托共用内核（maUp 仍被 A均线向上、A上证N日均线向上 复用，保留
+	// 在 buy_volume.go）：period/lookback<=0 直接不触发；预热拦截
+	// n<period+lookback 以显式 MinKlines 表达；判定原样保留旧表达式
+	// slope>0 且 !(slope<minSlope)。注意 minSlope 为 NaN 时旧式 !(x<NaN)
+	// 恒真（视为无涨速下限），严格 Compare 的"无效右操作数不触发"无法表达
+	// 该退化语义，故以 RuleFunc 复用内核 slope 操作数逐位还原。
+	if b.Period <= 0 || b.Lookback <= 0 {
+		return false
+	}
+	gate, err := rule.NewMinKlines(b.Period + b.Lookback)
+	if err != nil {
+		return false
+	}
+	slope := rule.MASlope(b.Period, b.Lookback)
+	trendUp, err := rule.NewRuleFunc("均线向上且涨速达标", func(in rule.Input) bool {
+		v := slope.Value(in)
+		if !v.Valid() {
+			return false
+		}
+		s := v.Float()
+		return s > 0 && !(s < b.MinSlope)
+	})
+	if err != nil {
+		return false
+	}
+	and, err := rule.NewAnd(gate, trendUp)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 func maUp(dks extend.Klines, period, lookback int, minSlope float64) bool {
@@ -306,17 +338,15 @@ func (b A缩量) Buy(code string, dks extend.Klines) bool {
 	if b.Ratio == 0 {
 		b.Ratio = 0.8
 	}
-	if len(dks) < b.Days+1 {
+	// 判断委托共用内核：今日量 < 前Days日均量×Ratio（严格小于，与旧实现
+	// 同一乘法与比较顺序）。基准均量缺数据或 <=0 时右操作数为无效值，
+	// 比较不触发，等价旧 avg<=0 守卫与 len<Days+1 预热守卫（旧均量 NaN
+	// 恰发生在该预热窗口内）。
+	cond, err := rule.NewCompare(rule.Volume(), rule.Lt, rule.PrevAvgVolumeScaled(b.Days, b.Ratio))
+	if err != nil {
 		return false
 	}
-
-	today := dks[len(dks)-1]
-	avg := f.A前N日均量(b.Days).Value(code, dks)
-	if avg <= 0 || float64(today.Volume) >= avg*b.Ratio {
-		return false
-	}
-
-	return true
+	return cond.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // VolumeShrink 是 A缩量 的兼容旧名。

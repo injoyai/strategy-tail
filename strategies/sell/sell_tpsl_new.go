@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A止盈止损 是基于买入价的固定比例止盈止损卖出策略。
@@ -34,43 +35,53 @@ func (s A止盈止损) Name() string {
 }
 
 func (s A止盈止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
-	if len(dks) == 0 {
-		return false
-	}
 	if s.TakeProfit <= 0 && s.StopLoss <= 0 {
 		return false
 	}
-	buyPrice := buy.Price.Float64()
-	if buyPrice <= 0 {
+	// 判断委托经规则级逃逸口委托内核：买入日之后的存在性扫描
+	// （任一根触及止盈或止损即触发）超出 Compare/Range 的单点比较能力，
+	// CountWindow 固定窗口计数无法表达"存在即触发"，故保留过程式扫描。
+	// 买入日定位沿用旧口径：顺序日期串匹配（计划第 4 节不统一各组件
+	// 定位算法）；len==0、买入价非正与找不到买入日均不触发，与旧一致。
+	r, err := rule.NewRuleFunc("止盈止损存在性扫描", func(in rule.Input) bool {
+		n := len(in.Klines)
+		if n == 0 {
+			return false
+		}
+		pos, ok := in.Position()
+		if !ok {
+			return false
+		}
+		buyPrice := pos.Price.Float64()
+		if buyPrice <= 0 {
+			return false
+		}
+		buyIdx := -1
+		buyDate := pos.Time.Format("2006-01-02")
+		for i, k := range in.Klines {
+			if k.Time.Format("2006-01-02") == buyDate {
+				buyIdx = i
+				break
+			}
+		}
+		if buyIdx < 0 {
+			return false
+		}
+		// 只检查买入日之后的K线（不含买入日当天）
+		for i := buyIdx + 1; i < n; i++ {
+			closePrice := in.Klines[i].Close.Float64()
+			rate := (closePrice - buyPrice) / buyPrice
+			if s.TakeProfit > 0 && rate >= s.TakeProfit {
+				return true
+			}
+			if s.StopLoss > 0 && rate <= -s.StopLoss {
+				return true
+			}
+		}
+		return false
+	})
+	if err != nil {
 		return false
 	}
-
-	// 定位买入日在 dks 中的索引
-	buyIdx := -1
-	buyDate := buy.Time.Format("2006-01-02")
-	for i, k := range dks {
-		if k.Time.Format("2006-01-02") == buyDate {
-			buyIdx = i
-			break
-		}
-	}
-	// 找不到买入日，保守不触发
-	if buyIdx < 0 {
-		return false
-	}
-
-	// 只检查买入日之后的K线（不含买入日当天）
-	for i := buyIdx + 1; i < len(dks); i++ {
-		closePrice := dks[i].Close.Float64()
-		rate := (closePrice - buyPrice) / buyPrice
-
-		if s.TakeProfit > 0 && rate >= s.TakeProfit {
-			return true
-		}
-		if s.StopLoss > 0 && rate <= -s.StopLoss {
-			return true
-		}
-	}
-
-	return false
+	return r.Eval(rule.NewInput(code, dks, nil, &buy))
 }

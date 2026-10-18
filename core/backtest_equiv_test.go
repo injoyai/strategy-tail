@@ -5,8 +5,8 @@ package core_test
 // ============================================================================
 // core.Backtest.Do 由"逐日 joinKlines 复制"改为"一次性 full 缓冲 + 前缀切片"。
 // 本测试将改动前的原版实现完整复制为 DoLegacy，在同一份随机数据（深拷贝隔离，
-// 因 Do 会原地改写 today.Kline）上分别运行新旧两版，逐笔比对交易结果，
-// 确保重构行为与原版完全一致（原版回测结果已经过验证，不可漂移）。
+// 因参考实现会原地改写 today.Kline）上分别运行新旧两版，逐笔比对交易结果，
+// 参考实现仅校正已复现的 T+1 与期末估值缺陷；其余成交与历史快照口径保持逐笔一致。
 
 import (
 	"fmt"
@@ -23,11 +23,16 @@ import (
 	"github.com/injoyai/tdx/protocol"
 )
 
-// DoLegacy 为重构前的原版 Do（逐日 joinKlines），自 git HEAD 逐行复制。
+// DoLegacy 保留原版逐日 joinKlines 算法，仅校正 T+1 和 Virtual 末日日线估值。
 func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks protocol.Klines) []core.Trade {
 
 	cost := this.Cost
 	pos := this.Position
+	// 参考算法会改写输入，先保存原始末日日线，避免估值期望也被分钟快照污染。
+	var lastDaily protocol.Kline
+	if len(dks) > 0 {
+		lastDaily = *dks[len(dks)-1].Kline
+	}
 
 	m := map[string]protocol.Klines{}
 	for _, mk := range mks {
@@ -51,6 +56,7 @@ func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks proto
 	for i := 0; i < len(dks); i++ {
 
 		today := dks[i]
+		tradingDay := core.DayOf(today.Time)
 		_his := joinKlines(his, dks[:i]...)
 		ls := joinKlines(_his, today)
 
@@ -75,7 +81,7 @@ func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks proto
 
 		remaining := make([]core.Buy, 0, len(currentBuys))
 		for _, currentBuy := range currentBuys {
-			if currentBuy.Time.Equal(today.Time) {
+			if core.DayOf(currentBuy.Time).Equal(tradingDay) {
 				remaining = append(remaining, currentBuy)
 				continue
 			}
@@ -100,9 +106,8 @@ func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks proto
 	}
 
 	if len(currentBuys) > 0 && len(dks) > 0 {
-		last := dks[len(dks)-1]
 		for _, currentBuy := range currentBuys {
-			tr := legacyExecuteSell(this, code, currentBuy, last.Close, pos, cost, last.Time)
+			tr := legacyExecuteSell(this, code, currentBuy, lastDaily.Close, pos, cost, lastDaily.Time)
 			tr.Virtual = true
 			ts = append(ts, tr)
 		}
@@ -264,7 +269,7 @@ func isWeekend(t time.Time) bool {
 
 // ---------- 差分测试 ----------
 
-func TestDo重构与原版等价(t *testing.T) {
+func TestDo与逐日参考实现等价(t *testing.T) {
 	// 策略组合覆盖：常买（最大化买入路径覆盖）、真实 MACD/均线条件（长窗口读取）、
 	// 多种卖出（止盈止损/反转/持仓天数/盈利组合），并混合分钟线缺失的交易日。
 	scenarios := []struct {
@@ -333,7 +338,7 @@ func TestDo重构与原版等价(t *testing.T) {
 						mks = data.mks
 					}
 
-					// 深拷贝两份输入：Do 会原地改写 today.Kline，必须隔离两轮运行
+					// 参考实现仍会原地改写行情，隔离两轮运行。
 					newTrades := bt.Do("test", cloneKlines(data.his), cloneKlines(data.dks), cloneMinKlines(mks))
 					legacyTrades := DoLegacy(bt, "test", cloneKlines(data.his), cloneKlines(data.dks), cloneMinKlines(mks))
 

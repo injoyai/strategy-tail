@@ -44,8 +44,9 @@ func (b A北证板) Buy(code string, dks extend.Klines) bool {
 	return len(code) == 8 && code[:2] == "bj"
 }
 
-// ETF 是只买入北交所股票的过滤条件。
-// 北交所代码前缀为 bj。
+// ETF 是只买入 ETF 基金的过滤条件。
+// 判定委托 protocol.IsETF，要求代码已带交易所前缀（如 sh510300、sz159915）；
+// 未加前缀的 6 位代码不命中。
 type ETF struct{}
 
 func (b ETF) Name() string {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A买入次日未高开 是买入次日未高开的卖出条件。
@@ -17,17 +18,32 @@ func (s A买入次日未高开) Name() string {
 }
 
 func (s A买入次日未高开) Sell(code string, dks extend.Klines, buy core.Buy) bool {
-	n := len(dks)
-	if n < 2 {
+	// 判断委托共用内核 And 组合：昨为买入日 且 今开(厘) <= 昨收(厘)。
+	// 昨日定位经规则级逃逸口表达，沿用旧口径日期串比较（计划第 4 节
+	// 不统一各组件定位算法）；价格比较为 protocol.Price 厘级 int64
+	// 精确比较，与旧 today.Open <= yesterday.Close 一致；n<2 或持仓
+	// 不可用不触发（昨收不足 2 根同样无效），等价旧 n<2 预检查。
+	isBuyDay, err := rule.NewRuleFunc("昨为买入日", func(in rule.Input) bool {
+		n := len(in.Klines)
+		if n < 2 {
+			return false
+		}
+		pos, ok := in.Position()
+		if !ok {
+			return false
+		}
+		return in.Klines[n-2].Time.Format(time.DateOnly) == pos.Time.Format(time.DateOnly)
+	})
+	if err != nil {
 		return false
 	}
-	today := dks[n-1]
-	yesterday := dks[n-2]
-
-	// 昨天必须是买入日
-	if yesterday.Time.Format(time.DateOnly) == buy.Time.Format(time.DateOnly) {
-		return today.Open <= yesterday.Close
+	c, err := rule.NewCompare(rule.OpenPrice(), rule.Le, rule.PrevClosePrice())
+	if err != nil {
+		return false
 	}
-
-	return false
+	r, err := rule.NewAnd(isBuyDay, c)
+	if err != nil {
+		return false
+	}
+	return r.Eval(rule.NewInput(code, dks, nil, &buy))
 }

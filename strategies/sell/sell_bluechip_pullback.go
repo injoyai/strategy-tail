@@ -6,6 +6,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A跌破短期均线 是收盘价跌破短期均线即触发的卖出条件。
@@ -29,12 +30,14 @@ func (s A跌破短期均线) Sell(code string, dks extend.Klines, b core.Buy) bo
 	if period == 0 {
 		period = 10
 	}
-	if len(dks) < period {
+	// 判断委托共用内核：今收 < 该周期均线（严格，恰等不触发）。旧实现无
+	// MA>0 守卫，迁移同样不设：数据不足时均线为无效值不触发，等价旧
+	// len<period 预检查，不引入额外门槛或守卫改变边界行为。
+	c, err := rule.NewCompare(rule.CloseFloat(), rule.Lt, rule.MAValue(period))
+	if err != nil {
 		return false
 	}
-	closePrice := dks[len(dks)-1].Close.Float64()
-	ma := f.A均线(period).Value(code, dks)
-	return closePrice < ma
+	return c.Eval(rule.NewInput(code, dks, nil, &b))
 }
 
 // A固定止盈 是盈利达到目标即卖出的保守止盈条件。
@@ -55,11 +58,13 @@ func (s A固定止盈) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	if pct == 0 {
 		pct = 0.05
 	}
-	if len(dks) == 0 || b.Price.Float64() <= 0 {
+	// 判断委托共用内核：持仓收益率 >= 阈值（恰等触发），与 A盈利 同构。
+	// 旧 len==0 与 buy<=0 预检查由收益率无效值等价表达。
+	c, err := rule.NewCompare(rule.PositionProfitPercent(), rule.Ge, rule.Literal(rule.FloatValue(pct)))
+	if err != nil {
 		return false
 	}
-	profit := (dks[len(dks)-1].Close.Float64() - b.Price.Float64()) / b.Price.Float64()
-	return profit >= pct
+	return c.Eval(rule.NewInput(code, dks, nil, &b))
 }
 
 // A_ATR止盈 是基于ATR的保守止盈条件。
@@ -88,13 +93,25 @@ func (s A_ATR止盈) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	if mul == 0 {
 		mul = 2.0
 	}
-	n := len(dks)
-	if n < period+1 || b.Price.Float64() <= 0 {
+	// 判断委托共用内核：今收 >= 买入价 + mul*ATR（恰等触发）。阈值线经
+	// 操作数逃逸口表达（内核无算术）：ATR 无效（含 n<period+1 数据不足，
+	// factor 返回 NaN）或买入价非正时阈值线无效不触发，等价旧预检查；
+	// 运算次序保持 buy + mul*atr 与旧实现一致。
+	atrOp := rule.ATR(period)
+	buyOp := rule.PositionBuyPriceFloat()
+	atrLine := rule.OperandFunc("ATR止盈线", func(in rule.Input) rule.Value {
+		atr := atrOp.Value(in)
+		buy := buyOp.Value(in)
+		if !atr.Valid() || !buy.Valid() {
+			return rule.InvalidValue()
+		}
+		return rule.FloatValue(buy.Float() + mul*atr.Float())
+	})
+	c, err := rule.NewCompare(rule.CloseFloat(), rule.Ge, atrLine)
+	if err != nil {
 		return false
 	}
-	atr := f.ATR值(period).Value(code, dks)
-	closePrice := dks[n-1].Close.Float64()
-	return closePrice >= b.Price.Float64()+mul*atr
+	return c.Eval(rule.NewInput(code, dks, nil, &b))
 }
 
 // A均线死叉 是短期均线下穿长期均线的卖出条件。
@@ -123,20 +140,15 @@ func (s A均线死叉) params() (int, int) {
 
 func (s A均线死叉) Sell(code string, dks extend.Klines, b core.Buy) bool {
 	short, long := s.params()
-	n := len(dks)
-	if n < long+1 {
+	// 判断委托共用内核：昨短>=昨长（恰等在昨日侧，CrossDown 不含今日口径）
+	// 且 今短<今长（严格）。旧 len<long+1 预检查由均线无效值等价表达：
+	// n==long 时昨侧均线（前缀 n-1<long）无效不触发，n<long 时今侧无效，
+	// 不引入额外门槛。
+	cross, err := rule.CrossDown(rule.MAValue(short), rule.MAValue(long), false)
+	if err != nil {
 		return false
 	}
-	// 今日：短期均线 < 长期均线
-	maShortNow := f.A均线(short).Value(code, dks)
-	maLongNow := f.A均线(long).Value(code, dks)
-	if maShortNow >= maLongNow {
-		return false
-	}
-	// 昨日：短期均线 >= 长期均线（刚刚下穿）
-	maShortPrev := f.A均线(short).Value(code, dks[:n-1])
-	maLongPrev := f.A均线(long).Value(code, dks[:n-1])
-	return maShortPrev >= maLongPrev
+	return cross.Eval(rule.NewInput(code, dks, nil, &b))
 }
 
 // A缩量滞涨 是成交量萎缩且涨幅极小的卖出条件（动能衰竭信号）。

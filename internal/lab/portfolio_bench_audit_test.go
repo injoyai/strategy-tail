@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -139,8 +140,17 @@ func runAuditBenchmark(b testing.TB) (time.Duration, uint64, int64, int, float64
 	model := benchGoldenModel()
 
 	stop := make(chan struct{})
+	done := make(chan struct{})
 	var peak uint64
-	go memSampler(stop, &peak)
+	go func() {
+		defer close(done)
+		memSampler(stop, &peak)
+	}()
+	stopSampling := sync.OnceFunc(func() {
+		close(stop)
+		<-done
+	})
+	b.Cleanup(stopSampling)
 
 	start := time.Now()
 	r := &Runner{}
@@ -180,7 +190,7 @@ func runAuditBenchmark(b testing.TB) (time.Duration, uint64, int64, int, float64
 		b.Fatalf("report.json 序列化: %v", err)
 	}
 	elapsed := time.Since(start)
-	close(stop)
+	stopSampling()
 	// 产物总大小 = report.json 字节 + 四类 CSV 估算（行数 × 行字节）。
 	rowBytes := int64(0)
 	for _, l := range ledgers {

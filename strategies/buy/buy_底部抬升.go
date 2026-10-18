@@ -60,10 +60,11 @@ func (s A底顶部抬升) withDefaults() A底顶部抬升 {
 }
 
 func findTrendUpPoints(ks extend.Klines, window int) (highs, lows []trendUpPoint) {
-	startIdx := len(ks) - 1 - 1
-	if startIdx < window {
-		startIdx = window
+	// 极值点左侧需要 window 根，右侧至少需要一根确认线。
+	if window <= 0 || window >= len(ks)-1 {
+		return nil, nil
 	}
+	startIdx := len(ks) - 2
 
 	// nextHighMinIdx / nextLowMinIdx：找到极值点后，下一个同类极值点至少要隔 window 根K线
 	nextHighMinIdx := startIdx

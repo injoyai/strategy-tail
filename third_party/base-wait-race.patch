@@ -1,0 +1,10 @@
+--- a/maps/wait/map_wait.go
++++ b/maps/wait/map_wait.go
+@@ -176,0 +177 @@
++	mu         sync.Mutex
+@@ -247,0 +249,2 @@
++	this.mu.Lock()
++	defer this.mu.Unlock()
+@@ -252,0 +256,2 @@
++	this.mu.Lock()
++	defer this.mu.Unlock()

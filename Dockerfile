@@ -11,6 +11,7 @@ ENV GOPROXY=${GOPROXY}
 
 # 先复制依赖清单并下载，利用层缓存
 COPY go.mod go.sum ./
+COPY third_party/injoyai-base ./third_party/injoyai-base
 RUN go mod download
 
 # golang:alpine 基础镜像不含 tzdata，运行阶段从这里拷贝时区数据

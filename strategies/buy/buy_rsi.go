@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // RSI 是 RSI 超卖买入策略。
@@ -30,16 +30,15 @@ func (s RSI) Buy(code string, dks extend.Klines) bool {
 		s.Threshold = 20
 	}
 
-	if len(dks) < s.Period+1 {
+	// 判断委托共用内核：RSI(浮点，util.CalcRSI 口径) < threshold（严格）。
+	// RSI 缺数据（len<period+1，因子返回 NaN）为无效值不触发，等价旧
+	// 预热守卫；窗口充足时 util.CalcRSI 恒为 0..100 有限值（全平价=50、
+	// 纯涨=100），不存在旧代码字面上的 NaN 分支差异。
+	cond, err := rule.NewCompare(rule.RSIFloat(s.Period), rule.Lt, rule.Literal(rule.FloatValue(s.Threshold)))
+	if err != nil {
 		return false
 	}
-
-	rsi := f.RSI值(s.Period).Value(code, dks)
-	if rsi >= s.Threshold {
-		return false
-	}
-
-	return true
+	return cond.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // RSI拐头 是 RSI 动量反转确认策略。
@@ -64,11 +63,26 @@ func (s RSI拐头) Buy(code string, dks extend.Klines) bool {
 	if p == 0 {
 		p = 14
 	}
-	// 拐头需计算今日与昨日 RSI，各需 period+1 根 K 线
-	if len(dks) < p+2 {
+	// 判断委托共用内核，与旧实现同构：拐头需今日与昨日两份 RSI，
+	// 旧预热守卫拒绝 len<p+2（比逐份计算所需的 p+1 严一天），显式
+	// MinKlines(p+2) 表达；昨日 RSI 用 RefOperand 按截断前缀求值，
+	// 与旧 dks[:len-1] 口径一致。RSI 缺数据（len<p+1）因子返回 NaN
+	// 为无效值不触发，与旧 NaN>NaN 为 false 等价。
+	gate, err := rule.NewMinKlines(p + 2)
+	if err != nil {
 		return false
 	}
-	todayRSI := f.RSI值(p).Value(code, dks)
-	prevRSI := f.RSI值(p).Value(code, dks[:len(dks)-1])
-	return todayRSI > prevRSI
+	prev, err := rule.RefOperand(1, rule.RSIFloat(p))
+	if err != nil {
+		return false
+	}
+	turnUp, err := rule.NewCompare(rule.RSIFloat(p), rule.Gt, prev)
+	if err != nil {
+		return false
+	}
+	and, err := rule.NewAnd(gate, turnUp)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }

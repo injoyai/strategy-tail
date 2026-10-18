@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A追踪止损 从买入后最高收盘价回撤达阈值时卖出的追踪止损策略。
@@ -29,40 +30,52 @@ func (s A追踪止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if s.Drawdown <= 0 {
 		return false
 	}
-	if len(dks) == 0 {
-		return false
-	}
-	buyPrice := buy.Price.Float64()
-	if buyPrice <= 0 {
-		return false
-	}
-
-	// 定位买入日在 dks 中的索引
-	buyIdx := -1
-	buyDate := buy.Time.Format("2006-01-02")
-	for i, k := range dks {
-		if k.Time.Format("2006-01-02") == buyDate {
-			buyIdx = i
-			break
+	// 判断委托共用内核：买入以来峰值回撤 >= Drawdown（恰等触发）。
+	// 回撤经操作数逃逸口表达（内核无窗口极值算术）：峰值扫描买入日
+	// （含）至今；买入日定位沿用旧口径顺序日期串匹配（计划第 4 节
+	// 不统一各组件定位算法）；peak<=0、找不到买入日、持仓不可用、
+	// 买入价非正、空前缀一律无效不触发，等价旧预检查。运算次序
+	// (peak-current)/peak 与旧实现一致。
+	drawdown := rule.OperandFunc("买入以来峰值回撤", func(in rule.Input) rule.Value {
+		n := len(in.Klines)
+		if n == 0 {
+			return rule.InvalidValue()
 		}
-	}
-	if buyIdx < 0 {
-		return false
-	}
-
-	// 扫描买入日（含）到今天的最高收盘价
-	peak := 0.0
-	for i := buyIdx; i < len(dks); i++ {
-		c := dks[i].Close.Float64()
-		if c > peak {
-			peak = c
+		pos, ok := in.Position()
+		if !ok {
+			return rule.InvalidValue()
 		}
-	}
-	if peak <= 0 {
+		if pos.Price.Float64() <= 0 {
+			return rule.InvalidValue()
+		}
+		buyIdx := -1
+		buyDate := pos.Time.Format("2006-01-02")
+		for i, k := range in.Klines {
+			if k.Time.Format("2006-01-02") == buyDate {
+				buyIdx = i
+				break
+			}
+		}
+		if buyIdx < 0 {
+			return rule.InvalidValue()
+		}
+		// 扫描买入日（含）到今天的最高收盘价
+		peak := 0.0
+		for i := buyIdx; i < n; i++ {
+			c := in.Klines[i].Close.Float64()
+			if c > peak {
+				peak = c
+			}
+		}
+		if peak <= 0 {
+			return rule.InvalidValue()
+		}
+		current := in.Klines[n-1].Close.Float64()
+		return rule.FloatValue((peak - current) / peak)
+	})
+	c, err := rule.NewCompare(drawdown, rule.Ge, rule.Literal(rule.FloatValue(s.Drawdown)))
+	if err != nil {
 		return false
 	}
-
-	current := dks[len(dks)-1].Close.Float64()
-	drawdown := (peak - current) / peak
-	return drawdown >= s.Drawdown
+	return c.Eval(rule.NewInput(code, dks, nil, &buy))
 }

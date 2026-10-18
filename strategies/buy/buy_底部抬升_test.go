@@ -1,6 +1,7 @@
 package buy
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -8,6 +9,41 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
 )
+
+func TestFindTrendUpPointsInsufficientHistory(t *testing.T) {
+	for _, tc := range []struct{ bars, window int }{
+		{0, 8}, {1, 8}, {8, 8}, {9, 8}, {60, 60}, {60, 500},
+		{60, int(^uint(0) >> 1)}, {60, 0}, {60, -1},
+	} {
+		t.Run(fmt.Sprintf("bars=%d/window=%d", tc.bars, tc.window), func(t *testing.T) {
+			highs, lows := findTrendUpPoints(makeTrendUp连续K线(tc.bars), tc.window)
+			if len(highs) != 0 || len(lows) != 0 {
+				t.Fatalf("insufficient history must have no extrema: highs=%v lows=%v", highs, lows)
+			}
+		})
+	}
+}
+
+func TestTrendUpStrategiesInsufficientHistory(t *testing.T) {
+	for _, bars := range []int{0, 1, 60} {
+		ks := makeTrendUp连续K线(bars)
+		for _, s := range []interface {
+			core.Buyer
+			core.Explainer
+			core.Visualizer
+		}{A底部抬升{Window: 500}, A底顶部抬升{Window: 500}} {
+			t.Run(fmt.Sprintf("bars=%d/%s", bars, s.Name()), func(t *testing.T) {
+				if s.Buy("test", ks) {
+					t.Fatal("insufficient history must not trigger a buy")
+				}
+				s.Explain("test", ks)
+				if anns := s.Annotate("test", ks); len(anns) != 0 {
+					t.Fatalf("insufficient history must have no annotations: %v", anns)
+				}
+			})
+		}
+	}
+}
 
 func TestFindTrendUpPointsReturnsLatestTwoHighsAndLows(t *testing.T) {
 	ks := makeTrendUp连续K线(50)

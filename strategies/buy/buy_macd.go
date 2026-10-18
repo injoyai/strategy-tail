@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // MACD反转 是 MACD 低位拐头买入策略。
@@ -57,34 +58,58 @@ func (s MACD反转) Buy(code string, dks extend.Klines) bool {
 		maxLb = 0
 	}
 
-	n := len(dks)
-	if n < 2 || n < s.Slow+s.Signal {
+	// 旧长度预检 n<2 || n<slow+signal 归一为 K线≥max(2,slow+signal) 根：
+	// MACDHist 对短前缀仍给出有限值，预热须显式拦截，无效值兜不住。
+	minLen := s.Slow + s.Signal
+	if minLen < 2 {
+		minLen = 2
+	}
+	mk, err := rule.NewMinKlines(minLen)
+	if err != nil {
+		return false
+	}
+	histOp := rule.MACDHist(s.Fast, s.Slow, s.Signal)
+	prevHist, err := rule.RefOperand(1, histOp)
+	if err != nil {
+		return false
+	}
+	// 今柱 > 昨柱+MinDiff：右侧包装"昨柱+MinDiff"操作数，保持旧公式
+	// today > yesterday+s.MinDiff 的先加后比运算次序（浮点逐位一致）。
+	prevPlusDiff := rule.OperandFunc(prevHist.Name()+"+MinDiff", func(in rule.Input) rule.Value {
+		v := prevHist.Value(in)
+		if !v.Valid() {
+			return rule.InvalidValue()
+		}
+		return rule.FloatValue(v.Float() + s.MinDiff)
+	})
+	in := rule.NewInput(code, dks, nil, nil)
+	if !mk.Eval(in) || !mustCompare(histOp, rule.Gt, prevPlusDiff).Eval(in) {
 		return false
 	}
 
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != n {
-		return false
-	}
-
-	yesterday := hist[n-2]
-	today := hist[n-1]
-	if !(today > yesterday+s.MinDiff) {
-		return false
-	}
-
-	// 昨天是近 [MinLookback, MaxLookback] 天窗口内的最低点
-	// 存在某个窗口大小 k 使昨天是近 k 天最低即可
+	// 昨天是近 [MinLookback, MaxLookback] 天内某窗口的最低点：逐 k 构造
+	// "昨柱 == 近k日窗口最小（不含今日，左端钳 0，含并列平价）"的内核比较
+	// 并短路求值；旧实现 k<=0 的病态参数直接成立，原样保留。
 	end := maxLb
 	if end == 0 {
 		end = s.MinLookback
 	}
 	for k := s.MinLookback; k <= end; k++ {
-		if k <= 0 || f.SeriesPosition(hist[max(n-1-k, 0):n-1]) == 0 {
+		if k <= 0 {
+			return true
+		}
+		winMin, err := rule.WindowMin(k, histOp, false)
+		if err != nil {
+			return false
+		}
+		atMin, err := rule.NewCompare(prevHist, rule.Eq, winMin)
+		if err != nil {
+			return false
+		}
+		if atMin.Eval(in) {
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -338,25 +363,28 @@ func (s MACD负数) Buy(code string, dks extend.Klines) bool {
 		maxDays = 0
 	}
 
-	n := len(dks)
-	if n < s.Slow+s.Signal || n < s.MinDays {
+	// 旧长度预检 n<slow+signal || n<minDays 归一为 K线≥max(slow+signal,minDays)
+	// 根：MACDHist 对短前缀仍给出有限值，预热须显式拦截，无效值兜不住。
+	minLen := s.Slow + s.Signal
+	if s.MinDays > minLen {
+		minLen = s.MinDays
+	}
+	mk, err := rule.NewMinKlines(minLen)
+	if err != nil {
 		return false
 	}
-
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != n {
+	// 末段连续"柱值<0"天数落在 [MinDays, MaxDays]（含今日；MaxDays<=0 表示
+	// 上限不限，恰等上下限均成立），对应旧 NegativeStreak 及其 min/max 校验。
+	consec, err := rule.NewConsecutive(s.MinDays, maxDays,
+		mustCompare(rule.MACDHist(s.Fast, s.Slow, s.Signal), rule.Lt, rule.Literal(rule.FloatValue(0))), true)
+	if err != nil {
 		return false
 	}
-
-	count := f.NegativeStreak(hist)
-
-	if count < s.MinDays {
+	and, err := rule.NewAnd(mk, consec)
+	if err != nil {
 		return false
 	}
-	if maxDays > 0 && count > maxDays {
-		return false
-	}
-	return true
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // MACD正数 是 MACD 连续负数买入条件。
@@ -390,17 +418,27 @@ func (s MACD正数) Buy(code string, dks extend.Klines) bool {
 		s.Days = 1
 	}
 
-	n := len(dks)
-	if n < s.Slow+s.Signal || n < s.Days {
+	// 旧长度预检 n<slow+signal || n<days 归一为 K线≥max(slow+signal,days)
+	// 根：MACDHist 对短前缀仍给出有限值，预热须显式拦截，无效值兜不住。
+	minLen := s.Slow + s.Signal
+	if s.Days > minLen {
+		minLen = s.Days
+	}
+	mk, err := rule.NewMinKlines(minLen)
+	if err != nil {
 		return false
 	}
-
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != n {
+	// 末段连续"柱值>0"天数 >= Days（含今日，无上限），对应旧 PositiveStreak。
+	consec, err := rule.NewConsecutive(s.Days, 0,
+		mustCompare(rule.MACDHist(s.Fast, s.Slow, s.Signal), rule.Gt, rule.Literal(rule.FloatValue(0))), true)
+	if err != nil {
 		return false
 	}
-
-	return f.PositiveStreak(hist) >= s.Days
+	and, err := rule.NewAnd(mk, consec)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // MACD连涨 是 MACD 柱子连续 N 天上升的买入条件。
@@ -465,50 +503,65 @@ func (s MACD连涨) Buy(code string, dks extend.Klines) bool {
 		maxDays = 0
 	}
 
-	n := len(dks)
-	if n < s.Slow+s.Signal || n < s.MinDays+1 {
+	// 旧长度预检 n<slow+signal || n<minDays+1 归一为
+	// K线≥max(slow+signal,minDays+1) 根：MACDHist 对短前缀仍给出有限值。
+	minLen := s.Slow + s.Signal
+	if s.MinDays+1 > minLen {
+		minLen = s.MinDays + 1
+	}
+	mk, err := rule.NewMinKlines(minLen)
+	if err != nil {
+		return false
+	}
+	histOp := rule.MACDHist(s.Fast, s.Slow, s.Signal)
+	prevHist, err := rule.RefOperand(1, histOp)
+	if err != nil {
+		return false
+	}
+	// 末段连续"今柱>昨柱"（含今日）落在 [MinDays, MaxDays]（MaxDays<=0
+	// 不限），对应旧 RisingStreak 及其 min/max 校验；下限>=1 已隐含旧
+	// "今日柱必须高于昨日柱"的首步预检。
+	consec, err := rule.NewConsecutive(s.MinDays, maxDays,
+		mustCompare(histOp, rule.Gt, prevHist), true)
+	if err != nil {
+		return false
+	}
+	body, err := rule.NewAnd(mk, consec)
+	if err != nil {
+		return false
+	}
+	in := rule.NewInput(code, dks, nil, nil)
+	if !body.Eval(in) {
 		return false
 	}
 
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != n {
-		return false
-	}
-
-	streakEnd := n - 1
-	if hist[streakEnd] <= hist[streakEnd-1] {
-		return false
-	}
-	streakDays := f.RisingStreak(hist)
-	streakStart := streakEnd - streakDays
-
-	// 校验连涨天数下限
-	if streakDays < s.MinDays {
-		return false
-	}
-	// 校验连涨天数上限（连涨段在 MaxDays+1 天前必须断开）
-	if maxDays > 0 && streakDays > maxDays {
-		return false
-	}
-
-	// 校验连涨起点是否为近 Lookback 天的最低点
+	// 连涨起点校验依赖真实连涨段起点：上限不限时内核连续段统计到 MinDays
+	// 即停、无法回推起点，按旧语义在门面用 RisingStreak 定位 startIdx；
+	// "起点柱为近 Lookback 日窗口最低（含并列）"复用内核 WindowMin 在
+	// 截断前缀 dks[:startIdx+1] 上求值，窗口 [startIdx-Lookback, startIdx)
+	// 与旧扫描同口径（左端钳 0）。startIdx==0 时旧窗口为空、扫描不执行，
+	// 视为通过。
 	if s.Lookback > 0 {
-		// 连涨段第一根柱子的前一根，它本身不参与连涨
-		startIdx := streakStart - 1
+		hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
+		if len(hist) != len(dks) {
+			return false
+		}
+		startIdx := len(dks) - 2 - f.RisingStreak(hist)
 		if startIdx < 0 {
 			return false
 		}
-		windowStart := startIdx - s.Lookback
-		if windowStart < 0 {
-			windowStart = 0
-		}
-		for i := windowStart; i < startIdx; i++ {
-			if hist[i] < hist[startIdx] {
+		if startIdx > 0 {
+			winMin, err := rule.WindowMin(s.Lookback, histOp, false)
+			if err != nil {
+				return false
+			}
+			atStart := in
+			atStart.Klines = dks[:startIdx+1]
+			if !mustCompare(histOp, rule.Le, winMin).Eval(atStart) {
 				return false
 			}
 		}
 	}
-
 	return true
 }
 

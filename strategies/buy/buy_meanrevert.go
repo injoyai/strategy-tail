@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // ----------------------------------------------------------------------------
@@ -42,11 +42,13 @@ func (s A布林下轨) Buy(code string, dks extend.Klines) bool {
 	if st == 0 {
 		st = 2
 	}
-	if len(dks) < p {
+	// 判断委托共用内核：今收（浮点元）<= 布林下轨。数据不足或 σ=0 时
+	// 下轨为无效值，比较不成立，与旧 NaN 比较为 false 的行为一致。
+	c, err := rule.NewCompare(rule.CloseFloat(), rule.Le, rule.BollLower(p, st))
+	if err != nil {
 		return false
 	}
-	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
-	return dks[len(dks)-1].Close.Float64() <= lower
+	return c.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // ----------------------------------------------------------------------------
@@ -83,15 +85,24 @@ func (s A乖离超卖) Buy(code string, dks extend.Klines) bool {
 	if mb == 0 {
 		mb = -7
 	}
-	if len(dks) < p {
+	// 判断委托共用内核，与旧实现同序：先均线守卫（MA>0，数据不足或
+	// 零值均线时无效值不成立，等价旧 ma<=0 提前返回），再乖离比较。
+	// 乖离率经 factor.Build("ma_bias") 的 (close/ma-1)*100 口径，与旧
+	// (close-ma)/ma*100 在恰等边界存在 1-ULP 舍入差异，快照已覆盖
+	// 本批恰等夹具（新旧判定一致）。
+	guard, err := rule.NewCompare(rule.MAValue(p), rule.Gt, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	ma := f.A均线(p).Value(code, dks)
-	if ma <= 0 {
+	main, err := rule.NewCompare(rule.BiasPercent(p), rule.Le, rule.Literal(rule.FloatValue(mb)))
+	if err != nil {
 		return false
 	}
-	bias := (dks[len(dks)-1].Close.Float64() - ma) / ma * 100
-	return bias <= mb
+	and, err := rule.NewAnd(guard, main)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // ----------------------------------------------------------------------------
@@ -129,11 +140,13 @@ func (s AZScore超卖) Buy(code string, dks extend.Klines) bool {
 	if mz == 0 {
 		mz = -2
 	}
-	if len(dks) < p {
+	// 判断委托共用内核：Z 值 <= 阈值。数据不足或 σ=0 时 Z 为无效值
+	// 不成立，与旧 NaN 比较为 false 的行为一致。
+	c, err := rule.NewCompare(rule.ZScore(p), rule.Le, rule.Literal(rule.FloatValue(mz)))
+	if err != nil {
 		return false
 	}
-	z := f.ZScore值(p).Value(code, dks)
-	return z <= mz
+	return c.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // ----------------------------------------------------------------------------
@@ -161,12 +174,14 @@ func (s A唐奇安下沿) Buy(code string, dks extend.Klines) bool {
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p+1 {
+	// 判断委托共用内核：今收（整数厘）<= 前 p 日最低价。LowestPrice
+	// 窗口不含今日（dks[:n-1]，台账风险 §5.5 买入侧口径），避免恒真；
+	// 数据不足时下沿为无效值不成立，与旧预检查为 false 一致。
+	c, err := rule.NewCompare(rule.ClosePrice(), rule.Le, rule.LowestPrice(p, false))
+	if err != nil {
 		return false
 	}
-	// 近 p 日最低（不含今天，避免恒真）
-	low := f.A最低价(p).Price(dks[:len(dks)-1])
-	return dks[len(dks)-1].Close <= low
+	return c.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // ----------------------------------------------------------------------------
@@ -215,21 +230,23 @@ func (s A布林下轨缩量) Buy(code string, dks extend.Klines) bool {
 	if vr == 0 {
 		vr = 0.6
 	}
-	if len(dks) < p || len(dks) < vd+1 {
+	// 判断委托共用内核，与旧实现同序短路：先下轨（今收 <= 布林下轨，
+	// 失败即整体不成立），再地量（今日量 <= 前vd日均量(不含今日)×vr，
+	// 含边界）。基准均量缺失或 <=0 时右操作数为无效值不成立，等价旧
+	// avgVol<=0 提前返回；len<p、len<vd+1 由两个操作数自身的无效值兜住。
+	lower, err := rule.NewCompare(rule.CloseFloat(), rule.Le, rule.BollLower(p, st))
+	if err != nil {
 		return false
 	}
-	// 布林下轨
-	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
-	if !(dks[len(dks)-1].Close.Float64() <= lower) {
+	quiet, err := rule.NewCompare(rule.Volume(), rule.Le, rule.PrevAvgVolumeScaled(vd, vr))
+	if err != nil {
 		return false
 	}
-	// 地量确认
-	today := dks[len(dks)-1]
-	avgVol := f.A前N日均量(vd).Value(code, dks)
-	if avgVol <= 0 {
+	and, err := rule.NewAnd(lower, quiet)
+	if err != nil {
 		return false
 	}
-	return float64(today.Volume) <= avgVol*vr
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // ----------------------------------------------------------------------------
@@ -278,15 +295,20 @@ func (s A布林下轨RSI超卖) Buy(code string, dks extend.Klines) bool {
 	if rt == 0 {
 		rt = 30
 	}
-	if len(dks) < p || len(dks) < rp+1 {
+	// 判断委托共用内核，与旧实现同序短路：先下轨（今收 <= 布林下轨，
+	// 失败即整体不成立），再 RSI 超卖（浮点 RSI <= 阈值，含边界）。
+	// RSI 数据不足时右操作数为无效值不成立，等价旧 len<rp+1 预检查。
+	lower, err := rule.NewCompare(rule.CloseFloat(), rule.Le, rule.BollLower(p, st))
+	if err != nil {
 		return false
 	}
-	// 布林下轨
-	lower := (f.A布林下轨{Days: p, StdTimes: st}).Value(code, dks)
-	if !(dks[len(dks)-1].Close.Float64() <= lower) {
+	oversold, err := rule.NewCompare(rule.RSIFloat(rp), rule.Le, rule.Literal(rule.FloatValue(rt)))
+	if err != nil {
 		return false
 	}
-	// RSI 超卖
-	rsi := f.RSI值(rp).Value(code, dks)
-	return rsi <= rt
+	and, err := rule.NewAnd(lower, oversold)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }

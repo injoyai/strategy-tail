@@ -2,10 +2,10 @@ package buy
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A因子过滤 按因子值闭区间过滤买入：Min <= 因子值 <= Max。
@@ -25,12 +25,5 @@ func (b A因子过滤) Name() string {
 }
 
 func (b A因子过滤) Buy(code string, dks extend.Klines) bool {
-	if b.Factor == nil || len(dks) == 0 {
-		return false
-	}
-	v := b.Factor.Value(code, dks)
-	if math.IsNaN(v) {
-		return false
-	}
-	return b.Min <= v && v <= b.Max
+	return rule.EvalFactorRange(b.Factor, b.Min, b.Max, rule.Input{Code: code, Klines: dks})
 }

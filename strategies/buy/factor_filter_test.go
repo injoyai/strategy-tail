@@ -7,6 +7,8 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 	"github.com/injoyai/tdx/protocol"
 )
 
@@ -86,3 +88,59 @@ func TestA因子过滤(t *testing.T) {
 
 // 编译期确认实现 Buyer。
 var _ core.Buyer = A因子过滤{}
+
+func TestFactorFilterNoAllocations(t *testing.T) {
+	ks := extend.Klines{mkKline(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 0, 10)}
+	for _, bounds := range [][2]float64{{0, 1}, {math.Inf(-1), math.Inf(1)}} {
+		b := A因子过滤{Factor: &stubFactor{val: 0.5}, Min: bounds[0], Max: bounds[1]}
+		if !b.Buy("sh600000", ks) {
+			t.Fatalf("夹具应触发: %v", bounds)
+		}
+		if allocs := testing.AllocsPerRun(1000, func() { b.Buy("sh600000", ks) }); allocs != 0 {
+			t.Fatalf("纯因子区间判断不应分配规则对象或 MACD 缓存，range=%v allocs=%g", bounds, allocs)
+		}
+	}
+}
+
+var factorFilterBenchmarkResult bool
+
+func BenchmarkFactorFilter(b *testing.B) {
+	ks := make(extend.Klines, 50)
+	for i := range ks {
+		ks[i] = mkKline(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), i, 10+float64(i)/10)
+	}
+	filter := A因子过滤{Factor: f.N日动量{Days: 5}, Min: 0, Max: 1e9}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		factorFilterBenchmarkResult = filter.Buy("sh600000", ks)
+	}
+}
+
+func TestFactorRangeLegacyBoundaries(t *testing.T) {
+	ks := extend.Klines{mkKline(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 0, 10)}
+	for _, bounds := range [][2]float64{
+		{0, 0}, {-1e9, 1e9}, {1, 0}, {math.NaN(), 1}, {0, math.NaN()},
+		{math.Inf(-1), 0}, {0, math.Inf(1)}, {math.Inf(-1), math.Inf(1)},
+		{math.Inf(1), math.Inf(1)}, {math.Inf(-1), math.Inf(-1)},
+	} {
+		for _, value := range []float64{-1e9 - 1, -1e9, -1, 0, 1, 1e9, 1e9 + 1, math.NaN(), math.Inf(-1), math.Inf(1)} {
+			b := A因子过滤{Factor: &stubFactor{val: value}, Min: bounds[0], Max: bounds[1]}
+			want := bounds[0] <= value && value <= bounds[1]
+			if got := b.Buy("sh600000", ks); got != want {
+				t.Fatalf("value=%g range=%v: got %v want %v", value, bounds, got, want)
+			}
+			compiled, err := rule.NewFactorRange(b.Factor, b.Min, b.Max)
+			if err != nil {
+				if want {
+					t.Fatalf("合法区间构造失败: value=%g range=%v: %v", value, bounds, err)
+				}
+			} else if compiled.Eval(rule.Input{Code: "sh600000", Klines: ks}) != want {
+				t.Fatalf("编译规则与直接求值不一致: value=%g range=%v", value, bounds)
+			}
+			if b.Buy("sh600000", nil) {
+				t.Fatalf("空行情不可触发: value=%g range=%v", value, bounds)
+			}
+		}
+	}
+}

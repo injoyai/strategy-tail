@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A底部抬升 是底部抬升买入策略（只判断低点抬升，不要求高点抬升）。
@@ -28,23 +29,36 @@ func (s A底部抬升) Name() string {
 
 func (s A底部抬升) Buy(code string, dks extend.Klines) bool {
 	s = s.withDefaults()
-	if len(dks) < 60 {
+	// 判断委托共用内核：60 根 K 线预热门槛用 MinKlines 表达；顶底点
+	// 识别与形态判定为专用结构逻辑，经 RuleFunc 逃逸口在 in.Klines 上
+	// 复刻旧实现（findTrendUpPoints → 低点/高点数量判定 →
+	// isBottomUpShape），逐行与旧代码同构。
+	gate, err := rule.NewMinKlines(60)
+	if err != nil {
 		return false
 	}
+	shape, err := rule.NewRuleFunc(s.Name(), func(in rule.Input) bool {
+		highs, lows := findTrendUpPoints(in.Klines, s.Window)
+		if len(lows) < 2 {
+			return false
+		}
+		l2, l1 := lows[0], lows[1]
 
-	highs, lows := findTrendUpPoints(dks, s.Window)
-	if len(lows) < 2 {
+		// 至少需要一个高点在 L1 和 L2 之间
+		if len(highs) < 1 {
+			return false
+		}
+
+		return isBottomUpShape(l1, l2, highs, s.Window)
+	})
+	if err != nil {
 		return false
 	}
-
-	l2, l1 := lows[0], lows[1]
-
-	// 至少需要一个高点在 L1 和 L2 之间
-	if len(highs) < 1 {
+	and, err := rule.NewAnd(gate, shape)
+	if err != nil {
 		return false
 	}
-
-	return isBottomUpShape(l1, l2, highs, s.Window)
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 func (s A底部抬升) withDefaults() A底部抬升 {

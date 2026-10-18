@@ -5,6 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A持仓N天 买入后满 N 个交易日强制卖出。
@@ -30,23 +31,13 @@ func (s A持仓N天) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if days == 0 {
 		days = 5
 	}
-	if len(dks) == 0 {
+	// 判断委托共用内核：已持仓交易日数 >= days（恰等触发）。定位口径
+	// 固化在内核 PositionHoldingDays：顺序首个不早于买入时刻（与旧
+	// 一致）；持仓不可用、空前缀或买入日在前缀之后均无效不触发，
+	// 等价旧 buyIdx<0 预检查。
+	c, err := rule.NewCompare(rule.PositionHoldingDays(), rule.Ge, rule.Literal(rule.FloatValue(float64(days))))
+	if err != nil {
 		return false
 	}
-
-	// 找到买入日在 dks 中的位置，计算已持仓的交易日数
-	buyIdx := -1
-	for i, k := range dks {
-		if !k.Time.Before(buy.Time) {
-			buyIdx = i
-			break
-		}
-	}
-	if buyIdx < 0 {
-		return false
-	}
-
-	// 持仓天数 = 当前K线总数 - 买入日索引 - 1（不含买入日当天）
-	holdingDays := len(dks) - buyIdx - 1
-	return holdingDays >= days
+	return c.Eval(rule.NewInput(code, dks, nil, &buy))
 }

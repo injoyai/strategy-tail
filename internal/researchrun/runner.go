@@ -638,9 +638,7 @@ func failure(code string, year int, stage, message string) *Failure {
 	return &Failure{Code: code, Year: year, Stage: stage, Message: message}
 }
 
-// cloneKlines isolates callers from Backtest.Do's intentional intraday pointer
-// overwrite. Keep this implementation centralized until the engine contract can
-// be changed with explicit compatibility approval.
+// cloneKlines isolates market data between variants and strategy callbacks.
 func cloneKlines(src extend.Klines) extend.Klines {
 	if src == nil {
 		return nil

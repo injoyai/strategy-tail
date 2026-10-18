@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 type MACD struct {
@@ -47,36 +47,41 @@ func (s MACD反转) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		s.Lookback = 20
 	}
 
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != len(dks) {
+	// 判断委托共用内核，与旧实现同序：先今柱 < 昨柱-MinDiff（严格小于，
+	// MinDiff 减法派生留门面——内核无算术 DSL，经 OperandFunc 表达），再
+	// 昨柱 == 近 Lookback 日窗口最大值（不含今日、左端越界钳 0，Eq 恰等
+	// 等价旧全等比较）。历史引用与窗口逐日对截断前缀求值，MACDHist 因果
+	// 递推与旧整段 Series 对应日逐位一致，旧 len(hist)!=len(dks) 防御天然
+	// 成立。旧组件无 slow+signal 预检（与买侧 MACD反转 不同，台账附录 B），
+	// n<2 由"昨柱无效值不触发"兜住，不引入 MinKlines 改变预热行为。
+	hist := rule.MACDHist(s.Fast, s.Slow, s.Signal)
+	prev, err := rule.RefOperand(1, hist)
+	if err != nil {
 		return false
 	}
-
-	n := len(hist)
-	if n < 2 {
-		return false
-	}
-	yesterday := hist[n-2]
-	today := hist[n-1]
-	if !(today < yesterday-s.MinDiff) {
-		return false
-	}
-
-	windowStart := n - 1 - s.Lookback
-	if windowStart < 0 {
-		windowStart = 0
-	}
-	maxV := hist[windowStart]
-	for j := windowStart + 1; j <= n-2; j++ {
-		if hist[j] > maxV {
-			maxV = hist[j]
+	fall, err := rule.NewCompare(hist, rule.Lt, rule.OperandFunc("昨柱-MinDiff", func(in rule.Input) rule.Value {
+		v := prev.Value(in)
+		if !v.Valid() {
+			return rule.InvalidValue()
 		}
-	}
-	if yesterday != maxV {
+		return rule.FloatValue(v.Float() - s.MinDiff)
+	}))
+	if err != nil {
 		return false
 	}
-
-	return true
+	winMax, err := rule.WindowMax(s.Lookback, hist, false)
+	if err != nil {
+		return false
+	}
+	peak, err := rule.NewCompare(prev, rule.Eq, winMax)
+	if err != nil {
+		return false
+	}
+	and, err := rule.NewAnd(fall, peak)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
 // MACD买入后连跌 是买入若干交易日后，MACD 柱子连续下跌的卖出策略。
@@ -139,10 +144,25 @@ func (s MACD买入后连跌) Sell(code string, dks extend.Klines, buy core.Buy) 
 		return false
 	}
 
-	hist := (f.MACD柱值{Fast: s.Fast, Slow: s.Slow, Signal: s.Signal}).Series(dks)
-	if len(hist) != n {
+	// 判断委托共用内核：MACD 柱序列用内核 MACDHist（因果 EMA 递推，与旧
+	// 整段 Series 对应日逐位一致，旧 len(hist)!=n 防御天然成立）；连跌判定
+	// 等旧 FallingStreak(hist) >= Days——末尾连续严格递减步数与
+	// Consecutive(Days, 0, 今柱<昨柱, 含今日) 的连续满足根数逐位一致
+	// （第 0 根昨柱无效不满足，步数封顶 n-1，同旧循环 i>0 终止）。旧的
+	// n<Days+1、逆序日期串定位买入日、n-1-buyIdx<AfterDays 预检查原样
+	// 保留在门面，保持判定次序。
+	hist := rule.MACDHist(s.Fast, s.Slow, s.Signal)
+	prev, err := rule.RefOperand(1, hist)
+	if err != nil {
 		return false
 	}
-
-	return f.FallingStreak(hist) >= s.Days
+	fall, err := rule.NewCompare(hist, rule.Lt, prev)
+	if err != nil {
+		return false
+	}
+	consec, err := rule.NewConsecutive(s.Days, 0, fall, true)
+	if err != nil {
+		return false
+	}
+	return consec.Eval(rule.NewInput(code, dks, nil, &buy))
 }

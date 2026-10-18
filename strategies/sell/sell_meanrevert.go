@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // ----------------------------------------------------------------------------
@@ -40,14 +40,22 @@ func (s A回到布林中轨) Sell(code string, dks extend.Klines, buy core.Buy) 
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p {
+	// 判断委托共用内核，与旧实现同序：先均线守卫（MA>0，数据不足或零值
+	// 均线时不成立，等价旧 len<p 与 ma<=0 提前返回），再今收 >= 布林中轨
+	//（该周期均线即中轨，含恰等边界）。
+	guard, err := rule.NewCompare(rule.MAValue(p), rule.Gt, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	ma := f.A均线(p).Value(code, dks)
-	if ma <= 0 {
+	main, err := rule.NewCompare(rule.CloseFloat(), rule.Ge, rule.MAValue(p))
+	if err != nil {
 		return false
 	}
-	return dks[len(dks)-1].Close.Float64() >= ma
+	and, err := rule.NewAnd(guard, main)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, &buy))
 }
 
 // ----------------------------------------------------------------------------
@@ -74,14 +82,22 @@ func (s A回到均线) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p {
+	// 判断委托共用内核，与旧实现同序：先均线守卫（MA>0，数据不足或零值
+	// 均线时不成立，等价旧 len<p 与 ma<=0 提前返回），再今收 >= 均线
+	//（含恰等边界）。
+	guard, err := rule.NewCompare(rule.MAValue(p), rule.Gt, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	ma := f.A均线(p).Value(code, dks)
-	if ma <= 0 {
+	main, err := rule.NewCompare(rule.CloseFloat(), rule.Ge, rule.MAValue(p))
+	if err != nil {
 		return false
 	}
-	return dks[len(dks)-1].Close.Float64() >= ma
+	and, err := rule.NewAnd(guard, main)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, &buy))
 }
 
 // ----------------------------------------------------------------------------
@@ -109,15 +125,23 @@ func (s A乖离归零) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p {
+	// 判断委托共用内核，与旧实现同序：先均线守卫（MA>0，数据不足或零值
+	// 均线时不成立，等价旧 len<p 与 ma<=0 提前返回），再乖离率 >= 0。
+	// 乖离率经 rule.BiasPercent 沿用旧合同公式 (Close-MA)/MA×100 的原始
+	// 运算次序，恰等 0 边界与旧实现逐位一致。
+	guard, err := rule.NewCompare(rule.MAValue(p), rule.Gt, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	ma := f.A均线(p).Value(code, dks)
-	if ma <= 0 {
+	main, err := rule.NewCompare(rule.BiasPercent(p), rule.Ge, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	bias := (dks[len(dks)-1].Close.Float64() - ma) / ma * 100
-	return bias >= 0
+	and, err := rule.NewAnd(guard, main)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, &buy))
 }
 
 // ----------------------------------------------------------------------------
@@ -144,11 +168,14 @@ func (s AZScore归零) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p {
+	// 判断委托共用内核：Z 值 >= 0（含恰等边界）。旧实现无均线守卫，
+	// 与旧一致地不设：数据不足（len<p）或 σ=0（平价行情）时 Z 为无效值
+	// 不触发，等价旧 NaN>=0 为 false。
+	c, err := rule.NewCompare(rule.ZScore(p), rule.Ge, rule.Literal(rule.FloatValue(0)))
+	if err != nil {
 		return false
 	}
-	z := f.ZScore值(p).Value(code, dks)
-	return z >= 0
+	return c.Eval(rule.NewInput(code, dks, nil, &buy))
 }
 
 // ----------------------------------------------------------------------------
@@ -176,16 +203,30 @@ func (s A回到唐奇安中轨) Sell(code string, dks extend.Klines, buy core.Bu
 	if p == 0 {
 		p = 20
 	}
-	if len(dks) < p {
+	// 判断委托共用内核：中轨 =（近 p 日最高价 + 近 p 日最低价）/2，窗口
+	// 含今日（台账风险 §5.5 卖出口径，与买入侧唐奇安下沿的"不含今日"
+	// 相反），窗口语义委托 HighestValue/LowestValue 操作数。内核无算术
+	// DSL，中轨派生经 OperandFunc（与买入侧 ATR 占比同模式）：极值缺
+	// 数据或中轨 <=0（全零行情）为无效值不触发，等价旧 len<p 与 mid<=0
+	// 提前返回；今收 >= 中轨含恰等边界。
+	hhv := rule.HighestValue(p, true)
+	llv := rule.LowestValue(p, true)
+	mid := rule.OperandFunc("唐奇安中轨(含今日)", func(in rule.Input) rule.Value {
+		h, l := hhv.Value(in), llv.Value(in)
+		if !h.Valid() || !l.Valid() {
+			return rule.InvalidValue()
+		}
+		m := (h.Float() + l.Float()) / 2
+		if m <= 0 {
+			return rule.InvalidValue()
+		}
+		return rule.FloatValue(m)
+	})
+	c, err := rule.NewCompare(rule.CloseFloat(), rule.Ge, mid)
+	if err != nil {
 		return false
 	}
-	hhv := f.A最高价(p).Value(code, dks)
-	llv := f.A最低价(p).Value(code, dks)
-	mid := (hhv + llv) / 2
-	if mid <= 0 {
-		return false
-	}
-	return dks[len(dks)-1].Close.Float64() >= mid
+	return c.Eval(rule.NewInput(code, dks, nil, &buy))
 }
 
 // ----------------------------------------------------------------------------
@@ -222,10 +263,13 @@ func (s ARSI恢复) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if t == 0 {
 		t = 50
 	}
-	if len(dks) < p+1 {
+	// 判断委托共用内核：整数 RSI（extend 0-100 截断口径）>= 阈值（含
+	// 恰等边界）。与买入侧浮点 RSI 不同源（台账风险 §5.4），迁移保持
+	// 各自口径不混用；数据不足（len<p+1）时为无效值不触发，等价旧
+	// len<p+1 预检查。
+	c, err := rule.NewCompare(rule.RSIInt(p), rule.Ge, rule.Literal(rule.FloatValue(t)))
+	if err != nil {
 		return false
 	}
-	// 用 extend.Klines 自带的 RSI（int64 0-100）
-	rsi := f.A整数RSI值(p).Value(code, dks)
-	return rsi >= t
+	return c.Eval(rule.NewInput(code, dks, nil, &buy))
 }

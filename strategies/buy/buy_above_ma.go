@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
 // A站上N日均线 判断收盘价连续 N 天站在指定均线上方。
@@ -41,11 +41,27 @@ func (s A站上N日均线) Buy(code string, dks extend.Klines) bool {
 		days = 5
 	}
 
-	n := len(dks)
-	minLen := period + days
-	if n < minLen {
+	// 判断委托共用内核，与旧实现同构：先预热拦截（n<period+days，与
+	// MA上方连续天数自身的"均线无效即断"拦截相比更严，必须显式
+	// MinKlines 表达），再最近 Days 天每天今收>当日均线（含今天，
+	// 逐日按截断前缀求值，与因子逐日重算口径一致）。旧比较为
+	// count>=days 无上限，Consecutive 上限传 0（上限不限），内核统计到
+	// MinDays 即停，判定等价。
+	gate, err := rule.NewMinKlines(period + days)
+	if err != nil {
 		return false
 	}
-
-	return (f.MA上方连续天数{Period: period, Days: days}).Value(code, dks) >= float64(days)
+	above, err := rule.NewCompare(rule.CloseFloat(), rule.Gt, rule.MAValue(period))
+	if err != nil {
+		return false
+	}
+	streak, err := rule.NewConsecutive(days, 0, above, true)
+	if err != nil {
+		return false
+	}
+	and, err := rule.NewAnd(gate, streak)
+	if err != nil {
+		return false
+	}
+	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
