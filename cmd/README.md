@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | `go run ./cmd/lab` | 策略搭建、回测、因子与组合研究；`LAB_ADDR` 默认 `0.0.0.0:8765` | 启动 HTTP 服务并尝试打开浏览器；用户操作可写入策略、报告或更新行情 |
 | `go run ./cmd/update` | 显式更新行情，读取 `pull.*` 与估值库路径 | 连接行情源，写入本地行情与估值快照，可能耗时较长 |
+| `go run ./cmd/kline-compress -dir data/database -workers 4` | 将分钟库转换为按日压缩格式；先升级读写程序 | 只操作本地分钟库；逐库校验并原子替换，持有行情更新锁，可中断后重跑 |
 | `go run ./cmd/valuation-sync -codes sh600519 -start 2020-01-01` | 同步历史估值，默认读取 `research.valuation.database` | 请求估值接口并写入 SQLite；`-all` 同步当前股票列表，`-db` 覆盖路径 |
 | `go run ./cmd/backtest` | 作者的调参草稿，策略及年份在 `main.go` 中修改；读取公共成本、仓位、基准与模拟次数 | 先更新行情，再执行回测并写入 `output/backtest/` |
 | `go run ./cmd/screen` | 实时筛选与历史买卖点服务，读取 `screen.*`；策略在 `strategies.go` | 连接行情源，写入 `data/database/trade.db`；HTTP 端口默认 9090 |

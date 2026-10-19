@@ -299,6 +299,7 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 	}
 	ks := protocol.Klines{}
 	mu := sync.Mutex{}
+	var firstErr error
 	wg := sync.WaitGroup{}
 	for _, year := range years {
 		wg.Add(1)
@@ -308,16 +309,13 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 			if !exists(filename) {
 				return
 			}
-			db, err := xorms.NewSqlite(filename)
+			ls, err := readMinuteFile(filename)
 			if err != nil {
-				logs.Err(err)
-				return
-			}
-			defer db.Close()
-			ls := protocol.Klines{}
-			err = db.Find(&ls)
-			if err != nil {
-				logs.Err(err)
+				mu.Lock()
+				if firstErr == nil {
+					firstErr = fmt.Errorf("读取分钟库 %s: %w", filename, err)
+				}
+				mu.Unlock()
 				return
 			}
 			res := protocol.Klines{}
@@ -333,6 +331,9 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 		}(code, year)
 	}
 	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
 	ks.Sort()
 	return ks, nil
 }
@@ -488,12 +489,25 @@ func (this *PullKline) updateMinuteKlineYear(m *tdx.Manage, code string, year in
 
 	//去年的数据库文件
 	filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
+	newFile := !exists(filename)
 
 	db, err := xorms.NewSqlite(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer db.Close()
+	if newFile {
+		if err = initMinuteStore(db.DB().DB); err != nil {
+			return nil, err
+		}
+	}
+	version, err := minuteVersion(db.DB().DB)
+	if err != nil {
+		return nil, err
+	}
+	if version == minuteStoreVersion {
+		return updateCompressedMinute(db.DB().DB, m, code, year, ks)
+	}
 
 	if err = db.Sync2(new(protocol.Kline)); err != nil {
 		return nil, err
