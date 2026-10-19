@@ -85,7 +85,7 @@ func TestAccountBacktestProgressByPhase(t *testing.T) {
 	cfg.Codes = []string{"sh600001", "600001", "sh600002"}
 	var progress []researchrun.Progress
 	cfg.OnCodeDone = func(p researchrun.Progress) { progress = append(progress, p) }
-	_, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	_, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: protocol.Yuan(.01)}
-	r, accounts, benchmark, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
+	r, accounts, _, benchmark, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
 	}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	cfg.Codes = []string{"sh600003", "sh600002", "sh600001", "sh600001"}
-	r, accounts, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 25000, MaxPositions: 2, OrderBudget: 20000})
+	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 25000, MaxPositions: 2, OrderBudget: 20000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +160,7 @@ func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
 	if r.Coverage.Requested != 3 {
 		t.Fatal("duplicate code counted twice")
 	}
-	r, accounts, _, err = runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 2, OrderBudget: 20000})
+	r, accounts, _, _, _, err = runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 2, OrderBudget: 20000})
 	if err != nil || len(r.Results[0].Trades) != 2 {
 		t.Fatalf("position limit ignored despite spare cash: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestAccountSellsBeforeRebuyAndUsesMinutePrice(t *testing.T) {
 		p := protocol.Yuan(11)
 		return protocol.Klines{&protocol.Kline{Time: d, Open: p, Close: p, High: p, Low: p}}, nil
 	}
-	r, accounts, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 10000, MaxPositions: 1, OrderBudget: 10000})
+	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 10000, MaxPositions: 1, OrderBudget: 10000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestAccountCarriesHoldingsAndCashAcrossYears(t *testing.T) {
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{onlyDate: dates[0]}, accountNeverSell{})
 	cfg.Years = []int{2025, 2026}
-	r, accounts, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
+	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestAccountIndependentVariantsNoTradesAndCancellation(t *testing.T) {
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	cfg.Variants = append(cfg.Variants, researchrun.Variant{Name: "none", Buyer: accountBuyer{onlyDate: "1999-01-01"}})
 	account := AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000}
-	r, a, _, err := runAccountBacktest(context.Background(), cfg, account)
+	r, a, _, _, _, err := runAccountBacktest(context.Background(), cfg, account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,13 +221,13 @@ func TestAccountIndependentVariantsNoTradesAndCancellation(t *testing.T) {
 		t.Fatal("empty strategy lost account curve")
 	}
 	nearAccount(t, a[1].Points[1].Return, 0)
-	r2, a2, _, err := runAccountBacktest(context.Background(), cfg, account)
+	r2, a2, _, _, _, err := runAccountBacktest(context.Background(), cfg, account)
 	if err != nil || !reflect.DeepEqual(r, r2) || !reflect.DeepEqual(a, a2) {
 		t.Fatal("non-deterministic result")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, _, _, err := runAccountBacktest(ctx, cfg, account); !errors.Is(err, context.Canceled) {
+	if _, _, _, _, _, err := runAccountBacktest(ctx, cfg, account); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancel: %v", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestAccountRejectsInvalidConfigAndMissingBenchmark(t *testing.T) {
 	}
 	dates := []string{"2025-01-02"}
 	cfg := accountTestConfig(map[string]extend.Klines{"sh600001": accountBars(dates, 10)}, accountBuyer{}, accountNeverSell{})
-	if _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000}); err == nil {
+	if _, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000}); err == nil {
 		t.Fatal("missing benchmark silently accepted")
 	}
 }
@@ -250,7 +250,7 @@ func TestAccountValuationGapsAndBenchmarkCoverage(t *testing.T) {
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 105, 110), "sh600001": accountBars([]string{dates[0], dates[2]}, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	account := AccountConfig{100000, 5, 20000}
-	r, a, _, err := runAccountBacktest(context.Background(), cfg, account)
+	r, a, _, _, _, err := runAccountBacktest(context.Background(), cfg, account)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,11 +265,11 @@ func TestAccountValuationGapsAndBenchmarkCoverage(t *testing.T) {
 	nearAccount(t, profit, a[0].Points[2].Equity-account.InitialCapital)
 	data["sh000001"] = accountBars([]string{dates[0], dates[2]}, 100, 110)
 	data["sh600001"] = accountBars(dates, 10, 11, 12)
-	if _, _, _, err := runAccountBacktest(context.Background(), cfg, account); err == nil {
+	if _, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, account); err == nil {
 		t.Fatal("missing index day accepted")
 	}
 	data["sh000001"] = extend.Klines{nil, data["sh000001"][0]}
-	if _, _, _, err := runAccountBacktest(context.Background(), cfg, account); err == nil {
+	if _, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, account); err == nil {
 		t.Fatal("invalid index day accepted")
 	}
 }

@@ -31,7 +31,7 @@ func TestMACDReportExportsOriginalNetCosts(t *testing.T) {
 	trade := core.Trade{Code: "sh600000", BuyTime: time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local), SellTime: time.Date(2025, 1, 3, 15, 0, 0, 0, time.Local), BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1005, SellIncome: 1090, Quantity: 100}
 	cfg := defaultMACDConfig()
 	rep := &Report{Config: cfg, Source: "macd", StartedAt: "2025-01-01T10:00:00+08:00", FinishedAt: "2025-01-01T10:00:01+08:00", Variants: []VariantReport{{Name: "MACD", Stats: newTradeStatsJSON(core.Stats([]core.Trade{trade})), Trades: toTradeJSON([]core.Trade{trade})}}}
-	if err := saveReport(rep, []researchrun.Result{{Trades: []core.Trade{trade}}}); err != nil {
+	if err := saveReport(rep, nil, nil, []researchrun.Result{{Trades: []core.Trade{trade}}}); err != nil {
 		t.Fatal(err)
 	}
 	paths, err := filepath.Glob(filepath.Join("output", "trades", "*", "*.csv"))

@@ -165,6 +165,12 @@ func (s *Server) handleBuilderRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 账户模式接入原因记录（R07/R15）：构建失败保持普通 Buyer，行为不变。
+	if cfg.Account != nil {
+		if recorded, err := cfg.Builder.RecordBuyer(builder.NewRecordContext()); err == nil {
+			buyer = recorded
+		}
+	}
 	variants := []core.Variant{{Name: cfg.Builder.Name, Buyer: buyer}}
 	cfg.ScriptName = sourceBuilder
 	if err := s.runner.Start(cfg, variants); err != nil {

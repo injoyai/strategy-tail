@@ -18,7 +18,9 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
@@ -170,6 +172,33 @@ func (c RunConfig) seller() core.Seller {
 	return ss.Or(sellers)
 }
 
+// defaultSellerList 按配置构造默认卖出规则列表（与 seller() 的默认分支同语义）。
+func (c RunConfig) defaultSellerList() []core.Seller {
+	sellers := []core.Seller(nil)
+	if c.HoldingDays > 0 {
+		sellers = append(sellers, ss.A持仓N天{Days: c.HoldingDays})
+	}
+	if c.TakeProfit > 0 || c.StopLoss > 0 {
+		sellers = append(sellers, ss.A止盈止损{TakeProfit: c.TakeProfit, StopLoss: c.StopLoss})
+	}
+	return sellers
+}
+
+// recordedDefaultSeller 把默认卖出规则接入原因记录：单规则提升为根入口，
+// 多规则包一层 Or（WrapSellerTree 自动包装成员为 sell.children[i]），
+// 空规则恒假不记录。包装器只旁路登记评估帧，不改变求值与卖出结果。
+func (c RunConfig) recordedDefaultSeller(rc *builder.RecordContext) core.Seller {
+	sellers := c.defaultSellerList()
+	switch len(sellers) {
+	case 0:
+		return ss.Or{}
+	case 1:
+		return rc.WrapSellerTree(sellers[0], "sell", builder.RoleSell, true)
+	default:
+		return rc.WrapSellerTree(ss.Or(sellers), "sell", builder.RoleSell, true)
+	}
+}
+
 // 报告来源：script=高级脚本模式，simple=声明式简单模式，builder=自由搭建模式。
 const (
 	sourceScript  = "script"
@@ -178,11 +207,20 @@ const (
 )
 
 // VariantReport 单变体结果（report.json 与 API 直出共用结构）。
+// Replay 描述回放数据能力：旧报告（本功能上线前）为 nil，前端据此提示
+// 重新回测；账户模式但该变体未记录时 Available 为 false（R13）。
 type VariantReport struct {
 	Name    string         `json:"name"`
 	Stats   TradeStatsJSON `json:"stats"`
 	Trades  []TradeJSON    `json:"trades"`
 	Account *AccountReport `json:"account,omitempty"`
+	Replay  *ReplayMeta    `json:"replay,omitempty"`
+}
+
+// ReplayMeta 变体回放数据能力描述（版本与可用状态，明细在 replay/ 目录）。
+type ReplayMeta struct {
+	Version   int  `json:"version"`
+	Available bool `json:"available"`
 }
 
 // TradeStatsJSON core.TradeStats 的可序列化形态（camelCase tag）。
@@ -361,6 +399,15 @@ type Runner struct {
 	modelStore      *FactorModelStore
 	experimentStore *PortfolioExperimentStore
 	validationStore *PortfolioValidationStore
+
+	// 盘感练习依赖（实施文档 §2）：由 Server.wirePracticeStores 注入；nil 时
+	// 出题直接报错（fail closed）。practiceSource 供测试注入固定行情，nil 用
+	// 本地库；practiceChoose 供测试注入固定抽样决策，nil 用真随机蓄水池。
+	trainingStore  *TrainingStore
+	practiceStore  *PracticeStore
+	builderStore   *BuilderStore
+	practiceSource practiceKlineSource
+	practiceChoose func(n int) bool
 
 	// store 不可变分析历史存储（生产默认 output/factor；测试注入临时根）。
 	// trials 追加式试验账本（生产默认 data/lab/factor-trials；测试注入临时根）。
@@ -557,7 +604,7 @@ func (r *Runner) Status() map[string]any {
 	} else if total := r.totalCodes.Load(); total > 0 {
 		m["progress"] = float64(r.doneCodes.Load()) / float64(total) * 100
 	}
-	if task == "portfolio" || task == "portfolio_validation" {
+	if task == "portfolio" || task == "portfolio_validation" || task == practiceTaskPrepare {
 		if id := r.portfolioRun.Load(); id != nil {
 			m["runId"] = *id
 		}
@@ -673,11 +720,34 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if cfg.MACD != nil && cost == (core.Cost{}) {
 		cost = core.DefaultCost()
 	}
+	// 账户模式接入原因记录（R07/R15）：记录包装器只旁路登记评估帧，
+	// 不改变求值次数、短路顺序与成交结果。仅记录变体保留 Seller；
+	// 脚本变体（非 RecordedBuyer）与 MACD 变体保持原行为。
 	runVariants := make([]researchrun.Variant, len(variants))
+	var contexts []*builder.RecordContext
+	if cfg.Account != nil {
+		contexts = make([]*builder.RecordContext, len(variants))
+	}
 	for i, variant := range variants {
-		runVariants[i] = researchrun.Variant{
+		rv := researchrun.Variant{
 			Name: variant.Name, Buyer: sb.Strategy(variant.Name, variant.Buyer),
 		}
+		if contexts != nil {
+			if recorded, ok := variant.Buyer.(builder.RecordedBuyer); ok {
+				rc := recorded.RecordContext()
+				contexts[i] = rc
+				switch {
+				case cfg.Builder != nil:
+					// 搭建器模式：卖出树同样接入记录；失败时回退默认 Seller。
+					if s, err := cfg.Builder.RecordSeller(rc); err == nil {
+						rv.Seller = s
+					}
+				case cfg.MACD == nil:
+					rv.Seller = cfg.recordedDefaultSeller(rc)
+				}
+			}
+		}
+		runVariants[i] = rv
 	}
 
 	execute := researchrun.Run
@@ -721,9 +791,11 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	}
 	var run researchrun.Report
 	var accounts []*AccountReport
+	var replays []*ReplayVariant
 	var benchmark []BenchmarkPoint
+	var loaded map[string]extend.Klines
 	if cfg.Account != nil {
-		run, accounts, benchmark, err = runAccountBacktest(ctx, runCfg, *cfg.Account)
+		run, accounts, replays, benchmark, loaded, err = runAccountBacktest(ctx, runCfg, *cfg.Account, contexts...)
 	} else {
 		run, err = execute(ctx, runCfg)
 	}
@@ -756,6 +828,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		vr := VariantReport{Name: result.Variant.Name, Stats: newTradeStatsJSON(core.Stats(result.Trades))}
 		if cfg.Account != nil {
 			vr.Account = accounts[i]
+			if i < len(replays) && replays[i] != nil {
+				vr.Replay = &ReplayMeta{Version: replayVersion, Available: true}
+			}
 		}
 		vr.Trades = toTradeJSON(result.Trades)
 		report.Variants = append(report.Variants, vr)
@@ -767,7 +842,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		report.Comparison = buildComparison(sp, report.Variants)
 	}
 
-	if err := saveReport(report, run.Results); err != nil {
+	if err := saveReport(report, replays, loaded, run.Results); err != nil {
 		return nil, fmt.Errorf("报告落盘失败: %w", err)
 	}
 	return report, nil
@@ -822,19 +897,17 @@ func toTradeJSON(trades []core.Trade) []TradeJSON {
 	return out
 }
 
-// saveReport 落盘报告（AGENTS.md 6.1）：report.json（原子写）+ 每变体 CSV + 汇总 HTML。
-func saveReport(rep *Report, raw ...[]researchrun.Result) error {
+// saveReport 落盘报告（AGENTS.md 6.1）：回放明细与个股快照 → 每变体 CSV +
+// 汇总 HTML → report.json 最后原子发布。中途失败时目录内只有零散文件，
+// 不会被误认为完整报告（R12：失败不发布半份回放）。
+func saveReport(rep *Report, replays []*ReplayVariant, loaded map[string]extend.Klines, raw ...[]researchrun.Result) error {
 	dir := filepath.Join("output", "trades", rep.RunID())
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	// report.json 原子写（tmp + fsync + rename，复用 atomicWrite）
-	buf, err := json.MarshalIndent(rep, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err := atomicWrite(filepath.Join(dir, "report.json"), buf); err != nil {
+	// 回放明细 replay/variant-<index>.json + 个股 K 线快照 kline/<code>.json。
+	if err := saveReplayFiles(dir, replays, loaded); err != nil {
 		return err
 	}
 
@@ -851,8 +924,16 @@ func saveReport(rep *Report, raw ...[]researchrun.Result) error {
 		}
 		allTrades = append(allTrades, trades...)
 	}
-	_, err = core.ExportTradesHTMLWithError(rep.Config.ScriptName, rep.RunID()+"_summary", allTrades, getDayKlines)
-	return err
+	if _, err := core.ExportTradesHTMLWithError(rep.Config.ScriptName, rep.RunID()+"_summary", allTrades, getDayKlines); err != nil {
+		return err
+	}
+
+	// report.json 原子写（tmp + fsync + rename，复用 atomicWrite）
+	buf, err := json.MarshalIndent(rep, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWrite(filepath.Join(dir, "report.json"), buf)
 }
 
 // fromTradeJSON 由报告 JSON 还原 core.Trade（供 CSV/HTML 导出复用口径）。

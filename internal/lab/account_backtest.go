@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/protocol"
@@ -54,16 +55,20 @@ type AccountReport struct {
 }
 
 type accountHolding struct {
-	buy   core.Buy
-	trade core.Trade
-	mark  protocol.Price
+	buy        core.Buy
+	trade      core.Trade
+	mark       protocol.Price
+	positionID int
+	markDate   string
 }
 
 type accountState struct {
-	cash     float64
-	holdings []accountHolding
-	trades   []core.Trade
-	report   *AccountReport
+	cash      float64
+	holdings  []accountHolding
+	trades    []core.Trade
+	report    *AccountReport
+	replay    *ReplayVariant
+	nextPosID int
 }
 
 type accountMinutes struct {
@@ -73,20 +78,25 @@ type accountMinutes struct {
 
 // runAccountBacktest 逐日统一执行账户：盘中卖出、收盘买入、收盘估值。
 // 复用 Buyer/Seller 和 Cost；不会把逐笔结果排序后冒充资金约束回测。
-func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account AccountConfig) (researchrun.Report, []*AccountReport, []BenchmarkPoint, error) {
+// contexts 按变体顺序提供原因记录上下文（可变参，缺省即不记录）；
+// 采集与求值顺序解耦，不影响成交与估值结果（R07/R15）。
+// 第三个返回值为逐变体回放数据：未提供记录上下文的变体为 nil。
+// 第五个返回值为本次回测已加载的个股日线副本（键为带前缀代码，含前导历史，
+// 供保存阶段生成回放个股 K 线快照），仅账户回测路径填充。
+func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account AccountConfig, contexts ...*builder.RecordContext) (researchrun.Report, []*AccountReport, []*ReplayVariant, []BenchmarkPoint, map[string]extend.Klines, error) {
 	var result researchrun.Report
 	if err := account.Validate(); err != nil {
-		return result, nil, nil, err
+		return result, nil, nil, nil, nil, err
 	}
 	if err := ctx.Err(); err != nil {
-		return result, nil, nil, err
+		return result, nil, nil, nil, nil, err
 	}
 	if len(cfg.Years) == 0 || len(cfg.Variants) == 0 || cfg.GetDayKlines == nil {
-		return result, nil, nil, fmt.Errorf("账户回测缺少年份、策略或行情源")
+		return result, nil, nil, nil, nil, fmt.Errorf("账户回测缺少年份、策略或行情源")
 	}
 	for _, v := range cfg.Variants {
 		if v.Buyer == nil || (v.Seller == nil && cfg.DefaultSeller == nil) {
-			return result, nil, nil, fmt.Errorf("账户回测缺少买入或卖出规则")
+			return result, nil, nil, nil, nil, fmt.Errorf("账户回测缺少买入或卖出规则")
 		}
 	}
 	years := append([]int(nil), cfg.Years...)
@@ -95,14 +105,14 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	end := time.Date(years[len(years)-1], 12, 31, 23, 59, 59, 0, time.Local)
 	index, err := cfg.GetDayKlines("sh000001", start, end)
 	if err != nil {
-		return result, nil, nil, fmt.Errorf("读取上证指数: %w", err)
+		return result, nil, nil, nil, nil, fmt.Errorf("读取上证指数: %w", err)
 	}
 	if len(index) == 0 {
-		return result, nil, nil, fmt.Errorf("回测区间缺少上证指数日线，请先更新行情")
+		return result, nil, nil, nil, nil, fmt.Errorf("回测区间缺少上证指数日线，请先更新行情")
 	}
 	for _, k := range index {
 		if k == nil || k.Kline == nil || k.Close <= 0 {
-			return result, nil, nil, fmt.Errorf("上证指数存在无效收盘价")
+			return result, nil, nil, nil, nil, fmt.Errorf("上证指数存在无效收盘价")
 		}
 	}
 	index = append(extend.Klines(nil), index...)
@@ -112,7 +122,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	for _, k := range index {
 		date := k.Time.Format(time.DateOnly)
 		if calendar[date] {
-			return result, nil, nil, fmt.Errorf("上证指数存在重复交易日: %s", date)
+			return result, nil, nil, nil, nil, fmt.Errorf("上证指数存在重复交易日: %s", date)
 		}
 		calendar[date] = true
 		benchmark = append(benchmark, BenchmarkPoint{Date: date, Return: (k.Close.Float64()/index[0].Close.Float64() - 1) * 100})
@@ -157,7 +167,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		mu.Unlock()
 	})
 	if err != nil {
-		return result, nil, nil, err
+		return result, nil, nil, nil, nil, err
 	}
 	for _, code := range codes {
 		ks, ok := data[code]
@@ -166,10 +176,10 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		}
 		for i, k := range ks {
 			if k == nil || k.Kline == nil || k.Close <= 0 || (i > 0 && !k.Time.After(ks[i-1].Time)) {
-				return result, nil, nil, fmt.Errorf("%s 日线存在无效价格或日期顺序", code)
+				return result, nil, nil, nil, nil, fmt.Errorf("%s 日线存在无效价格或日期顺序", code)
 			}
 			if !k.Time.Before(start) && !calendar[k.Time.Format(time.DateOnly)] {
-				return result, nil, nil, fmt.Errorf("上证指数缺少 %s 交易日，请先更新指数行情", k.Time.Format(time.DateOnly))
+				return result, nil, nil, nil, nil, fmt.Errorf("上证指数缺少 %s 交易日，请先更新指数行情", k.Time.Format(time.DateOnly))
 			}
 		}
 		result.Coverage.Completed++
@@ -177,11 +187,23 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	result.Coverage.Skipped = len(codes) - result.Coverage.Completed
 	states := make([]accountState, len(cfg.Variants))
 	accounts := make([]*AccountReport, len(states))
+	replays := make([]*ReplayVariant, len(states))
 	result.Results = make([]researchrun.Result, len(states))
 	for i, variant := range cfg.Variants {
 		accounts[i] = &AccountReport{Points: make([]AccountPoint, 0, len(index))}
 		states[i] = accountState{cash: account.InitialCapital, report: accounts[i]}
 		result.Results[i].Variant = variant
+		// 提供记录上下文的变体旁路采集回放数据；其余变体保持 nil，路径零开销。
+		if i < len(contexts) && contexts[i] != nil {
+			replays[i] = &ReplayVariant{
+				Version:      replayVersion,
+				VariantIndex: i,
+				VariantName:  variant.Name,
+				Dates:        make([]string, 0, len(index)),
+				Days:         make([]ReplayDay, 0, len(index)),
+			}
+			states[i].replay = replays[i]
+		}
 	}
 	cursors := map[string]int{}
 	minutes := map[string]accountMinutes{}
@@ -190,7 +212,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	}
 	for day, k := range index {
 		if err := ctx.Err(); err != nil {
-			return result, nil, nil, err
+			return result, nil, nil, nil, nil, err
 		}
 		date := k.Time.Format(time.DateOnly)
 		prefixes := map[string]extend.Klines{}
@@ -221,6 +243,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 				}
 				today := ks[len(ks)-1]
 				holding.mark = today.Close
+				holding.markDate = date
 				if today.Volume <= 0 || holding.buy.Time.Format(time.DateOnly) == date {
 					remaining = append(remaining, holding)
 					continue
@@ -233,7 +256,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 						to := time.Date(k.Time.Year(), 12, 31, 23, 59, 59, 0, time.Local)
 						mks, err := cfg.GetMinKlines(holding.buy.Code, from, to)
 						if err != nil {
-							return result, nil, nil, fmt.Errorf("%s 分钟行情: %w", holding.buy.Code, err)
+							return result, nil, nil, nil, nil, fmt.Errorf("%s 分钟行情: %w", holding.buy.Code, err)
 						}
 						for _, mk := range mks {
 							if mk != nil && mk.Close > 0 {
@@ -260,7 +283,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 				sold := false
 				for m, bar := range bars {
 					if err := ctx.Err(); err != nil {
-						return result, nil, nil, err
+						return result, nil, nil, nil, nil, err
 					}
 					current.Kline = bars[:m+1].Kline(bar.Time, bar.Open)
 					if fallback {
@@ -275,10 +298,25 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 						tr.SellPrice = current.Close
 						tr.SellExecPrice, tr.SellIncome = cfg.Cost.SellIncome(current.Close, tr.Quantity)
 						if tr.SellExecPrice <= 0 || tr.SellIncome < 0 {
-							return result, nil, nil, fmt.Errorf("%s 卖出价格或费用产生负收入，请检查成本配置", holding.buy.Code)
+							return result, nil, nil, nil, nil, fmt.Errorf("%s 卖出价格或费用产生负收入，请检查成本配置", holding.buy.Code)
 						}
 						s.cash += tr.SellIncome
 						s.trades = append(s.trades, tr)
+						// 旁路记录实际卖出事件；ExtractSuccessPath 返回新建切片，引用安全。
+						if s.replay != nil {
+							s.replay.recordTrade(ReplayTrade{
+								PositionID:     holding.positionID,
+								Code:           holding.buy.Code,
+								Time:           tr.SellTime.Format(replayTimeLayout),
+								Side:           "sell",
+								Price:          tr.SellPrice.Float64(),
+								ExecPrice:      tr.SellExecPrice.Float64(),
+								Quantity:       tr.Quantity,
+								Fee:            tr.SellExecPrice.Float64()*float64(tr.Quantity) - tr.SellIncome,
+								MinuteFallback: fallback,
+								Reason:         contexts[i].ExtractSuccessPath(),
+							})
+						}
 						sold = true
 						break
 					}
@@ -310,7 +348,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 				budget := math.Min(account.OrderBudget, s.cash)
 				price, _ := cfg.Cost.BuyCost(today.Close, 100)
 				if price <= 0 {
-					return result, nil, nil, fmt.Errorf("%s 买入成交价无效", code)
+					return result, nil, nil, nil, nil, fmt.Errorf("%s 买入成交价无效", code)
 				}
 				qty := int(math.Floor(budget/price.Float64()/100)) * 100
 				var buyCost float64
@@ -325,14 +363,70 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 					continue
 				}
 				s.cash -= buyCost
+				s.nextPosID++
 				tr := core.Trade{Code: code, BuyTime: accountCloseTime(today.Time), BuyPrice: today.Close, BuyExecPrice: price, BuyCost: buyCost, Quantity: qty}
-				s.holdings = append(s.holdings, accountHolding{buy: core.Buy{Code: code, Time: today.Time, Price: today.Close}, trade: tr, mark: today.Close})
+				s.holdings = append(s.holdings, accountHolding{buy: core.Buy{Code: code, Time: today.Time, Price: today.Close}, trade: tr, mark: today.Close, positionID: s.nextPosID, markDate: date})
+				// 旁路记录实际买入事件；仓位身份此后固定，卖出沿用。
+				if s.replay != nil {
+					s.replay.recordTrade(ReplayTrade{
+						PositionID: s.nextPosID,
+						Code:       code,
+						Time:       tr.BuyTime.Format(replayTimeLayout),
+						Side:       "buy",
+						Price:      today.Close.Float64(),
+						ExecPrice:  price.Float64(),
+						Quantity:   qty,
+						Fee:        buyCost - price.Float64()*float64(qty),
+						Reason:     contexts[i].ExtractSuccessPath(),
+					})
+				}
 			}
 			equity := s.cash
 			for _, h := range s.holdings {
 				equity += h.mark.Float64() * float64(h.trade.Quantity)
 			}
 			s.report.Points = append(s.report.Points, AccountPoint{Date: date, Equity: equity, Cash: s.cash, Holdings: len(s.holdings), Return: (equity/account.InitialCapital - 1) * 100})
+			// 收盘帧点之后立即冻结当日回放帧：持仓为不可变副本，事件为当日全部成交。
+			if s.replay != nil {
+				marketValue := equity - s.cash
+				day := ReplayDay{
+					Date:        date,
+					Equity:      equity,
+					Cash:        s.cash,
+					MarketValue: marketValue,
+				}
+				if n := len(s.report.Points); n >= 2 {
+					day.DayPnL = equity - s.report.Points[n-2].Equity
+				} else {
+					day.DayPnL = equity - account.InitialCapital
+				}
+				if equity > 0 {
+					day.PositionRatio = marketValue / equity * 100
+				}
+				for _, h := range s.holdings {
+					totalCost := h.trade.BuyCost
+					mv := h.mark.Float64() * float64(h.trade.Quantity)
+					floating := mv - totalCost
+					day.Holdings = append(day.Holdings, ReplayHolding{
+						PositionID:   h.positionID,
+						Code:         h.buy.Code,
+						BuyTime:      h.trade.BuyTime.Format(replayTimeLayout),
+						Quantity:     h.trade.Quantity,
+						BuyPrice:     h.trade.BuyPrice.Float64(),
+						BuyExecPrice: h.trade.BuyExecPrice.Float64(),
+						TotalCost:    totalCost,
+						CostPrice:    totalCost / float64(h.trade.Quantity),
+						MarkPrice:    h.mark.Float64(),
+						MarkDate:     h.markDate,
+						MarketValue:  mv,
+						FloatingPnL:  floating,
+						FloatingRate: floating / totalCost * 100,
+					})
+				}
+				day.Trades = s.replay.takeDayTrades()
+				s.replay.Dates = append(s.replay.Dates, date)
+				s.replay.Days = append(s.replay.Days, day)
+			}
 		}
 		// 仅保留仍有持仓的代码分钟缓存，避免全市场多年分钟数据常驻内存。
 		for code := range minutes {
@@ -353,6 +447,10 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		}
 	}
 	for i, s := range states {
+		// 回测结束时冻结规则描述表；构建期已完整登记，此处只读快照。
+		if s.replay != nil {
+			s.replay.snapshotRules(contexts[i])
+		}
 		for _, h := range s.holdings {
 			tr := h.trade
 			tr.SellTime, tr.SellPrice, tr.SellExecPrice = accountCloseTime(index[len(index)-1].Time), h.mark, h.mark
@@ -362,7 +460,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		sort.SliceStable(s.trades, func(a, b int) bool { return s.trades[a].BuyTime.Before(s.trades[b].BuyTime) })
 		result.Results[i].Trades = s.trades
 	}
-	return result, accounts, benchmark, nil
+	return result, accounts, replays, benchmark, data, nil
 }
 
 func accountCloseTime(t time.Time) time.Time {

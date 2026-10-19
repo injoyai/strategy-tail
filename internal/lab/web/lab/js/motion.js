@@ -47,7 +47,7 @@ export function initMotion() {
       autoAlpha: 1, y: 0, duration: .45, stagger: .07, ease: 'power2.out',
       clearProps: 'opacity,visibility,transform'
     });
-    gsap.fromTo('.tabs [role="tab"]', {autoAlpha: 0, y: -5}, {
+    gsap.fromTo('.primary-tabs button', {autoAlpha: 0, y: -5}, {
       autoAlpha: 1, y: 0, duration: .34, delay: .08, stagger: .045, ease: 'power2.out',
       clearProps: 'opacity,visibility,transform'
     });

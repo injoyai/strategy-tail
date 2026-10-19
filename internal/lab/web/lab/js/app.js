@@ -1,4 +1,4 @@
-// 根组件：masthead / Tabs（WAI-ARIA + URL）/ 批量任务状态条 / 6 个功能面板 + 顶层对话框。
+// 根组件：masthead / Tabs（WAI-ARIA + URL）/ 批量任务状态条 / 7 个功能面板 + 顶层对话框。
 // 从 index.html 迁移：switchTab/键盘导航/renderTaskProgress/showPendingTask/pollStatus/
 // pollStatusOnce/stopBatchTask/dismissTaskDock/initMotion。
 // 任务状态放入 store.taskDock（响应式），状态条模板渲染；done 分流钩子：
@@ -6,7 +6,7 @@
 import { createApp, watch } from './vendor/vue.esm-browser.prod.js';
 import { state, runtime } from './store.js';
 import { Api } from './api.js';
-import { TABS, TAB_SLUG, TAB_NUM, TASK_LABEL } from './constants.js';
+import { TABS, NAV_GROUPS, TAB_SLUG, TAB_NUM, TASK_LABEL } from './constants.js';
 import { taskProgress } from './format.js';
 import { animatePanel, animateStatus, initMotion } from './motion.js';
 import Tab1Run from './components/Tab1Run.js';
@@ -17,6 +17,7 @@ import Tab3Trades from './components/Tab3Trades.js';
 import Tab4Factor from './components/Tab4Factor.js';
 import Tab5Candidates from './components/Tab5Candidates.js';
 import Tab6Portfolio from './components/Tab6Portfolio.js';
+import Tab7Practice from './components/Tab7Training.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
 import CandidateEditDlg from './components/CandidateEditDlg.js';
 import CandidateEvidenceDlg from './components/CandidateEvidenceDlg.js';
@@ -27,10 +28,18 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
+    Tab7Practice, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
-    return {state, tabs: TABS};
+    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7}};
+  },
+  computed: {
+    activeGroup() {
+      return this.groups.find(g => g.tabs.includes(state.activeTab));
+    },
+    sectionTabs() {
+      return this.tabs.filter(t => this.activeGroup.tabs.includes(t.n));
+    },
   },
   provide() {
     return {
@@ -58,15 +67,31 @@ const App = {
     if (initial) this.switchTab(initial);
   },
   methods: {
+    setTaskRef(name, el) {
+      this.$refs[name] = el;
+    },
     // ============ Tabs ============
     setPanelRef(el, n) {
       if (el) this.$refs['panel' + n] = el; else delete this.$refs['panel' + n];
     },
+    switchGroup(group) {
+      this.switchTab(this.groupTabs[group.id]);
+    },
     switchTab(n) {
+      const group = NAV_GROUPS.find(g => g.tabs.includes(n));
+      if (!group) return;
+      this.groupTabs[group.id] = n;
       state.activeTab = n;
       if (n === 6) {
         const p = new URLSearchParams(location.search);
         p.set('tab', 'portfolio'); // 06 保留并更新扩展参数（model/revision/run/val/filter/sort/page）
+        history.replaceState(null, '', '?' + p.toString());
+      } else if (n === 7) {
+        const p = new URLSearchParams(location.search);
+        p.set('tab', 'practice'); // 07 保留扩展参数 p（不透明会话 ID，刷新恢复）
+        if (state.practiceTrainingId) { p.set('t', state.practiceTrainingId); p.delete('p'); p.delete('bank'); }
+        else if (state.practiceBankId) { p.set('bank', state.practiceBankId); p.delete('p'); p.delete('t'); }
+        else if (state.practiceCurrentId && !p.has('t') && !p.has('bank')) p.set('p', state.practiceCurrentId);
         history.replaceState(null, '', '?' + p.toString());
       } else if (n === 1) {
         history.replaceState(null, '', location.pathname);
@@ -76,7 +101,7 @@ const App = {
       this.$nextTick(() => animatePanel(this.$refs['panel' + n]));
     },
     onTabsKeydown(e) {
-      const tabs = this.tabs;
+      const tabs = this.sectionTabs;
       const i = tabs.findIndex(t => t.n === state.activeTab);
       let target = null;
       if (e.key === 'ArrowRight') target = tabs[(i + 1) % tabs.length];
@@ -192,6 +217,9 @@ const App = {
           } else if (s.task === 'portfolio' || s.task === 'portfolio_validation') {
             // 组合任务完成：终态以持久 Store 为准，刷新 06 页对应详情（不自动切页）。
             if (s.runId && this.$refs.tab6) await this.$refs.tab6.pfOnTaskDone(s.runId, s.task);
+          } else if (s.task === 'practice_prepare') {
+            // 盘感出题完成：07 页轮询通常先发现；此处作为任务条先行的加速钩子。
+            if (s.runId && this.$refs.tab7) await this.$refs.tab7.practiceOnTaskDone(s.runId);
           } else {
             state.currentReport = await Api.latestReport();
             this.switchTab(2);
@@ -240,25 +268,25 @@ const App = {
     <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
   </div>
   <div class="brand-copy">
-    <span class="eyebrow">A-SHARE RESEARCH WORKBENCH</span>
     <h1>策略实验室</h1>
   </div>
-  <div class="header-meta" aria-label="运行环境">
-    <span class="local-badge"><span class="live-dot" aria-hidden="true"></span>本地研究会话</span>
-  </div>
+  <nav class="tabs primary-tabs" aria-label="主导航">
+    <button v-for="g in groups" :key="g.id" :id="'nav-' + g.id" type="button"
+      :aria-current="activeGroup.id === g.id ? 'location' : null" :aria-controls="'tab' + groupTabs[g.id]"
+      @click="switchGroup(g)"><span class="tab-title">{{ g.title }}</span></button>
+  </nav>
 </header>
 
-<div class="tabs" role="tablist" aria-label="功能区" @keydown="onTabsKeydown">
-  <button v-for="t in tabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
-    :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
-    :tabindex="state.activeTab === t.n ? 0 : -1" @click="switchTab(t.n)">
-    <span class="tab-copy"><span class="tab-title">{{ t.title }}</span><span class="tab-desc">{{ t.desc }}</span></span>
-  </button>
-</div>
-
-<main :class="{'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
+<main :class="{'practice-page': state.activeTab === 7 && (!state.taskDock || state.taskDock.task === 'practice_prepare'), 'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
+  <div v-if="sectionTabs.length > 1" class="tabs section-tabs" role="tablist" :aria-label="activeGroup.title" @keydown="onTabsKeydown">
+    <button v-for="t in sectionTabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
+      :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
+      :tabindex="state.activeTab === t.n ? 0 : -1" @click="switchTab(t.n)">
+      <span class="tab-title">{{ t.title }}</span>
+    </button>
+  </div>
   <data-update />
-  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+  <section class="statusbar" :class="{'practice-task-progress': state.activeTab === 7 && state.taskDock?.task === 'practice_prepare' && (state.taskDock.running || state.taskDock.connectionError)}" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">
@@ -291,13 +319,14 @@ const App = {
   </section>
 
   <div v-for="t in tabs" :key="t.n" class="tab-panel" :id="'tab' + t.n" :ref="el => setPanelRef(el, t.n)"
-    role="tabpanel" :aria-labelledby="'tabbtn' + t.n" tabindex="0" v-show="state.activeTab === t.n">
+    :role="t.n === 7 ? 'region' : 'tabpanel'" :aria-labelledby="t.n === 7 ? 'nav-practice' : 'tabbtn' + t.n" tabindex="0" v-show="state.activeTab === t.n">
     <tab1-run v-if="t.n === 1" />
     <tab2-compare v-if="t.n === 2" />
     <tab3-trades v-if="t.n === 3" />
     <tab4-factor v-if="t.n === 4" />
     <tab5-candidates v-if="t.n === 5" />
-    <tab6-portfolio ref="tab6" v-if="t.n === 6" />
+    <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />
+    <tab7-practice :ref="el => setTaskRef('tab7', el)" v-if="t.n === 7" />
   </div>
 </main>
 

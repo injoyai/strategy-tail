@@ -59,6 +59,11 @@ export const state = reactive({
   currentReport: null,
   selectedVariant: null, // 03 行点击 → 04 筛选
 
+  // —— 03 逐日回放（回放区替换结果区） ——
+  replayOn: false,       // 03 结果区是否处于逐日回放视图
+  replay: null,          // 回放会话（replay.js createSession 产物；跨页保留，
+                         // 页面组件 v-if 销毁后恢复；报告切换时整体重置）
+
   // —— 01 因子研究 ——
   factorCatalog: [],
   currentAnalysis: null,
@@ -118,6 +123,11 @@ export const state = reactive({
   pfValRequestId: null,              // 验证创建幂等
   pfExpDirty: 0,                     // 实验数据版本号：创建成功后递增，06 页监听刷新
   pfValDirty: 0,                     // 验证数据版本号：创建成功后递增，06 页监听刷新
+
+  // —— 07 盘感练习 ——
+  practiceTrainingId: '',
+  practiceBankId: '',
+  practiceCurrentId: '',             // 当前练习会话 ID（跨页保留；页面组件 v-if 销毁后恢复用）
 });
 
 // 非响应式运行时句柄（定时器、跨轮询记忆）。

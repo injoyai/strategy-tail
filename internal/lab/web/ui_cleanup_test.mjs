@@ -64,6 +64,7 @@ test('因子入口只打开运行配置，切换模式后确认仍运行因子�
 
 test('行情失败详情归气泡所有，通用任务保留错误入口', () => {
   const ctx = {...App.data(), ...App.methods};
+  for (const [key, fn] of Object.entries(App.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
   const render = () => compile(App.template)(ctx, []);
   for (const task of ['data_update', 'backtest']) {
     App.methods.renderTaskProgress.call(ctx, {task, state: 'error', doneCodes: 2, totalCodes: 4, progress: 50, error: 'download failed'});
@@ -94,5 +95,74 @@ test('所有页面和对话框模板通过 Vue 编译', () => {
   for (const file of fs.readdirSync(dir).filter(f => f.endsWith('.js'))) {
     const source = fs.readFileSync(new URL(file, dir), 'utf8');
     for (const [, template] of source.matchAll(/template: `([\s\S]*?)`/g)) assert.doesNotThrow(() => compile(template), file);
+  }
+});
+
+function navigationContext() {
+  const ctx = {...App.data(), $refs: {}, $nextTick() {}};
+  for (const [key, fn] of Object.entries(App.methods)) ctx[key] = fn.bind(ctx);
+  for (const [key, fn] of Object.entries(App.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
+  return ctx;
+}
+
+test('三个主入口覆盖全部页面，二级页签仅展示当前工作区', () => {
+  const ctx = navigationContext();
+  assert.deepEqual(ctx.groups.map(g => g.title), ['策略回测', '因子研究', '盘感练习']);
+  assert.deepEqual(ctx.groups.flatMap(g => g.tabs), constants.TABS.map(t => t.n));
+  const previous = state.activeTab;
+  try {
+    for (const group of ctx.groups) {
+      state.activeTab = group.tabs[0];
+      const tree = compile(App.template)(ctx, []);
+      const [nav] = elements(tree, 'nav');
+      assert.equal(elements(nav, 'button').length, 3);
+      assert.equal(elements(nav, 'button').filter(b => b.props['aria-current'] === 'location').length, 1);
+      const secondary = elements(tree, 'button').filter(b => b.props?.role === 'tab');
+      assert.deepEqual(secondary.map(b => Number(b.props['data-tab'])), group.tabs.length > 1 ? group.tabs : []);
+      assert.equal(secondary.filter(b => b.props['aria-selected'] === 'true').length, group.tabs.length > 1 ? 1 : 0);
+      const panels = elements(tree, 'div').filter(v => v.props?.id === 'tab7');
+      assert.equal(panels[0].props.role, 'region');
+      assert.equal(panels[0].props['aria-labelledby'], 'nav-practice');
+    }
+  } finally {state.activeTab = previous;}
+});
+
+test('跨工作区返回上次页面，旧链接和组内键盘切换保持可用', () => {
+  const previous = {activeTab: state.activeTab, location: globalThis.location, history: globalThis.history, document: globalThis.document};
+  let url, focused;
+  globalThis.location = {pathname: '/', search: ''};
+  globalThis.history = {replaceState(_state, _title, next) {url = next;}};
+  globalThis.document = {getElementById(id) {return {focus() {focused = id;}};}};
+  const ctx = navigationContext();
+  try {
+    for (const t of constants.TABS) {
+      ctx.switchTab(t.n);
+      assert.equal(ctx.activeGroup.tabs.includes(t.n), true);
+      assert.equal(url, t.n === 1 ? '/' : '?tab=' + constants.TAB_SLUG[t.n]);
+    }
+    ctx.switchTab(3);
+    ctx.switchTab(5);
+    ctx.switchGroup(ctx.groups[0]);
+    assert.equal(state.activeTab, 3);
+    ctx.switchGroup(ctx.groups[1]);
+    assert.equal(state.activeTab, 5);
+    const key = k => ctx.onTabsKeydown({key: k, preventDefault() {}});
+    key('End'); assert.equal(state.activeTab, 6); assert.equal(focused, 'tabbtn6');
+    key('ArrowRight'); assert.equal(state.activeTab, 4); assert.equal(focused, 'tabbtn4');
+    key('ArrowLeft'); assert.equal(state.activeTab, 6);
+    key('Home'); assert.equal(state.activeTab, 4);
+    ctx.switchTab(999); assert.equal(state.activeTab, 4);
+    ctx.switchTab(7);
+    globalThis.location.search = '?tab=practice&p=session123';
+    ctx.switchTab(7);
+    assert.equal(url, '?tab=practice&p=session123');
+    globalThis.location.search = '?tab=portfolio&model=model123&revision=2';
+    ctx.switchTab(6);
+    assert.equal(url, '?tab=portfolio&model=model123&revision=2');
+  } finally {
+    state.activeTab = previous.activeTab;
+    for (const name of ['location', 'history', 'document']) {
+      if (previous[name] === undefined) delete globalThis[name]; else globalThis[name] = previous[name];
+    }
   }
 });

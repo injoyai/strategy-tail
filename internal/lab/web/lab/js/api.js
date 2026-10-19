@@ -32,6 +32,9 @@ export const Api = {
   report: id => api('GET', '/api/report/' + encodeURIComponent(id)),
   deleteReport: id => api('DELETE', '/api/report/' + encodeURIComponent(id)),
   kline: (code, from, to) => api('GET', `/api/kline/${encodeURIComponent(code)}?from=${from}&to=${to}`),
+  // 回放（报告内快照，旧报告不可用时 400 提示重新回测）
+  replay: (id, variant) => api('GET', `/api/report/${encodeURIComponent(id)}/replay/${variant}`),
+  replayKline: (id, code) => api('GET', `/api/report/${encodeURIComponent(id)}/replay/kline/${encodeURIComponent(code)}`),
   // 因子研究
   factors: () => api('GET', '/api/factors'),
   analyze: req => api('POST', '/api/analyze', req),
@@ -68,4 +71,22 @@ export const Api = {
   portfolioValidations: query => api('GET', '/api/portfolio-validations' + (query || '')),
   createPortfolioValidation: req => api('POST', '/api/portfolio-validations', req),
   validation: id => api('GET', '/api/portfolio-validations/' + encodeURIComponent(id)),
+  practiceBanks: () => api('GET', '/api/practice-banks'),
+  createPracticeBank: req => api('POST', '/api/practice-banks', req),
+  practiceBank: id => api('GET', '/api/practice-banks/' + encodeURIComponent(id)),
+  trainings: () => api('GET', '/api/practice-trainings'),
+  startTraining: req => api('POST', '/api/practice-trainings', req),
+  training: id => api('GET', '/api/practice-trainings/' + encodeURIComponent(id)),
+  trainingAction: (id, cmd) => api('POST', '/api/practice-trainings/' + encodeURIComponent(id) + '/actions', cmd),
+  trainingReport: id => api('GET', '/api/practice-trainings/' + encodeURIComponent(id) + '/report'),
+  trainingQuestion: (id, q) => api('GET', '/api/practice-trainings/' + encodeURIComponent(id) + '/questions/' + encodeURIComponent(q)),
+  trainingReview: (id, q) => api('GET', '/api/practice-trainings/' + encodeURIComponent(id) + '/questions/' + encodeURIComponent(q) + '/review'),
+  trainingRetry: (id, q, requestId) => api('POST', '/api/practice-trainings/' + encodeURIComponent(id) + '/questions/' + encodeURIComponent(q) + '/retry', {requestId}),
+  // 盘感练习
+  practiceStart: req => api('POST', '/api/practice', req),
+  practices: () => api('GET', '/api/practices'),
+  practice: id => api('GET', '/api/practice/' + encodeURIComponent(id)),
+  practiceAction: (id, cmd) => api('POST', '/api/practice/' + encodeURIComponent(id) + '/actions', cmd),
+  practiceReview: id => api('GET', '/api/practice/' + encodeURIComponent(id) + '/review'),
+  practiceRetry: (id, requestId) => api('POST', '/api/practice/' + encodeURIComponent(id) + '/retry', {requestId}),
 };

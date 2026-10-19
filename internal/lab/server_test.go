@@ -174,6 +174,14 @@ func TestServerRunLifecycle(t *testing.T) {
 	if err := json.Unmarshal(res, &rep); err != nil {
 		t.Fatal(err)
 	}
+	// 响应注入报告 ID（= 落盘目录名），前端回放请求以此为定位键（plan T4）。
+	var latestRaw map[string]any
+	if err := json.Unmarshal(res, &latestRaw); err != nil {
+		t.Fatal(err)
+	}
+	if latestRaw["id"] != rep.RunID() {
+		t.Fatalf("latest 响应 id=%v, 期望 %s", latestRaw["id"], rep.RunID())
+	}
 	if rep.Config.ScriptName != "matrix" || len(rep.Variants) != 1 {
 		t.Fatalf("报告结构异常: script=%q variants=%d", rep.Config.ScriptName, len(rep.Variants))
 	}
@@ -221,6 +229,13 @@ func TestServerRunLifecycle(t *testing.T) {
 	res = doReq(t, h, http.MethodGet, "/api/report/"+runID, nil, http.StatusOK)
 	if !bytes.Contains(res, []byte(`"基线·全买"`)) {
 		t.Fatalf("report/{id} 内容异常: %s", res)
+	}
+	var repRaw map[string]any
+	if err := json.Unmarshal(res, &repRaw); err != nil {
+		t.Fatal(err)
+	}
+	if repRaw["id"] != runID {
+		t.Fatalf("report/{id} 响应 id=%v, 期望 %s", repRaw["id"], runID)
 	}
 
 	// 路径穿越防护

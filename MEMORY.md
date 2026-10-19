@@ -163,3 +163,27 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **迁移总则（长期，勿违反）**：① 73 项目录组件唯一求值来源为 `strategies/rule` 内核（＋`strategies/factor` 因子），buy/sell 门面只做参数归一与委托，不得出现第二套公式；② 目录外仍维护的算法复用同一 factor 数值，禁止为"统一"再造与因子等价的 rule 包装；③ 门面迁移失败必须构造期报错返回 false/error，禁止隐性回退旧实现；④ 持仓指标（rule 包）不得注册进研究用 factor.Catalog；⑤ 迁移证据以真实 `go build ./...` ＋全量测试为准，GetDiagnostics 或单包测试不能替代（见 T4 教训）。
 - **T7 验收（docker golang:1.25-alpine，2026-10-18）**：`go build ./...` BUILD_OK、`go vet ./...` VET_OK、`go test ./... -count=1` 20 包全绿；`node --test internal/lab/web/*.mjs` 67/67；`python3 tests/deploy_test.py` 7/7；`git diff --check` exit 0。受保护核心类型与 BuilderSpec v1/三种节点/FactorFilterSpec 字段未改；未改 data/lab 与 testdata 冻结基线。
 - **时序性能验收**：窗口／历史引用不能逐点从头重算 MACD。保留同输入、同参数的旧 oracle 与新规则 A/B 基准；账户组合研究的整体基准不能替代 Seller 分钟热路径验证，单次 Seller 微基准也不能替代完整分钟循环。具体证据与未验证项以迁移台账为准。
+
+## 回测逐日回放（2026-10-18）
+- **回放数据合同**：ReplayVariant.Dates 与 Days 在 account_backtest.go 同一循环同步 append，严格一一对应；首日 DayPnL = equity − InitialCapital，故初始资金可由 days[0].equity − days[0].dayPnl 推导，前端不得伪造。
+- **R07/R15 等价断言口径**：researchrun.Result 内嵌 Variant（含 Buyer/Seller 接口值），记录版的包装器与裸版策略对象必然不等——等价测试只能比对 Trades/Coverage/账户基准数据，不能 DeepEqual 整个 Report。
+- **测试夹具时区坑（勿回退）**：docker 验证容器为 UTC，夹具时间用 time.Local 会随宿主时区漂移（freezeValidation「冻结早于完成应拒绝」在 +08 宿主绿、UTC 容器红）。夹具固定时区一律 time.FixedZone("CST", 8*3600)。
+- **Go 整数常量除法坑**：测试期望值写 `37000/99962*100` 是常量整数除法得 0，须写 `37000.0/99962*100`；账号/成本单价/浮动率期望值全部中招过。
+- **ServeMux 单段通配与编码斜杠**：`{code}` 匹配单段，`a%2F` 解转义后成两段在路由层即 404（安全拒绝，不进 handler）；要测 handler 的 400 用单段非法代码（如 `sh%20600` 含空格）。
+- **Vue Options API 模板作用域**：模板访问不到模块级 import（`R.stepPrev` 点击即 ReferenceError），须经 methods 转发；`Math`/`Date` 在 Vue 3 模板全局白名单内可直接用。
+- **前端组件 Node 测试模式**：模块源码正则替换 import → globalThis.xxx 桩（replay.js/format.js 用真实实现、Vue 用 vendor、Api/state/mountChart 用桩），data URL base64 导入；`import * as R` 需单独正则；桩对象须补全 NAV_COLORS、ma 等被解构的导出，否则运行期 undefined 报错。
+- **工具链兼容（2026-10-19 复核）**：`go.mod` 已升级 goutil 至 v1.2.34，本机 darwin/arm64 可运行测试，不再沿用旧版“macOS 必然无法构建”的结论。项目基线仍是 Go 1.25.4；ServeMux 路径规范化在实测 Go 1.25 为 301、Go 1.27 为 307，路径安全测试同时检查精确重定向目标及跟随后 404，勿仅锁定一种状态码。Docker 验证可复用 golang:1.25-alpine、TZ=Asia/Shanghai、GOPROXY=off 与本地模块缓存。
+
+## 盘感练习（2026-10-19）
+- **核心合同**：`internal/lab/practice.go` 生命周期为 preparing→active→finished（另有 failed/cancelled），active 内仓位为 waiting→holding→sold；`Apply` 乐观并发要求 expectedRevision 严格相等、无 0 豁免，前端每次操作必须回传最近一次服务端返回的 revision；成交与推进全部在服务端求值（当日收盘价、2 万预算含费 100 股取整、T+1、单买单卖、零滑点），`practice.js` 只做视图投影不重算成交。抽题由 `practice_prepare.go` 快照扫描（task=practice_prepare，`/api/status` done 分流 `$refs.tab7.practiceOnTaskDone(runId)`，app.js 只转发不读报告）；盲练只消费服务端已揭示的相对日数据，身份复盘在主动结束/行情用尽后才可见；重练另建新会话不改旧记录。
+- **存储与数据根**：生产 `PracticeStore` 落服务 cwd 下 `data/lab/practice/`，tmp+rename 原子写；仅测试构造器 `newServerWithStores` 使用 `candidates.root` 下 practice 子目录。UI 深链 `?tab=practice&p=<会话ID>` 只保存会话 ID，刷新后从服务端恢复。
+- **前端坑（勿回退）**：Tab7Practice 模板直接调用的 helper（含历史列表的 `fmtTime`、`fmtMoney/fmtPct/pnlClass` 与各 label/相对日文案映射）必须在 `setup()` 显式 return，否则模板作用域不可见、整个面板可能渲染空白。模板可编译不代表运行期可用；`practice_ui_test.mjs` 同时检查 helper 暴露和非空历史的实际模板渲染，避免空历史掩盖缺失函数。
+- **前端测试模式**：`internal/lab/web/practice_ui_test.mjs`（data: URL base64 导入组件源码 + 正则替换 import 桩），覆盖文案映射、盲练 K 线无真实日期、命令网络中断同 commandId 重试、409 刷新、防重复点击、preparing 轮询发现 failed、旧响应不覆盖新题加载、图表宿主重建、页签 1–6 契约不变与 `07=practice` URL 行为。
+
+## Trae 终端沙箱故障（2026-10-19，间歇性）
+- **现象一**：RunCommand 直连与子代理内均报 `Toolhost terminal commands must be routed through the agent runtime`（命令未真正执行）；MCP integrated_code_mode 的 Shell 调用报 `auto review source state is not ready`。属宿主故障，重试、换子代理、换 MCP 通道均不解决，只能等待恢复后补跑受影响检查，不得声称未执行的检查已通过。
+- **现象二（同日早段，已验证绕开）**：`kill`/`pkill` 与 RunCommand 后台模式触发沙箱 dyld 崩溃（exit 255）。绕开：不杀旧进程、换端口启动新版本；长驻服务用 `nohup … &` + `sleep N` 前台方式启动；临时目录运行服务须先 `go build -o` 再以目标 cwd 执行二进制（临时 cwd 直接 `go run` 找不到 go.mod）。
+
+## 题库训练持久化边界
+- 新题库/训练根为 `data/lab/practice/training-v1`，沿用单实例原子文件写；同股行情按库共享，训练的作答、稀疏随机排列和命令回执必须在同一 training.json 提交，不能拆开提交而引入重复抽题窗口。
+- 训练动作使用训练 revision 加 questionId，和旧单题 session revision 是不同层级；前端不能把单题 revision 传给训练接口。正式结果在题目结束时冻结，重练写独立旧格式记录，不能重新扫描或改动原训练。

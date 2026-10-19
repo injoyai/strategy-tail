@@ -7,10 +7,12 @@ import { factorTypeName, formatBuilderSpec, formatMacdParameters } from '../form
 import { Api } from '../api.js';
 import { mountChart, dropChart, ANNUAL_PALETTE, NAV_COLORS } from '../echarts.js';
 import ReportHistory from './ReportHistory.js';
+import BacktestReplay from './BacktestReplay.js';
+import { createSession, resetSession } from '../replay.js';
 
 export default {
   name: 'Tab2Compare',
-  components: {ReportHistory},
+  components: {ReportHistory, BacktestReplay},
   inject: ['switchTab'],
   setup() {
     return { state, factorTypeName };
@@ -21,6 +23,8 @@ export default {
   computed: {
     rep() { return state.currentReport; },
     accountMode() { return !!this.rep?.config.account; },
+    // 回放入口（spec §3）：仅账户报告且至少一个变体有回放数据时展示。
+    hasReplay() { return this.accountMode && (this.rep?.variants ?? []).some(v => v.replay?.available); },
     benchmarkReturn() { return this.rep?.benchmark?.at(-1)?.return ?? null; },
     accountWarnings() {
       return this.vs.flatMap(v => {
@@ -72,7 +76,16 @@ export default {
     watch(() => state.activeTab, n => { if (n === 2) this.renderNow(); });
     watch(() => state.currentReport, () => {
       this.loadBuilderCatalog();
+      this.resetReplay(); // 报告切换后旧回放会话整体失效（spec §3：切报告重置）
       if (state.activeTab === 2) this.renderNow();
+    });
+    watch(() => state.replayOn, n => {
+      // 进入/退出回放会销毁、重建 charts2 容器；旧实例必须释放，退出后重挂。
+      dropChart(this.trendC);
+      dropChart(this.winC);
+      this.trendC = null;
+      this.winC = null;
+      if (!n && state.activeTab === 2) this.renderNow();
     });
     this.loadBuilderCatalog();
     if (state.activeTab === 2 && state.currentReport) this.renderNow();
@@ -122,6 +135,15 @@ export default {
     profitWan(v) {
       if (!v.stats.total) return null;
       return v.trades.reduce((sum, t) => sum + t.profit, 0) / 1e4;
+    },
+    enterReplay() {
+      // 会话跨页保留：曾进入过回放则从暂停处继续，否则新建。
+      if (!state.replay) state.replay = createSession();
+      state.replayOn = true;
+    },
+    resetReplay() {
+      state.replay = resetSession();
+      state.replayOn = false;
     },
     selectVariant(v) {
       state.selectedVariant = v.name;
@@ -180,8 +202,11 @@ export default {
   template: `
 <report-history />
 <div class="card">
-  <h3>{{ rep?.source === 'macd' ? '回测统计' : '变体汇总' }} <span class="hint">{{ reportMeta }}</span></h3>
+  <h3 v-if="!state.replayOn">{{ rep?.source === 'macd' ? '回测统计' : '变体汇总' }} <span class="hint">{{ reportMeta }}</span>
+    <button v-if="hasReplay && !state.replayOn" type="button" class="secondary replay-entry" @click="enterReplay">逐日回放</button></h3>
 
+  <backtest-replay v-if="state.replayOn" />
+  <template v-else>
   <!-- 多条件对照摘要：仅简单模式报告 -->
   <div v-if="showCmp && cmp">
     <div class="cmp-hero">
@@ -269,6 +294,7 @@ export default {
     <div ref="trendChart" class="chart-block" role="img" :aria-label="accountMode ? '账户累计收益率与上证指数对比，期末数值见上方表格' : '逐笔收益率累计，非资金曲线'"></div>
     <div ref="winChart" class="chart-block"></div>
   </div>
+  </template>
 </div>
   `,
 };

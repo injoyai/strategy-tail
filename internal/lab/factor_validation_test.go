@@ -21,9 +21,13 @@ const (
 	fvFreezeGhostID = "fv_20260101T000000000Z_abcdef01"
 )
 
+// freezeTZ 测试固定时区（+08:00）：夹具时间全部按业务时区书写，避免
+// time.Local 随宿主/容器时区漂移（如 UTC 容器中 14:00 Local = 22:00+08）。
+var freezeTZ = time.FixedZone("CST", 8*3600)
+
 // freezeNow 冻结时刻：晚于发现期完成时间（2026-09-17T15:00+08:00），
 // 也晚于发现期最后数据日（2025-02-03）。
-func freezeNow() time.Time { return time.Date(2026, 9, 17, 16, 0, 0, 0, time.Local) }
+func freezeNow() time.Time { return time.Date(2026, 9, 17, 16, 0, 0, 0, freezeTZ) }
 
 // freezeFixture 构造合法冻结夹具：v4 报告、由报告推导的候选、同家族
 // trial（因子快照取自报告）、指向二者的合法请求。
@@ -158,10 +162,10 @@ func TestFreezeValidationRejectsV3Evidence(t *testing.T) {
 func TestFreezeValidationFactorVersionMismatch(t *testing.T) {
 	cand, rep, trial, req := freezeFixture(t)
 	cases := map[string]func(*FactorCandidate){
-		"kind":   func(c *FactorCandidate) { c.Factor.Kind = "volatility" },
-		"days":   func(c *FactorCandidate) { c.Factor.Days = 5 },
-		"name":   func(c *FactorCandidate) { c.Factor.Name = "别的因子" },
-		"unit":   func(c *FactorCandidate) { c.Factor.Unit = "名次" },
+		"kind":    func(c *FactorCandidate) { c.Factor.Kind = "volatility" },
+		"days":    func(c *FactorCandidate) { c.Factor.Days = 5 },
+		"name":    func(c *FactorCandidate) { c.Factor.Name = "别的因子" },
+		"unit":    func(c *FactorCandidate) { c.Factor.Unit = "名次" },
 		"version": func(c *FactorCandidate) { c.Factor.ImplementationVersion = 2 },
 	}
 	for name, mut := range cases {
@@ -246,13 +250,13 @@ func TestFreezeValidationEvidenceClassTime(t *testing.T) {
 	cand, rep, trial, req := freezeFixture(t)
 	// retrospective：冻结时间早于发现期完成时间 → 拒绝。
 	if _, err := freezeValidation(cand, rep, []FactorTrial{trial}, req,
-		time.Date(2026, 9, 17, 14, 0, 0, 0, time.Local)); err == nil {
+		time.Date(2026, 9, 17, 14, 0, 0, 0, freezeTZ)); err == nil {
 		t.Fatal("冻结时间早于发现期完成时间应拒绝")
 	}
 	// prospective：冻结时间不晚于发现期最后数据日 → 拒绝。
 	p := req
 	p.EvidenceClass = validationEvidenceProspective
-	early := time.Date(2025, 2, 3, 23, 59, 59, 0, time.Local)
+	early := time.Date(2025, 2, 3, 23, 59, 59, 0, freezeTZ)
 	if _, err := freezeValidation(cand, rep, []FactorTrial{trial}, p, early); err == nil {
 		t.Fatal("前瞻冻结未晚于最后数据日应拒绝")
 	}

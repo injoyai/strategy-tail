@@ -197,3 +197,59 @@ func toBuyers(filters []sb.A因子过滤) []core.Buyer {
 	}
 	return out
 }
+
+// RecordVariants 在 Variants 合同之上为每个变体接入原因记录（R07/R15）：
+// 每个变体独立 RecordContext；包装器只旁路登记评估帧，Buyer 的求值
+// 次数、短路顺序与结果和 Variants() 完全一致。基准变体根路径 buy；
+// 单条件与组合增强变体为 And 组（buy.children[0]=基础、
+// buy.children[i+1]=第 i 项因子过滤）。变体名称逐一取 Variants() 原名。
+func (s StrategySpec) RecordVariants() ([]core.Variant, error) {
+	plain, err := s.Variants()
+	if err != nil {
+		return nil, err
+	}
+	base, err := s.baseBuyer()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]core.Variant, 0, len(plain))
+	rc := builder.NewRecordContext()
+	out = append(out, core.Variant{
+		Name:  plain[0].Name,
+		Buyer: rc.WrapBuyerTree(base, "buy", builder.RoleBuy, true),
+	})
+	for i := range s.FactorFilters {
+		flt, err := s.FactorFilters[i].Build()
+		if err != nil {
+			return nil, err
+		}
+		rc := builder.NewRecordContext()
+		members := []core.Buyer{
+			rc.WrapBuyerTree(base, "buy.children[0]", builder.RoleBuy, false),
+			rc.WrapBuyerRule(flt, builder.NewFactorRule(&s.FactorFilters[i], "buy.children[1]", builder.RoleBuy), false, false),
+		}
+		out = append(out, core.Variant{
+			Name:  plain[i+1].Name,
+			Buyer: rc.WrapBuyerGroup(members, "buy", builder.RoleBuy, true),
+		})
+	}
+	if len(s.FactorFilters) <= 1 {
+		return out, nil
+	}
+	rc = builder.NewRecordContext()
+	members := make([]core.Buyer, 0, len(s.FactorFilters)+1)
+	members = append(members, rc.WrapBuyerTree(base, "buy.children[0]", builder.RoleBuy, false))
+	for i := range s.FactorFilters {
+		flt, err := s.FactorFilters[i].Build()
+		if err != nil {
+			return nil, err
+		}
+		members = append(members, rc.WrapBuyerRule(flt, builder.NewFactorRule(
+			&s.FactorFilters[i], fmt.Sprintf("buy.children[%d]", i+1), builder.RoleBuy), false, false))
+	}
+	out = append(out, core.Variant{
+		Name:  plain[len(plain)-1].Name,
+		Buyer: rc.WrapBuyerGroup(members, "buy", builder.RoleBuy, true),
+	})
+	return out, nil
+}

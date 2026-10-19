@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -628,14 +629,24 @@ func TestPortfolioArtifactPathTraversal(t *testing.T) {
 	doReq(t, h, http.MethodPost, "/api/portfolio-runs/"+id+"/start", nil, http.StatusAccepted)
 	waitStatus(t, h)
 	// URL 编码的穿越段会到达 handler 并经 ValidArtifactName 拒绝（400）；
-	// 裸 ../ 被 mux 路径归一化重定向（301 后 404，同样安全拒绝）。
+	// 裸 ../ 被 mux 路径归一化重定向，跟随目标必须仍为 404。
 	for _, name := range []string{
 		"..%2Fsecret", "%2Fetc%2Fpasswd", "report.json%2F..%2Fx",
 		"..%5Csecret", "nav.csv%2F..%2F..", "evil.json",
 	} {
 		doReq(t, h, http.MethodGet, "/api/portfolio-experiments/"+id+"/artifacts/"+name, nil, http.StatusBadRequest)
 	}
-	doReq(t, h, http.MethodGet, "/api/portfolio-experiments/"+id+"/artifacts/../secret", nil, http.StatusMovedPermanently)
+	redirect := httptest.NewRecorder()
+	h.ServeHTTP(redirect, httptest.NewRequest(http.MethodGet, "/api/portfolio-experiments/"+id+"/artifacts/../secret", nil))
+	// Go 1.25 使用 301，Go 1.27 使用保持方法的 307；均须验证精确目标与拒绝结果。
+	if redirect.Code != http.StatusMovedPermanently && redirect.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("路径归一化应重定向: %d", redirect.Code)
+	}
+	target := "/api/portfolio-experiments/" + id + "/secret"
+	if redirect.Header().Get("Location") != target {
+		t.Fatalf("错误的归一化目标: %s", redirect.Header().Get("Location"))
+	}
+	doReq(t, h, http.MethodGet, target, nil, http.StatusNotFound)
 	// 未完成实验的产物 → 404。
 	res = doReq(t, h, http.MethodPost, "/api/portfolio-experiments", experimentBody(m, testUUID2), http.StatusCreated)
 	var second struct {

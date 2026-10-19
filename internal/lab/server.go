@@ -4,10 +4,12 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +30,8 @@ import (
 //	GET      /api/report/latest 最新报告
 //	GET      /api/reports       历史报告列表
 //	GET      /api/report/{id}   指定报告
+//	GET      /api/report/{id}/replay/{variant}     变体回放明细（不可用时 400 提示重新回测）
+//	GET      /api/report/{id}/replay/kline/{code}  报告内个股 K 线快照（保存时旧快照）
 //	GET      /api/kline/{code}  日K数据
 //	GET      /api/factors       因子目录
 //	POST     /api/analyze       启动因子分析（与回测共用任务互斥）
@@ -61,6 +65,9 @@ type Server struct {
 	candidateStore *CandidateStore
 	// builderStore 搭建器策略库（生产默认 data/lab/strategies；测试注入临时根）。
 	builderStore *BuilderStore
+	// practiceStore 盘感练习记录（生产默认 data/lab/practice；测试注入临时根）。
+	practiceStore *PracticeStore
+	trainingStore *TrainingStore
 
 	// 多因子组合研究 v2（Task 9）依赖：模型/实验/验证库与组合执行器。
 	// validationInput 为 v1 验证输入适配器（模型装配时重读上游验证）。
@@ -79,9 +86,15 @@ func NewServer() *Server {
 		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
 		candidateStore: NewCandidateStore(candidateDataDir),
 		builderStore:   NewBuilderStore(builderDataDir),
+		practiceStore:  NewPracticeStore(practiceDataDir),
 	}
 	s.dataUpdater = newDataUpdater(s.runner, common.ResolveRuntimePath(filepath.Join("data", "lab", "data-update.json")), updateData)
 	s.wirePortfolioStores()
+	// 恢复重启前中断的练习准备（标为 failed，可重练出题）。
+	if err := s.practiceStore.RecoverInterrupted(); err != nil {
+		log.Printf("[lab] 恢复中断的练习会话失败: %v", err)
+	}
+	s.wirePracticeStores()
 	s.registerRoutes()
 	return s
 }
@@ -106,12 +119,26 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		mux:            http.NewServeMux(),
 		analysisStore:  analyses,
 		candidateStore: candidates,
-		builderStore:   NewBuilderStore(builderDataDir), // 搭建器测试按需覆盖
+		builderStore:   NewBuilderStore(builderDataDir),                              // 搭建器测试按需覆盖
+		practiceStore:  NewPracticeStore(filepath.Join(candidates.root, "practice")), // 练习测试按需覆盖
 	}
 	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(candidates.root, "data-update.json"), updateData)
 	s.wirePortfolioStores()
+	s.wirePracticeStores()
 	s.registerRoutes()
 	return s
+}
+
+// wirePracticeStores 注入盘感练习依赖（策略库与练习存储）。
+func (s *Server) wirePracticeStores() {
+	s.runner.SetPracticeStores(s.practiceStore, s.builderStore)
+	if s.trainingStore == nil || s.trainingStore.root != filepath.Join(s.practiceStore.root, "training-v1") {
+		s.trainingStore = NewTrainingStore(filepath.Join(s.practiceStore.root, "training-v1"))
+		if err := s.trainingStore.recoverBanks(); err != nil {
+			log.Printf("[lab] 题库中断恢复失败: %v", err)
+		}
+	}
+	s.runner.trainingStore = s.trainingStore
 }
 
 // registerRoutes 注册全部 REST 路由。
@@ -136,6 +163,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)
 	s.mux.HandleFunc("GET /api/report/{id}", s.handleReport)
 	s.mux.HandleFunc("DELETE /api/report/{id}", s.handleDeleteReport)
+	s.mux.HandleFunc("GET /api/report/{id}/replay/{variant}", s.handleReplayVariant)
+	s.mux.HandleFunc("GET /api/report/{id}/replay/kline/{code}", s.handleReplayKline)
 	s.mux.HandleFunc("GET /api/kline/{code}", s.handleKline)
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
 	s.mux.HandleFunc("POST /api/analyze", withSameOrigin(s.handleAnalyze))
@@ -158,6 +187,15 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PUT /api/builder/strategies/{id}", s.handleBuilderUpdateStrategy)
 	s.mux.HandleFunc("POST /api/builder/strategies/{id}/copy", s.handleBuilderCopyStrategy)
 	s.mux.HandleFunc("POST /api/builder/run", s.handleBuilderRun)
+
+	// 盘感练习（实施文档 §4）。写端点已在 handler 内校验同源。
+	s.registerTrainingRoutes()
+	s.mux.HandleFunc("POST /api/practice", s.handlePracticeStart)
+	s.mux.HandleFunc("GET /api/practices", s.handlePracticeList)
+	s.mux.HandleFunc("GET /api/practice/{id}", s.handlePracticeGet)
+	s.mux.HandleFunc("POST /api/practice/{id}/actions", s.handlePracticeAction)
+	s.mux.HandleFunc("GET /api/practice/{id}/review", s.handlePracticeReview)
+	s.mux.HandleFunc("POST /api/practice/{id}/retry", s.handlePracticeRetry)
 
 	// 多因子组合研究 v2（Task 9，设计 §12.2）。
 	s.mux.HandleFunc("POST /api/factor-models", withSameOrigin(s.handleCreateFactorModel))
@@ -367,7 +405,11 @@ func (s *Server) handleLatestReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeJSON(w, rep)
+	// 注入报告 ID（目录名，= rep.RunID()）；前端回放请求以此为定位键（plan T3/T4）。
+	writeJSON(w, struct {
+		*Report
+		ID string `json:"id"`
+	}{rep, rep.RunID()})
 }
 
 // handleFactors 因子目录（注册表 All()，供前端下拉）。
@@ -467,6 +509,12 @@ func (s *Server) handleStrategyRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// 账户模式接入原因记录（R07/R15）：构建失败或长度不一致时保持原变体。
+	if cfg.Account != nil {
+		if recorded, err := spec.RecordVariants(); err == nil && len(recorded) == len(variants) {
+			variants = recorded
+		}
+	}
 	if err := s.runner.StartStrategy(cfg, variants, spec); err != nil {
 		// 走到这里说明请求已全部校验通过，剩余错误只有任务互斥
 		writeErr(w, http.StatusConflict, err.Error())
@@ -501,7 +549,126 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, rep)
+	// 注入报告 ID（目录名，= rep.RunID()）；前端回放请求以此为定位键（plan T3/T4）。
+	writeJSON(w, struct {
+		*Report
+		ID string `json:"id"`
+	}{rep, rep.RunID()})
+}
+
+// handleReplayVariant 变体回放明细（plan §5）。R13：旧报告（replay 描述为
+// nil）或未记录变体（Available=false）一律 400 提示重新回测；版本不受
+// 支持时透传 readReplay 的用户文案。
+func (s *Server) handleReplayVariant(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !validReportID(id) {
+		writeErr(w, http.StatusBadRequest, "非法报告 ID")
+		return
+	}
+	idx, err := strconv.Atoi(r.PathValue("variant"))
+	if err != nil || idx < 0 {
+		writeErr(w, http.StatusBadRequest, "非法变体序号")
+		return
+	}
+	rep, err := readReport(id)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeErr(w, http.StatusNotFound, "报告不存在")
+		} else {
+			writeErr(w, http.StatusInternalServerError, "读取报告失败")
+		}
+		return
+	}
+	if idx >= len(rep.Variants) {
+		writeErr(w, http.StatusBadRequest, "变体序号超出范围")
+		return
+	}
+	meta := rep.Variants[idx].Replay
+	if meta == nil || !meta.Available {
+		writeErr(w, http.StatusBadRequest, "该报告未包含回放数据，请重新回测")
+		return
+	}
+	rv, err := readReplay(id, idx)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeErr(w, http.StatusNotFound, "回放数据不存在")
+			return
+		}
+		var ve *replayVersionError
+		if errors.As(err, &ve) {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+		} else {
+			writeErr(w, http.StatusInternalServerError, "读取回放数据失败")
+		}
+		return
+	}
+	writeJSON(w, rv)
+}
+
+// handleReplayKline 报告目录内的个股 K 线快照（回放图表专用，不实时拉取，
+// 行情更新不影响历史报告图表）。只保存实际买入过的股票，其余 404。
+func (s *Server) handleReplayKline(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	code := r.PathValue("code")
+	if !validReportID(id) {
+		writeErr(w, http.StatusBadRequest, "非法报告 ID")
+		return
+	}
+	if !validReplayCode(code) {
+		writeErr(w, http.StatusBadRequest, "非法股票代码")
+		return
+	}
+	if _, err := readReport(id); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeErr(w, http.StatusNotFound, "报告不存在")
+		} else {
+			writeErr(w, http.StatusInternalServerError, "读取报告失败")
+		}
+		return
+	}
+	rows, err := readReplayKline(id, code)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			writeErr(w, http.StatusNotFound, "该股票不在回放数据中")
+		} else {
+			writeErr(w, http.StatusInternalServerError, "读取K线快照失败")
+		}
+		return
+	}
+	writeJSON(w, rows)
+}
+
+// klineRow 日K接口与回放快照共用的 ECharts 行格式（MACD 默认 12/26/9）。
+type klineRow struct {
+	Date   string  `json:"date"`
+	Open   float64 `json:"open"`
+	Close  float64 `json:"close"`
+	Low    float64 `json:"low"`
+	High   float64 `json:"high"`
+	Volume int64   `json:"volume"`
+	DIF    float64 `json:"dif"`
+	DEA    float64 `json:"dea"`
+	MACD   float64 `json:"macd"`
+}
+
+// klineSeries 在完整已加载区间（含前导历史）上计算 MACD 因子并逐行构造，
+// 时间过滤由调用方按需进行；保证因果指标语义与全量计算一致。
+func klineSeries(ks extend.Klines) []klineRow {
+	hist := (f.MACD柱值{}).Series(ks)
+	dif := (f.MACDDIF值{}).Series(ks)
+	rows := make([]klineRow, 0, len(ks))
+	for i, k := range ks {
+		rows = append(rows, klineRow{
+			Date:   k.Time.Format(time.DateOnly),
+			Open:   k.Open.Float64(),
+			Close:  k.Close.Float64(),
+			Low:    k.Low.Float64(),
+			High:   k.High.Float64(),
+			Volume: k.Volume,
+			DIF:    dif[i], DEA: dif[i] - hist[i], MACD: hist[i],
+		})
+	}
+	return rows
 }
 
 // handleKline 日K 数据（ECharts 格式直出）。
@@ -528,33 +695,13 @@ func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "拉取日K失败: "+err.Error())
 		return
 	}
-	hist := (f.MACD柱值{}).Series(ks)
-	dif := (f.MACDDIF值{}).Series(ks)
-	type klineRow struct {
-		Date   string  `json:"date"`
-		Open   float64 `json:"open"`
-		Close  float64 `json:"close"`
-		Low    float64 `json:"low"`
-		High   float64 `json:"high"`
-		Volume int64   `json:"volume"`
-		DIF    float64 `json:"dif"`
-		DEA    float64 `json:"dea"`
-		MACD   float64 `json:"macd"`
-	}
-	rows := make([]klineRow, 0, len(ks))
+	all := klineSeries(ks)
+	rows := make([]klineRow, 0, len(all))
 	for i, k := range ks {
 		if k.Time.Before(start) || k.Time.After(end) {
 			continue
 		}
-		rows = append(rows, klineRow{
-			Date:   k.Time.Format(time.DateOnly),
-			Open:   k.Open.Float64(),
-			Close:  k.Close.Float64(),
-			Low:    k.Low.Float64(),
-			High:   k.High.Float64(),
-			Volume: k.Volume,
-			DIF:    dif[i], DEA: dif[i] - hist[i], MACD: hist[i],
-		})
+		rows = append(rows, all[i])
 	}
 	writeJSON(w, rows)
 }

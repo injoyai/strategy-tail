@@ -152,8 +152,12 @@ func (s *BuilderStore) List() ([]BuilderStrategy, error) {
 	return out, nil
 }
 
-// Get 按 ID 读取策略。
+// Get 按 ID 读取策略；ID 不合法视为不存在（读路径统一 404 语义，且不向
+// 调用方泄露 ID 格式细节，调用方用 errors.Is(err, errBuilderNotFound) 判定）。
 func (s *BuilderStore) Get(id string) (*BuilderStrategy, error) {
+	if !builderStrategyIDRe.MatchString(id) {
+		return nil, fmt.Errorf("%w（非法策略 ID）", errBuilderNotFound)
+	}
 	p, err := s.strategyPath(id)
 	if err != nil {
 		return nil, err

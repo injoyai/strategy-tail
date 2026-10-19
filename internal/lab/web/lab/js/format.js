@@ -15,6 +15,7 @@ export function taskProgress(s = {}) {
     queued: '准备任务', loading_data: '加载数据与因子', transform: '截面变换', combine: '合成分数',
     target: '构建目标组合', execute: '模拟交易', metrics: '计算组合指标', attribution: '计算收益归因', finalize: '保存结果',
     checking: '检查行情', day: '更新日线', minute: '更新分钟线', valuation: '更新估值快照', updating: '更新行情',
+    prepare: '准备出题', scan: '扫描股票', save: '保存练习',
   }[phase] || '处理任务';
   const unit = s.unit || (phase === 'simulating' || phase === 'execute' ? 'trading_days'
     : phase === 'yearly' ? 'years' : s.task === 'data_update' ? 'symbols'

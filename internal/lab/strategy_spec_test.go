@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
@@ -451,3 +452,87 @@ func TestStrategySpecDisplayName(t *testing.T) {
 
 // 编译期确认 Variants 产出物满足 core.Variant 契约。
 var _ = func() []core.Variant { return nil }
+
+// findRuleDesc 按路径取规则描述。
+func findRuleDesc(descs []builder.RuleDesc, path string) *builder.RuleDesc {
+	for i := range descs {
+		if descs[i].Path == path {
+			return &descs[i]
+		}
+	}
+	return nil
+}
+
+// TestStrategySpecRecordVariants RecordVariants 合同：变体名称与 Variants()
+// 逐一对应；全部实现 RecordedBuyer；根规则为 buy 组节点；因子路径与参数
+// 按声明原样记录（不补目录默认值）；条件数量决定变体数量。
+func TestStrategySpecRecordVariants(t *testing.T) {
+	s := validSpec()
+	plain, err := s.Variants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, err := s.RecordVariants()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recorded) != len(plain) {
+		t.Fatalf("变体数量不一致: %d vs %d", len(recorded), len(plain))
+	}
+	contexts := make([]*builder.RecordContext, len(recorded))
+	for i, v := range recorded {
+		if v.Name != plain[i].Name {
+			t.Fatalf("变体[%d] 名称 = %q, want %q", i, v.Name, plain[i].Name)
+		}
+		rb, ok := v.Buyer.(builder.RecordedBuyer)
+		if !ok {
+			t.Fatalf("变体[%d] 未实现 RecordedBuyer: %T", i, v.Buyer)
+		}
+		contexts[i] = rb.RecordContext()
+		descs := contexts[i].Rules()
+		root := descs[len(descs)-1]
+		if root.Path != "buy" || root.Role != builder.RoleBuy || root.Op != "and" {
+			t.Fatalf("变体[%d] 根规则 = %+v, want buy/RoleBuy/and", i, root)
+		}
+	}
+
+	// 基准变体：预设两个子条件登记在 buy.children[0..1]。
+	if findRuleDesc(contexts[0].Rules(), "buy.children[0]") == nil ||
+		findRuleDesc(contexts[0].Rules(), "buy.children[1]") == nil {
+		t.Fatalf("基准变体缺少预设子条件: %+v", contexts[0].Rules())
+	}
+
+	// 单条件 1：因子过滤登记在 buy.children[1]，参数按声明原样记录。
+	flt := findRuleDesc(contexts[1].Rules(), "buy.children[1]")
+	if flt == nil || flt.Role != builder.RoleBuy {
+		t.Fatalf("单条件 1 缺少因子规则: %+v", contexts[1].Rules())
+	}
+	want := map[string]any{"kind": "momentum", "days": 20, "operator": "gte", "min": 0.05}
+	if !reflect.DeepEqual(flt.Params, want) {
+		t.Fatalf("因子参数 = %+v, want %+v", flt.Params, want)
+	}
+
+	// 组合增强：两个过滤依次登记在 buy.children[1..2]。
+	comb := findRuleDesc(contexts[3].Rules(), "buy.children[1]")
+	if comb == nil || comb.Params["days"] != 20 {
+		t.Fatalf("组合增强缺少过滤 1: %+v", contexts[3].Rules())
+	}
+	comb2 := findRuleDesc(contexts[3].Rules(), "buy.children[2]")
+	if comb2 == nil || comb2.Params["days"] != 60 {
+		t.Fatalf("组合增强缺少过滤 2: %+v", contexts[3].Rules())
+	}
+
+	// 1 条件 → 2 变体；0 条件 → 仅基准 1 个变体。
+	one := validSpec()
+	one.FactorFilters = one.FactorFilters[:1]
+	oneRec, err := one.RecordVariants()
+	if err != nil || len(oneRec) != 2 {
+		t.Fatalf("1 条件应记录 2 个变体: %d, %v", len(oneRec), err)
+	}
+	zero := validSpec()
+	zero.FactorFilters = nil
+	zeroRec, err := zero.RecordVariants()
+	if err != nil || len(zeroRec) != 1 {
+		t.Fatalf("0 条件应记录 1 个变体: %d, %v", len(zeroRec), err)
+	}
+}
