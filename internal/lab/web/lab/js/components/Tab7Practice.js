@@ -14,7 +14,7 @@ import { mountKline, dropKline } from '../kline.js';
 export default {
   name: 'Tab7Practice',
   props: {training: {default: null}, initialSessionId: {default: ''}, historyOnly: {default: false}},
-  emits: ['training-update', 'next-question', 'retake', 'home'],
+  emits: ['training-update', 'retake', 'home'],
   watch: { 'training.revision'() { if (this.training) this.applySession(this.training.session); } },
   inject: ['switchTab', 'startTask'],
   setup() {
@@ -290,33 +290,6 @@ export default {
       } finally {
         this.pStarting = false;
       }
-    },
-
-    async nextPractice() {
-      if (this.training) { this.$emit('next-question'); return; }
-      if (this.pStarting || this.retrying || this.sess?.phase !== 'finished') return;
-      const sess = this.sess, request = this.seq;
-      this.pStarting = true;
-      this.startMsg = null;
-      try {
-        // 新题使用策略当前保存版本；旧题及同题重练继续保留原快照。
-        const res = await Api.builderStrategies();
-        if (request !== this.seq) return;
-        state.builderStrategies = res.strategies || [];
-        if (!state.builderStrategies.some(s => s.id === sess.strategyId)) {
-          this.startMsg = {text: '本题策略已被删除，请返回出题页选择其他策略。', ok: false};
-          return;
-        }
-        this.pStrategyId = sess.strategyId;
-        this.pFromYear = sess.fromYear;
-        this.pToYear = sess.toYear;
-      } catch (e) {
-        if (request === this.seq) this.startMsg = {text: '读取下一题策略失败：' + e.message, ok: false};
-        return;
-      } finally {
-        this.pStarting = false;
-      }
-      if (request === this.seq) await this.startPractice();
     },
 
     // ============ 动作（买入/卖出/推进/放弃/结束） ============
@@ -608,7 +581,6 @@ export default {
             <button type="button" class="danger" :disabled="actionBusy || !sess.canFinish" @click="askConfirm('finish')">{{ confirmAction === 'finish' ? '再点一次确认结束' : '结束本题' }}</button>
           </template>
           <template v-else-if="sess.phase === 'finished'">
-            <button v-if="!historyOnly && !training" type="button" class="primary" :disabled="pStarting || retrying" @click="nextPractice">{{ pStarting ? '正在出下一题…' : '开始下一题' }}</button>
             <button v-if="view === 'session'" type="button" class="secondary" @click="openReview">{{ training ? '单题分析 / 复盘' : '分析报告 / 复盘' }}</button>
             <button v-else type="button" class="secondary" @click="backToSession">返回练习视图</button>
             <button type="button" class="secondary" :disabled="retrying || pStarting" @click="retryPractice">{{ retrying ? '重练中…' : '同题重练' }}</button>

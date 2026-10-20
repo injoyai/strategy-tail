@@ -187,6 +187,8 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 ## 题库训练持久化边界
 - 新题库/训练根为 `data/lab/practice/training-v1`，沿用单实例原子文件写；同股行情按库共享，训练的作答、稀疏随机排列和命令回执必须在同一 training.json 提交，不能拆开提交而引入重复抽题窗口。
 - 训练动作使用训练 revision 加 questionId，和旧单题 session revision 是不同层级；前端不能把单题 revision 传给训练接口。正式结果在题目结束时冻结，重练写独立旧格式记录，不能重新扫描或改动原训练。
+- Lab 前端通过 Go embed 编译进二进制；本地源码修改或 Git 提交不会更新运行中的容器。排查新旧练习流程时先核对已服务的 app.js：新题库入口导入 Tab7Training，旧单题入口导入 Tab7Practice，后者的下一题会重新扫描；更新站点需要重新构建并部署。
+
 
 ## KLineChart 接入约束
 - K 线运行时集中在 `internal/chartui`，由 Lab／screen 路由及独立 HTML 导出复用；Lab 包装器必须 `markRaw`，不能把图表实例交给 Vue 深代理。KLineChart 10.1.0 的实际发布包中自定义指标 `calc` 返回数组；接入 API 以随包类型声明和浏览器验证为准，在线文档部分示例与发布包不一致。

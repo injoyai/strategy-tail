@@ -494,3 +494,72 @@ func TestTrainingBankMultipleSignalsAndOrphanRecovery(t *testing.T) {
 		t.Fatal(e, len(banks))
 	}
 }
+
+// Any unexpected live-market access fails the next-question regression test.
+type trainingNoMarketSource struct{}
+
+func (trainingNoMarketSource) Codes() ([]string, error) {
+	panic("next question must not enumerate stocks")
+}
+func (trainingNoMarketSource) DayKlinesAll(string) (extend.Klines, error) {
+	panic("next question must not read live market")
+}
+
+func TestTrainingNextQuestionNeverScansMarket(t *testing.T) {
+	s, h := newPracticeServerForTest(t)
+	ts, b := trainingFixture(t, 3)
+	s.trainingStore = ts
+	s.runner.trainingStore = ts
+	tr, e := ts.Start(b.ID, "no-scan")
+	if e != nil {
+		t.Fatal(e)
+	}
+	tr = trainingDo(t, ts, tr, "skip")
+	s.runner.practiceSource = trainingNoMarketSource{}
+	// The global background lock may be occupied by another task; advancing an
+	// existing bank still works because it is a local atomic training operation.
+	s.runner.mu.Lock()
+	defer s.runner.mu.Unlock()
+	command := trainingCommand{Action: "next_question", QuestionID: tr.Attempts[0].Session.ID, CommandID: "same-next", ExpectedRevision: tr.Revision}
+	path := "/api/practice-trainings/" + tr.ID + "/actions"
+	code, raw := practiceTryReq(t, h, "POST", path, command)
+	if code != http.StatusOK {
+		t.Fatalf("next question %d %s", code, raw)
+	}
+	var view struct {
+		ID        string              `json:"id"`
+		BankID    string              `json:"bankId"`
+		Revision  int64               `json:"revision"`
+		Practiced int                 `json:"practiced"`
+		Session   practiceSessionView `json:"session"`
+	}
+	if e = json.Unmarshal(raw, &view); e != nil {
+		t.Fatal(e)
+	}
+	if view.ID != tr.ID || view.BankID != b.ID || view.Practiced != 2 || view.Session.ID == command.QuestionID || view.Session.Phase != "active" {
+		t.Fatalf("unexpected next %+v", view)
+	}
+	code, repeated := practiceTryReq(t, h, "POST", path, command)
+	if code != http.StatusOK || !bytes.Equal(raw, repeated) {
+		t.Fatalf("next replay %d %s", code, repeated)
+	}
+	if s.runner.Status()["state"] == "running" {
+		t.Fatal("next question started background work")
+	}
+	// Finish one more question and draw again from the same frozen bank.
+	command = trainingCommand{Action: "skip", QuestionID: view.Session.ID, CommandID: "skip-second", ExpectedRevision: view.Revision}
+	code, raw = practiceTryReq(t, h, "POST", path, command)
+	if code != http.StatusOK {
+		t.Fatal(code, string(raw))
+	}
+	json.Unmarshal(raw, &view)
+	command = trainingCommand{Action: "next_question", QuestionID: view.Session.ID, CommandID: "next-third", ExpectedRevision: view.Revision}
+	code, raw = practiceTryReq(t, h, "POST", path, command)
+	if code != http.StatusOK {
+		t.Fatal(code, string(raw))
+	}
+	json.Unmarshal(raw, &view)
+	if view.Practiced != 3 || view.BankID != b.ID {
+		t.Fatalf("third question %+v", view)
+	}
+}

@@ -277,7 +277,7 @@ const App = {
   </nav>
 </header>
 
-<main :class="{'practice-page': state.activeTab === 7 && (!state.taskDock || state.taskDock.task === 'practice_prepare'), 'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
+<main :class="{'practice-page': state.activeTab === 7 && !state.taskDock, 'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
   <div v-if="sectionTabs.length > 1" class="tabs section-tabs" role="tablist" :aria-label="activeGroup.title" @keydown="onTabsKeydown">
     <button v-for="t in sectionTabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
       :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
@@ -286,7 +286,7 @@ const App = {
     </button>
   </div>
   <data-update />
-  <section class="statusbar" :class="{'practice-task-progress': state.activeTab === 7 && state.taskDock?.task === 'practice_prepare' && (state.taskDock.running || state.taskDock.connectionError)}" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">

@@ -552,8 +552,6 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 @media(max-width:900px){.practice-workspace{height:calc(100dvh - 80px)}}
 @media(max-width:560px){.practice-workspace{height:auto;min-height:0}.practice-workspace>.practice-chart-panel{min-height:480px}.practice-chart-panel .chart-kline{height:360px;flex:auto}.practice-toolbar .practice-stats{gap:4px 12px}.practice-toolbar .practice-actions button{padding:7px 10px}}
 
-/* 出题沿用唯一全局进度组件，在练习页正文展示，切页后恢复浮动任务栏。 */
-.statusbar.practice-task-progress{position:relative;inset:auto;width:100%;margin-bottom:14px;box-shadow:none;z-index:auto}
 .practice-prepare-actions{margin:12px 0 0}
 
 .practice-review-actions{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 10px;flex:none}

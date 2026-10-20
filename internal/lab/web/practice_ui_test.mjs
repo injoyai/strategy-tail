@@ -518,38 +518,16 @@ test('恢复出题时重新启动全局进度轮询，准备中响应更新参�
  assert.equal(vm.sess.fromYear,2020);
  assert.equal(tasks.length,1);
  vm.stopPoll();
- assert.match(App.template,/practice-task-progress/);
 });
 
-test('开始下一题沿用策略和年份、读取最新版本，重复点击只提交一次', async () => {
- let resolveStrategies;
- const started=[];
- Api.builderStrategies=()=>new Promise(resolve=>{resolveStrategies=resolve;});
- const old={id:'old',phase:'finished',strategyId:'s1',fromYear:2020,toYear:2024};
- const vm=instance({sess:old});
- vm.startPractice=async()=>{started.push([vm.pStrategyId,vm.pFromYear,vm.pToYear,state.builderStrategies[0].version]);};
- const next=vm.nextPractice();
- assert.equal(vm.pStarting,true);
- await vm.nextPractice();
- assert.equal(vm.sess,old,'受理前保留原题');
- resolveStrategies({strategies:[{id:'s1',version:3}]});
- await next;
- assert.deepEqual(started,[['s1',2020,2024,3]]);
- assert.equal(vm.pStarting,false);
-});
-
-test('下一题读取失败保留原题并显示错误，进行中不能开始下一题', async () => {
- const old={id:'old',phase:'finished',strategyId:'s1'};
- const vm=instance({sess:old});
- Api.builderStrategies=async()=>{throw new Error('断网');};
- await vm.nextPractice();
- assert.equal(vm.sess,old);
- assert.match(vm.startMsg.text,/断网/);
- assert.equal(vm.pStarting,false);
- vm.sess={id:'active',phase:'active'};
- vm.startMsg=null;
- await vm.nextPractice();
- assert.equal(vm.startMsg,null);
+test('历史单题不再提供重新扫描的下一题入口，连续练习由训练页负责', () => {
+ assert.equal(Tab7.methods.nextPractice,undefined);
+ const vm=instance({historyOnly:true,sess:{id:'old',phase:'finished',stage:'waiting',days:[]}});
+ const render=Vue.compile(Tab7.template,{decodeEntities:s=>s,hoistStatic:false});
+ const all=v=>Array.isArray(v)?v.flatMap(all):v&&typeof v==='object'?[v,...all(v.children)]:[];
+ const buttons=all(render(vm,[])).filter(v=>v.type==='button');
+ assert.ok(!buttons.some(v=>/开始下一题/.test(v.children)));
+ assert.ok(buttons.some(v=>v.children==='同题重练'));
 });
 
 const reportReview = () => ({id:'report-1',code:'sh600000',strategyName:'测试策略',endReason:'finished_sold',

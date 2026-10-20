@@ -247,7 +247,7 @@ export default {
         </template>
       </section>
     </template>
-    <Tab7Practice v-if="train.phase === 'active' || drill" ref="question" :key="questionTraining.session.id" :training="questionTraining" @training-update="acceptTraining" @next-question="trainingAction('next_question')" @retake="onRetake" @home="home()" />
+    <Tab7Practice v-if="train.phase === 'active' || drill" ref="question" :key="questionTraining.session.id" :training="questionTraining" @training-update="acceptTraining" @retake="onRetake" @home="home()" />
   </template>
 
   <section v-if="pane === 'history'" class="card">
