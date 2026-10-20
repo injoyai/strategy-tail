@@ -25,6 +25,12 @@
   已提供的均线（包括空值）不重算；未提供均线的旧页面沿用窗口内计算。
 - `markers` 使用 `date` 或 `day` 定位，`price` 是实际价格，
   `kind` 区分 `buy/sell/est/signal`；同日多笔成交独立保留。
+  标记采用“蜡烛外标签＋方向箭头＋成交价圆点／引线”：买入在下、卖出与估值在上；
+  文字底色不透明，红／绿只标边框和图形，文字沿用主题高对比颜色。
+  标签避让其宽度覆盖的邻近影线，同日与相邻标签优先纵向错开，缩放、平移和尺寸变化后重新投影。
+  Y 轴为标签预留像素空间，不改变 OHLC、实际成交价或指标数据；视窗外标记不固定在边缘。
+  该布局参考 [TradingView 的 aboveBar/belowBar 系列标记](https://tradingview.github.io/lightweight-charts/tutorials/how_to/series-markers)，
+  使用 KLineChart 10.1.0 的自定义覆盖物实现；没有更换图表组件。
 - `identity` 区分股票／题目／交易窗口，切换时恢复默认视窗；
   相同身份更新保留缩放。回放只传当前日期以前的数据，回退不能只移动视窗。
 - Vue 调用经 Lab 的 `js/kline.js` 包装器使用 `markRaw`。
