@@ -326,8 +326,9 @@ func spearmanIfEnough(xs, ys []float64) (float64, bool) {
 func compositeIC(factors []FactorSeries, rets ReturnsView, missing string) CompositeIC {
 	daily := compositeICByDate(factors, rets, missing)
 	var vals []float64
-	for _, ic := range daily {
-		vals = append(vals, ic)
+	// 与留一法一致，跨日浮点累加固定按日期顺序。
+	for _, date := range sortedKeys(daily) {
+		vals = append(vals, daily[date])
 	}
 	return CompositeIC{Mean: meanOf(vals), ValidDays: len(vals)}
 }
@@ -341,12 +342,13 @@ func compositeICByDate(factors []FactorSeries, rets ReturnsView, missing string)
 	}
 	for _, r := range rep.Results {
 		var xs, ys []float64
-		for code, sc := range r.Scores {
+		// Pearson 的浮点累加依赖输入顺序，截面必须固定按代码配对。
+		for _, code := range sortedKeys(r.Scores) {
 			ret, ok := rets[r.Date][code]
 			if !ok || math.IsNaN(ret) || math.IsInf(ret, 0) {
 				continue
 			}
-			xs = append(xs, sc)
+			xs = append(xs, r.Scores[code])
 			ys = append(ys, ret)
 		}
 		if ic, ok := spearmanIfEnough(xs, ys); ok {

@@ -210,7 +210,7 @@ func TestRedundancyLeaveOneOutHandComputed(t *testing.T) {
 	assertFloat(t, lo2.ICChange, 1, 1e-9, "移除 f2 的 IC 变化")
 }
 
-// TestRedundancyLeaveOneOutDeterministic 留一法均值按日期排序后累加，
+// TestRedundancyLeaveOneOutDeterministic 截面和跨日累计都应有固定顺序，
 // 重复运行结果应逐位一致（不受 map 迭代顺序影响）。
 func TestRedundancyLeaveOneOutDeterministic(t *testing.T) {
 	f1 := flatFactor("f1", DirectionHigherIsBetter, 1, dates6, []float64{1, 2, 3, 4})
@@ -228,16 +228,41 @@ func TestRedundancyLeaveOneOutDeterministic(t *testing.T) {
 		return rep.LeaveOneOut
 	}
 	first := run()
-	second := run()
-	if len(first) != len(second) {
-		t.Fatalf("两次运行留一法数量不同: %d vs %d", len(first), len(second))
-	}
-	for i := range first {
-		if first[i] != second[i] {
-			t.Fatalf("两次运行留一法结果不一致: %+v vs %+v", first[i], second[i])
+	for range 100 {
+		second := run()
+		if len(first) != len(second) {
+			t.Fatalf("两次运行留一法数量不同: %d vs %d", len(first), len(second))
 		}
-		if first[i].ValidDays != len(dates6) {
-			t.Fatalf("留一法有效日应为 %d: %+v", len(dates6), first[i])
+		for i := range first {
+			if first[i] != second[i] {
+				t.Fatalf("两次运行留一法结果不一致: %+v vs %+v", first[i], second[i])
+			}
+			if first[i].ValidDays != len(dates6) {
+				t.Fatalf("留一法有效日应为 %d: %+v", len(dates6), first[i])
+			}
+		}
+	}
+}
+
+func TestRedundancyCompositeICDeterministic(t *testing.T) {
+	dates := append(append([]string(nil), dates6...), "2026-01-13")
+	values := []float64{1, 2, 3, 4}
+	f := flatFactor("f1", DirectionHigherIsBetter, 1, dates, values)
+	returns := [][]float64{{1, 2, 3, 4}, {1, 2, 4, 3}, {4, 3, 2, 1}, {2, 1, 4, 3}, {4, 1, 2, 3}, {1, 3, 4, 2}}
+	rets := ReturnsView{}
+	var daily []float64
+	for i, d := range dates6 {
+		v := returns[i]
+		rets[d] = map[string]float64{"A": v[0], "B": v[1], "C": v[2], "D": v[3]}
+		// 按日期及 A/B/C/D 固定顺序计算期望，校验实际流水线的逐位一致性。
+		daily = append(daily, spearman(values, v))
+	}
+	// 缺少有效收益的日期仍须排除，不能为了固定顺序改变配对样本。
+	rets[dates[6]] = map[string]float64{"A": 1, "B": 2, "C": math.NaN(), "D": math.NaN()}
+	want := CompositeIC{Mean: meanOf(daily), ValidDays: len(dates6)}
+	for range 100 {
+		if got := compositeIC([]FactorSeries{f}, rets, TransformMissingExclude); got != want {
+			t.Fatalf("合成 IC 不符合确定性股票/日期顺序: %+v vs %+v", got, want)
 		}
 	}
 }
