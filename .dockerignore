@@ -6,6 +6,7 @@
 data
 output
 bin
+node_modules
 docs
 *.exe
 *.db

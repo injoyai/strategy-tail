@@ -5,8 +5,8 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { ma } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
+import { mountKline, dropKline } from '../kline.js';
 import * as R from '../replay.js';
 
 export default {
@@ -96,7 +96,7 @@ export default {
     // 离开回放区域（含切页销毁）即暂停；会话留在 store，重挂载从暂停态恢复。
     R.pause(state.replay);
     dropChart(this.equityC);
-    dropChart(this.klineC);
+    dropKline(this.klineC);
   },
   methods: {
     fmtMoney(v) {
@@ -251,65 +251,22 @@ export default {
         return;
       }
       if (!this.klineC) {
-        this.klineC = mountChart(el);
+        this.klineC = mountKline(el);
         if (!this.klineC) { s.klineError = '图表组件未加载，请刷新页面后重试'; return; }
       }
       const rows = R.klineVisible(s.kline, this.curDate);
       if (!rows.length) { this.klineC.clear(); return; }
-      const dates = rows.map(k => k.date);
-      const values = rows.map(k => [k.open, k.close, k.low, k.high]);
-      const closes = rows.map(k => k.close);
-      const vols = rows.map(k => k.volume);
-      const dateSet = new Set(dates);
-      // B/S 标记对应当日实际成交事件（标记在成交价位置），截至当前日期。
-      const markers = this.selectedTrades.filter(t => dateSet.has(t.date)).map(t => {
-        const isBuy = t.side === 'buy';
-        return {name: `${isBuy ? '买入' : '卖出'} ${t.date} · 成交 ${t.execPrice.toFixed(2)}（原始 ${t.price.toFixed(2)}）`,
-          coord: [t.date, t.execPrice], value: isBuy ? 'B' : 'S',
-          symbol: 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 14,
-          itemStyle: {color: isBuy ? '#ef4444' : '#22c55e'},
-          label: {show: true, formatter: isBuy ? 'B' : 'S', color: '#fff', fontSize: 10, offset: [0, isBuy ? 12 : -12]}};
-      });
-      this.klineC.setOption({
-        animation: false,
-        backgroundColor: 'transparent',
-        title: {text: `${s.code} · ${this.curDate}`, left: 12, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
-        tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
-        axisPointer: {link: [{xAxisIndex: 'all'}]},
-        legend: {top: 28, right: 10, data: ['日K', 'MA5', 'MA10', 'MA20']},
-        dataZoom: [{type: 'inside', xAxisIndex: [0, 1, 2]}, {show: true, xAxisIndex: [0, 1, 2], type: 'slider', bottom: 8}],
-        grid: [{left: 54, right: 20, top: 72, height: '38%'},
-          {left: 54, right: 20, top: '57%', height: '12%'},
-          {left: 54, right: 20, top: '77%', height: '12%'}],
-        graphic: [
-          {type: 'text', left: 54, top: '53%', style: {text: '成交量', fill: '#94a3b8', fontSize: 11}},
-          {type: 'text', left: 54, top: '73%', style: {text: 'MACD(12,26,9) · 柱=DIF−DEA', fill: '#94a3b8', fontSize: 11}},
-        ],
-        xAxis: [
-          {type: 'category', data: dates, boundaryGap: false, axisLabel: {show: false}},
-          {type: 'category', gridIndex: 1, data: dates, boundaryGap: false, axisLabel: {show: false}},
-          {type: 'category', gridIndex: 2, data: dates, boundaryGap: false},
-        ],
-        yAxis: [
-          {scale: true, splitArea: {show: true}},
-          {scale: true, gridIndex: 1, splitNumber: 2, axisLabel: {show: false}, splitLine: {show: false}},
-          {scale: true, gridIndex: 2, splitNumber: 2, axisLabel: {fontSize: 10}, splitLine: {show: false}},
-        ],
-        series: [
-          {name: '日K', type: 'candlestick', data: values,
-            itemStyle: {color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e'},
-            markPoint: {data: markers}},
-          {name: 'MA5', type: 'line', data: ma(closes, 5), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
-          {name: 'MA10', type: 'line', data: ma(closes, 10), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
-          {name: 'MA20', type: 'line', data: ma(closes, 20), symbol: 'none', lineStyle: {width: 1, color: '#3b82f6'}},
-          {name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
-            itemStyle: {color: p => values[p.dataIndex] && values[p.dataIndex][1] >= values[p.dataIndex][0] ? '#ef4444' : '#22c55e'}},
-          {name: 'MACD', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: rows.map(k => k.macd),
-            itemStyle: {color: p => p.value >= 0 ? '#ef4444' : '#22c55e'}},
-          {name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: rows.map(k => k.dif), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
-          {name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: rows.map(k => k.dea), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
-        ],
-      }, true);
+      const dates = new Set(rows.map(k => k.date));
+      const markers = this.selectedTrades.filter(t => dates.has(t.date)).map(t => ({
+        date: t.date, price: t.execPrice, kind: t.side,
+        text: `${t.side === 'buy' ? '买入' : '卖出'} ${t.date} · 成交 ${t.execPrice.toFixed(2)}（原始 ${t.price.toFixed(2)}）`,
+      }));
+      try {
+        this.klineC.setData({rows, markers, identity: `${this.reportId}/${s.code}`, title: `${s.code} · ${this.curDate}`});
+      } catch (e) {
+        s.klineError = e?.message || String(e);
+        R.pause(s);
+      }
     },
   },
   template: `

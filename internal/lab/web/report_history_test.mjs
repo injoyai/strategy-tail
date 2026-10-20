@@ -110,7 +110,7 @@ test('报告 API 对 ID 编码并使用 DELETE 删除', async () => {
 
 test('切换或删除报告时清除旧 K 线，晚到响应不恢复旧成交图', async () => {
   globalThis.window = {matchMedia: () => ({matches:false})};
-  Object.assign(globalThis.reportHistoryTest, {ma() {}, mountChart() {}, dropChart() {}});
+  Object.assign(globalThis.reportHistoryTest, {mountKline() {}, dropKline() {}});
   const source = read('./lab/js/components/Tab3Trades.js').replace(/^import (\{.*\}) from .*;$/gm,
     'const $1 = globalThis.reportHistoryTest;');
   const {default: Trades} = await import(moduleURL(source));

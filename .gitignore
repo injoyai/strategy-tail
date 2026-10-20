@@ -6,6 +6,7 @@
 /internal/lab/data/
 /output/
 /bin/
+/node_modules/
 **/bin/
 *.go.*
 .*

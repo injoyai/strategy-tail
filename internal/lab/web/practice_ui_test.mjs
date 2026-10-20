@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+await import(new URL('../../chartui/kline.js', import.meta.url));
+const K = globalThis.StrategyKline;
+
 
 // 盘感练习前端测试：practice.js 纯函数、页签契约、Tab7Practice 交互逻辑
 // （命令幂等、请求幂等、preparing 轮询发现失败、重练另建记录）、app.js
@@ -8,7 +11,7 @@ import test from 'node:test';
 const read = p => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
 const moduleURL = s => 'data:text/javascript;base64,' + Buffer.from(s).toString('base64');
 const Vue = await import(moduleURL(read('./lab/js/vendor/vue.esm-browser.prod.js')));
-const practice = await import(moduleURL(read('./lab/js/practice.js')));
+const practice = await import(moduleURL(read('./lab/js/practice.js').replace("'./format.js'", JSON.stringify(moduleURL(read('./lab/js/format.js'))))));
 const constants = await import(moduleURL(read('./lab/js/constants.js')));
 const format = await import(moduleURL(read('./lab/js/format.js')));
 
@@ -19,7 +22,7 @@ globalThis.window = {matchMedia: () => ({matches: false})};
 globalThis.location = {search: '', pathname: '/'};
 globalThis.history = {replaceState(_s, _t, url) {lastUrl = url;}};
 globalThis.practiceTest = {...Vue, ...practice, state, Api,
-  mountChart: el => chartFactory(el), dropChart(c) {c?.dispose?.();}};
+  mountKline: el => chartFactory(el), dropKline(c) {c?.dispose?.();}};
 
 const Tab7Src = read('./lab/js/components/Tab7Practice.js')
   .replace(/^import (\{.*\}) from .*;$/gm, 'const $1 = globalThis.practiceTest;');
@@ -109,32 +112,32 @@ test('盲练 K 线横轴为相对日序号且不含真实日期，复盘横轴�
     {day: -1, open: 10, high: 11, low: 9, close: 10.5, volume: 100, ma5: null, ma10: null, ma20: null, dif: null, dea: null, hist: null},
     {day: 0, date: '2024-05-06', open: 10.5, high: 11, low: 10, close: 10.8, volume: 120, ma5: 10.4, ma10: null, ma20: null, dif: 0.1, dea: 0.05, hist: 0.05},
   ];
-  const blind = practice.practiceKlineOption({days, markers: [{day: 0, price: 10.8, kind: 'buy'}]});
-  assert.deepEqual(blind.option.xAxis[0].data, ['前1日', '信号日']);
-  assert.ok(!JSON.stringify(blind.option).includes('2024-05-06'), '盲练不得包含真实日期');
-  assert.equal(blind.missing.length, 0);
-  const review = practice.practiceKlineOption({days, markers: [], showDate: true, title: 'sh600000 · 信号日 2024-05-06'});
-  assert.deepEqual(review.option.xAxis[0].data, ['前1日', '2024-05-06']);
-  assert.ok(review.option.title.text.includes('sh600000'));
+  const blind = practice.practiceKlineData({days, markers: [{day: 0, price: 10.8, kind: 'buy'}]});
+  assert.deepEqual(K.normalize(blind).data.map(d=>d.label), ['前1日', '信号日']);
+  assert.ok(!JSON.stringify(K.normalize(blind)).includes('2024-05-06'), '盲练不得包含真实日期');
+  assert.equal(K.normalize(blind).missing.length, 0);
+  const review = practice.practiceKlineData({days, markers: [], showDate: true, title: 'sh600000 · 信号日 2024-05-06'});
+  assert.deepEqual(K.normalize(review).data.map(d=>d.label), ['前1日', '2024-05-06']);
+  assert.ok(review.title.includes('sh600000'));
 });
 
 test('买卖与估值标记按已揭示日定位，越界标记进入 missing 不绘制', () => {
   const day = (d, close) => ({day: d, open: close, high: close, low: close, close, volume: 1,
     ma5: null, ma10: null, ma20: null, dif: null, dea: null, hist: null});
   const days = [day(0, 10), day(1, 11)];
-  const hits = practice.practiceKlineOption({days, markers: [
+  const hits = practice.practiceKlineData({days, markers: [
     {day: 0, price: 10, kind: 'buy'}, {day: 1, price: 11, kind: 'sell'}, {day: 1, price: 11, kind: 'est'}]});
-  const marks = hits.option.series[0].markPoint.data;
+  const marks = K.normalize(hits).markers;
   assert.equal(marks.length, 3);
-  assert.equal(marks[0].value, 'B');
-  assert.equal(marks[0].symbol, 'triangle');
-  assert.equal(marks[1].value, 'S');
-  assert.equal(marks[1].symbolRotate, 180);
-  assert.equal(marks[2].value, '估');
-  assert.equal(marks[2].symbol, 'diamond');
-  const miss = practice.practiceKlineOption({days, markers: [{day: 9, price: 10, kind: 'sell'}]});
-  assert.equal(miss.option.series[0].markPoint.data.length, 0);
-  assert.equal(miss.missing.length, 1);
+  assert.equal(marks[0].label, 'B');
+  assert.equal(marks[0].kind, 'buy');
+  assert.equal(marks[1].label, 'S');
+  assert.equal(marks[1].kind, 'sell');
+  assert.equal(marks[2].label, '估');
+  assert.equal(marks[2].kind, 'est');
+  const miss = practice.practiceKlineData({days, markers: [{day: 9, price: 10, kind: 'sell'}]});
+  assert.equal(K.normalize(miss).markers.length, 0);
+  assert.equal(K.normalize(miss).missing.length, 1);
 });
 
 // —— 页签契约（既有编号与 URL 行为保持） ——
@@ -459,7 +462,7 @@ test('重练尚未返回时选择另一题，重练结果不能把当前题切�
 
 test('切换图表宿主后重新创建实例，末日仍可请求行情用尽结束', () => {
   let mounts = 0, drops = 0;
-  chartFactory = el => ({getDom: () => el, setOption() {}, dispose() {drops++;}, id: ++mounts});
+  chartFactory = el => ({getDom: () => el, setData() {return [];}, dispose() {drops++;}, id: ++mounts});
   const days = [{day: 0, open: 10, high: 11, low: 9, close: 10, volume: 100, ma5: null, ma10: null, ma20: null, dif: 0, dea: 0, hist: 0}];
   const vm = instance({sess: {id: 'p1', phase: 'active', stage: 'waiting', days, canNext: false}});
   vm.renderKline();
@@ -476,26 +479,17 @@ test('切换图表宿主后重新创建实例，末日仍可请求行情用尽�
 });
 
 test('买卖标记离开影线，提示仍披露真实成交价，缩放不改指标数据', () => {
-  const days = [{day: 0, open: 10, close: 10.5, low: 9, high: 12, volume: 100,
-    ma5: 10, ma10: 10, ma20: 10, dif: 0.0002, dea: 0.0001, hist: 0.0001}];
-  const {option} = practice.practiceKlineOption({days, markers: [
-    {day: 0, price: 10.5, kind: 'buy'}, {day: 0, price: 10.8, kind: 'sell'}, {day: 0, price: 10.5, kind: 'est'}]});
-  const [buy, sell, est] = option.series[0].markPoint.data;
-  assert.deepEqual(buy.coord, ['信号日', 9]);
-  assert.deepEqual(sell.coord, ['信号日', 12]);
-  assert.deepEqual(est.coord, ['信号日', 12]);
-  assert.ok(buy.symbolOffset[1] >= 16);
-  assert.ok(sell.symbolOffset[1] <= -16);
-  assert.match(buy.name, /买入 · 10\.50 元/);
-  assert.match(sell.name, /卖出 · 10\.80 元/);
-  assert.match(est.name, /结束估值/);
-  const axis = option.yAxis[2];
-  for (const range of [{min: 0, max: 0}, {min: 0.0001, max: 0.0002}, {min: -0.2, max: -0.1}]) {
-    assert.ok(axis.min(range) < Math.min(0, range.min));
-    assert.ok(axis.max(range) > Math.max(0, range.max));
-  }
-  assert.deepEqual(option.series.find(s => s.name === 'MACD').data, [0.0001]);
-  for (const name of ['DIF', 'DEA']) assert.equal(option.series.find(s => s.name === name).lineStyle.width, 2);
+  const days = [{day:0,open:10,close:10.5,low:9,high:12,volume:100,
+    ma5:10,ma10:10,ma20:10,dif:0.0002,dea:0.0001,hist:0.0001}];
+  const normalized = K.normalize(practice.practiceKlineData({days, markers:[
+    {day:0,price:10.5,kind:'buy'},{day:0,price:10.8,kind:'sell'},{day:0,price:10.5,kind:'est'}]}));
+  const [buy,sell,est] = normalized.markers;
+  assert.equal(buy.value,9); assert.equal(sell.value,12); assert.equal(est.value,12);
+  assert.match(buy.text,/买入 · 10\.50 元/); assert.match(sell.text,/卖出 · 10\.80 元/);
+  assert.match(est.text,/期末估值/);
+  assert.equal(normalized.data[0].hist,0.0001);
+  assert.equal(normalized.data[0].dif,0.0002);
+  assert.equal(normalized.data[0].dea,0.0001);
 });
 
 test('练习与复盘保留空图表宿主，历史和成交明细按需展开', () => {
@@ -605,4 +599,14 @@ test('报告可实际渲染、图表宿主保持空节点，报告缺失时保�
  assert.equal(tree.find(v=>v.props?.ref==='reviewChart').children,null);
  vm.review.report=null;
  assert.doesNotThrow(()=>render(vm,[]));
+});
+
+test('练习和复盘K线悬浮提示均显示较前收涨跌幅，缩放不改变基准', () => {
+ const days=[{day:-1,open:10,close:10,low:9,high:11,volume:100},{day:0,date:'2024-01-02',open:12,close:11,low:10,high:12,volume:200}];
+ for(const showDate of [false,true]){
+  const normalized=K.normalize(practice.practiceKlineData({days,showDate}));
+  const values=K.legends({current:normalized.data[1]});
+  assert.equal(values.find(x=>x.title==='涨跌幅（较前收）').value.text,'+10.00%');
+  if(!showDate)assert.ok(!JSON.stringify(values).includes('2024-01-02'));
+ }
 });

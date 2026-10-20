@@ -87,7 +87,7 @@ func TestExportTradesHTML(t *testing.T) {
 	if len(content) < 1000 {
 		t.Fatalf("HTML 内容过短: %d 字节", len(content))
 	}
-	for _, kw := range []string{"测试策略", "sh600000", "交易明细", "echarts"} {
+	for _, kw := range []string{"测试策略", "sh600000", "交易明细", "StrategyKline.mount"} {
 		if !contains(content, kw) {
 			t.Fatalf("HTML 缺少关键内容: %s", kw)
 		}

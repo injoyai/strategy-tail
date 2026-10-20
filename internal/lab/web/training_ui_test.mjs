@@ -4,7 +4,7 @@ import test from 'node:test';
 const read = p => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
 const url = s => 'data:text/javascript;base64,' + Buffer.from(s).toString('base64');
 const Vue = await import(url(read('./lab/js/vendor/vue.esm-browser.prod.js')));
-const practice = await import(url(read('./lab/js/practice.js')));
+const practice = await import(url(read('./lab/js/practice.js').replace("'./format.js'", JSON.stringify(url(read('./lab/js/format.js'))))));
 // Install the test boundary before importing modules that use it.
 const state = {activeTab:7, builderStrategies:[]}, Api = {};
 globalThis.trainingTest = {...practice, ...Vue, state, Api, Tab7Practice: {}};

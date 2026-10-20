@@ -76,5 +76,7 @@
 
 新文档按用途放入 `guides/`、`specs/`、`plans/` 或 `reviews/`，并在本页登记。源码、持久状态和生成报告分别留在代码目录、`data/` 与 `output/`。
 
+- [交易表格、Excel 导出与浏览器回归](guides/components-and-browser-tests.md)
+
 - [题库训练实现与存储约定](plans/2026-10-19-practice-training.md)
 - [题库训练验收记录](reviews/2026-10-19-practice-training-acceptance.md)

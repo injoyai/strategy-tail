@@ -4,8 +4,8 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { ma } from '../format.js';
-import { mountChart, dropChart } from '../echarts.js';
+import { mountKline, dropKline } from '../kline.js';
+import { mountTradeTable } from '../trade-table.js';
 
 export default {
   name: 'Tab3Trades',
@@ -27,6 +27,10 @@ export default {
       klineWarning: '',
       klineC: null,
       klineRequest: 0,
+      tradeTable: null,
+      tableErr: '',
+      exportBusy: false,
+      exportError: '',
     };
   },
   computed: {
@@ -42,47 +46,63 @@ export default {
       const rows = [];
       const rep = state.currentReport;
       if (!rep) return rows;
-      for (const v of rep.variants) {
+      for (const [vi, v] of rep.variants.entries()) {
         if (vName && v.name !== vName) continue;
-        for (const t of v.trades) {
+        for (const [ti, t] of v.trades.entries()) {
           if (code && !t.code.includes(code)) continue;
           if (from && t.buyTime.slice(0, 10) < from) continue;
           if (to && t.buyTime.slice(0, 10) > to) continue;
           if (!isNaN(rMin) && t.rate < rMin) continue;
           if (!isNaN(rMax) && t.rate > rMax) continue;
-          rows.push({...t, variant: v.name});
+          rows.push({...t, variant: v.name, _rowId: `${vi}:${ti}`});
         }
       }
       return rows;
     },
-    // 与后端一致：最多渲染 2000 行，防止大报告卡死
-    visibleTrades() { return this.filteredTrades.slice(0, 2000); },
-    noTradesText() {
-      return this.filteredTrades.length
-        ? '（结果超过 2000 条，仅显示前 2000 条，可调整筛选缩小范围）'
-        : '无匹配交易';
-    },
   },
   mounted() {
     watch(() => state.currentReport, () => this.resetReport());
+    watch(() => this.filteredTrades, () => this.refreshTrades());
+    if (state.activeTab === 3) this.refreshTrades();
     // 进入本页：同步变体下拉（保留上次选择/来自 03 的行选择），并修正图表尺寸
     watch(() => state.activeTab, n => {
       if (n !== 3) return;
       this.$nextTick(() => {
         this.syncVariantFilter();
+        this.refreshTrades();
+        this.tradeTable?.resize();
         if (this.klineC) this.klineC.resize();
       });
     });
   },
   unmounted() {
     this.klineRequest++;
-    dropChart(this.klineC);
+    dropKline(this.klineC);
+    this.tradeTable?.destroy();
   },
   methods: {
+    refreshTrades() {
+      if (state.activeTab !== 3) return;
+      this.tableErr = '';
+      try {
+        if (!this.tradeTable) this.tradeTable = mountTradeTable(this.$refs.tradeTable, t => this.showKline(t), e => {this.tableErr = e.message;});
+        this.tradeTable.setData(this.filteredTrades);
+      } catch (e) {this.tableErr = e.message;}
+    },
+    async exportReport() {
+      if (!this.rep?.id || this.exportBusy) return;
+      const id = this.rep.id;
+      this.exportBusy = true; this.exportError = '';
+      try {await Api.exportReport(id);}
+      catch (e) {if (this.rep?.id === id) this.exportError = 'Excel 导出失败：' + e.message;}
+      finally {this.exportBusy = false;}
+    },
     resetReport() {
       this.klineRequest++;
       this.klineTrade = null; this.klineLoading = false; this.klineErr = ''; this.klineWarning = '';
-      dropChart(this.klineC); this.klineC = null;
+      dropKline(this.klineC); this.klineC = null;
+      this.exportError = '';
+      this.tradeTable?.select(null);
       this.syncVariantFilter();
     },
     // 变体筛选下拉：优先 03 页选中行，其次保留当前值
@@ -95,6 +115,7 @@ export default {
     async showKline(t) {
       const request = ++this.klineRequest;
       this.klineTrade = t;
+      this.tradeTable?.select(t._rowId);
       this.klineLoading = true;
       this.klineErr = ''; this.klineWarning = '';
       try {
@@ -123,63 +144,16 @@ export default {
     renderKline(t, ks) {
       const el = this.$refs.klineChart;
       if (!el) return;
-      if (!this.klineC) this.klineC = mountChart(el);
+      if (!this.klineC) this.klineC = mountKline(el);
       if (!this.klineC) throw new Error('图表组件未加载，请刷新页面后重试');
-      const dates = ks.map(k => k.date);
-      const values = ks.map(k => [k.open, k.close, k.low, k.high]);
-      const closes = ks.map(k => k.close);
-      const vols = ks.map(k => k.volume);
-      const dateSet = new Set(dates), missing = [];
-      const mk = (time, type, price) => {
-        if (!dateSet.has(time.slice(0, 10))) { missing.push(type); return null; }
-        const isBuy = type === '买入', virtual = type === '期末估值';
-        const label = isBuy ? 'B' : virtual ? '估' : 'S';
-        return {name: `${type} ${time} · ${price.toFixed(2)}`, coord: [time.slice(0, 10), price], value: label,
-          symbol: virtual ? 'diamond' : 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 14,
-          itemStyle: {color: virtual ? '#94a3b8' : isBuy ? '#ef4444' : '#22c55e'},
-          label: {show: true, formatter: label, color: '#fff', fontSize: 10, offset: [0, isBuy ? 12 : -12]}};
-      };
-      const markers = [mk(t.buyTime, '买入', t.buyPrice), mk(t.sellTime, t.virtual === true ? '期末估值' : '卖出', t.sellPrice)].filter(Boolean);
-      this.klineWarning = missing.length ? `${missing.join('、')}当日缺少日K，未绘制对应标记；时间与价格见上方交易信息。` : '';
-      this.klineC.setOption({
-        backgroundColor: 'transparent',
-        title: {text: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`, left: 12, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}},
-        tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
-        axisPointer: {link: [{xAxisIndex: 'all'}]},
-        legend: {top: 28, right: 10, data: ['日K', 'MA5', 'MA10', 'MA20']},
-        dataZoom: [{type: 'inside', xAxisIndex: [0, 1, 2]}, {show: true, xAxisIndex: [0, 1, 2], type: 'slider', bottom: 8}],
-        grid: [{left: 54, right: 20, top: 72, height: '38%'},
-          {left: 54, right: 20, top: '57%', height: '12%'},
-          {left: 54, right: 20, top: '77%', height: '12%'}],
-        graphic: [
-          {type: 'text', left: 54, top: '53%', style: {text: '成交量', fill: '#94a3b8', fontSize: 11}},
-          {type: 'text', left: 54, top: '73%', style: {text: 'MACD(12,26,9) · 柱=DIF−DEA', fill: '#94a3b8', fontSize: 11}},
-        ],
-        xAxis: [
-          {type: 'category', data: dates, boundaryGap: false, axisLabel: {show: false}},
-          {type: 'category', gridIndex: 1, data: dates, boundaryGap: false, axisLabel: {show: false}},
-          {type: 'category', gridIndex: 2, data: dates, boundaryGap: false},
-        ],
-        yAxis: [
-          {scale: true, splitArea: {show: true}},
-          {scale: true, gridIndex: 1, splitNumber: 2, axisLabel: {show: false}, splitLine: {show: false}},
-          {scale: true, gridIndex: 2, splitNumber: 2, axisLabel: {fontSize: 10}, splitLine: {show: false}},
-        ],
-        series: [
-          {name: '日K', type: 'candlestick', data: values,
-            itemStyle: {color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e'},
-            markPoint: {data: markers}},
-          {name: 'MA5', type: 'line', data: ma(closes, 5), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
-          {name: 'MA10', type: 'line', data: ma(closes, 10), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
-          {name: 'MA20', type: 'line', data: ma(closes, 20), symbol: 'none', lineStyle: {width: 1, color: '#3b82f6'}},
-          {name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols,
-            itemStyle: {color: p => values[p.dataIndex] && values[p.dataIndex][1] >= values[p.dataIndex][0] ? '#ef4444' : '#22c55e'}},
-          {name: 'MACD', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: ks.map(k => k.macd),
-            itemStyle: {color: p => p.value >= 0 ? '#ef4444' : '#22c55e'}},
-          {name: 'DIF', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ks.map(k => k.dif), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
-          {name: 'DEA', type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: ks.map(k => k.dea), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
-        ],
-      }, true);
+      const markers = [
+        {date: t.buyTime.slice(0, 10), price: t.buyPrice, kind: 'buy', text: `买入 ${t.buyTime} · ${t.buyPrice.toFixed(2)} 元`},
+        {date: t.sellTime.slice(0, 10), price: t.sellPrice, kind: t.virtual === true ? 'est' : 'sell',
+          text: `${t.virtual === true ? '期末估值' : '卖出'} ${t.sellTime} · ${t.sellPrice.toFixed(2)} 元`},
+      ];
+      const missing = this.klineC.setData({rows: ks, markers, identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
+        title: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`});
+      this.klineWarning = missing.length ? `${missing.map(m => m.kind === 'buy' ? '买入' : m.kind === 'est' ? '期末估值' : '卖出').join('、')}当日缺少日K，未绘制对应标记；时间与价格见上方交易信息。` : '';
     },
   },
   template: `
@@ -190,36 +164,22 @@ export default {
       <option value="">全部变体</option>
       <option v-for="nm in variantNames" :key="nm" :value="nm">{{ nm }}</option>
     </select>
-    <input type="text" v-model="fCode" placeholder="代码" aria-label="代码筛选">
+    <input ref="codeFilter" type="text" v-model="fCode" placeholder="代码" aria-label="代码筛选">
+    <button v-if="fCode" type="button" class="secondary" aria-label="清除代码筛选" @click="fCode = ''; $nextTick(() => $refs.codeFilter.focus())">清除</button>
     <input type="date" v-model="fFrom" title="买入日期从" aria-label="买入日期从">
     <input type="date" v-model="fTo" title="买入日期到" aria-label="买入日期到">
     <input type="number" v-model="fRateMin" placeholder="收益率≥%" step="0.1" style="width:90px" aria-label="收益率下限">
     <input type="number" v-model="fRateMax" placeholder="收益率≤%" step="0.1" style="width:90px" aria-label="收益率上限">
   </div>
-  <div class="detail-wrap">
-    <table>
-      <thead><tr><th>变体</th><th>代码</th><th>买入时间</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>数量</th><th>盈亏(元)</th><th>收益率%</th><th>持仓天</th><th>成交类型</th></tr></thead>
-      <tbody>
-        <template v-if="visibleTrades.length">
-          <tr v-for="(t, i) in visibleTrades" :key="i" @click="showKline(t)"
-            :class="{selected: klineTrade && klineTrade.code === t.code && klineTrade.variant === t.variant && klineTrade.buyTime === t.buyTime && klineTrade.sellTime === t.sellTime}">
-            <td>{{ t.variant }}</td>
-            <td><button type="button" class="secondary trade-kline-button" :aria-label="'查看 ' + t.code + ' ' + t.buyTime + ' 交易K线'" aria-controls="tradeKlinePanel" @click.stop="showKline(t)">{{ t.code }} · K线</button></td>
-            <td>{{ t.buyTime }}</td>
-            <td>{{ t.buyPrice.toFixed(2) }}</td>
-            <td>{{ t.sellTime }}</td>
-            <td>{{ t.sellPrice.toFixed(2) }}</td>
-            <td>{{ t.quantity }}</td>
-            <td :class="t.profit >= 0 ? 'pos' : 'neg'">{{ t.profit.toFixed(0) }}</td>
-            <td :class="t.rate >= 0 ? 'pos' : 'neg'">{{ t.rate.toFixed(2) }}</td>
-            <td>{{ t.holdingDays }}</td>
-            <td>{{ t.virtual === true ? '期末估值（Virtual）' : t.virtual === false ? '实际成交' : '未记录' }}</td>
-          </tr>
-        </template>
-        <tr v-else><td colspan="11" class="empty">{{ noTradesText }}</td></tr>
-      </tbody>
-    </table>
+  <div class="trade-table-tools">
+    <span class="hint" role="status">{{ rep ? '匹配 ' + filteredTrades.length + ' 笔交易' : '请先运行回测或从组合对比中选择历史结果' }}</span>
+    <button type="button" class="secondary" :disabled="!rep?.id || exportBusy" :aria-busy="exportBusy" @click="exportReport">导出完整报告 Excel</button>
   </div>
+  <p class="hint">Excel 包含全部变体与交易，不受当前筛选影响。</p>
+  <p v-if="exportBusy" class="hint" role="status">正在生成 Excel…</p>
+  <p v-if="exportError" class="msg err" role="alert">{{ exportError }} <button type="button" class="secondary" @click="exportReport">重试</button></p>
+  <p v-if="tableErr" class="msg err" role="alert">表格加载失败：{{ tableErr }} <button type="button" class="secondary" @click="refreshTrades">重试</button></p>
+  <div ref="tradeTable" class="trade-table" aria-label="交易明细"></div>
  </div>
   <section ref="klinePanel" id="tradeKlinePanel" class="card trade-kline-panel" tabindex="-1" aria-labelledby="tradeKlineTitle" :aria-busy="klineLoading">
     <h3 id="tradeKlineTitle">{{ klineTrade ? klineTrade.code + ' · 交易日K与买卖点' : '交易日K与买卖点' }}</h3>
@@ -230,7 +190,7 @@ export default {
     <p v-if="klineLoading" class="empty" role="status">加载K线中…</p>
     <div v-else-if="klineErr" class="warnbar" role="alert">K线加载失败：{{ klineErr }} <button type="button" class="secondary" @click="showKline(klineTrade)">重试</button></div>
     <p v-if="klineWarning" class="hint" role="status">{{ klineWarning }}</p>
-    <!-- ECharts 独占容器，加载与错误提示不得放在其中。 -->
+    <!-- KLineChart 独占容器，加载与错误提示不得放在其中。 -->
     <div v-show="klineTrade" :style="{visibility: klineLoading || klineErr ? 'hidden' : 'visible'}" ref="klineChart" class="chart-kline" role="img" aria-label="交易日K、成交量、MACD；B为买入、S为卖出、估为期末估值，准确时间与价格见上方"></div>
   </section>
 </div>

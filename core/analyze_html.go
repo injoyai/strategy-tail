@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/injoyai/goutil/oss"
+	"github.com/injoyai/strategy-tail/internal/chartui"
 )
 
 // ============================================================================
@@ -49,14 +50,15 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 		}
 
 		kline := make([][]any, 0, len(dks))
-		for _, k := range dks {
+		indicators := reportMACD(dks)
+		for i, k := range dks {
 			kline = append(kline, []any{
 				k.Time.Format(time.DateOnly),
 				k.Open.Float64(),
 				k.Close.Float64(),
 				k.Low.Float64(),
 				k.High.Float64(),
-				k.Volume,
+				k.Volume, indicators[i][0], indicators[i][1], indicators[i][2],
 			})
 		}
 
@@ -71,6 +73,10 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 		tradeRows := make([]map[string]any, 0)
 		for _, year := range yearsForCode {
 			for _, t := range tradeYears[year] {
+				sellLabel := "卖"
+				if t.Virtual {
+					sellLabel = "估"
+				}
 				buyRate := tradeReturnRate(t)
 				profit := tradeProfitAmount(t)
 				marks = append(marks, map[string]any{
@@ -86,7 +92,7 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 					"time":  t.SellTime.Format(time.TimeOnly),
 					"year":  year,
 					"price": t.SellPrice.Float64(),
-					"type":  "卖",
+					"type":  sellLabel,
 					"rate":  buyRate,
 				})
 				tradeRows = append(tradeRows, map[string]any{
@@ -277,6 +283,7 @@ func professionalReportHTML(statsJSON, equityJSON, monthlyJSON, distJSON []byte,
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>策略回测报告</title>
+` + chartui.Scripts() + `
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
 :root{--bg:#f8f9fb;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--red:#ef4444;--green:#22c55e}
@@ -561,52 +568,19 @@ document.getElementById('reportSubtitle').textContent = '回测年份：' + year
   render();
 })();
 
-// K线买卖点
+// K线买卖点与所有行情页共用同一适配器。
 (function(){
   if(!allCharts.length) return;
   const select = document.getElementById('code');
-  const chart = echarts.init(document.getElementById('klineChart'));
-  function ema(v,p){const a=2/(p+1);const r=[v[0]];for(let i=1;i<v.length;i++)r.push(r[i-1]+a*(v[i]-r[i-1]));return r;}
-  function calcMACD(c){const e12=ema(c,12);const e26=ema(c,26);const d=c.map((_,i)=>e12[i]-e26[i]);const de=ema(d,9);return{dif:d,dea:de,macd:d.map((v,i)=>(v-de[i])*2)};}
-  function ma(v,p){return v.map((_,i)=>{if(i+1<p)return null;let s=0;for(let j=i-p+1;j<=i;j++)s+=Number(v[j]||0);return Number((s/p).toFixed(3));});}
+  const chart = StrategyKline.mount(document.getElementById('klineChart'), {dark:false, maPeriods:[5,10,20,60]});
   function render(){
-    const code = select.value || allCharts[0].code;
-    const item = allCharts.find(x=>x.code===code) || allCharts[0];
-    if(!item){chart.setOption({title:{text:'无数据'}});return;}
-    const dates=item.kline.map(x=>x[0]);
-    const values=item.kline.map(x=>[x[1],x[2],x[3],x[4]]);
-    const closes=item.kline.map(x=>x[2]);
-    const vols=item.kline.map(x=>x[5]);
-    const macd=calcMACD(closes);
-    const dateMap=new Map(item.kline.map(x=>[x[0],x]));
-    const marks=(item.trades||[]).map(x=>{
-      const k=dateMap.get(x.date);
-      const bp=k?(x.type==='买'?k[3]:k[4]):x.price;
-      return{name:x.type,coord:[x.date,bp],value:x.type==='买'?'B':'S',symbol:'triangle',symbolRotate:x.type==='买'?0:180,symbolSize:14,symbolOffset:[0,x.type==='买'?12:-12],itemStyle:{color:x.type==='买'?'#ef4444':'#22c55e'},label:{show:true,formatter:x.type==='买'?'B':'S',color:'#fff',fontWeight:'bold',fontSize:10,offset:[0,x.type==='买'?4:-4]},tooltip:{formatter:x.type+' '+x.date+' '+x.time+'<br/>价格:'+Number(x.price).toFixed(2)+'<br/>收益:'+Number(x.rate).toFixed(2)+'%'}};
-    });
-    chart.setOption({animation:false,
-      title:{text:item.code+' K线买卖点',left:16,top:10},
-      legend:{top:12,data:['日K','MA5','MA10','MA20','MA60','成交量','MACD','DIF','DEA']},
-      tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
-      axisPointer:{link:[{xAxisIndex:'all'}]},
-      dataZoom:[{type:'inside',xAxisIndex:[0,1,2]},{show:true,xAxisIndex:[0,1,2],type:'slider',bottom:8}],
-      grid:[{left:60,right:30,top:60,height:'50%'},{left:60,right:30,top:'64%',height:'12%'},{left:60,right:30,top:'80%',height:'12%'}],
-      xAxis:[{type:'category',data:dates,boundaryGap:false},{type:'category',gridIndex:1,data:dates,boundaryGap:false,axisLabel:{show:false}},{type:'category',gridIndex:2,data:dates,boundaryGap:false,axisLabel:{show:false}}],
-      yAxis:[{scale:true,splitArea:{show:true}},{scale:true,gridIndex:1,splitNumber:2,axisLabel:{show:false},splitLine:{show:false}},{scale:true,gridIndex:2,splitNumber:3,splitLine:{show:true}}],
-      series:[
-        {name:'日K',type:'candlestick',data:values,itemStyle:{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'},markPoint:{data:marks}},
-        {name:'MA5',type:'line',data:ma(closes,5),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
-        {name:'MA10',type:'line',data:ma(closes,10),symbol:'none',lineStyle:{width:1,color:'#8b5cf6'}},
-        {name:'MA20',type:'line',data:ma(closes,20),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}},
-        {name:'MA60',type:'line',data:ma(closes,60),symbol:'none',lineStyle:{width:1,color:'#22c55e'}},
-        {name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,data:vols,itemStyle:{color:p=>values[p.dataIndex]&&values[p.dataIndex][1]>=values[p.dataIndex][0]?'#ef4444':'#22c55e'}},
-        {name:'MACD',type:'bar',xAxisIndex:2,yAxisIndex:2,data:macd.macd.map(v=>+v.toFixed(4)),itemStyle:{color:p=>p.data>=0?'#ef4444':'#22c55e'}},
-        {name:'DIF',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dif.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
-        {name:'DEA',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dea.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}}
-      ]
-    },true);
+    const item = allCharts.find(x=>x.code===select.value) || allCharts[0];
+    if(!item || !chart) return;
+    const rows = item.kline.map(x=>({date:x[0],open:x[1],close:x[2],low:x[3],high:x[4],volume:x[5],dif:x[6],dea:x[7],hist:x[8]}));
+    const markers = (item.trades||[]).map(x=>({date:x.date,price:x.price,kind:x.type==='买'?'buy':x.type==='估'?'est':'sell',
+      text:x.type+' '+x.date+' '+x.time+' · '+Number(x.price).toFixed(2)+' 元'}));
+    chart.setData({rows,markers,identity:item.code,title:item.code+' K线买卖点'});
   }
-  window.addEventListener('resize',()=>chart.resize());
   select.addEventListener('change',render);
   render();
 })();

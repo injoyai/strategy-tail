@@ -8,8 +8,8 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel, practiceFailReasonLabel, practiceActionLabel, practiceDayLabel, newCommandId, pnlClass, fmtMoney, fmtPct, fmtTime, practiceKlineOption, practiceReportSections, practiceReportSummary, practiceReportText } from '../practice.js';
-import { mountChart, dropChart } from '../echarts.js';
+import { practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel, practiceFailReasonLabel, practiceActionLabel, practiceDayLabel, newCommandId, pnlClass, fmtMoney, fmtPct, fmtTime, practiceKlineData, practiceReportSections, practiceReportSummary, practiceReportText } from '../practice.js';
+import { mountKline, dropKline } from '../kline.js';
 
 export default {
   name: 'Tab7Practice',
@@ -130,8 +130,8 @@ export default {
     this.stopPoll();
     clearTimeout(this.confirmTimer);
     this.seq++; this.histSeq++; this.reviewSeq++;
-    dropChart(this.klineC); this.klineC = null;
-    dropChart(this.reviewC); this.reviewC = null;
+    dropKline(this.klineC); this.klineC = null;
+    dropKline(this.reviewC); this.reviewC = null;
   },
   methods: {
     // ============ URL 与会话 ============
@@ -503,31 +503,39 @@ export default {
       const el = this.$refs.klineChart;
       if (!s || !s.days || !s.days.length || !el) return;
       if (this.klineC && this.klineC.getDom() !== el) {
-        dropChart(this.klineC); this.klineC = null;
+        dropKline(this.klineC); this.klineC = null;
       }
       if (!this.klineC) {
-        this.klineC = mountChart(el);
+        this.klineC = mountKline(el);
         if (!this.klineC) { this.klineWarning = '图表组件未加载，行情图暂不可用，请刷新页面重试。'; return; }
       }
-      const {option, missing} = practiceKlineOption({days: s.days, markers: this.sessionMarkers(), showDate: false, title: ''});
-      this.klineWarning = missing.length ? '部分买卖标记未能定位到已揭示行情，仅以状态摘要为准。' : '';
-      this.klineC.setOption(option, true);
+      try {
+        const missing = this.klineC.setData(practiceKlineData({days: s.days, markers: this.sessionMarkers(), identity: s.id}));
+        this.klineWarning = missing.length ? '部分买卖标记未能定位到已揭示行情，仅以状态摘要为准。' : '';
+      } catch (e) {
+        this.klineC.clear();
+        this.klineWarning = '行情图绘制失败，请刷新页面重试。';
+      }
     },
     renderReview() {
       const rv = this.review;
       const el = this.$refs.reviewChart;
       if (!rv || !rv.days || !rv.days.length || !el) return;
       if (this.reviewC && this.reviewC.getDom() !== el) {
-        dropChart(this.reviewC); this.reviewC = null;
+        dropKline(this.reviewC); this.reviewC = null;
       }
       if (!this.reviewC) {
-        this.reviewC = mountChart(el);
+        this.reviewC = mountKline(el);
         if (!this.reviewC) { this.klineWarning = '图表组件未加载，复盘图暂不可用，以下方成交明细为准。'; return; }
       }
       const markers = (rv.trades || []).map(t => ({day: t.day, price: t.price, kind: t.action === 'buy' ? 'buy' : 'sell'}));
-      const {option, missing} = practiceKlineOption({days: rv.days, markers, showDate: true});
-      this.klineWarning = missing.length ? '部分成交标记未能定位到复盘窗口行情，仅以下方明细为准。' : '';
-      this.reviewC.setOption(option, true);
+      try {
+        const missing = this.reviewC.setData(practiceKlineData({days: rv.days, markers, showDate: true, identity: this.sess?.id}));
+        this.klineWarning = missing.length ? '部分成交标记未能定位到复盘窗口行情，仅以下方明细为准。' : '';
+      } catch (e) {
+        this.reviewC.clear();
+        this.klineWarning = '复盘图绘制失败，请刷新页面重试，成交以下方明细为准。';
+      }
     },
   },
   template: `

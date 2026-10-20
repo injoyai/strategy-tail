@@ -168,10 +168,27 @@ tbody tr.selected{background:rgba(76,141,255,.14)}
 .trades-layout{display:grid;grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr);gap:18px;align-items:start}
 .trades-layout>.card{min-width:0}
 .chart-kline{width:100%;height:580px;margin-top:16px}
+.chart-kline:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
 .trade-kline-panel{scroll-margin-top:68px}
 .trade-kline-placeholder{min-height:580px;display:grid;place-items:center}
 .trade-kline-panel>.hint{overflow-wrap:anywhere}
 button.trade-kline-button{min-height:28px;padding:3px 8px;font-family:var(--font-num);white-space:nowrap}
+.trade-table-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.trade-table-tools .hint{margin:0}
+.trade-table.tabulator{margin-top:10px;max-width:100%;border:1px solid var(--rule);border-radius:12px;background:var(--bg2);color:var(--ink2);font-family:inherit;font-size:12px;line-height:1.6;font-variant-numeric:tabular-nums}
+.trade-table.tabulator .tabulator-header,.trade-table.tabulator .tabulator-header .tabulator-col{background:var(--surface);color:var(--ink2);border-color:var(--rule)}
+.trade-table.tabulator .tabulator-header .tabulator-col .tabulator-col-content{padding:7px 9px}
+.trade-table.tabulator .tabulator-header .tabulator-col.tabulator-sortable:hover{background:var(--accent-soft)}
+.trade-table.tabulator .tabulator-tableholder .tabulator-table{background:var(--bg2);color:var(--ink2)}
+.trade-table.tabulator .tabulator-row,.trade-table.tabulator .tabulator-row.tabulator-row-even{background:var(--bg2);color:var(--ink2);border-bottom:1px solid var(--rule);cursor:pointer}
+.trade-table.tabulator .tabulator-row:hover{background:var(--surface-soft)}
+.trade-table.tabulator .tabulator-row.selected{background:var(--accent-soft)}
+.trade-table.tabulator .tabulator-row .tabulator-cell{padding:7px 9px;border-right:1px solid var(--rule)}
+.trade-table.tabulator .tabulator-placeholder .tabulator-placeholder-contents{color:var(--muted);font-size:13px;font-weight:400}
+.trade-table.tabulator button.trade-sort-button{min-height:28px;padding:0;border:0;border-radius:4px;background:transparent;color:inherit;font:inherit;box-shadow:none;cursor:pointer}
+.trade-table.tabulator button.trade-sort-button:hover{color:var(--gold-soft)}
+.trade-table.tabulator button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.trade-table.tabulator .tabulator-tableholder:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .charts2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .filters{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:14px;padding:13px;background:rgba(255,255,255,.03);border:1px solid var(--rule);border-radius:12px}
 .filters input{width:124px}

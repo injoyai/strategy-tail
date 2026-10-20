@@ -1,15 +1,12 @@
 /* =========================================================
  * 选股系统 - 诊断弹窗
- * - lightweight-charts K线图 + 标注
+ * - KLineChart K线图 + 标注
  * - 诊断树 + explain 逐步判定
  * 移植自 cmd/visualize/template.go
  * ========================================================= */
 
 let diagChart = null;       // 当前图表实例
-let diagVolumeSeries = null;
-let diagCandleSeries = null;
 let diagStrategies = [];    // 策略列表(从全局获取)
-let diagResizeObserver = null; // 图表尺寸监听单例：重建前 disconnect，避免重复创建不释放
 let diagLoadSeq = 0;        // 诊断加载请求序列号：快速切换时旧响应丢弃
 
 // ── 打开诊断弹窗 ──
@@ -51,15 +48,10 @@ function closeDiagnose() {
   const overlay = document.getElementById('diagOverlay');
   overlay.style.display = 'none';
   if (diagChart) {
-    diagChart.remove();
+    diagChart.dispose();
     diagChart = null;
-    diagCandleSeries = null;
-    diagVolumeSeries = null;
   }
-  if (diagResizeObserver) {
-    diagResizeObserver.disconnect();
-    diagResizeObserver = null;
-  }
+
 }
 
 // ── 加载诊断数据 ──
@@ -74,6 +66,7 @@ async function loadDiagnose(code, strategy) {
   const badgeEl = document.getElementById('diagBadge');
 
   // 加载中
+  diagChart?.dispose(); diagChart = null;
   chartWrap.innerHTML = '<div class="loading"><div class="spinner"></div><div>加载诊断数据...</div></div>';
   explainEl.innerHTML = '';
   treeEl.innerHTML = '';
@@ -122,213 +115,25 @@ async function loadDiagnose(code, strategy) {
 
 function renderChart(data) {
   const chartWrap = document.getElementById('diagChart');
+  diagChart?.dispose();
+  diagChart = null;
   chartWrap.innerHTML = '';
-
-  // 清理旧图表
-  if (diagChart) {
-    diagChart.remove();
-    diagChart = null;
+  if (!(data.klines || []).length) { chartWrap.textContent = '暂无日K数据'; return; }
+  diagChart = StrategyKline.mount(chartWrap, {macd: false});
+  if (!diagChart) throw new Error('图表组件未加载');
+  const rows = data.klines.map(k => ({...k, date: k.time}));
+  const grouped = new Map();
+  for (const annotation of data.annotations || []) {
+    const date = (annotation.time || '').slice(0, 10);
+    const kind = /买/.test(annotation.label) ? 'buy' : /卖/.test(annotation.label) ? 'sell' : 'signal';
+    const key = date + '/' + kind + '/' + annotation.label;
+    const previous = grouped.get(key);
+    if (previous) { previous.count++; continue; }
+    grouped.set(key, {date, kind, price: annotation.price, label: annotation.label, text: annotation.note, color: annotation.color, count: 1});
   }
-  if (diagResizeObserver) {
-    diagResizeObserver.disconnect();
-    diagResizeObserver = null;
-  }
-
-  const chart = LightweightCharts.createChart(chartWrap, {
-    layout: {
-      background: { type: 'solid', color: '#0a0e16' },
-      textColor: '#94a3b8',
-      fontSize: 11,
-    },
-    grid: {
-      vertLines: { color: 'rgba(35, 43, 61, 0.5)' },
-      horzLines: { color: 'rgba(35, 43, 61, 0.5)' },
-    },
-    crosshair: {
-      mode: LightweightCharts.CrosshairMode.Normal,
-    },
-    rightPriceScale: {
-      borderColor: '#232b3d',
-    },
-    timeScale: {
-      borderColor: '#232b3d',
-      timeVisible: false,
-    },
-  });
-
-  // 手机端判断
-  const isMobile = chartWrap.clientWidth < 768;
-
-  diagChart = chart;
-
-  // 蜡烛图 - A股惯例: 涨红跌绿
-  const candleSeries = chart.addCandlestickSeries({
-    upColor: '#ef4444',
-    downColor: '#22c55e',
-    borderUpColor: '#ef4444',
-    borderDownColor: '#22c55e',
-    wickUpColor: '#ef4444',
-    wickDownColor: '#22c55e',
-  });
-  diagCandleSeries = candleSeries;
-
-  // K线与量柱之间留出间隔: K线底部留白,量柱顶部下移
-  chart.priceScale('right').applyOptions({
-    scaleMargins: { top: 0.08, bottom: isMobile ? 0.28 : 0.22 },
-  });
-
-  const candleData = (data.klines || []).map(k => ({
-    time: k.time,
-    open: k.open,
-    high: k.high,
-    low: k.low,
-    close: k.close,
-  }));
-  candleSeries.setData(candleData);
-
-  // 成交量
-  const volumeSeries = chart.addHistogramSeries({
-    color: 'rgba(59, 130, 246, 0.3)',
-    priceFormat: { type: 'volume' },
-    priceScaleId: 'volume',
-  });
-  diagVolumeSeries = volumeSeries;
-  chart.priceScale('volume').applyOptions({
-    scaleMargins: { top: isMobile ? 0.74 : 0.82, bottom: 0.02 },
-  });
-
-  const volOpacity = isMobile ? 0.5 : 0.3;
-  const volumeData = (data.klines || []).map(k => ({
-    time: k.time,
-    value: k.volume,
-    color: k.close >= k.open ? `rgba(239, 68, 68, ${volOpacity})` : `rgba(34, 197, 94, ${volOpacity})`, // A股: 涨红跌绿
-  }));
-  volumeSeries.setData(volumeData);
-
-  // 标注 markers - 买卖点用独立 series 增加与K线的距离,策略标注用小圆点
-  const klineMap = new Map();
-  for (const k of (data.klines || [])) {
-    klineMap.set(k.time, k);
-  }
-
-  const buySellItems = [];
-  const otherMarkers = [];
-
-  for (const a of (data.annotations || [])) {
-    const label = a.label || '';
-    const color = a.color || '#3b82f6';
-    const isBuy = label.includes('买');
-    const isSell = label.includes('卖');
-    // 将 ISO 时间统一为 YYYY-MM-DD,与K线数据对齐
-    let t = a.time || '';
-    if (typeof t === 'string' && t.includes('T')) t = t.split('T')[0];
-    if (!t) continue;
-
-    if (isBuy || isSell) {
-      // 买卖点:在K线 low/high 外侧 1.5% 处放置标记,增加与K线的距离
-      const k = klineMap.get(t);
-      const basePrice = k ? (isBuy ? k.low : k.high) : a.price;
-      if (!basePrice || basePrice <= 0) continue;
-      buySellItems.push({
-        time: t,
-        marker: {
-          position: isBuy ? 'belowBar' : 'aboveBar',
-          color: isBuy ? '#ff6b35' : '#00d4ff',
-          shape: isBuy ? 'arrowUp' : 'arrowDown',
-          size: 2,
-          text: label,
-        },
-        value: isBuy ? basePrice * 0.97 : basePrice * 1.03,
-      });
-    } else {
-      otherMarkers.push({
-        time: t,
-        position: 'aboveBar',
-        color: color,
-        shape: 'circle',
-        size: 1,
-        text: label,
-      });
-    }
-  }
-
-  // 去重: 同一天同一类型的标注合并显示(text 加 xN 后缀)
-  const grouped = new Map(); // key: time|shape -> { item, count }
-  for (const item of buySellItems) {
-    const key = item.time + '|' + item.marker.shape;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      grouped.set(key, { item, count: 1 });
-    }
-  }
-  const dedupedBuySell = [];
-  for (const { item, count } of grouped.values()) {
-    const marker = { ...item.marker };
-    if (count > 1) {
-      marker.text = `${item.marker.text} x${count}`;
-    }
-    dedupedBuySell.push({ time: item.time, marker, value: item.value });
-  }
-  const dedupedOther = otherMarkers.filter(m => {
-    const key = m.time + '|' + m.shape;
-    if (grouped.has(key)) return false;
-    return true;
-  });
-
-  // 按时间排序, lightweight-charts 要求 markers 时间有序
-  const byTime = (a, b) => a.time < b.time ? -1 : a.time > b.time ? 1 : 0;
-  const buySellMarkers = dedupedBuySell.map(i => ({ time: i.time, ...i.marker }));
-  const markerData = dedupedBuySell.map(i => ({ time: i.time, value: i.value }));
-  buySellMarkers.sort(byTime);
-  markerData.sort(byTime);
-  dedupedOther.sort(byTime);
-
-  // 买卖点标记用独立 line series,离K线有一定距离
-  if (buySellMarkers.length > 0) {
-    try {
-      const markerSeries = chart.addLineSeries({
-        lineVisible: false,
-        lastValueVisible: false,
-        priceLineVisible: false,
-      });
-      markerSeries.setData(markerData);
-      markerSeries.setMarkers(buySellMarkers);
-    } catch (e) {
-      console.warn('设置买卖点标注失败', e);
-    }
-  }
-
-  // 策略标注在 candleSeries 上
-  if (dedupedOther.length > 0) {
-    try {
-      candleSeries.setMarkers(dedupedOther);
-    } catch (e) {
-      console.warn('设置策略标注失败', e);
-    }
-  }
-
-  // 自适应大小（单例复用，避免重复创建不释放）
-  diagResizeObserver = new ResizeObserver(() => {
-    chart.applyOptions({
-      width: chartWrap.clientWidth,
-      height: chartWrap.clientHeight,
-    });
-  });
-  diagResizeObserver.observe(chartWrap);
-
-  // 设置默认可见K线数量: 手机约60根,桌面约120根
-  const totalBars = (data.klines || []).length;
-  const visibleBars = isMobile ? 60 : 120;
-  if (totalBars > visibleBars) {
-    chart.timeScale().setVisibleLogicalRange({
-      from: totalBars - visibleBars,
-      to: totalBars + 2,
-    });
-  } else {
-    chart.timeScale().fitContent();
-  }
+  const markers = [...grouped.values()].map(m => ({...m, outside: true,
+    label: m.label + (m.count > 1 ? ' x' + m.count : '')}));
+  diagChart.setData({rows, markers, identity: data.code, title: data.code});
 }
 
 // ── 交易汇总渲染 ──

@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/injoyai/goutil/oss"
+	"github.com/injoyai/strategy-tail/internal/chartui"
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // ============================================================================
@@ -139,8 +141,15 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 	}
 
 	hitCards := make([]hitCard, 0, len(allReturns))
+	hitIndicators := make([][][3]float64, 0, len(allReturns))
 	for idx, fr := range allReturns {
 		// 组装 K 线数组: before + buy + after
+		indicatorKlines := append(extend.Klines(nil), fr.HitsBefore...)
+		if fr.BuyKline != nil {
+			indicatorKlines = append(indicatorKlines, fr.BuyKline)
+		}
+		indicatorKlines = append(indicatorKlines, fr.HitsAfter...)
+		hitIndicators = append(hitIndicators, reportMACD(indicatorKlines))
 		ks := make([]hitKline, 0, len(fr.HitsBefore)+1+len(fr.HitsAfter))
 		for _, k := range fr.HitsBefore {
 			ks = append(ks, hitKline{
@@ -196,7 +205,11 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 		return "", fmt.Errorf("序列化命中点 K 线: %w", err)
 	}
 
-	reportHTML := futureReportHTML(html.EscapeString(buyerName), string(summaryJSON), string(curveJSON), string(distJSON), string(labelsJSON), string(hitsJSON))
+	indicatorsJSON, err := json.Marshal(hitIndicators)
+	if err != nil {
+		return "", fmt.Errorf("序列化命中点指标: %w", err)
+	}
+	reportHTML := futureReportHTML(html.EscapeString(buyerName), string(summaryJSON), string(curveJSON), string(distJSON), string(labelsJSON), string(hitsJSON), string(indicatorsJSON))
 	dir := filepath.Join("output", "future")
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", fmt.Errorf("创建前向收益输出目录: %w", err)
@@ -209,13 +222,14 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 }
 
 // futureReportHTML 生成整合的未来收益分析 + 命中点K线可视化 HTML报告。
-func futureReportHTML(buyerName, summaryJSON, curveJSON, distJSON, labelsJSON, hitsJSON string) string {
+func futureReportHTML(buyerName, summaryJSON, curveJSON, distJSON, labelsJSON, hitsJSON, indicatorsJSON string) string {
 	return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>买入信号未来N天收益分析</title>
+` + chartui.Scripts() + `
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 <style>
 :root{--bg:#f8f9fb;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--red:#ef4444;--green:#22c55e}
@@ -387,7 +401,8 @@ const PAGE_SIZE = 12;
 
   let filtered = hitCards.slice();
   let currentPage = 0;
-  let renderedCharts = {}; // index -> echarts instance
+  let renderedCharts = {}; // index -> KLineChart adapter
+  const hitIndicators = ` + indicatorsJSON + `;
 
   function applyFilter(){
     const code = codeSel.value;
@@ -435,7 +450,7 @@ const PAGE_SIZE = 12;
       card.className = 'hit-card';
       card.innerHTML = '<div class="hit-header"><span><span class="code">'+h.code+'</span>'+nameStr+' · '+h.date+' · 买入'+h.buyPrice.toFixed(2)+'</span><span class="ret">'+retStr+'</span></div><div id="hit-chart-'+h.index+'" class="hit-chart"></div>';
       list.appendChild(card);
-      // 初始化 ECharts
+      // 初始化 KLineChart
       renderHitChart(h);
     }
     // 分页器
@@ -456,101 +471,16 @@ const PAGE_SIZE = 12;
     pager.appendChild(nextBtn);
   }
 
-  function ma(v,p){
-    const r=[];
-    for(let i=0;i<v.length;i++){
-      if(i+1<p){ r.push(null); continue; }
-      let s=0;
-      for(let j=i-p+1;j<=i;j++) s+=Number(v[j]||0);
-      r.push(Number((s/p).toFixed(3)));
-    }
-    return r;
-  }
-  function ema(v,p){
-    const a=2/(p+1);
-    const r=[v[0]];
-    for(let i=1;i<v.length;i++) r.push(r[i-1]+a*(v[i]-r[i-1]));
-    return r;
-  }
-  function calcMACD(c){
-    const e12=ema(c,12), e26=ema(c,26);
-    const d=c.map((_,i)=>e12[i]-e26[i]);
-    const de=ema(d,9);
-    return{dif:d,dea:de,macd:d.map((v,i)=>(v-de[i])*2)};
-  }
-
   function renderHitChart(h){
     const el = document.getElementById('hit-chart-'+h.index);
     if(!el) return;
-    const chart = echarts.init(el);
+    const chart = StrategyKline.mount(el, {dark:false});
+    if(!chart) {el.textContent='图表组件未加载';return;}
     renderedCharts[h.index] = chart;
-
-    const dates = h.klines.map(k=>k.time);
-    const values = h.klines.map(k=>[k.open,k.close,k.low,k.high]);
-    const closes = h.klines.map(k=>k.close);
-    const vols = h.klines.map(k=>k.volume);
-    const macd = calcMACD(closes);
-
-    // 命中日 markPoint
-    const markData = [];
-    if(h.buyIdx >= 0 && h.buyIdx < values.length){
-      const k = h.klines[h.buyIdx];
-      markData.push({
-        name:'命中日',
-        coord:[dates[h.buyIdx], k.low],
-        value:'B',
-        symbol:'triangle',
-        symbolSize:14,
-        symbolRotate:0,
-        symbolOffset:[0,16],
-        itemStyle:{color:'#ef4444'},
-        label:{show:true,formatter:'B',color:'#fff',fontWeight:'bold',fontSize:10,offset:[0,3]},
-        tooltip:{formatter:'命中日 '+h.date+'<br/>买入: '+h.buyPrice.toFixed(2)}
-      });
-    }
-
-    // 命中日K线高亮: 用 markLine 画一条竖线
-    const markLineData = [];
-    if(h.buyIdx >= 0 && h.buyIdx < dates.length){
-      markLineData.push([{xAxis:dates[h.buyIdx],yAxis:'max'},{xAxis:dates[h.buyIdx],yAxis:'min'}]);
-    }
-
-    chart.setOption({
-      animation:false,
-      legend:{top:2,data:['日K','MA5','MA10','MA20','成交量','MACD','DIF','DEA']},
-      tooltip:{trigger:'axis',axisPointer:{type:'cross'}},
-      axisPointer:{link:[{xAxisIndex:'all'}]},
-      grid:[{left:50,right:20,top:30,height:'52%'},{left:50,right:20,top:'66%',height:'12%'},{left:50,right:20,top:'82%',height:'14%'}],
-      xAxis:[
-        {type:'category',data:dates,boundaryGap:false,axisLabel:{fontSize:10}},
-        {type:'category',gridIndex:1,data:dates,boundaryGap:false,axisLabel:{show:false}},
-        {type:'category',gridIndex:2,data:dates,boundaryGap:false,axisLabel:{show:false}}
-      ],
-      yAxis:[
-        {scale:true,splitArea:{show:true}},
-        {scale:true,gridIndex:1,splitNumber:2,axisLabel:{show:false},splitLine:{show:false}},
-        {scale:true,gridIndex:2,splitNumber:3,splitLine:{show:true}}
-      ],
-      series:[
-        {name:'日K',type:'candlestick',data:values,
-          itemStyle:{color:'#ef4444',color0:'#22c55e',borderColor:'#ef4444',borderColor0:'#22c55e'},
-          markPoint:{data:markData},
-          markLine:{data:markLineData,symbol:'none',lineStyle:{color:'#ef4444',type:'dashed',width:1},label:{show:false}}
-        },
-        {name:'MA5',type:'line',data:ma(closes,5),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
-        {name:'MA10',type:'line',data:ma(closes,10),symbol:'none',lineStyle:{width:1,color:'#8b5cf6'}},
-        {name:'MA20',type:'line',data:ma(closes,20),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}},
-        {name:'成交量',type:'bar',xAxisIndex:1,yAxisIndex:1,data:vols,
-          itemStyle:{color:p=>values[p.dataIndex]&&values[p.dataIndex][1]>=values[p.dataIndex][0]?'#ef4444':'#22c55e'}
-        },
-        {name:'MACD',type:'bar',xAxisIndex:2,yAxisIndex:2,data:macd.macd.map(v=>+v.toFixed(4)),
-          itemStyle:{color:p=>p.data>=0?'#ef4444':'#22c55e'}
-        },
-        {name:'DIF',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dif.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#f59e0b'}},
-        {name:'DEA',type:'line',xAxisIndex:2,yAxisIndex:2,data:macd.dea.map(v=>+v.toFixed(4)),symbol:'none',lineStyle:{width:1,color:'#3b82f6'}}
-      ]
-    });
-    window.addEventListener('resize',()=>chart.resize());
+    const rows = h.klines.map((k,i)=>({...k,date:k.time,dif:hitIndicators[h.index][i][0],dea:hitIndicators[h.index][i][1],hist:hitIndicators[h.index][i][2]}));
+    const hit = h.klines[h.buyIdx];
+    chart.setData({rows,identity:h.index,title:h.code+' · '+h.date,
+      markers:hit?[{date:hit.time,price:h.buyPrice,kind:'buy',label:'命中',outside:true}]:[]});
   }
 
   document.getElementById('hitFilter').addEventListener('click', applyFilter);

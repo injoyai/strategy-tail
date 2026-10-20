@@ -14,6 +14,7 @@ import (
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
+	"github.com/injoyai/strategy-tail/internal/chartui"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
@@ -30,6 +31,7 @@ import (
 //	GET      /api/report/latest 最新报告
 //	GET      /api/reports       历史报告列表
 //	GET      /api/report/{id}   指定报告
+//	GET      /api/report/{id}/export.xlsx 完整报告 Excel（按需生成）
 //	GET      /api/report/{id}/replay/{variant}     变体回放明细（不可用时 400 提示重新回测）
 //	GET      /api/report/{id}/replay/kline/{code}  报告内个股 K 线快照（保存时旧快照）
 //	GET      /api/kline/{code}  日K数据
@@ -162,6 +164,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/report/latest", s.handleLatestReport)
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)
 	s.mux.HandleFunc("GET /api/report/{id}", s.handleReport)
+	s.mux.HandleFunc("GET /api/report/{id}/export.xlsx", s.handleReportExcel)
 	s.mux.HandleFunc("DELETE /api/report/{id}", s.handleDeleteReport)
 	s.mux.HandleFunc("GET /api/report/{id}/replay/{variant}", s.handleReplayVariant)
 	s.mux.HandleFunc("GET /api/report/{id}/replay/kline/{code}", s.handleReplayKline)
@@ -211,6 +214,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/start", withSameOrigin(s.handleStartPortfolioRun))
 	s.mux.HandleFunc("POST /api/portfolio-runs/{id}/stop", withSameOrigin(s.handleStopPortfolioRun))
 	s.mux.HandleFunc("GET /api/portfolio-runs/{id}", s.handleGetPortfolioRun)
+	s.mux.Handle("GET /assets/kline/", http.StripPrefix("/assets/kline/", chartui.Handler()))
 	s.mux.HandleFunc("GET /", s.handleIndex)
 }
 
@@ -638,7 +642,7 @@ func (s *Server) handleReplayKline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, rows)
 }
 
-// klineRow 日K接口与回放快照共用的 ECharts 行格式（MACD 默认 12/26/9）。
+// klineRow 日K接口与回放快照共用的行情行格式（MACD 默认 12/26/9）。
 type klineRow struct {
 	Date   string  `json:"date"`
 	Open   float64 `json:"open"`
@@ -671,7 +675,7 @@ func klineSeries(ks extend.Klines) []klineRow {
 	return rows
 }
 
-// handleKline 日K 数据（ECharts 格式直出）。
+// handleKline 日K 数据（绘图库无关的行情行格式）。
 func (s *Server) handleKline(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	from := r.URL.Query().Get("from")

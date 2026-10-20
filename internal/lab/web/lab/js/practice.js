@@ -1,4 +1,4 @@
-// practice.js：盘感练习前端纯逻辑（文案映射、相对日标签、图表 option 构建）。
+// practice.js：盘感练习前端纯逻辑（文案映射、相对日标签、行情数据投影）。
 // 只处理视图与操作状态；成交、预算取整与费用一律以后端持久状态为准，前端不重算。
 
 // —— 文案映射（与后端 practice.go 常量对应） ——
@@ -75,81 +75,12 @@ export function fmtTime(iso) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-// —— 练习 K 线 option 构建（三 grid：日K／成交量／MACD，样式对齐 Tab3Trades） ——
-
-// days: 服务端已揭示日 K（盲练无 date；复盘含 date）。markers: [{day, price, kind}]，
-// kind: buy | sell | est。showDate=true（复盘）用真实日期作 x 轴；盲练用相对日标签。
-// 返回 {option, missing}：missing 为未能定位的标记（对应日不在已揭示范围）。
-export function practiceKlineOption({days, markers = [], showDate = false, title = ''}) {
-  const cat = d => (showDate && d.date) ? d.date : practiceDayLabel(d.day);
-  const cats = days.map(cat);
-  const byDay = new Map(days.map(d => [d.day, d]));
-  const marks = markers.map(m => {
-    const k = byDay.get(m.day);
-    if (!k) return null;
-    const isBuy = m.kind === 'buy', est = m.kind === 'est';
-    const label = isBuy ? 'B' : est ? '估' : 'S';
-    return {name: `${isBuy ? '买入' : est ? '结束估值' : '卖出'} · ${m.price.toFixed(2)} 元`,
-      coord: [cat(k), isBuy ? Math.min(k.low, m.price) : Math.max(k.high, m.price)], value: label,
-      symbol: est ? 'diamond' : 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 16,
-      symbolOffset: [0, isBuy ? 18 : -18],
-      itemStyle: {color: est ? '#94a3b8' : isBuy ? '#ef4444' : '#22c55e'},
-      label: {show: true, formatter: label, color: '#fff', fontSize: 11, fontWeight: 'bold', offset: [0, isBuy ? 15 : -15]}};
-  });
-  const missing = markers.filter((m, i) => !marks[i]);
-  const values = days.map(d => [d.open, d.close, d.low, d.high]);
-  const option = {
-    backgroundColor: 'transparent',
-    ...(title ? {title: {text: title, left: 12, top: 6, textStyle: {fontSize: 13, color: '#e9eef8'}}} : {}),
-    tooltip: {trigger: 'axis', axisPointer: {type: 'cross'}},
-    axisPointer: {link: [{xAxisIndex: 'all'}]},
-    legend: [
-      {top: title ? 26 : 0, right: 8, itemWidth: 16, itemHeight: 10, data: ['日K', 'MA5', 'MA10', 'MA20']},
-      {top: '58%', right: 8, itemWidth: 14, itemHeight: 8, data: ['DIF', 'DEA']},
-    ],
-    dataZoom: [{type: 'inside', xAxisIndex: [0, 1, 2]}, {show: true, xAxisIndex: [0, 1, 2], type: 'slider', bottom: 0, height: 18, showDetail: false}],
-    grid: [{left: 52, right: 16, top: title ? 58 : 30, bottom: '56%'},
-      {left: 52, right: 16, top: '50%', height: '8%'},
-      {left: 52, right: 16, top: '65%', bottom: 44}],
-    graphic: [
-      {type: 'text', left: 8, top: '46%', style: {text: '成交量', fill: '#c2ccdd', fontSize: 11}},
-      {type: 'text', left: 8, top: '60%', style: {text: 'MACD(12,26,9)', fill: '#c2ccdd', fontSize: 11}},
-    ],
-    xAxis: [
-      {type: 'category', data: cats, boundaryGap: false, axisLabel: {show: false}},
-      {type: 'category', gridIndex: 1, data: cats, boundaryGap: false, axisLabel: {show: false}},
-      {type: 'category', gridIndex: 2, data: cats, boundaryGap: false, axisLabel: {fontSize: 10, hideOverlap: true}},
-    ],
-    yAxis: [
-      {scale: true, splitNumber: 4,
-        min: v => v.min - (v.max - v.min || Math.abs(v.min) * 0.01 || 1) * 0.25,
-        max: v => v.max + (v.max - v.min || Math.abs(v.max) * 0.01 || 1) * 0.25,
-        splitArea: {show: true}},
-      {scale: true, gridIndex: 1, splitNumber: 2, axisLabel: {show: false}, splitLine: {show: false}},
-      {scale: true, gridIndex: 2, splitNumber: 3,
-        // 只对当前可见指标留少量边距，避免自动整刻度把小幅 MACD 压扁。
-        min: v => Math.min(0, v.min) - (v.max - v.min || Math.abs(v.max) || 0.01) * 0.1,
-        max: v => Math.max(0, v.max) + (v.max - v.min || Math.abs(v.min) || 0.01) * 0.1,
-        axisLabel: {fontSize: 11, formatter: v => Number(v.toPrecision(3)).toString()},
-        splitLine: {show: true, lineStyle: {color: 'rgba(255,255,255,.08)'}}},
-    ],
-    series: [
-      {name: '日K', type: 'candlestick', data: values,
-        itemStyle: {color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e'},
-        markPoint: {data: marks.filter(Boolean)}},
-      {name: 'MA5', itemStyle: {color: '#f59e0b'}, type: 'line', data: days.map(d => d.ma5), symbol: 'none', lineStyle: {width: 1, color: '#f59e0b'}},
-      {name: 'MA10', itemStyle: {color: '#8b5cf6'}, type: 'line', data: days.map(d => d.ma10), symbol: 'none', lineStyle: {width: 1, color: '#8b5cf6'}},
-      {name: 'MA20', itemStyle: {color: '#3b82f6'}, type: 'line', data: days.map(d => d.ma20), symbol: 'none', lineStyle: {width: 1, color: '#3b82f6'}},
-      {name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: days.map(d => d.volume),
-        itemStyle: {color: p => values[p.dataIndex] && values[p.dataIndex][1] >= values[p.dataIndex][0] ? '#ef4444' : '#22c55e'}},
-      {name: 'MACD', type: 'bar', xAxisIndex: 2, yAxisIndex: 2, data: days.map(d => d.hist),
-        markLine: {silent: true, symbol: 'none', label: {show: false}, lineStyle: {color: '#94a3b8', width: 1}, data: [{yAxis: 0}]},
-        itemStyle: {color: p => p.value == null ? '#94a3b8' : p.value >= 0 ? '#ef4444' : '#22c55e'}},
-      {name: 'DIF', itemStyle: {color: '#f59e0b'}, type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: days.map(d => d.dif), symbol: 'none', lineStyle: {width: 2, color: '#f59e0b'}},
-      {name: 'DEA', itemStyle: {color: '#8b5cf6'}, type: 'line', xAxisIndex: 2, yAxisIndex: 2, data: days.map(d => d.dea), symbol: 'none', lineStyle: {width: 2, color: '#8b5cf6'}},
-    ],
-  };
-  return {option, missing};
+// 盲练只把已揭示的相对日交给共享图表；真实日期只用于结束后的复盘。
+export function practiceKlineData({days, markers = [], showDate = false, title = '', identity}) {
+  const rows = days.map(({day, date, open, high, low, close, volume, ma5, ma10, ma20, dif, dea, hist}) => ({
+    day, ...(showDate && date ? {date} : {}), open, high, low, close, volume, ma5, ma10, ma20, dif, dea, hist,
+  }));
+  return {rows, markers: markers.map(m => ({day: m.day, price: m.price, kind: m.kind, outside: true})), showDate, title, identity};
 }
 
 // 报告和文本下载共用同一套行文；金额、比率与回撤只消费服务端计算结果。

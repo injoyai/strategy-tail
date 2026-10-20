@@ -8,6 +8,7 @@ import (
 
 	"github.com/injoyai/frame/fbr"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/strategy-tail/internal/chartui"
 )
 
 // codeFormat A股代码格式校验,防止任意字符串流入文件路径拼接等下游逻辑。
@@ -64,6 +65,11 @@ func Api(port int, useLocal bool, svc *ScreenService) error {
 		fbr.WithGET("/diagnose.js", func(c fbr.Ctx) {
 			c.Set("Content-Type", "application/javascript; charset=utf-8")
 			c.Send(maybeLocal(useLocal, "diagnose.js", diagnoseJS))
+		}),
+
+		fbr.WithGET("/kline.js", func(c fbr.Ctx) {
+			c.Set("Content-Type", "application/javascript; charset=utf-8")
+			c.SendString(chartui.JavaScript())
 		}),
 
 		// ── HTTP API ──

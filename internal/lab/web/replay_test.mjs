@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import test from 'node:test';
+await import(new URL('../../chartui/kline.js', import.meta.url));
+const K = globalThis.StrategyKline;
+
 
 const read = p => fs.readFileSync(new URL(p, import.meta.url), 'utf8');
 const moduleURL = s => 'data:text/javascript;base64,' + Buffer.from(s).toString('base64');
@@ -14,7 +17,7 @@ const state = Vue.reactive({activeTab: 2}), Api = {};
 let available, chart, mounts;
 globalThis.replayTest = {...R, ...format, ...Vue, state, Api,
   NAV_COLORS: {gross: '#4c8dff', net: '#ecd69c'},
-  mountChart: () => {mounts++; return available ? chart : null;}, dropChart() {}};
+  mountChart: () => {mounts++; return available ? chart : null;}, dropChart() {}, mountKline: () => {mounts++;return available ? chart : null;}, dropKline() {}};
 const source = read('./lab/js/components/BacktestReplay.js')
   .replace(/^import (\{.*\}) from .*;$/gm, 'const $1 = globalThis.replayTest;')
   .replace(/^import \* as (\w+) from .*;$/gm, 'const $1 = globalThis.replayTest;');
@@ -42,7 +45,7 @@ const report3 = () => ({id: 'rep-1', variants: [{name: '基线', replay: {versio
 
 function instance() {
   available = true; mounts = 0;
-  chart = {options: [], cleared: 0, setOption(o) {this.options.push(o);}, clear() {this.cleared++;}};
+  chart = {options: [], cleared: 0, setOption(o) {this.options.push(o);}, setData(o) {this.options.push(o);return K.normalize(o).missing;}, clear() {this.cleared++;}};
   if (!state.replay) state.replay = R.createSession();
   const ctx = {...Replay.data(), ...Replay.setup(),
     $nextTick: async fn => fn?.(), $refs: {equityChart: {}, klineChart: {}}};
@@ -323,13 +326,15 @@ test('K线渲染截至当前日期，B/S 标记用成交价并披露原始价，
     ...dates3.map(d => ({date: d, open: 10, close: 10.5, low: 9.9, high: 10.6, volume: 100, dif: 0.1, dea: 0.05, macd: 0.05}))];
   ctx.renderKline();
   const o = chart.options.at(-1);
-  const dates = o.xAxis[0].data;
-  assert.ok(dates.includes('2024-12-30')); // 预热段保留
-  assert.ok(!dates.includes(dates3[2])); // 未来截断
-  const markers = o.series[0].markPoint.data;
-  assert.equal(markers.length, 1); // d1 买入；d3 卖出尚未发生
-  assert.match(markers[0].name, /成交 10\.01（原始 10\.00）/);
-  assert.equal(o.animation, false);
+  const dates = o.rows.map(r=>r.date);
+  assert.ok(dates.includes('2024-12-30'));
+  assert.ok(!dates.includes(dates3[2]));
+  const normalized = K.normalize(o);
+  assert.equal(K.legends({current:normalized.data[1]}).find(x=>x.title==='涨跌幅（较前收）').value.text,'+10.53%');
+  assert.equal(normalized.markers.length, 1);
+  assert.match(normalized.markers[0].text, /成交 10\.01（原始 10\.00）/);
+  assert.equal(normalized.data[0].hist, 0);
+  assert.equal(normalized.data[1].hist, 0.05);
 });
 
 test('模板渲染：摘要 7 字段、成交/持仓披露列、无模块级引用残留', () => {

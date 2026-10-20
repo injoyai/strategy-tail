@@ -322,18 +322,16 @@ test('替换未保存草稿须显式选择，取消保留原内容', () => {
 });
 
 test('Virtual、实际成交与旧报告缺失标记分开展示', async () => {
-  instance();
-  let source = read('./lab/js/components/Tab3Trades.js').replace(/^import .*;$/gm, '');
-  source = 'const state=globalThis.builderTestState;\n' + source;
-  const Trades = (await import(moduleURL(source))).default;
-  const row = {variant: '样本', code: 'sh600000', buyTime: '2025-01-02', sellTime: '2025-01-03',
-    buyPrice: 10, sellPrice: 11, profit: 100, rate: 10, quantity: 100, holdingDays: 1};
-  const ctx = {...Trades.data(), visibleTrades: [{...row, virtual: true}, {...row, virtual: false}, row],
-    variantNames: ['样本'], noTradesText: '', showKline() {}};
-  const cells = elements(render(Trades.template, ctx), 'td').map(v => v.children);
-  assert.ok(cells.includes('期末估值（Virtual）'));
-  assert.ok(cells.includes('实际成交'));
-  assert.ok(cells.includes('未记录'));
+  let options;
+  globalThis.Tabulator = class {constructor(_el, opts) {options = opts;} on() {}};
+  try {
+    const source = read('./lab/js/trade-table.js').replace(/^import .*;$/gm, 'const markRaw = v => v;');
+    const {mountTradeTable} = await import(moduleURL(source));
+    mountTradeTable({}, () => {}, () => {});
+    const formatter = options.columns.find(c => c.field === 'virtual').formatter;
+    assert.deepEqual([true, false, undefined].map(value => formatter({getValue: () => value})),
+      ['期末估值（Virtual）', '实际成交', '未记录']);
+  } finally {delete globalThis.Tabulator;}
 });
 
 test('后端省略空 risks/params 时仍可添加风控并编辑参数', () => {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/injoyai/goutil/oss"
 	"github.com/injoyai/goutil/oss/csv"
+	"github.com/injoyai/strategy-tail/internal/chartui"
 )
 
 // ============================================================================
@@ -157,6 +158,10 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 				}
 				marks := make([]map[string]any, 0, len(ts)*2)
 				for _, t := range ts {
+					sellLabel := "卖"
+					if t.Virtual {
+						sellLabel = "估"
+					}
 					marks = append(marks,
 						map[string]any{
 							"date":  t.BuyTime.Format(time.DateOnly),
@@ -166,7 +171,7 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 						},
 						map[string]any{
 							"date":  t.SellTime.Format(time.DateOnly),
-							"type":  "卖",
+							"type":  sellLabel,
 							"price": t.SellPrice.Float64(),
 							"rate":  tradeReturnRate(t),
 						},
@@ -260,7 +265,7 @@ func buildTradesExportHTML(charts []map[string]any, summary map[string]any) (str
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>交易记录 - %s</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+%s
 <style>
 :root{--bg:#f8f9fb;--bg2:#fff;--ink:#1a1a2e;--muted:#6b7280;--rule:#e5e7eb;--accent:#3b82f6;--red:#ef4444;--green:#22c55e}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -336,15 +341,6 @@ allCharts.forEach(c => {
   select.appendChild(opt);
 });
 
-function ma(v, p) {
-  return v.map((_, i) => {
-    if (i + 1 < p) return null;
-    let s = 0;
-    for (let j = i - p + 1; j <= i; j++) s += Number(v[j] || 0);
-    return Number((s / p).toFixed(3));
-  });
-}
-
 let chart = null;
 function render() {
   const item = allCharts.find(x => x.code === select.value) || allCharts[0];
@@ -363,56 +359,20 @@ function render() {
   // K线（无日线数据的代码自动跳过）
   const box = document.getElementById('klineChart');
   if (!item.kline || !item.kline.length) {
+    chart?.dispose(); chart = null;
     box.innerHTML = '<p style="color:#999;padding:40px;text-align:center">该代码无可绘制日线数据</p>';
     return;
   }
-  if (!chart) chart = echarts.init(box);
-  const dates = item.kline.map(x => x[0]);
-  const values = item.kline.map(x => [x[1], x[2], x[3], x[4]]);
-  const closes = item.kline.map(x => x[2]);
-  const vols = item.kline.map(x => x[5]);
-  const dateMap = new Map(item.kline.map(x => [x[0], x]));
-  const marks = (item.trades || []).map(x => {
-    const k = dateMap.get(x.date);
-    const bp = k ? (x.type === '买' ? k[3] : k[4]) : x.price;
-    const isBuy = x.type === '买';
-    return {
-      name: x.type, coord: [x.date, bp], value: isBuy ? 'B' : 'S',
-      symbol: 'triangle', symbolRotate: isBuy ? 0 : 180, symbolSize: 14,
-      symbolOffset: [0, isBuy ? 12 : -12],
-      itemStyle: { color: isBuy ? '#ef4444' : '#22c55e' },
-      label: { show: true, formatter: isBuy ? 'B' : 'S', color: '#fff', fontSize: 10, offset: [0, isBuy ? 4 : -4] },
-      tooltip: { formatter: x.type + ' ' + x.date + '<br/>价格: ' + Number(x.price).toFixed(2) + '<br/>本笔收益: ' + Number(x.rate).toFixed(2) + '%%' }
-    };
-  });
-  chart.setOption({
-    animation: false,
-    title: { text: item.code + ' K线买卖点', left: 16, top: 10 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { top: 12, data: ['日K', 'MA5', 'MA10', 'MA20'] },
-    dataZoom: [{ type: 'inside', xAxisIndex: [0, 1] }, { show: true, xAxisIndex: [0, 1], type: 'slider', bottom: 8 }],
-    grid: [{ left: 60, right: 30, top: 60, height: '55%%' }, { left: 60, right: 30, top: '74%%', height: '14%%' }],
-    xAxis: [
-      { type: 'category', data: dates, boundaryGap: false },
-      { type: 'category', gridIndex: 1, data: dates, boundaryGap: false, axisLabel: { show: false } }
-    ],
-    yAxis: [
-      { scale: true, splitArea: { show: true } },
-      { scale: true, gridIndex: 1, splitNumber: 2, axisLabel: { show: false }, splitLine: { show: false } }
-    ],
-    series: [
-      { name: '日K', type: 'candlestick', data: values, itemStyle: { color: '#ef4444', color0: '#22c55e', borderColor: '#ef4444', borderColor0: '#22c55e' }, markPoint: { data: marks } },
-      { name: 'MA5', type: 'line', data: ma(closes, 5), symbol: 'none', lineStyle: { width: 1, color: '#f59e0b' } },
-      { name: 'MA10', type: 'line', data: ma(closes, 10), symbol: 'none', lineStyle: { width: 1, color: '#8b5cf6' } },
-      { name: 'MA20', type: 'line', data: ma(closes, 20), symbol: 'none', lineStyle: { width: 1, color: '#3b82f6' } },
-      { name: '成交量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: vols, itemStyle: { color: p => values[p.dataIndex] && values[p.dataIndex][1] >= values[p.dataIndex][0] ? '#ef4444' : '#22c55e' } }
-    ]
-  }, true);
+  if (!chart) chart = StrategyKline.mount(box, {dark: false, macd: false});
+  if (!chart) { box.textContent = '图表组件未加载'; return; }
+  const rows = item.kline.map(x => ({date:x[0],open:x[1],close:x[2],low:x[3],high:x[4],volume:x[5]}));
+  const markers = (item.trades || []).map(x => ({date:x.date, price:x.price, kind:x.type === '买' ? 'buy' : x.type === '估' ? 'est' : 'sell'}));
+  chart.setData({rows, markers, identity:item.code, title:item.code + ' K线买卖点'});
 }
 window.addEventListener('resize', () => chart && chart.resize());
 select.addEventListener('change', render);
 render();
 </script>
 </body>
-</html>`, title, chartsJSON, summaryJSON), nil
+</html>`, title, chartui.Scripts(), chartsJSON, summaryJSON), nil
 }

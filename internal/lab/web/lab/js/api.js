@@ -30,6 +30,17 @@ export const Api = {
   latestReport: () => api('GET', '/api/report/latest'),
   reports: () => api('GET', '/api/reports'),
   report: id => api('GET', '/api/report/' + encodeURIComponent(id)),
+  async exportReport(id) {
+    const response = await fetch('/api/report/' + encodeURIComponent(id) + '/export.xlsx');
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || '下载失败，请重试');
+    }
+    const url = URL.createObjectURL(await response.blob()), link = document.createElement('a');
+    link.href = url; link.download = 'report-' + id + '.xlsx';
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   deleteReport: id => api('DELETE', '/api/report/' + encodeURIComponent(id)),
   kline: (code, from, to) => api('GET', `/api/kline/${encodeURIComponent(code)}?from=${from}&to=${to}`),
   // 回放（报告内快照，旧报告不可用时 400 提示重新回测）
