@@ -172,6 +172,7 @@ tbody tr.selected{background:rgba(76,141,255,.14)}
 .trade-kline-panel{scroll-margin-top:68px}
 .trade-kline-placeholder{min-height:580px;display:grid;place-items:center}
 .trade-kline-panel>.hint{overflow-wrap:anywhere}
+.kline-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
 button.trade-kline-button{min-height:28px;padding:3px 8px;font-family:var(--font-num);white-space:nowrap}
 .trade-table-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .trade-table-tools .hint{margin:0}

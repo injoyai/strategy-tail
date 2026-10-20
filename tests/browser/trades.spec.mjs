@@ -119,6 +119,42 @@ test('切换空历史报告清除旧表格与K线', async ({page}) => {
 });
 
 for (const width of [1440, 390]) {
+  test(`${width}px 完整交易区间、按钮缩放、键盘恢复与窗口变化`, async ({page}, info) => {
+    await page.setViewportSize({width,height:1000});
+    const longBars=Array.from({length:360},(_,i)=>{
+      const date=new Date(Date.UTC(2025,0,1+i)).toISOString().slice(0,10);
+      return {...bars[0],date,close:10+i/100};
+    });
+    await page.route('**/api/kline/**',route=>route.fulfill({json:longBars}));
+    await openTrades(page);await code(page).fill('600000');
+    await page.getByRole('button',{name:/查看 sh600000 .*交易K线/}).click();
+    const host=chart(page),tools=page.getByRole('group',{name:'交易K线视图'});
+    await expect(tools.getByRole('button',{name:'显示全程',exact:true})).toBeEnabled();
+    const snapshot=()=>host.evaluate(el=>{
+      const c=klinecharts.init(el);return {range:c.getVisibleRange(),space:c.getBarSpace().bar,
+        count:c.getDataList().length,width:c.getSize('candle_pane','main').width};
+    });
+    const expectAll=async()=>{
+      await expect.poll(async()=>{const s=await snapshot();return s.range.from<=0&&s.range.to>=s.count;}).toBe(true);
+    };
+    await expectAll();const initial=await snapshot();
+    expect(initial.count).toBe(360);
+    if(width===390) expect(initial.space).toBeLessThan(1);
+    await tools.getByRole('button',{name:'放大K线',exact:true}).click();
+    await expect.poll(async()=>(await snapshot()).space).toBeGreaterThan(initial.space);
+    await tools.getByRole('button',{name:'缩小K线',exact:true}).click();
+    await expect.poll(async()=>(await snapshot()).space).toBeCloseTo(initial.space,5);
+    await host.focus();await page.keyboard.press('+');const manual=(await snapshot()).space;
+    await page.setViewportSize({width:width===390?450:1280,height:1000});
+    await expect.poll(async()=>(await snapshot()).width).not.toBe(initial.width);
+    expect((await snapshot()).space).toBe(manual);
+    const all=tools.getByRole('button',{name:'显示全程',exact:true});
+    await all.focus();await page.keyboard.press('Enter');await expectAll();await expect(all).toBeFocused();
+    await page.setViewportSize({width,height:1000});await expectAll();
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await info.attach(`kline-controls-${width}`,{body:await page.locator('#tradeKlinePanel').screenshot(),contentType:'image/png'});
+  });
+
   test(`${width}px 布局与截图：滚动归表格，K线可见`, async ({page}, info) => {
     await page.setViewportSize({width, height: 900});
     await openTrades(page);

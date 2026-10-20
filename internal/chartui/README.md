@@ -16,8 +16,8 @@
 ## 数据与生命周期
 
 `StrategyKline.mount(element, {dark, macd, maPeriods})` 创建实例，
-`setData({rows, markers, showDate, identity, title})` 替换完整可见数据，返回未能定位的标记。
-实例提供 `resize()`、`clear()` 和幂等 `dispose()`。
+`setData({rows, markers, showDate, identity, title, view})` 替换完整可见数据，返回未能定位的标记。
+实例提供 `resize()`、`zoom(scale)`、`fitContent()`、`clear()` 和幂等 `dispose()`。
 
 - `rows` 为按交易日递增的 OHLC／volume，以及可选 `ma5/ma10/ma20/dif/dea/hist`。
   普通行情使用 `date`；盲练使用 `day`，并显式传 `showDate:false`。
@@ -33,6 +33,9 @@
   使用 KLineChart 10.1.0 的自定义覆盖物实现；没有更换图表组件。
 - `identity` 区分股票／题目／交易窗口，切换时恢复默认视窗；
   相同身份更新保留缩放。回放只传当前日期以前的数据，回退不能只移动视窗。
+- 交易明细传 `view:'all'`，按主图实际宽度展示整个已加载窗口，左右保留少量空白；
+  长区间可使用不足一像素的柱间距，不截断或补拉数据。默认全程状态随尺寸变化适配；
+  用户缩放／平移后保留视图，`fitContent()` 恢复全程。其他调用方保留默认最近区间。
 - Vue 调用经 Lab 的 `js/kline.js` 包装器使用 `markRaw`。
   宿主内没有 Vue 管理的提示节点；卸载先销毁，再替换 DOM。
 

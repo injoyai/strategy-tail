@@ -15,12 +15,15 @@ function runtime() {
         setDataLoader(l) {this.loader = l;}, setSymbol() {}, setPeriod() {}, setStyles() {}, setPaneOptions() {},
         resetData() {this.loader.getBars({type:'init',callback:(d,more)=>{this.data=d;this.more=more;}});},
         createOverlay(o) {this.markers.push(o);}, removeOverlay() {this.markers=[];},
-        resize() {assert.equal(this.disposed,false);this.resizes++;}, setBarSpace() {}, getBarSpace() {return {bar:12};},
-        overrideYAxis(options) {this.axisOptions=options;}, scrollToRealTime() {},
+        resize() {assert.equal(this.disposed,false);this.resizes++;}, setBarSpace(space) {this.space=space;}, getBarSpace() {return {bar:12};},
+        getSize() {return {width:el.clientWidth-70,height:300};}, setLayoutOptions(options) {this.layoutOptions=options;},
+        setOffsetRightDistance(distance) {this.offset=distance;},
+        subscribeAction(name,fn) {(this.actions??=new Map()).set(name,fn);}, unsubscribeAction(name) {this.actions.delete(name);},
+        overrideYAxis(options) {this.axisOptions=options;}, scrollToRealTime() {this.atEnd=true;},
         scrollByDistance(d) {this.scrolled=d;}, zoomAtCoordinate(scale) {this.zoom=scale;}, scrollToDataIndex() {}};
       charts.push(c);return c;
     }, dispose(el) {charts.find(c=>c.el===el).disposed=true;}};
-  const context = {klinecharts:lib, ResizeObserver:class {
+  const context = {klinecharts:lib, queueMicrotask, ResizeObserver:class {
     constructor(cb) {this.cb=cb;observers.push(this);}
     observe() {} disconnect() {this.disconnected=true;}
   }};
@@ -64,7 +67,9 @@ test('匿名日期、月份刻度和提示不携带真实身份；真实日期�
 });
 
 test('隐藏尺寸不绘制，销毁取消监听，键盘缩放与点击输入互不干扰', () => {
-  const r=runtime(), chart=r.mount(r.el), c=r.charts[0], initial=c.resizes;
+  const r=runtime(), chart=r.mount(r.el), c=r.charts[0];
+  chart.setData({showDate:false,rows:[row(0)]});
+  const initial=c.resizes;
   r.el.clientWidth=0;r.observers[0].cb();assert.equal(c.resizes,initial);
   r.el.clientWidth=390;r.observers[0].cb();assert.equal(c.resizes,initial+1);
   let prevented=0;
@@ -73,6 +78,29 @@ test('隐藏尺寸不绘制，销毁取消监听，键盘缩放与点击输入�
   assert.equal(prevented,1);
   chart.dispose();chart.dispose();r.observers[0].cb();assert.equal(c.disposed,true);
   assert.equal(r.observers[0].disconnected,true);assert.equal(r.events.size,0);
+});
+
+test('完整区间按主图宽度适配，手动调整后保留缩放，恢复全程不加载额外行情', async () => {
+  const r=runtime();r.el.clientWidth=390;
+  const mounted=r.mount(r.el), chart=r.charts[0], rows=Array.from({length:600},(_,day)=>row(day));
+  mounted.setData({identity:'trade',view:'all',showDate:false,rows});
+  await Promise.resolve();
+  assert.equal(chart.space,(320-48)/600);
+  assert.equal(chart.layoutOptions.barSpaceLimit.min,chart.space,'长区间允许小于一像素的柱间距');
+  assert.equal(chart.offset,24);assert.equal(chart.data.length,600);assert.equal(chart.atEnd,true);
+  r.el.clientWidth=800;mounted.resize();await Promise.resolve();
+  assert.equal(chart.space,(730-48)/600,'默认全程视图随容器变化适配');
+  mounted.zoom(1.25);chart.space=4;
+  r.el.clientWidth=390;mounted.resize();await Promise.resolve();
+  assert.equal(chart.space,4,'用户缩放后不擅自恢复全程');
+  mounted.fitContent();assert.equal(chart.space,(320-48)/600);
+  chart.actions.get('onScroll')();chart.space=5;mounted.resize();await Promise.resolve();
+  assert.equal(chart.space,5,'原生拖动后保留用户视图');
+  mounted.setData({identity:'other',view:'all',showDate:false,rows:rows.slice(0,69)});await Promise.resolve();
+  assert.equal(chart.space,(320-48)/69,'切换交易恢复全程');
+  mounted.clear();const previous=chart.space;mounted.fitContent();assert.equal(chart.space,previous);
+  mounted.dispose();mounted.zoom(1.25);mounted.fitContent();await Promise.resolve();
+  assert.equal(chart.actions.size,0);
 });
 
 test('无组件时降级；无效时间、重复交易日和无效价格明确失败', () => {

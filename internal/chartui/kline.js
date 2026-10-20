@@ -202,16 +202,37 @@
     if (maPeriods.length) chart.createIndicator({name: 'STRATEGY_MA', calcParams: maPeriods, paneId: 'candle_pane'}, true);
     chart.createIndicator({name: 'STRATEGY_VOLUME', paneId: 'strategy_volume'});
     if (macd) chart.createIndicator({name: 'STRATEGY_MACD', paneId: 'strategy_macd'});
-    let data = [], byTime = new Map(), identity, alive = true;
+    let data = [], byTime = new Map(), identity = Symbol(), view, fitted = false, alive = true;
     chart.setFormatter({formatDate: ({timestamp}) => byTime.get(timestamp)?.label || ''});
     chart.setDataLoader({getBars: ({type, callback}) => callback(type === 'init' ? data : [], false)});
     chart.setSymbol({ticker: '日K', pricePrecision: 2, volumePrecision: 0});
     chart.setPeriod({type: 'day', span: 1});
+    const fitContent = () => {
+      if (!alive || !data.length || !el.clientWidth || !el.clientHeight) return;
+      const width = chart.getSize('candle_pane', 'main').width;
+      if (width <= 48) return;
+      const space = Math.min(12, (width - 48) / data.length);
+      chart.setLayoutOptions({barSpaceLimit: {min: Math.min(1, space)}});
+      chart.setBarSpace(space);
+      chart.setOffsetRightDistance(24);
+      chart.scrollToRealTime(0);
+      fitted = true;
+    };
+    const stopFitting = () => { fitted = false; };
+    chart.subscribeAction('onZoom', stopFitting);
+    chart.subscribeAction('onScroll', stopFitting);
+    const zoom = scale => {
+      if (!alive || !data.length || !Number.isFinite(scale) || scale <= 0) return;
+      fitted = false;
+      chart.zoomAtCoordinate(scale);
+    };
     const resize = () => {
       if (!alive || !el.clientWidth || !el.clientHeight) return;
       chart.setPaneOptions({id: 'strategy_volume', height: Math.max(54, Math.round(el.clientHeight * 0.16)), minHeight: 45});
       if (macd) chart.setPaneOptions({id: 'strategy_macd', height: Math.max(100, Math.round(el.clientHeight * 0.26)), minHeight: 80});
       chart.resize();
+      // KLineChart measures the price axis in its queued layout first.
+      queueMicrotask(() => { if (fitted) fitContent(); });
     };
     const observer = new ResizeObserver(resize);
     observer.observe(el);
@@ -220,8 +241,8 @@
       switch (event.key) {
         case 'ArrowLeft': chart.scrollByDistance(80, 0); break;
         case 'ArrowRight': chart.scrollByDistance(-80, 0); break;
-        case '+': case '=': chart.zoomAtCoordinate(1.15); break;
-        case '-': chart.zoomAtCoordinate(0.85); break;
+        case '+': case '=': zoom(1.15); break;
+        case '-': zoom(0.85); break;
         case 'Home': chart.scrollToDataIndex(0, 0); break;
         case 'End': chart.scrollToRealTime(0); break;
         default: return;
@@ -235,6 +256,8 @@
     return {
       getDom: () => el,
       resize,
+      zoom,
+      fitContent,
       setData(options) {
         if (!alive) return [];
         const normalized = normalize({...options, maPeriods});
@@ -253,18 +276,23 @@
         for (const [markerIndex, marker] of normalized.markers.entries()) chart.createOverlay({name: 'strategyTrade', groupId: 'strategy_trades',
           lock: true, points: [{timestamp: marker.timestamp, value: marker.price}], extendData: {...marker, markerIndex},
           onRightClick: ({event}) => {event?.preventDefault?.();}});
-        if (identity !== options.identity) {
+        if (identity !== options.identity || view !== options.view) {
           identity = options.identity;
-          chart.setBarSpace(Math.max(2, Math.min(12, (el.clientWidth - 70) / Math.max(1, Math.min(data.length, el.clientWidth < 600 ? 60 : 120)))));
-          chart.scrollToRealTime(0);
+          view = options.view;
+          fitted = view === 'all';
+          if (!fitted) {
+            chart.setBarSpace(Math.max(2, Math.min(12, (el.clientWidth - 70) / Math.max(1, Math.min(data.length, el.clientWidth < 600 ? 60 : 120)))));
+            chart.scrollToRealTime(0);
+          }
         }
         resize();
         return normalized.missing;
       },
-      clear() { data = []; byTime.clear(); tradeStates.delete(chart); chart.removeOverlay({groupId: 'strategy_trades'}); chart.resetData(); },
+      clear() { data = []; byTime.clear(); fitted = false; identity = Symbol(); tradeStates.delete(chart); chart.removeOverlay({groupId: 'strategy_trades'}); chart.resetData(); },
       dispose() {
         if (!alive) return;
-        alive = false; tradeStates.delete(chart); observer.disconnect(); el.removeEventListener('keydown', keydown); lib.dispose(el);
+        alive = false; fitted = false; tradeStates.delete(chart); observer.disconnect(); el.removeEventListener('keydown', keydown);
+        chart.unsubscribeAction('onZoom', stopFitting); chart.unsubscribeAction('onScroll', stopFitting); lib.dispose(el);
       },
     };
   }

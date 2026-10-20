@@ -45,6 +45,7 @@ test('连续选择交易复用图表，B/S 使用实际成交价，图表容器�
   assert.equal(ctx.klineErr, ''); assert.equal(ctx.klineLoading, false);
   assert.equal(mounts, 1); assert.equal(chart.options.length, 2); assert.equal(ctx.scrolls, 0);
   assert.match(chart.options[1].title, /sz000001/);
+  assert.equal(chart.options[1].view, 'all');
   const markers = K.normalize(chart.options[1]).markers;
   assert.deepEqual(markers.map(m => [m.timestamp,m.price]), [[Date.parse('2025-01-02T00:00:00+08:00'),10.5], [Date.parse('2025-01-03T00:00:00+08:00'),11.5]]);
   assert.deepEqual(markers.map(m => m.label), ['B','S']);
@@ -57,6 +58,21 @@ test('连续选择交易复用图表，B/S 使用实际成交价，图表容器�
     const [tableHost] = elements(tree, v => v.props?.ref === 'tradeTable');
     assert.ok(tableHost); assert.equal(tableHost.children, null);
   }
+});
+
+test('K线工具按钮调用共享图表能力，加载与错误时禁用且不占图表宿主', async () => {
+  const ctx=instance();await ctx.showKline(trade());
+  const calls=[];chart.zoom=scale=>calls.push(scale);chart.fitContent=()=>calls.push('all');
+  const render=Vue.compile(Trades.template,{decodeEntities:s=>s,hoistStatic:false});
+  for(const [loading,error] of [[false,''],[true,''],[false,'failed']]) {
+    ctx.klineLoading=loading;ctx.klineErr=error;
+    const tree=render(ctx,[]), buttons=elements(tree,v=>v.type==='button' &&
+      (['放大K线','缩小K线'].includes(v.props?.['aria-label']) || v.children==='显示全程'));
+    assert.equal(buttons.length,3);
+    assert.ok(buttons.every(b=>b.props.disabled===!!(loading||error)));
+    if(!loading&&!error) for(const button of buttons) button.props.onClick();
+  }
+  assert.deepEqual(calls,[0.8,1.25,'all']);
 });
 
 test('日K、成交量、MACD 共用缩放和十字光标，窄屏选择后定位图表', async () => {

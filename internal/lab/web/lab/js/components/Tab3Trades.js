@@ -151,7 +151,7 @@ export default {
         {date: t.sellTime.slice(0, 10), price: t.sellPrice, kind: t.virtual === true ? 'est' : 'sell',
           text: `${t.virtual === true ? '期末估值' : '卖出'} ${t.sellTime} · ${t.sellPrice.toFixed(2)} 元`},
       ];
-      const missing = this.klineC.setData({rows: ks, markers, identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
+      const missing = this.klineC.setData({rows: ks, markers, view: 'all', identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
         title: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`});
       this.klineWarning = missing.length ? `${missing.map(m => m.kind === 'buy' ? '买入' : m.kind === 'est' ? '期末估值' : '卖出').join('、')}当日缺少日K，未绘制对应标记；时间与价格见上方交易信息。` : '';
     },
@@ -187,6 +187,11 @@ export default {
     <template v-if="klineTrade">
       <p class="hint">买入：{{ klineTrade.buyTime }} · {{ klineTrade.buyPrice.toFixed(2) }} 元（B）；{{ klineTrade.virtual === true ? '期末估值' : '卖出' }}：{{ klineTrade.sellTime }} · {{ klineTrade.sellPrice.toFixed(2) }} 元（{{ klineTrade.virtual === true ? '估' : 'S' }}）</p>
     </template>
+    <div v-if="klineTrade" class="kline-tools" role="group" aria-label="交易K线视图">
+      <button type="button" class="secondary" aria-label="缩小K线" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.zoom(0.8)">− 缩小</button>
+      <button type="button" class="secondary" aria-label="放大K线" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.zoom(1.25)">＋ 放大</button>
+      <button type="button" class="secondary" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.fitContent()">显示全程</button>
+    </div>
     <p v-if="klineLoading" class="empty" role="status">加载K线中…</p>
     <div v-else-if="klineErr" class="warnbar" role="alert">K线加载失败：{{ klineErr }} <button type="button" class="secondary" @click="showKline(klineTrade)">重试</button></div>
     <p v-if="klineWarning" class="hint" role="status">{{ klineWarning }}</p>
