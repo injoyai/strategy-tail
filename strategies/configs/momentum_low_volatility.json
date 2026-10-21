@@ -1,0 +1,89 @@
+{
+  "spec": {
+    "version": 1,
+    "name": "中期动量低波动（研究基线）",
+    "buy": {
+      "type": "group",
+      "op": "and",
+      "children": [
+        {
+          "type": "condition",
+          "componentId": "buy_price",
+          "params": {"min": 3, "max": 100}
+        },
+        {
+          "type": "condition",
+          "componentId": "buy_filter_limit_up"
+        },
+        {
+          "type": "factor",
+          "factor": {
+            "kind": "skip_month_momentum",
+            "days": 126,
+            "factorVersion": 1,
+            "operator": "gte",
+            "min": 0.05
+          }
+        },
+        {
+          "type": "factor",
+          "factor": {
+            "kind": "volatility",
+            "days": 60,
+            "factorVersion": 1,
+            "operator": "lte",
+            "max": 0.025
+          }
+        },
+        {
+          "type": "factor",
+          "factor": {
+            "kind": "ma_bias",
+            "days": 120,
+            "factorVersion": 1,
+            "operator": "between",
+            "min": 0,
+            "max": 0.25
+          }
+        },
+        {
+          "type": "factor",
+          "factor": {
+            "kind": "amihud_illiquidity",
+            "days": 20,
+            "factorVersion": 1,
+            "operator": "lte",
+            "max": 0.02
+          }
+        }
+      ]
+    },
+    "sellSignal": {
+      "type": "factor",
+      "factor": {
+        "kind": "ma_bias",
+        "days": 60,
+        "factorVersion": 1,
+        "operator": "lte",
+        "max": -0.02
+      }
+    },
+    "risks": [
+      {
+        "type": "condition",
+        "componentId": "risk_fixed_stop",
+        "params": {"pct": 8}
+      },
+      {
+        "type": "condition",
+        "componentId": "risk_trailing_stop",
+        "params": {"drawdown": 12}
+      },
+      {
+        "type": "condition",
+        "componentId": "risk_holding_days",
+        "params": {"days": 20}
+      }
+    ]
+  }
+}
