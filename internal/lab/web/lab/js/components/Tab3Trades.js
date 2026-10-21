@@ -7,9 +7,11 @@ import { Api } from '../api.js';
 import { stockLabel } from '../format.js';
 import { mountKline, dropKline } from '../kline.js';
 import { mountTradeTable } from '../trade-table.js';
+import { StockInfo } from './StockInfo.js';
 
 export default {
   name: 'Tab3Trades',
+  components: { StockInfo },
   inject: ['switchTab'],
   setup() {
     return { stockLabel, state };
@@ -187,6 +189,7 @@ export default {
     <h3 id="tradeKlineTitle">{{ klineTrade ? stockLabel(klineTrade.code, state.stockNames) + ' · 交易日K与买卖点' : '交易日K与买卖点' }}</h3>
     <p v-if="!klineTrade" class="empty trade-kline-placeholder">选择一笔交易，查看日K、成交量、MACD 与买卖点</p>
     <template v-if="klineTrade">
+      <StockInfo :code="klineTrade.code" :history-date="klineTrade.buyTime.slice(0,10)" history-label="买入日" />
       <p class="hint">买入：{{ klineTrade.buyTime }} · {{ klineTrade.buyPrice.toFixed(2) }} 元（B）；{{ klineTrade.virtual === true ? '期末估值' : '卖出' }}：{{ klineTrade.sellTime }} · {{ klineTrade.sellPrice.toFixed(2) }} 元（{{ klineTrade.virtual === true ? '估' : 'S' }}）</p>
     </template>
     <div v-if="klineTrade" class="kline-tools" role="group" aria-label="交易K线视图">

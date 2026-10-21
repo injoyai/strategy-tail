@@ -11,9 +11,11 @@ import { Api } from '../api.js';
 import { stockLabel } from '../format.js';
 import { practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel, practiceFailReasonLabel, practiceActionLabel, practiceDayLabel, newCommandId, pnlClass, fmtMoney, fmtPct, fmtTime, practiceKlineData, practiceReportSections, practiceReportSummary, practiceReportText } from '../practice.js';
 import { mountKline, dropKline } from '../kline.js';
+import { StockInfo } from './StockInfo.js';
 
 export default {
   name: 'Tab7Practice',
+  components: { StockInfo },
   props: {training: {default: null}, initialSessionId: {default: ''}, historyOnly: {default: false}},
   emits: ['training-update', 'retake', 'home'],
   watch: { 'training.revision'() { if (this.training) this.applySession(this.training.session); } },
@@ -650,6 +652,7 @@ export default {
           </details>
           <p v-if="reviewMode === 'chart' && review.extraDays < 20" class="hint" role="status">结束后仅有 {{ review.extraDays }} 个可用交易日，不足 20 日；按开题快照实际数据展示。</p>
           <p v-if="reviewMode === 'chart' && klineWarning" class="hint" role="status">{{ klineWarning }}</p>
+          <StockInfo v-if="reviewMode === 'chart' && review.code" :code="review.code" :history-date="review.days?.find(d => d.day === 0)?.date || ''" history-label="信号日" />
           <div v-show="reviewMode === 'chart'" ref="reviewChart" class="chart-kline" role="img" aria-label="复盘日K、成交量、MACD 与真实日期买卖点图"></div>
           <details class="ui-help practice-trades"><summary>成交明细（{{ (review.trades || []).length }} 笔）</summary>
           <div class="detail-wrap">

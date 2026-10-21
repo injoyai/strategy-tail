@@ -367,6 +367,9 @@ test('模板渲染：摘要 7 字段、成交/持仓披露列、无模块级引�
   assert.ok(elements(tree2, v => v.type === 'p' && v.children?.includes('当日无成交。')).length >= 1);
   state.replay.code = 'sh600000';
   const detail = render(ctx, []);
+  const info = elements(detail, v => v.type === 'StockInfo')[0];
+  assert.equal(info.props.code, 'sh600000');
+  assert.equal(info.props['as-of'], dates3[1] + 'T15:00:00+08:00', '估值只查询回放当天收盘时已可得数据');
   assert.ok(elements(detail, v => typeof v.children === 'string' && v.children.includes('MA金叉')).length > 0, '持仓日也可查看此前成交原因');
   assert.equal(ctx.fmtPnL(10.5), '+10.50');
   assert.equal(ctx.fmtPnL(-0.1), '-0.10');

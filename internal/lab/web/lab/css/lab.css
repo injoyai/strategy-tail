@@ -173,6 +173,23 @@ tbody tr.selected{background:rgba(76,141,255,.14)}
 .trade-kline-placeholder{min-height:580px;display:grid;place-items:center}
 .trade-kline-panel>.hint{overflow-wrap:anywhere}
 .kline-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.stock-info{margin-top:12px;padding:10px 12px;border:1px solid var(--rule);border-radius:var(--control-radius);font-size:12px}
+.stock-info>.hint{margin:4px 0;overflow-wrap:anywhere}
+.stock-info .stock-info-caption{margin-top:0}
+.stock-info-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px 12px;margin:8px 0}
+.stock-info-metrics dt{color:var(--muted)}
+.stock-info-metrics dd{margin:0;color:var(--ink);font-family:var(--font-num);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.stock-info button{padding:2px 8px;min-height:28px;font-size:12px}
+.stock-info-date{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:var(--muted)}
+.stock-info-date input{padding:3px 6px;min-width:0;font-size:12px}
+.stock-info-comparison{table-layout:fixed;margin:8px 0}
+.stock-info-comparison th,.stock-info-comparison td{padding:5px 4px;white-space:normal;overflow-wrap:anywhere;position:static;text-align:left;letter-spacing:normal;background:none;border-color:var(--rule)}
+.stock-info-comparison th:first-child{width:28%}
+.stock-info-comparison small{display:block;font-size:10px;font-weight:400;color:var(--muted)}
+.stock-info-comparison td{font-family:var(--font-num);color:var(--ink)}
+.stock-info-comparison tfoot td{font-family:inherit;font-size:11px;color:var(--muted)}
+.stock-info-comparison tbody tr{cursor:default}
+.stock-info-comparison tbody tr:hover{background:none}
 button.trade-kline-button{min-height:28px;padding:3px 8px;font-family:var(--font-num);white-space:nowrap}
 .trade-table-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .trade-table-tools .hint{margin:0}

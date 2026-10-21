@@ -15,6 +15,7 @@ export async function api(method, url, body) {
 
 export const Api = {
   stockNames: () => api('GET', '/api/stock-names'),
+  stockInfo: (code, asOf = '') => api('GET', '/api/stock-info/' + encodeURIComponent(code) + (asOf ? '?asOf=' + encodeURIComponent(asOf) : '')),
   macdConfig: () => api('GET', '/api/macd/config'),
   runMACD: cfg => api('POST', '/api/macd/run', cfg),
   dataUpdateStatus: () => api('GET', '/api/data-update/status'),

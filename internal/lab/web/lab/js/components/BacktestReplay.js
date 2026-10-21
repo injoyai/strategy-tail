@@ -9,9 +9,11 @@ import { stockLabel } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 import { mountKline, dropKline } from '../kline.js';
 import * as R from '../replay.js';
+import { StockInfo } from './StockInfo.js';
 
 export default {
   name: 'BacktestReplay',
+  components: { StockInfo },
   setup() {
     return { stockLabel, state };
   },
@@ -366,7 +368,8 @@ export default {
     <p v-if="s.code && !s.klineLoading && selectedTrades.length" class="hint">
       <template v-for="(t, i) in selectedTrades" :key="i">{{ t.date }} {{ t.side === 'buy' ? '买入' : '卖出' }} 原始 {{ t.price.toFixed(2) }} → 成交 {{ t.execPrice.toFixed(2) }} · {{ t.quantity }} 股 · 费用 {{ t.fee.toFixed(2) }} · 原因：{{ reasonText(t) }}{{ i < selectedTrades.length - 1 ? '；' : '' }}</template>
     </p>
-    <!-- ECharts 独占容器，加载与错误提示不得放在其中。 -->
+    <StockInfo v-if="s.code && curDate" :code="s.code" :as-of="curDate + 'T15:00:00+08:00'" />
+    <!-- KLineChart 独占容器，加载与错误提示不得放在其中。 -->
     <div v-show="s.code" :style="{visibility: s.klineLoading || s.klineError ? 'hidden' : 'visible'}" ref="klineChart" class="chart-kline" role="img" aria-label="个股日K、成交量、MACD 与买卖标记，仅展示截至当前回放日期"></div>
   </template>
 </div>

@@ -474,6 +474,7 @@ test('切换图表宿主后重新创建实例，末日仍可请求行情用尽�
   const tree = render(vm, []);
   const find = v => Array.isArray(v) ? v.flatMap(find) : v && typeof v === 'object' ? [v, ...find(v.children)] : [];
   const next = find(tree).find(v => v.type === 'button' && typeof v.children === 'string' && /行情用尽/.test(v.children));
+  assert.ok(!find(tree).some(v => v.type === 'StockInfo'), '盲练不得挂载可泄露身份的股票估值请求');
   assert.ok(next, '末日应有明确结束入口');
   assert.equal(next.props.disabled, false);
 });
@@ -575,6 +576,8 @@ test('报告可实际渲染、图表宿主保持空节点，报告缺失时保�
  assert.ok(tree.some(v=>v.type==='button'&&v.children==='下载报告'));
  assert.ok(tree.some(v=>v.type==='dd'&&v.children==='+89.00 元'));
  assert.equal(tree.find(v=>v.props?.ref==='reviewChart').children,null);
+ vm.reviewMode='chart';
+ assert.ok(all(render(vm,[])).some(v=>v.type==='StockInfo'&&v.props.code===vm.review.code), '结束后复盘才显示股票估值');
  vm.review.report=null;
  assert.doesNotThrow(()=>render(vm,[]));
 });

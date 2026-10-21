@@ -170,6 +170,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/report/{id}/replay/kline/{code}", s.handleReplayKline)
 	s.mux.HandleFunc("GET /api/kline/{code}", s.handleKline)
 	s.mux.HandleFunc("GET /api/stock-names", s.handleStockNames)
+	s.mux.HandleFunc("GET /api/stock-info/{code}", s.handleStockInfo)
 	s.mux.HandleFunc("GET /api/factors", s.handleFactors)
 	s.mux.HandleFunc("POST /api/analyze", withSameOrigin(s.handleAnalyze))
 	s.mux.HandleFunc("GET /api/analysis/latest", s.handleLatestAnalysis)
