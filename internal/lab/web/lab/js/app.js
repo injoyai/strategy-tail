@@ -55,6 +55,10 @@ const App = {
     };
   },
   mounted() {
+    Api.stockNames().then(names => {
+      state.stockNames = names;
+      if (state.status?.state === 'running' && state.taskDock) state.taskDock.current = taskProgress(state.status, names).current;
+    }).catch(e => console.warn('股票名称读取失败，保留代码显示', e));
     // 刷新只触发一次轮询；任务运行中由 pollStatusOnce 续上轮询
     this.pollStatusOnce();
     // 任务卡首次出现时做揭示动画
@@ -122,7 +126,7 @@ const App = {
       if (st === 'idle') { state.taskDock = null; return; }
       const taskName = TASK_LABEL[s.task] || '批量任务';
       const isUpdate = s.task === 'data_update';
-      const p = taskProgress(s);
+      const p = taskProgress(s, state.stockNames);
       const connectionError = st === 'connection-error';
       const determinate = !connectionError && (st === 'done' || p.percent != null);
       const title = {

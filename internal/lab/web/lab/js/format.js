@@ -1,8 +1,14 @@
 // 展示层格式化助手：只影响显示，JSON/提交始终用原始值。
 // unit 取值见 strategies/factor/registry.go（ratio / multiple / percent / 其他原值）。
 
+// 当前名称仅用于显示；完整市场前缀参与匹配，避免股票与指数混淆。
+export function stockLabel(code, names = {}) {
+  const name = Object.hasOwn(names, code) ? names[code] : '';
+  return name ? `${code} ${name}` : (code || '');
+}
+
 // 所有任务共用阶段口径；没有可度量工作量的阶段保持不定进度。
-export function taskProgress(s = {}) {
+export function taskProgress(s = {}, names) {
   const total = Number(s.total ?? s.totalCodes) || 0;
   const done = Math.max(0, Math.min(total, Number(s.done ?? s.doneCodes) || 0));
   const phase = s.phase || s.stage || (total > 0
@@ -25,7 +31,7 @@ export function taskProgress(s = {}) {
     : unit === 'stocks' && /^(sh|sz|bj)\d+$/.test(s.currentCode || '') ? '当前股票' : '当前';
   return {phase, label, done, total, percent: total > 0 ? Math.round(done / total * 100) : null,
     counts: total > 0 ? `${done}/${total} ${unitLabel}` : '',
-    current: s.currentCode ? `${currentLabel} ${s.currentCode}` : ''};
+    current: s.currentCode ? `${currentLabel} ${stockLabel(s.currentCode, names)}` : ''};
 }
 
 // 参数模式已下线，历史报告仍显示当时启用的条件与参数。

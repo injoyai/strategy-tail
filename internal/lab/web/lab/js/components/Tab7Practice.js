@@ -8,6 +8,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { stockLabel } from '../format.js';
 import { practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel, practiceFailReasonLabel, practiceActionLabel, practiceDayLabel, newCommandId, pnlClass, fmtMoney, fmtPct, fmtTime, practiceKlineData, practiceReportSections, practiceReportSummary, practiceReportText } from '../practice.js';
 import { mountKline, dropKline } from '../kline.js';
 
@@ -20,7 +21,7 @@ export default {
   setup() {
     // 模板中直接调用的格式化与文案函数必须从 setup 返回，否则模板作用域不可见。
     return {
-      state,
+      stockLabel, state,
       fmtMoney, fmtPct, fmtTime, pnlClass, practiceReportSections, practiceReportSummary,
       practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel,
       practiceFailReasonLabel, practiceActionLabel, practiceDayLabel,
@@ -89,7 +90,7 @@ export default {
       const rv = this.review;
       if (!rv) return '';
       const sig = (rv.days || []).find(d => d.day === 0);
-      return `${rv.code} · 信号日 ${sig && sig.date ? sig.date : '—'}`;
+      return `${stockLabel(rv.code, state.stockNames)} · 信号日 ${sig && sig.date ? sig.date : '—'}`;
     },
     // 本题评估行（口径全部来自服务端 eval，前端不重算）。
     evalRows() {
@@ -643,7 +644,7 @@ export default {
             <details v-if="review.coverage" class="ui-help">
               <summary>抽题覆盖（扫描 {{ review.coverage.scanned }} 只 · 有本地数据 {{ review.coverage.withData }} 只 · 命中 {{ review.coverage.hits }} 个）</summary>
             <div class="msg">扫描股票 {{ review.coverage.codes }} 只，失败 {{ review.coverage.failed }} 只。
-              <div v-for="(f, i) in review.coverage.failures || []" :key="i">{{ f.code }}：{{ f.message }}</div>
+              <div v-for="(f, i) in review.coverage.failures || []" :key="i">{{ stockLabel(f.code, state.stockNames) }}：{{ f.message }}</div>
             </div>
             </details>
           </details>

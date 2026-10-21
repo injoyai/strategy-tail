@@ -3,7 +3,7 @@
 // 行点击 → state.selectedVariant + switchTab(3)；图表按 activeTab 可见时渲染。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
-import { factorTypeName, formatBuilderSpec, formatMacdParameters } from '../format.js';
+import { stockLabel, factorTypeName, formatBuilderSpec, formatMacdParameters } from '../format.js';
 import { Api } from '../api.js';
 import { mountChart, dropChart, ANNUAL_PALETTE, NAV_COLORS } from '../echarts.js';
 import ReportHistory from './ReportHistory.js';
@@ -15,7 +15,7 @@ export default {
   components: {ReportHistory, BacktestReplay},
   inject: ['switchTab'],
   setup() {
-    return { state, factorTypeName };
+    return { stockLabel, state, factorTypeName };
   },
   data() {
     return { trendC: null, winC: null };
@@ -251,7 +251,7 @@ export default {
   <div v-if="accountWarnings.length" class="warnbar" role="status"><ul><li v-for="message in accountWarnings" :key="message">{{ message }}</li></ul></div>
   <details v-if="rep?.coverage.skipped > 0" class="macd-parameters">
     <summary>查看跳过原因（{{ rep.coverage.skipped }}）</summary>
-    <ul><li v-for="f in rep.coverage.failures" :key="f.code + ':' + f.year">{{ f.code }} · {{ f.year }} · {{ f.message }}</li></ul>
+    <ul><li v-for="f in rep.coverage.failures" :key="f.code + ':' + f.year">{{ stockLabel(f.code, state.stockNames) }} · {{ f.year }} · {{ f.message }}</li></ul>
   </details>
 
   <details v-if="macdParameters.length" class="macd-parameters">

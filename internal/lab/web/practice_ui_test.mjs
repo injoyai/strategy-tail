@@ -21,7 +21,7 @@ let chartFactory = () => null;
 globalThis.window = {matchMedia: () => ({matches: false})};
 globalThis.location = {search: '', pathname: '/'};
 globalThis.history = {replaceState(_s, _t, url) {lastUrl = url;}};
-globalThis.practiceTest = {...Vue, ...practice, state, Api,
+globalThis.practiceTest = {...Vue, ...practice, ...format, state, Api,
   mountKline: el => chartFactory(el), dropKline(c) {c?.dispose?.();}};
 
 const Tab7Src = read('./lab/js/components/Tab7Practice.js')

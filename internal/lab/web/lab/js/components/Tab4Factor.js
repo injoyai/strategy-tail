@@ -10,7 +10,7 @@ import { state } from '../store.js';
 import { Api } from '../api.js';
 import { buildConfig } from '../config.js';
 import {
-  factorTypeName, factorInstanceName, factorHasDays, groupFactors,
+  stockLabel, factorTypeName, factorInstanceName, factorHasDays, groupFactors,
   fmtFactorVal, groupRangeLabel, groupChartCategories,
   factorAxisNumber, factorAxisLabel,
   currentGrouping, analysisYearsForChart, groupingSummaryText,
@@ -22,7 +22,7 @@ export default {
   name: 'Tab4Factor',
   inject: ['switchTab', 'startTask', 'openCandidateDlg'],
   setup() {
-    return { state, factorTypeName, factorHasDays, groupRangeLabel, fmtFactorVal };
+    return { stockLabel, state, factorTypeName, factorHasDays, groupRangeLabel, fmtFactorVal };
   },
   data() {
     return {
@@ -517,7 +517,7 @@ export default {
       <span id="covText">{{ covText }}</span>
       <details class="stat" v-if="failures.length" style="margin-top:0">
         <summary id="failSummary">失败明细（{{ failures.length }}）</summary>
-        <ul id="failList"><li v-for="(f, i) in failures" :key="i">{{ f.code }} · {{ f.year }} · {{ f.stage }} · {{ f.message }}</li></ul>
+        <ul id="failList"><li v-for="(f, i) in failures" :key="i">{{ stockLabel(f.code, state.stockNames) }} · {{ f.year }} · {{ f.stage }} · {{ f.message }}</li></ul>
       </details>
     </div>
     <div class="warnbar" v-show="skipped > 0">部分样本因数据缺失或无效被跳过，统计结论仅基于完成计算的样本。</div>

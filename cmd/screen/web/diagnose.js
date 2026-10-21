@@ -133,7 +133,7 @@ function renderChart(data) {
   }
   const markers = [...grouped.values()].map(m => ({...m, outside: true,
     label: m.label + (m.count > 1 ? ' x' + m.count : '')}));
-  diagChart.setData({rows, markers, identity: data.code, title: data.code});
+  diagChart.setData({rows, markers, identity: data.code, title: [data.code, data.name].filter(Boolean).join(' ')});
 }
 
 // ── 交易汇总渲染 ──

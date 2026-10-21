@@ -7,7 +7,8 @@ const Vue = await import(url(read('./lab/js/vendor/vue.esm-browser.prod.js')));
 const practice = await import(url(read('./lab/js/practice.js').replace("'./format.js'", JSON.stringify(url(read('./lab/js/format.js'))))));
 // Install the test boundary before importing modules that use it.
 const state = {activeTab:7, builderStrategies:[]}, Api = {};
-globalThis.trainingTest = {...practice, ...Vue, state, Api, Tab7Practice: {}};
+const format = await import(url(read('./lab/js/format.js')));
+globalThis.trainingTest = {...practice, ...Vue, ...format, state, Api, Tab7Practice: {}};
 const helpers = await import(url(read('./lab/js/training.js').replace(/^import (\{.*\}) from .*;$/gm,'const $1 = globalThis.trainingTest;')) + '#ready');
 Object.assign(globalThis.trainingTest, helpers);
 const source = read('./lab/js/components/Tab7Training.js').replace(/^import (\{.*\}|\w+) from .*;$/gm,'const $1 = globalThis.trainingTest;').replace('const Tab7Practice = globalThis.trainingTest;', 'const {Tab7Practice} = globalThis.trainingTest;');

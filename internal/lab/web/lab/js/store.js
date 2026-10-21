@@ -6,6 +6,7 @@ import { reactive } from './vendor/vue.esm-browser.prod.js';
 
 export const state = reactive({
   // —— 全局 / 状态轮询 ——
+  stockNames: {},        // 当前行情目录名称；仅用于显示，业务身份仍使用代码
   activeTab: 1,          // 默认进入自由搭建
   status: null,          // 最近一次 /api/status 响应
   statusError: false,    // 轮询网络失败 → connection-error 提示条

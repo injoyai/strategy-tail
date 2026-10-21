@@ -164,3 +164,22 @@ test('Excel 导出绑定选中报告并防重复，失败不清空筛选，切�
   reject(new Error('old failure')); await second;
   assert.equal(ctx.exportError, ''); assert.equal(ctx.exportBusy, false);
 });
+
+test('股票名称用于表格和K线标题，筛选、身份和请求仍保留原始代码', async () => {
+  const ctx = instance();
+  state.stockNames = {sh600000: '浦发银行'};
+  try {
+    const row = ctx.filteredTrades[0];
+    assert.equal(row.stockLabel, 'sh600000 浦发银行');
+    assert.equal(row.code, 'sh600000');
+    let requestCode;
+    Api.kline = async code => {requestCode = code; return bars;};
+    await ctx.showKline(row);
+    assert.equal(requestCode, 'sh600000');
+    assert.match(chart.options.at(-1).title, /^sh600000 浦发银行（/);
+    assert.match(chart.options.at(-1).identity, /^sh600000\//);
+    state.stockNames = {};
+    assert.equal(ctx.filteredTrades[0].stockLabel, 'sh600000');
+    ctx.fCode = '600000'; assert.equal(ctx.filteredTrades.length, 1);
+  } finally {delete state.stockNames;}
+});

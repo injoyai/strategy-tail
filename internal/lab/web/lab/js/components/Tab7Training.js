@@ -1,3 +1,4 @@
+import { stockLabel } from '../format.js';
 import Tab7Practice from './Tab7Practice.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
@@ -8,7 +9,7 @@ export default {
   name: 'Tab7Training',
   components: {Tab7Practice},
   inject: ['startTask'],
-  setup() { return {state, fmtMoney, fmtPct, fmtTime, pnlClass, practiceFailReasonLabel, trainingMetrics, trainingResultLabel}; },
+  setup() { return {stockLabel, state, fmtMoney, fmtPct, fmtTime, pnlClass, practiceFailReasonLabel, trainingMetrics, trainingResultLabel}; },
   data() { return {
     banks: [], trainings: [], catalogLoading: false, catalogErr: '', catalogSeq: 0,
     pane: 'banks', bank: null, train: null, report: null, drill: null, legacyId: '',
@@ -241,9 +242,9 @@ export default {
           <p class="hint">各题独立资金；胜率、平均收益率只含真实已平仓题，打平计入分母。实际费用含未平仓买入费，盈亏已扣费，无需再次扣除。同题重练、历史单题及其他训练不计入。</p>
           <div class="detail-wrap"><table>
             <thead><tr><th>题目</th><th>信号 / 结束</th><th>结果</th><th>买入支出 / 卖出收入（元）</th><th>已实现（元）</th><th>浮动（元）</th><th>收益率</th><th>费用（元）</th><th>持仓日</th><th>操作</th></tr></thead>
-            <tbody><tr v-for="(q,i) in report.questions" :key="q.id"><td>{{ i + 1 }} · {{ q.code }}</td><td>{{ q.signalDate }} / {{ q.endDate }}</td><td>{{ trainingResultLabel(q.status) }}</td><td>{{ fmtMoney(q.buyCost) }} / {{ fmtMoney(q.sellIncome) }}</td><td :class="pnlClass(q.realizedPnl)">{{ q.status === 'sold' ? fmtMoney(q.realizedPnl,true) : '—' }}</td><td :class="pnlClass(q.openPnl)">{{ q.status === 'open' ? fmtMoney(q.openPnl,true) : '—' }}</td><td :class="pnlClass(q.returnPct)">{{ q.returnPct == null ? '不适用' : fmtPct(q.returnPct) }}</td><td>{{ fmtMoney(q.fees) }}</td><td>{{ q.status === 'untraded' ? '—' : q.holdingDays }}</td><td><button type="button" class="secondary" :disabled="loading" @click="reviewQuestion(q.id)">单题复盘 / 重练</button></td></tr></tbody>
+            <tbody><tr v-for="(q,i) in report.questions" :key="q.id"><td>{{ i + 1 }} · {{ stockLabel(q.code, state.stockNames) }}</td><td>{{ q.signalDate }} / {{ q.endDate }}</td><td>{{ trainingResultLabel(q.status) }}</td><td>{{ fmtMoney(q.buyCost) }} / {{ fmtMoney(q.sellIncome) }}</td><td :class="pnlClass(q.realizedPnl)">{{ q.status === 'sold' ? fmtMoney(q.realizedPnl,true) : '—' }}</td><td :class="pnlClass(q.openPnl)">{{ q.status === 'open' ? fmtMoney(q.openPnl,true) : '—' }}</td><td :class="pnlClass(q.returnPct)">{{ q.returnPct == null ? '不适用' : fmtPct(q.returnPct) }}</td><td>{{ fmtMoney(q.fees) }}</td><td>{{ q.status === 'untraded' ? '—' : q.holdingDays }}</td><td><button type="button" class="secondary" :disabled="loading" @click="reviewQuestion(q.id)">单题复盘 / 重练</button></td></tr></tbody>
           </table></div>
-          <details v-if="report.coverage" class="ui-help"><summary>扫描覆盖与统计边界</summary><p class="hint">题库共 {{ report.bankTotal }} 题，仅统计本训练实际练过的 {{ report.practiced }} 题。扫描 {{ report.coverage.codes }} 只，有行情 {{ report.coverage.withData }} 只，求值失败 {{ report.coverage.failed }} 只，命中 {{ report.coverage.hits }} 个。复盘额外行情不改变成绩。</p><ul><li v-for="(f,i) in report.coverage.failures || []" :key="i">{{ f.code }}：{{ f.message }}</li></ul></details>
+          <details v-if="report.coverage" class="ui-help"><summary>扫描覆盖与统计边界</summary><p class="hint">题库共 {{ report.bankTotal }} 题，仅统计本训练实际练过的 {{ report.practiced }} 题。扫描 {{ report.coverage.codes }} 只，有行情 {{ report.coverage.withData }} 只，求值失败 {{ report.coverage.failed }} 只，命中 {{ report.coverage.hits }} 个。复盘额外行情不改变成绩。</p><ul><li v-for="(f,i) in report.coverage.failures || []" :key="i">{{ stockLabel(f.code, state.stockNames) }}：{{ f.message }}</li></ul></details>
         </template>
       </section>
     </template>

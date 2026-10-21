@@ -5,6 +5,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { stockLabel } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 import { mountKline, dropKline } from '../kline.js';
 import * as R from '../replay.js';
@@ -12,7 +13,7 @@ import * as R from '../replay.js';
 export default {
   name: 'BacktestReplay',
   setup() {
-    return { state };
+    return { stockLabel, state };
   },
   data() {
     return { equityC: null, klineC: null, timer: null, equityError: '' };
@@ -80,7 +81,7 @@ export default {
       if (playing) this.schedule();
     });
     // 日期或数据变化 → 重绘（未来截断随 dateIdx 变化）。
-    watch(() => [state.replay?.dateIdx, state.replay?.data], () => {
+    watch(() => [state.replay?.dateIdx, state.replay?.data, state.stockNames], () => {
       this.renderEquity();
       this.renderKline();
     }, {flush: 'post'});
@@ -262,7 +263,7 @@ export default {
         text: `${t.side === 'buy' ? '买入' : '卖出'} ${t.date} · 成交 ${t.execPrice.toFixed(2)}（原始 ${t.price.toFixed(2)}）`,
       }));
       try {
-        this.klineC.setData({rows, markers, identity: `${this.reportId}/${s.code}`, title: `${s.code} · ${this.curDate}`});
+        this.klineC.setData({rows, markers, identity: `${this.reportId}/${s.code}`, title: `${stockLabel(s.code, state.stockNames)} · ${this.curDate}`});
       } catch (e) {
         s.klineError = e?.message || String(e);
         R.pause(s);
@@ -314,9 +315,9 @@ export default {
       <table>
         <thead><tr><th>#</th><th>代码</th><th>方向</th><th>成交时间</th><th>原始价</th><th>成交价</th><th>数量</th><th>费用</th><th>触发原因</th></tr></thead>
         <tbody>
-          <tr v-for="t in trades" :key="t.seq" :class="{selected: s.code === t.code}" @click="pickStock(t.code)" :aria-label="'查看 ' + t.code + ' ' + (t.side === 'buy' ? '买入' : '卖出') + ' K线'">
+          <tr v-for="t in trades" :key="t.seq" :class="{selected: s.code === t.code}" @click="pickStock(t.code)" :aria-label="'查看 ' + stockLabel(t.code, state.stockNames) + ' ' + (t.side === 'buy' ? '买入' : '卖出') + ' K线'">
             <td>{{ t.seq }}</td>
-            <td><button type="button" class="secondary trade-kline-button" @click.stop="pickStock(t.code)" :aria-label="'查看 ' + t.code + ' 成交K线'">{{ t.code }}</button></td>
+            <td><button type="button" class="secondary trade-kline-button" @click.stop="pickStock(t.code)" :aria-label="'查看 ' + stockLabel(t.code, state.stockNames) + ' 成交K线'">{{ stockLabel(t.code, state.stockNames) }}</button></td>
             <td :class="t.side === 'buy' ? 'pos' : 'neg'">{{ t.side === 'buy' ? '买入' : '卖出' }}</td>
             <td>{{ fmtTime(t.time) }}</td>
             <td>{{ t.price.toFixed(2) }}</td>
@@ -335,8 +336,8 @@ export default {
       <table>
         <thead><tr><th>代码</th><th>买入日期</th><th>数量</th><th>成本单价</th><th>总成本(含费)</th><th>估值价</th><th>市值</th><th>浮动盈亏</th><th>浮动%</th></tr></thead>
         <tbody>
-          <tr v-for="h in holdings" :key="h.positionId" :class="{selected: s.code === h.code}" @click="pickStock(h.code)" :aria-label="'查看 ' + h.code + ' K线'">
-            <td><button type="button" class="secondary trade-kline-button" @click.stop="pickStock(h.code)" :aria-label="'查看 ' + h.code + ' 持仓K线'">{{ h.code }}</button>{{ markHint(h) }}</td>
+          <tr v-for="h in holdings" :key="h.positionId" :class="{selected: s.code === h.code}" @click="pickStock(h.code)" :aria-label="'查看 ' + stockLabel(h.code, state.stockNames) + ' K线'">
+            <td><button type="button" class="secondary trade-kline-button" @click.stop="pickStock(h.code)" :aria-label="'查看 ' + stockLabel(h.code, state.stockNames) + ' 持仓K线'">{{ stockLabel(h.code, state.stockNames) }}</button>{{ markHint(h) }}</td>
             <td>{{ fmtDay(h.buyTime) }}</td>
             <td>{{ h.quantity }}</td>
             <td>{{ h.costPrice.toFixed(2) }}</td>
@@ -355,7 +356,7 @@ export default {
     <div class="filters replay-stockbar">
       <select :value="s.code" @change="pickStock($event.target.value)" aria-label="选择个股查看K线">
         <option value="">选择个股（持仓或已发生成交）</option>
-        <option v-for="c in stockCodes" :key="c" :value="c">{{ c }}</option>
+        <option v-for="c in stockCodes" :key="c" :value="c">{{ stockLabel(c, state.stockNames) }}</option>
       </select>
     </div>
     <p v-if="s.klineLoading" class="empty" role="status">加载K线中…</p>

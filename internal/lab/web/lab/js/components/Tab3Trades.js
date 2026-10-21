@@ -4,6 +4,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { stockLabel } from '../format.js';
 import { mountKline, dropKline } from '../kline.js';
 import { mountTradeTable } from '../trade-table.js';
 
@@ -11,7 +12,7 @@ export default {
   name: 'Tab3Trades',
   inject: ['switchTab'],
   setup() {
-    return { state };
+    return { stockLabel, state };
   },
   data() {
     return {
@@ -54,7 +55,7 @@ export default {
           if (to && t.buyTime.slice(0, 10) > to) continue;
           if (!isNaN(rMin) && t.rate < rMin) continue;
           if (!isNaN(rMax) && t.rate > rMax) continue;
-          rows.push({...t, variant: v.name, _rowId: `${vi}:${ti}`});
+          rows.push({...t, stockLabel: stockLabel(t.code, state.stockNames), variant: v.name, _rowId: `${vi}:${ti}`});
         }
       }
       return rows;
@@ -62,6 +63,7 @@ export default {
   },
   mounted() {
     watch(() => state.currentReport, () => this.resetReport());
+    watch(() => state.stockNames, () => {if (this.klineC && !this.klineLoading && !this.klineErr) this.showKline(this.klineTrade);});
     watch(() => this.filteredTrades, () => this.refreshTrades());
     if (state.activeTab === 3) this.refreshTrades();
     // 进入本页：同步变体下拉（保留上次选择/来自 03 的行选择），并修正图表尺寸
@@ -152,7 +154,7 @@ export default {
           text: `${t.virtual === true ? '期末估值' : '卖出'} ${t.sellTime} · ${t.sellPrice.toFixed(2)} 元`},
       ];
       const missing = this.klineC.setData({rows: ks, markers, view: 'all', identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
-        title: `${t.code}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`});
+        title: `${stockLabel(t.code, state.stockNames)}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`});
       this.klineWarning = missing.length ? `${missing.map(m => m.kind === 'buy' ? '买入' : m.kind === 'est' ? '期末估值' : '卖出').join('、')}当日缺少日K，未绘制对应标记；时间与价格见上方交易信息。` : '';
     },
   },
@@ -182,7 +184,7 @@ export default {
   <div ref="tradeTable" class="trade-table" aria-label="交易明细"></div>
  </div>
   <section ref="klinePanel" id="tradeKlinePanel" class="card trade-kline-panel" tabindex="-1" aria-labelledby="tradeKlineTitle" :aria-busy="klineLoading">
-    <h3 id="tradeKlineTitle">{{ klineTrade ? klineTrade.code + ' · 交易日K与买卖点' : '交易日K与买卖点' }}</h3>
+    <h3 id="tradeKlineTitle">{{ klineTrade ? stockLabel(klineTrade.code, state.stockNames) + ' · 交易日K与买卖点' : '交易日K与买卖点' }}</h3>
     <p v-if="!klineTrade" class="empty trade-kline-placeholder">选择一笔交易，查看日K、成交量、MACD 与买卖点</p>
     <template v-if="klineTrade">
       <p class="hint">买入：{{ klineTrade.buyTime }} · {{ klineTrade.buyPrice.toFixed(2) }} 元（B）；{{ klineTrade.virtual === true ? '期末估值' : '卖出' }}：{{ klineTrade.sellTime }} · {{ klineTrade.sellPrice.toFixed(2) }} 元（{{ klineTrade.virtual === true ? '估' : 'S' }}）</p>

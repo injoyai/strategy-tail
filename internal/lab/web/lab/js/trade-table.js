@@ -31,8 +31,8 @@ export function mountTradeTable(el, onSelect, onError) {
       {title: '代码', field: 'code', formatter(cell) {
         const t = cell.getRow().getData(), button = document.createElement('button');
         button.type = 'button'; button.className = 'secondary trade-kline-button';
-        button.textContent = t.code + ' · K线';
-        button.setAttribute('aria-label', `查看 ${t.code} ${t.buyTime} 交易K线`);
+        button.textContent = (t.stockLabel || t.code) + ' · K线';
+        button.setAttribute('aria-label', `查看 ${t.stockLabel || t.code} ${t.buyTime} 交易K线`);
         button.setAttribute('aria-controls', 'tradeKlinePanel');
         button.addEventListener('click', e => {e.stopPropagation(); onSelect(t);});
         return button;
@@ -54,7 +54,9 @@ export function mountTradeTable(el, onSelect, onError) {
     },
   });
   function update() {
-    if (ready && !destroyed) table.replaceData(rows).catch(e => {if (!destroyed) onError(e);});
+    if (ready && !destroyed) table.replaceData(rows).then(() => {
+      if (!destroyed) table.getColumn('code').setWidth(true);
+    }).catch(e => {if (!destroyed) onError(e);});
   }
   table.on('tableBuilt', () => {ready = true; update();});
   table.on('rowClick', (_e, row) => onSelect(row.getData()));

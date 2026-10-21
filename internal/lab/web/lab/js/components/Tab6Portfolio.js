@@ -6,7 +6,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
+import { stockLabel, esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 
 const PF_EVIDENCE = {exploratory: '探索性', retrospective: '回溯', prospective: '前瞻'};
@@ -20,7 +20,7 @@ export default {
   name: 'Tab6Portfolio',
   inject: ['switchTab', 'startTask', 'openPfExpDlg', 'openPfValDlg'],
   setup() {
-    return {state, PF_RUNSTATE, PF_VERDICT};
+    return {stockLabel, state, PF_RUNSTATE, PF_VERDICT};
   },
   data() {
     return {
@@ -209,7 +209,7 @@ export default {
       }
       (rd.warnings || []).forEach(w => parts.push(`<div class="hint" style="color:#f0cd86">⚠ ${esc(w)}</div>`));
       parts.push(this.pfH4('股票贡献（算术累计）'));
-      parts.push(this.pfTable(['代码', '贡献'], (att.stocks || []).map(s => `<tr><td>${esc(s.code)}</td><td class="pf-num ${pfCls(s.contribution)}">${pfPct(s.contribution, 4)}</td></tr>`)));
+      parts.push(this.pfTable(['代码', '贡献'], (att.stocks || []).map(s => `<tr><td>${esc(stockLabel(s.code, state.stockNames))}</td><td class="pf-num ${pfCls(s.contribution)}">${pfPct(s.contribution, 4)}</td></tr>`)));
       parts.push(this.pfH4('行业贡献'));
       parts.push(this.pfTable(['行业', '贡献', '股票数'], (att.industries || []).map(i => `<tr><td>${esc(i.industry)}</td><td class="pf-num ${pfCls(i.contribution)}">${pfPct(i.contribution, 4)}</td><td class="pf-num">${i.stockCount}</td></tr>`)));
       parts.push(this.pfH4('成本与偏离'));
@@ -410,7 +410,7 @@ export default {
       if (run.status === 'completed') return '已完成';
       if (run.status !== 'running') return PF_RUNSTATE[run.status] || '—';
       if (s?.state !== 'running' || s.runId !== run.experimentId) return '运行中';
-      const p = taskProgress(s);
+      const p = taskProgress(s, state.stockNames);
       return p.label + (p.percent == null ? '…' : ` · 本阶段 ${p.percent}%`);
     },
     // —— 通用 ——
@@ -1450,7 +1450,7 @@ export default {
               <thead><tr><th>代码</th><th>目标权重</th><th>实际权重</th><th>偏离</th></tr></thead>
               <tbody id="pfWeightBody">
                 <tr v-for="w in weightRows" :key="w.code">
-                  <td>{{ w.code }}</td>
+                  <td>{{ stockLabel(w.code, state.stockNames) }}</td>
                   <td>{{ pfPct(w.t) }}</td>
                   <td>{{ pfPct(w.a) }}</td>
                   <td :class="pfCls(w.dv)">{{ pfPct(w.dv) }}</td>

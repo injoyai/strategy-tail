@@ -36,7 +36,7 @@ export default {
     progressInfo() {
       const s = this.status || {};
       return taskProgress({task: 'data_update', phase: s.stage, unit: s.stage === 'valuation' ? 'snapshots' : 'symbols',
-        done: s.stageDone ?? s.done, total: s.stageTotal ?? s.total, currentCode: s.code});
+        done: s.stageDone ?? s.done, total: s.stageTotal ?? s.total, currentCode: s.code}, state.stockNames);
     },
     progressPercent() {
       return this.progressInfo.percent;
