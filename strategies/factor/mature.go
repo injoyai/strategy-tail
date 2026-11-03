@@ -31,8 +31,8 @@ func (f 跳过近月动量) Value(code string, dks extend.Klines) float64 {
 	if days <= skipMonthTradingDays || len(dks) < days+1 {
 		return math.NaN()
 	}
-	start := dks[len(dks)-days-1].Close.Float64()
-	end := dks[len(dks)-skipMonthTradingDays-1].Close.Float64()
+	start := dks[len(dks)-days-1].Close
+	end := dks[len(dks)-skipMonthTradingDays-1].Close
 	if start <= 0 || end <= 0 {
 		return math.NaN()
 	}
@@ -53,8 +53,8 @@ func (f N日短期反转) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < days+1 {
 		return math.NaN()
 	}
-	start := dks[len(dks)-days-1].Close.Float64()
-	end := dks[len(dks)-1].Close.Float64()
+	start := dks[len(dks)-days-1].Close
+	end := dks[len(dks)-1].Close
 	if start <= 0 || end <= 0 {
 		return math.NaN()
 	}
@@ -79,9 +79,9 @@ func (f Amihud非流动性) Value(code string, dks extend.Klines) float64 {
 	window := dks[len(dks)-days-1:]
 	var sum float64
 	for i := 1; i < len(window); i++ {
-		previous := window[i-1].Close.Float64()
-		current := window[i].Close.Float64()
-		amount := window[i].Amount.Float64()
+		previous := window[i-1].Close
+		current := window[i].Close
+		amount := window[i].Amount
 		if previous <= 0 || current <= 0 || amount <= 0 {
 			return math.NaN()
 		}
@@ -108,12 +108,12 @@ func (f N日收盘高点距离) Value(code string, dks extend.Klines) float64 {
 	window := dks[len(dks)-days:]
 	highest := 0.0
 	for _, kline := range window {
-		closePrice := kline.Close.Float64()
+		closePrice := kline.Close
 		if closePrice > highest {
 			highest = closePrice
 		}
 	}
-	current := window[len(window)-1].Close.Float64()
+	current := window[len(window)-1].Close
 	if highest <= 0 || current <= 0 {
 		return math.NaN()
 	}
@@ -131,7 +131,7 @@ func (对数流通市值) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	current := dks[len(dks)-1]
-	closePrice := current.Close.Float64()
+	closePrice := current.Close
 	if closePrice <= 0 || current.FloatStock <= 0 {
 		return math.NaN()
 	}

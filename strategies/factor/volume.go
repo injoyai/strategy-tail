@@ -252,7 +252,7 @@ func upDownVolumeRatio(w extend.Klines, cmp func(c, o float64) bool) float64 {
 	var selCnt int
 	for _, k := range w {
 		sum += k.Volume
-		if cmp(k.Close.Float64(), k.Open.Float64()) {
+		if cmp(k.Close, k.Open) {
 			sel += k.Volume
 			selCnt++
 		}

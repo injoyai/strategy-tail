@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // factorScript 探针脚本：值字面量因子 + A因子过滤 行为断言；
@@ -34,8 +34,8 @@ func closeKs(base time.Time, closes ...float64) extend.Klines {
 		ks = append(ks, &extend.Kline{
 			Unix: tm.Unix(),
 			Kline: &protocol.Kline{
-				Time: tm, Open: protocol.Yuan(c), Close: protocol.Yuan(c),
-				High: protocol.Yuan(c), Low: protocol.Yuan(c), Volume: 10000,
+				Time: tm, Open: c, Close: c,
+				High: c, Low: c, Volume: 10000,
 			},
 		})
 	}

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/researchdata"
-	upstream "github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	upstream "github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Keep this contract compatible with the initial manually collected snapshot.
@@ -27,12 +27,12 @@ var valuationSpec = researchdata.DatasetSpec{
 
 // Sync downloads one full-market snapshot and stores only Shanghai/Shenzhen
 // mainboard rows. The second count reports rejected mainboard rows.
-func Sync(pool upstream.IPool, store *researchdata.SQLiteStore) (int, int, error) {
+func Sync(pool upstream.ClientPool, store *researchdata.SQLiteStore) (int, int, error) {
 	if pool == nil || store == nil {
 		return 0, 0, fmt.Errorf("TDX估值更新器尚未初始化")
 	}
 	var stats []*protocol.TdxStat
-	err := pool.Do(func(c *upstream.Client) error {
+	err := pool.Do(func(c upstream.Client) error {
 		var err error
 		stats, err = c.GetTdxStat()
 		return err

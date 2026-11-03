@@ -196,7 +196,7 @@ Hist = DIF - DEA      ← 注意：不乘 2
 
 ## 5. K 线与价格
 
-* `protocol.Price` 是 `int64`，单位为**厘**（0.001 元），用 `.Float64()` 转元。
+* 行情与交易价格使用 `float64`，单位为原币种值（A 股为元）；金额同样不再使用整数厘。旧 SQLite 整数厘仅由存储边界显式转换。
 
 * `extend.Klines` 提供 `HHV(n)`、`LLV(n)`、`MA(n)`、`EMA(n)`、`MACD()`、`BOLL(n)`、`ATR(n)`、`RSI(n)`，**优先使用**，不要新写循环。
 
@@ -233,7 +233,7 @@ type Cost struct {
     CommissionRate  float64        // 佣金费率（双边，万三=0.0003）
     StampDutyRate   float64        // 印花税率（仅卖出，千一=0.001）
     TransferFeeRate float64        // 过户费率（沪深统一，买卖双边）
-    Slippage        protocol.Price // 滑点（每股绝对值，默认0.01元）
+    Slippage        float64 // 滑点（每股绝对值，默认0.01元）
     MinCommission   float64        // 最低佣金（元，默认5）
 }
 ```
@@ -282,8 +282,8 @@ type PositionConfig struct {
 
 ```go
 type Trade struct {
-    BuyPrice, SellPrice     protocol.Price // 原始收盘价
-    BuyExecPrice, SellExecPrice protocol.Price // 含滑点实际成交价
+    BuyPrice, SellPrice     float64 // 原始收盘价
+    BuyExecPrice, SellExecPrice float64 // 含滑点实际成交价
     BuyCost, SellIncome     float64 // 含佣金/印花税的实际投入/收回（元）
     Quantity                int     // 成交股数
     Virtual                 bool    // 期末未平仓的虚拟成交

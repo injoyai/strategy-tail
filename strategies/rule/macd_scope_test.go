@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestMACDEvaluationScope(t *testing.T) {
@@ -25,7 +24,7 @@ func TestMACDEvaluationScope(t *testing.T) {
 	// 同一切片、长度和代码的下一分钟必须重新计算。
 	op := MACDHist(3, 6, 2)
 	before := op.Value(in).Float()
-	ks[len(ks)-1].Close = protocol.Yuan(20)
+	ks[len(ks)-1].Close = 20
 	want := (f.MACD柱值{Fast: 3, Slow: 6, Signal: 2}).Value("sh600000", ks)
 	for _, next := range []Input{NewInput("sh600000", ks, nil, nil), {Code: "sh600000", Klines: ks}} {
 		got := op.Value(next)

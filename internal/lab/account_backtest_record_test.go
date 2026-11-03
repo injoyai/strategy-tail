@@ -11,7 +11,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // countBuyer / countSeller 在既有桩实现上累计真实求值次数，
@@ -45,7 +45,7 @@ func accountMinuteBars(dates []string) protocol.Klines {
 			price float64
 		}{{"09:31:00", 9.9}, {"09:36:00", 10.4}} {
 			ts, _ := time.ParseInLocation(time.DateTime, d+" "+m.clock, time.Local)
-			v := protocol.Yuan(m.price)
+			v := m.price
 			out = append(out, &protocol.Kline{Time: ts, Open: v, Close: v, High: v, Low: v, Volume: 1000})
 		}
 	}
@@ -57,7 +57,7 @@ func accountMinuteBars(dates []string) protocol.Klines {
 func recordTestConfig(buyer core.Buyer, seller core.Seller, data map[string]extend.Klines, dates []string) researchrun.Config {
 	cfg := accountTestConfig(data, buyer, seller)
 	cfg.Variants = []researchrun.Variant{{Name: "v", Buyer: buyer, Seller: seller}}
-	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: protocol.Yuan(.01)}
+	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: .01}
 	cfg.GetMinKlines = func(code string, _, _ time.Time) (protocol.Klines, error) {
 		if code == "sh600001" {
 			return accountMinuteBars(dates), nil

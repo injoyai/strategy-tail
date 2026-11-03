@@ -12,7 +12,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // AccountConfig 是随请求及报告冻结的资金约束；OrderBudget 包含买入费用。
@@ -57,7 +57,7 @@ type AccountReport struct {
 type accountHolding struct {
 	buy        core.Buy
 	trade      core.Trade
-	mark       protocol.Price
+	mark       float64
 	positionID int
 	markDate   string
 }
@@ -111,7 +111,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		return result, nil, nil, nil, nil, fmt.Errorf("回测区间缺少上证指数日线，请先更新行情")
 	}
 	for _, k := range index {
-		if k == nil || k.Kline == nil || k.Close <= 0 {
+		if k == nil || k.Kline == nil || k.Close <= 0.0 {
 			return result, nil, nil, nil, nil, fmt.Errorf("上证指数存在无效收盘价")
 		}
 	}
@@ -125,7 +125,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 			return result, nil, nil, nil, nil, fmt.Errorf("上证指数存在重复交易日: %s", date)
 		}
 		calendar[date] = true
-		benchmark = append(benchmark, BenchmarkPoint{Date: date, Return: (k.Close.Float64()/index[0].Close.Float64() - 1) * 100})
+		benchmark = append(benchmark, BenchmarkPoint{Date: date, Return: (k.Close/index[0].Close - 1) * 100})
 	}
 	// 代码排序只决定同一收盘时刻资金不足时的买入优先级，不使用未来收益排名。
 	codes := append([]string(nil), cfg.Codes...)
@@ -175,7 +175,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 			continue
 		}
 		for i, k := range ks {
-			if k == nil || k.Kline == nil || k.Close <= 0 || (i > 0 && !k.Time.After(ks[i-1].Time)) {
+			if k == nil || k.Kline == nil || k.Close <= 0.0 || (i > 0 && !k.Time.After(ks[i-1].Time)) {
 				return result, nil, nil, nil, nil, fmt.Errorf("%s 日线存在无效价格或日期顺序", code)
 			}
 			if !k.Time.Before(start) && !calendar[k.Time.Format(time.DateOnly)] {
@@ -259,7 +259,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 							return result, nil, nil, nil, nil, fmt.Errorf("%s 分钟行情: %w", holding.buy.Code, err)
 						}
 						for _, mk := range mks {
-							if mk != nil && mk.Close > 0 {
+							if mk != nil && mk.Close > 0.0 {
 								d := mk.Time.Format(time.DateOnly)
 								cached.days[d] = append(cached.days[d], mk)
 							}
@@ -297,7 +297,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 						}
 						tr.SellPrice = current.Close
 						tr.SellExecPrice, tr.SellIncome = cfg.Cost.SellIncome(current.Close, tr.Quantity)
-						if tr.SellExecPrice <= 0 || tr.SellIncome < 0 {
+						if tr.SellExecPrice <= 0.0 || tr.SellIncome < 0 {
 							return result, nil, nil, nil, nil, fmt.Errorf("%s 卖出价格或费用产生负收入，请检查成本配置", holding.buy.Code)
 						}
 						s.cash += tr.SellIncome
@@ -309,10 +309,10 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 								Code:           holding.buy.Code,
 								Time:           tr.SellTime.Format(replayTimeLayout),
 								Side:           "sell",
-								Price:          tr.SellPrice.Float64(),
-								ExecPrice:      tr.SellExecPrice.Float64(),
+								Price:          tr.SellPrice,
+								ExecPrice:      tr.SellExecPrice,
 								Quantity:       tr.Quantity,
-								Fee:            tr.SellExecPrice.Float64()*float64(tr.Quantity) - tr.SellIncome,
+								Fee:            tr.SellExecPrice*float64(tr.Quantity) - tr.SellIncome,
 								MinuteFallback: fallback,
 								Reason:         contexts[i].ExtractSuccessPath(),
 							})
@@ -347,10 +347,10 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 				today := ks[len(ks)-1]
 				budget := math.Min(account.OrderBudget, s.cash)
 				price, _ := cfg.Cost.BuyCost(today.Close, 100)
-				if price <= 0 {
+				if price <= 0.0 {
 					return result, nil, nil, nil, nil, fmt.Errorf("%s 买入成交价无效", code)
 				}
-				qty := int(math.Floor(budget/price.Float64()/100)) * 100
+				qty := int(math.Floor(budget/price/100)) * 100
 				var buyCost float64
 				for qty > 0 {
 					_, buyCost = cfg.Cost.BuyCost(today.Close, qty)
@@ -373,17 +373,17 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 						Code:       code,
 						Time:       tr.BuyTime.Format(replayTimeLayout),
 						Side:       "buy",
-						Price:      today.Close.Float64(),
-						ExecPrice:  price.Float64(),
+						Price:      today.Close,
+						ExecPrice:  price,
 						Quantity:   qty,
-						Fee:        buyCost - price.Float64()*float64(qty),
+						Fee:        buyCost - price*float64(qty),
 						Reason:     contexts[i].ExtractSuccessPath(),
 					})
 				}
 			}
 			equity := s.cash
 			for _, h := range s.holdings {
-				equity += h.mark.Float64() * float64(h.trade.Quantity)
+				equity += h.mark * float64(h.trade.Quantity)
 			}
 			s.report.Points = append(s.report.Points, AccountPoint{Date: date, Equity: equity, Cash: s.cash, Holdings: len(s.holdings), Return: (equity/account.InitialCapital - 1) * 100})
 			// 收盘帧点之后立即冻结当日回放帧：持仓为不可变副本，事件为当日全部成交。
@@ -405,18 +405,18 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 				}
 				for _, h := range s.holdings {
 					totalCost := h.trade.BuyCost
-					mv := h.mark.Float64() * float64(h.trade.Quantity)
+					mv := h.mark * float64(h.trade.Quantity)
 					floating := mv - totalCost
 					day.Holdings = append(day.Holdings, ReplayHolding{
 						PositionID:   h.positionID,
 						Code:         h.buy.Code,
 						BuyTime:      h.trade.BuyTime.Format(replayTimeLayout),
 						Quantity:     h.trade.Quantity,
-						BuyPrice:     h.trade.BuyPrice.Float64(),
-						BuyExecPrice: h.trade.BuyExecPrice.Float64(),
+						BuyPrice:     h.trade.BuyPrice,
+						BuyExecPrice: h.trade.BuyExecPrice,
 						TotalCost:    totalCost,
 						CostPrice:    totalCost / float64(h.trade.Quantity),
-						MarkPrice:    h.mark.Float64(),
+						MarkPrice:    h.mark,
 						MarkDate:     h.markDate,
 						MarketValue:  mv,
 						FloatingPnL:  floating,
@@ -454,7 +454,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		for _, h := range s.holdings {
 			tr := h.trade
 			tr.SellTime, tr.SellPrice, tr.SellExecPrice = accountCloseTime(index[len(index)-1].Time), h.mark, h.mark
-			tr.SellIncome, tr.Virtual = h.mark.Float64()*float64(tr.Quantity), true
+			tr.SellIncome, tr.Virtual = h.mark*float64(tr.Quantity), true
 			s.trades = append(s.trades, tr)
 		}
 		sort.SliceStable(s.trades, func(a, b int) bool { return s.trades[a].BuyTime.Before(s.trades[b].BuyTime) })

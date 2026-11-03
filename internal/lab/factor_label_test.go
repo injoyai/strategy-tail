@@ -7,7 +7,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // --- Task 2 Step 3：labelReturn 纯函数 ---
@@ -15,8 +15,8 @@ import (
 // labelKline 构造 Open/Close 各自可控的日 K。
 func labelKline(at time.Time, open, close float64) *extend.Kline {
 	return &extend.Kline{Kline: &protocol.Kline{
-		Time: at, Open: protocol.Yuan(open), High: protocol.Yuan(math.Max(open, close)),
-		Low: protocol.Yuan(math.Min(open, close)), Close: protocol.Yuan(close), Volume: 100,
+		Time: at, Open: open, High: math.Max(open, close),
+		Low: math.Min(open, close), Close: close, Volume: 100,
 	}}
 }
 

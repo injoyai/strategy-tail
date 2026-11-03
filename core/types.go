@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 const (
@@ -35,11 +35,11 @@ type Trade struct {
 	BuyTime  time.Time
 	SellTime time.Time
 	// 价格（原始收盘价，用于策略复盘）
-	BuyPrice  protocol.Price
-	SellPrice protocol.Price
+	BuyPrice  float64
+	SellPrice float64
 	// 实际成交价（含滑点）
-	BuyExecPrice  protocol.Price
-	SellExecPrice protocol.Price
+	BuyExecPrice  float64
+	SellExecPrice float64
 	// 金额（元，含佣金/印花税等）
 	BuyCost    float64 // 买入总支出 = 成交价×数量 + 佣金
 	SellIncome float64 // 卖出总收入 = 成交价×数量 - 佣金 - 印花税
@@ -73,7 +73,7 @@ func (t Trade) HoldingDays() int {
 // ============================================================================
 
 type (
-	Price  = protocol.Price
+	Price  = float64
 	Klines = protocol.Klines
 )
 
@@ -91,12 +91,12 @@ type CompositeBuyer interface {
 type Buy struct {
 	Code  string
 	Time  time.Time
-	Price protocol.Price
+	Price float64
 	Rise  float64
 }
 
 func (b *Buy) String() string {
-	return fmt.Sprintf("代码: %s  买入价: %.2f", b.Code, b.Price.Float64())
+	return fmt.Sprintf("代码: %s  买入价: %.2f", b.Code, b.Price)
 }
 
 type Seller interface {
@@ -107,11 +107,11 @@ type Seller interface {
 type Sell struct {
 	Code  string
 	Time  time.Time
-	Price protocol.Price
+	Price float64
 }
 
 func (s *Sell) String() string {
-	return fmt.Sprintf("代码: %s  卖出价: %.2f", s.Code, s.Price.Float64())
+	return fmt.Sprintf("代码: %s  卖出价: %.2f", s.Code, s.Price)
 }
 
 // ============================================================================
@@ -121,11 +121,11 @@ func (s *Sell) String() string {
 // Cost 描述交易成本模型。
 // 各费率均为小数（如 0.0003 = 万三）。
 type Cost struct {
-	CommissionRate  float64        // 佣金费率（买/卖双边）
-	StampDutyRate   float64        // 印花税率（仅卖出）
-	TransferFeeRate float64        // 过户费率（沪深两市统一，买卖双边收取）
-	Slippage        protocol.Price // 滑点（每股绝对值，单边加减）
-	MinCommission   float64        // 最低佣金（元），不足按此收取
+	CommissionRate  float64 // 佣金费率（买/卖双边）
+	StampDutyRate   float64 // 印花税率（仅卖出）
+	TransferFeeRate float64 // 过户费率（沪深两市统一，买卖双边收取）
+	Slippage        float64 // 滑点（每股绝对值，单边加减）
+	MinCommission   float64 // 最低佣金（元），不足按此收取
 }
 
 // DefaultCost 返回 A 股常见成本参数。
@@ -133,11 +133,11 @@ type Cost struct {
 // 滑点 0.01 元、最低佣金不设下限。
 func DefaultCost() Cost {
 	return Cost{
-		CommissionRate:  0.0001,              //佣金费率,万一
-		StampDutyRate:   0.0005,              //印花税,0.05%
-		TransferFeeRate: 0.00001,             //过户费,万0.1
-		Slippage:        protocol.Yuan(0.01), //滑点,0.01元
-		MinCommission:   0,                   //最低佣金,例5元
+		CommissionRate:  0.0001,  //佣金费率,万一
+		StampDutyRate:   0.0005,  //印花税,0.05%
+		TransferFeeRate: 0.00001, //过户费,万0.1
+		Slippage:        0.01,    //滑点,0.01元
+		MinCommission:   0,       //最低佣金,例5元
 	}
 }
 

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // p6Klines 构造测试用 K 线序列，每根按 [4]float64{开, 收, 高, 低}（元）给定，
@@ -19,10 +19,10 @@ func p6Klines(bars ...[4]float64) extend.Klines {
 			Unix: tm.Unix(),
 			Kline: &protocol.Kline{
 				Time:  tm,
-				Open:  protocol.Yuan(b[0]),
-				Close: protocol.Yuan(b[1]),
-				High:  protocol.Yuan(b[2]),
-				Low:   protocol.Yuan(b[3]),
+				Open:  b[0],
+				Close: b[1],
+				High:  b[2],
+				Low:   b[3],
 			},
 		}
 	}

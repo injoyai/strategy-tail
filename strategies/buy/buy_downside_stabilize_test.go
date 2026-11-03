@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // makeKline 构造一根 K 线。
@@ -13,10 +13,10 @@ func makeKline(t time.Time, open, close, low, high float64, vol int64) *extend.K
 	return &extend.Kline{
 		Kline: &protocol.Kline{
 			Time:   t,
-			Open:   protocol.Price(open * 1000),
-			Close:  protocol.Price(close * 1000),
-			Low:    protocol.Price(low * 1000),
-			High:   protocol.Price(high * 1000),
+			Open:   float64(open*1000) / 1000.0,
+			Close:  float64(close*1000) / 1000.0,
+			Low:    float64(low*1000) / 1000.0,
+			High:   float64(high*1000) / 1000.0,
 			Volume: vol,
 		},
 	}
@@ -43,7 +43,7 @@ func buildDownthenStabilize() extend.Klines {
 	// 最后 1 根：3倍倍量阳线（量略大于昨日3倍，满足严格大于）
 	last := ks[len(ks)-1]
 	t := last.Time.AddDate(0, 0, 1)
-	ks = append(ks, makeKline(t, last.Close.Float64(), last.Close.Float64()+2, last.Low.Float64()-0.5, last.Close.Float64()+3, 300000*3+1))
+	ks = append(ks, makeKline(t, last.Close, last.Close+2, last.Low-0.5, last.Close+3, 300000*3+1))
 	return ks
 }
 
@@ -87,10 +87,10 @@ func Test下跌企稳倍量_无企稳(t *testing.T) {
 	// 破坏企稳: 将倍量日之前 8 根横盘全部改为持续阴线创新低
 	for i := 140; i < len(ks)-1; i++ {
 		k := ks[i]
-		k.Open = protocol.Price(42 * 1000)
-		k.Close = protocol.Price(float64(42 - (i-139)*2) * 1000) // 40 -> 24 阴跌
-		k.Low = protocol.Price((float64(42-(i-139)*2) - 2) * 1000)
-		k.High = protocol.Price(43 * 1000)
+		k.Open = 42.0
+		k.Close = float64(float64(42-(i-139)*2)*1000) / 1000.0 // 40 -> 24 阴跌
+		k.Low = float64((float64(42-(i-139)*2)-2)*1000) / 1000.0
+		k.High = 43.0
 	}
 	b := A下跌企稳倍量{Mode: "deep"}
 	if b.Buy("sh600000", ks) {
@@ -104,24 +104,24 @@ func Test下跌企稳倍量_未深跌(t *testing.T) {
 	for i := 0; i < 140; i++ {
 		price := 100 - 15*float64(i)/140
 		k := ks[i]
-		k.Open = protocol.Price((price + 1) * 1000)
-		k.Close = protocol.Price(price * 1000)
-		k.Low = protocol.Price((price - 2) * 1000)
-		k.High = protocol.Price((price + 2) * 1000)
+		k.Open = float64((price+1)*1000) / 1000.0
+		k.Close = float64(price*1000) / 1000.0
+		k.Low = float64((price-2)*1000) / 1000.0
+		k.High = float64((price+2)*1000) / 1000.0
 	}
 	for i := 140; i < len(ks)-1; i++ {
 		k := ks[i]
 		price := 85 + 0.5*float64(i-140)/8
-		k.Open = protocol.Price(price * 1000)
-		k.Close = protocol.Price((price + 0.4) * 1000)
-		k.Low = protocol.Price((price - 0.2) * 1000)
-		k.High = protocol.Price((price + 0.6) * 1000)
+		k.Open = float64(price*1000) / 1000.0
+		k.Close = float64((price+0.4)*1000) / 1000.0
+		k.Low = float64((price-0.2)*1000) / 1000.0
+		k.High = float64((price+0.6)*1000) / 1000.0
 	}
 	last := ks[len(ks)-1]
-	last.Open = protocol.Price(85.5 * 1000)
-	last.Close = protocol.Price(87.5 * 1000)
-	last.Low = protocol.Price(85 * 1000)
-	last.High = protocol.Price(88 * 1000)
+	last.Open = 85.5
+	last.Close = 87.5
+	last.Low = 85.0
+	last.High = 88.0
 	b := A下跌企稳倍量{Mode: "deep"}
 	if b.Buy("sh600000", ks) {
 		t.Errorf("deep 模式回撤不足40%%不应命中")
@@ -153,7 +153,7 @@ func buildStabilizeNoDowntrend() extend.Klines {
 	// 最后 1 根：3倍倍量阳线（量略大于昨日3倍，满足严格大于）
 	last := ks[len(ks)-1]
 	t := last.Time.AddDate(0, 0, 1)
-	ks = append(ks, makeKline(t, last.Close.Float64(), last.Close.Float64()+2, last.Low.Float64()-0.5, last.Close.Float64()+3, 250000*3+1))
+	ks = append(ks, makeKline(t, last.Close, last.Close+2, last.Low-0.5, last.Close+3, 250000*3+1))
 	return ks
 }
 
@@ -187,9 +187,9 @@ func Test企稳倍量_Confirm5_未站上5日线(t *testing.T) {
 	// 将倍量日收盘压低，使其 <= 截止昨日的 5 日均线，但仍满足倍量
 	last := ks[len(ks)-1]
 	ma5 := coreMA5(ks[:len(ks)-1])
-	last.Close = protocol.Price((ma5 - 0.5) * 1000)
-	last.High = protocol.Price((ma5 + 0.5) * 1000)
-	last.Open = protocol.Price((ma5 - 1.5) * 1000)
+	last.Close = float64((ma5-0.5)*1000) / 1000.0
+	last.High = float64((ma5+0.5)*1000) / 1000.0
+	last.Open = float64((ma5-1.5)*1000) / 1000.0
 	b := A下跌企稳倍量{Mode: "confirm5"}
 	if b.Buy("sh600000", ks) {
 		t.Errorf("倍量日收盘未站上5日线时 confirm5 不应命中")
@@ -209,7 +209,7 @@ func coreMA5(ks extend.Klines) float64 {
 	tail := ks[len(ks)-5:]
 	sum := 0.0
 	for _, k := range tail {
-		sum += k.Close.Float64()
+		sum += k.Close
 	}
 	return sum / 5
 }
@@ -233,7 +233,7 @@ func buildTdxVolume() extend.Klines {
 	last := ks[len(ks)-1]
 	t := last.Time.AddDate(0, 0, 1)
 	// 倍量日量能为昨日 2.2 倍，收盘站上5日线
-	ks = append(ks, makeKline(t, last.Close.Float64(), last.Close.Float64()+2, last.Low.Float64()-0.5, last.Close.Float64()+3, 250000*22/10))
+	ks = append(ks, makeKline(t, last.Close, last.Close+2, last.Low-0.5, last.Close+3, 250000*22/10))
 	return ks
 }
 

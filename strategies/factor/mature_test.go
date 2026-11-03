@@ -4,8 +4,6 @@ import (
 	"math"
 	"testing"
 	"time"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 func Test跳过近月动量(t *testing.T) {
@@ -41,17 +39,17 @@ func TestN日短期反转(t *testing.T) {
 func TestAmihud非流动性(t *testing.T) {
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
 	ks := closes(base, 100, 110, 99)
-	ks[1].Amount = protocol.Yuan(100_000_000)
-	ks[2].Amount = protocol.Yuan(100_000_000)
+	ks[1].Amount = 100_000_000
+	ks[2].Amount = 100_000_000
 	// 两日绝对收益率均为 10%，成交额均为 1 亿元，缩放后均为 0.1。
 	f := Amihud非流动性{Days: 2}
 	wantVal(t, f.Name(), f.Value("sh600000", ks), 0.1, 1e-12)
 
-	ks[2].Amount = 0
+	ks[2].Amount = 0.0
 	wantNaN(t, "窗口内零成交额", f.Value("sh600000", ks))
 	wantNaN(t, "数据不足", f.Value("sh600000", ks[:2]))
 	zeroBase := closes(base, 0, 1)
-	zeroBase[1].Amount = protocol.Yuan(100_000_000)
+	zeroBase[1].Amount = 100_000_000
 	wantNaN(t, "前收盘为零", (Amihud非流动性{Days: 1}).Value("sh600000", zeroBase))
 	if got := (Amihud非流动性{}).Name(); got != "Amihud非流动性(20)" {
 		t.Fatalf("默认参数名异常: %s", got)

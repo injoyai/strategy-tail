@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
 	"path/filepath"
 	"reflect"
 	"sync"
@@ -12,14 +14,14 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/codes"
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func testTradeDB(t *testing.T) *xorms.Engine {
 	t.Helper()
-	db, err := xorms.NewSqlite(filepath.Join(t.TempDir(), "trades.db"))
+	db, err := xorms.NewSQLite(filepath.Join(t.TempDir(), "trades.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +35,7 @@ func testTradeDB(t *testing.T) *xorms.Engine {
 func TestTradeSellReturnUsesBuyPrice(t *testing.T) {
 	for _, tc := range []struct{ buy, sell, want float64 }{{10, 12, 20}, {10, 8, -20}, {10, 0, -100}, {0, 12, 0}} {
 		tr := &Trade{BuyPrice: tc.buy}
-		tr.Sell(&core.Sell{Price: protocol.Yuan(tc.sell)})
+		tr.Sell(&core.Sell{Price: tc.sell})
 		if tr.Income != tc.want {
 			t.Fatalf("%v -> %v: got %v, want %v", tc.buy, tc.sell, tr.Income, tc.want)
 		}
@@ -42,7 +44,7 @@ func TestTradeSellReturnUsesBuyPrice(t *testing.T) {
 
 func TestHistoricalReturnIsCorrectedWithoutUsingLivePrice(t *testing.T) {
 	tr := &Trade{BuyPrice: 10, SellPrice: 12, Sold: true, Income: 100.0 / 6}
-	tr.Realtime(&protocol.Kline{Close: protocol.Yuan(99)})
+	tr.Realtime(&protocol.Kline{Close: 99})
 	if tr.Income != 20 || tr.SellPrice != 12 {
 		t.Fatalf("历史收益率或卖出价不正确: %+v", tr)
 	}
@@ -50,11 +52,11 @@ func TestHistoricalReturnIsCorrectedWithoutUsingLivePrice(t *testing.T) {
 
 func TestDiagnoseAllStrategies(t *testing.T) {
 	old := common.Manage
-	common.Manage = &tdx.Manage{Codes: &tdx.Codes{CodesBase: &tdx.CodesBase{}}}
+	common.Manage = &manage.Manage{Codes: codes.NewBase()}
 	t.Cleanup(func() { common.Manage = old })
 	s := &ScreenService{DB: testTradeDB(t), Strategies: []Strategy{{Key: "always", Buyer: buy.A全部{}}},
 		realtimeDayKlines: map[string]extend.Klines{"sh600000": {
-			&extend.Kline{Kline: &protocol.Kline{Time: time.Now(), Close: protocol.Yuan(10)}},
+			&extend.Kline{Kline: &protocol.Kline{Time: time.Now(), Close: 10}},
 		}},
 	}
 	for _, key := range []string{"all", ""} {
@@ -110,21 +112,21 @@ func TestHistoryLoadFailureKeepsOldTrades(t *testing.T) {
 }
 
 type failingHistoryPool struct {
-	tdx.IPool
+	tdx.ClientPool
 	err error
 }
 
-func (p failingHistoryPool) Do(func(*tdx.Client) error) error { return p.err }
+func (p failingHistoryPool) Do(func(tdx.Client) error) error { return p.err }
 
 func TestHistoryMinuteFailureKeepsOldTrades(t *testing.T) {
 	failure := errors.New("test minute download failure")
 	oldManage := common.Manage
-	common.Manage = &tdx.Manage{IPool: failingHistoryPool{err: failure}}
+	common.Manage = &manage.Manage{ClientPool: failingHistoryPool{err: failure}}
 	t.Cleanup(func() { common.Manage = oldManage })
 	s := &ScreenService{DB: testTradeDB(t), Codes: []string{"sh600000"}, Goroutines: 1,
 		Strategies: []Strategy{{Key: "always", Buyer: buy.A全部{}}},
 		historyDayKlines: map[string]extend.Klines{"sh600000": {
-			&extend.Kline{Kline: &protocol.Kline{Time: time.Now(), Open: 10000, Close: 10000, High: 10000, Low: 10000}},
+			&extend.Kline{Kline: &protocol.Kline{Time: time.Now(), Open: 10.0, Close: 10.0, High: 10.0, Low: 10.0}},
 		}},
 	}
 	old := &Trade{Code: "sh600000", BuyTime: "2025-01-02 15:00:00"}
@@ -141,7 +143,7 @@ func TestHistoryMinuteFailureKeepsOldTrades(t *testing.T) {
 }
 
 func TestResponsesDoNotMutateSharedTrades(t *testing.T) {
-	s := &ScreenService{DB: testTradeDB(t), lastPrices: map[string]*protocol.Kline{"sh600000": {Close: protocol.Yuan(12)}}}
+	s := &ScreenService{DB: testTradeDB(t), lastPrices: map[string]*protocol.Kline{"sh600000": {Close: 12}}}
 	if _, err := s.DB.Insert(&Trade{Code: "sh600000", BuyTime: "2025-01-02", BuyPrice: 10}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestResponsesDoNotMutateSharedTrades(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded[0].Sell(&core.Sell{Price: protocol.Yuan(15)})
+	loaded[0].Sell(&core.Sell{Price: 15})
 	_, _, snapshot := s.snapshot()
 	before := *snapshot[0]
 	var wg sync.WaitGroup

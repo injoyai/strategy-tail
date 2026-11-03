@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // make均线K线 构造一组 K 线，closes 为每日收盘价。
@@ -18,10 +18,10 @@ func make均线K线(closes []float64) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(c),
-				Close:  protocol.Yuan(c),
-				High:   protocol.Yuan(c),
-				Low:    protocol.Yuan(c),
+				Open:   c,
+				Close:  c,
+				High:   c,
+				Low:    c,
 				Volume: 100,
 			},
 		}

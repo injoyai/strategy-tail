@@ -174,7 +174,7 @@ func (s A唐奇安下沿) Buy(code string, dks extend.Klines) bool {
 	if p == 0 {
 		p = 20
 	}
-	// 判断委托共用内核：今收（整数厘）<= 前 p 日最低价。LowestPrice
+	// 判断委托共用内核：今收（浮点元）<= 前 p 日最低价。LowestPrice
 	// 窗口不含今日（dks[:n-1]，台账风险 §5.5 买入侧口径），避免恒真；
 	// 数据不足时下沿为无效值不成立，与旧预检查为 false 一致。
 	c, err := rule.NewCompare(rule.ClosePrice(), rule.Le, rule.LowestPrice(p, false))

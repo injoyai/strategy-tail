@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ============================================================================
@@ -18,11 +18,11 @@ import (
 func TestBuyCost含滑点和佣金(t *testing.T) {
 	c := core.Cost{
 		CommissionRate: 0.0003,
-		Slippage:       protocol.Yuan(0.01),
+		Slippage:       0.01,
 		MinCommission:  5.0,
 	}
-	execPrice, totalCost := c.BuyCost(protocol.Yuan(10.00), 100)
-	if math.Abs(execPrice.Float64()-10.01) > 1e-6 {
+	execPrice, totalCost := c.BuyCost(10.00, 100)
+	if math.Abs(execPrice-10.01) > 1e-6 {
 		t.Fatalf("execPrice expected 10.01, got %v", execPrice)
 	}
 	if math.Abs(totalCost-1006) > 0.01 {
@@ -33,11 +33,11 @@ func TestBuyCost含滑点和佣金(t *testing.T) {
 func TestBuyCost大额佣金超过最低(t *testing.T) {
 	c := core.Cost{
 		CommissionRate: 0.0003,
-		Slippage:       protocol.Yuan(0.01),
+		Slippage:       0.01,
 		MinCommission:  5.0,
 	}
-	execPrice, totalCost := c.BuyCost(protocol.Yuan(100), 1000)
-	if math.Abs(execPrice.Float64()-100.01) > 1e-6 {
+	execPrice, totalCost := c.BuyCost(100, 1000)
+	if math.Abs(execPrice-100.01) > 1e-6 {
 		t.Fatalf("execPrice expected 100.01, got %v", execPrice)
 	}
 	if math.Abs(totalCost-100040.003) > 0.1 {
@@ -49,11 +49,11 @@ func TestSellIncome含印花税和佣金(t *testing.T) {
 	c := core.Cost{
 		CommissionRate: 0.0003,
 		StampDutyRate:  0.001,
-		Slippage:       protocol.Yuan(0.01),
+		Slippage:       0.01,
 		MinCommission:  5.0,
 	}
-	execPrice, netIncome := c.SellIncome(protocol.Yuan(11.00), 100)
-	if math.Abs(execPrice.Float64()-10.99) > 1e-6 {
+	execPrice, netIncome := c.SellIncome(11.00, 100)
+	if math.Abs(execPrice-10.99) > 1e-6 {
 		t.Fatalf("execPrice expected 10.99, got %v", execPrice)
 	}
 	if math.Abs(netIncome-1092.901) > 0.01 {
@@ -63,12 +63,12 @@ func TestSellIncome含印花税和佣金(t *testing.T) {
 
 func TestTradeProfit含成本口径(t *testing.T) {
 	c := core.DefaultCost()
-	_, buyCost := c.BuyCost(protocol.Yuan(10.00), 100)
-	_, sellIncome := c.SellIncome(protocol.Yuan(11.00), 100)
+	_, buyCost := c.BuyCost(10.00, 100)
+	_, sellIncome := c.SellIncome(11.00, 100)
 
 	tr := core.Trade{
-		BuyPrice:   protocol.Yuan(10.00),
-		SellPrice:  protocol.Yuan(11.00),
+		BuyPrice:   10.00,
+		SellPrice:  11.00,
 		BuyCost:    buyCost,
 		SellIncome: sellIncome,
 		Quantity:   100,
@@ -88,10 +88,10 @@ func TestCost过户费沪深统一收取(t *testing.T) {
 
 	// 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见复核报告第 4 节）：
 	// 1000 元成交额 × 0.00001 = 0.01 元，买卖两侧同额计费
-	_, shBuy := c.BuyCost(protocol.Yuan(10.00), 100)
-	_, shSell := c.SellIncome(protocol.Yuan(10.00), 100)
-	_, szBuy := c.BuyCost(protocol.Yuan(10.00), 100)
-	_, szSell := c.SellIncome(protocol.Yuan(10.00), 100)
+	_, shBuy := c.BuyCost(10.00, 100)
+	_, shSell := c.SellIncome(10.00, 100)
+	_, szBuy := c.BuyCost(10.00, 100)
+	_, szSell := c.SellIncome(10.00, 100)
 
 	if math.Abs(shBuy-szBuy) > 1e-9 || math.Abs(shSell-szSell) > 1e-9 {
 		t.Fatalf("沪深两市费用应完全一致: shBuy=%v szBuy=%v shSell=%v szSell=%v", shBuy, szBuy, shSell, szSell)
@@ -117,7 +117,7 @@ func TestDo止损触发(t *testing.T) {
 	bt := core.Backtest{
 		Buyer:    alwaysBuyer{},
 		Seller:   sell.Or{sell.A止盈止损{StopLoss: 0.08}},
-		Cost:     core.Cost{Slippage: protocol.Yuan(0)},
+		Cost:     core.Cost{Slippage: 0},
 		Position: core.PositionConfig{SharesPerLot: 100},
 	}
 
@@ -142,7 +142,7 @@ func TestDo止盈触发(t *testing.T) {
 	bt := core.Backtest{
 		Buyer:    alwaysBuyer{},
 		Seller:   sell.Or{sell.A止盈止损{TakeProfit: 0.15}},
-		Cost:     core.Cost{Slippage: protocol.Yuan(0)},
+		Cost:     core.Cost{Slippage: 0},
 		Position: core.PositionConfig{SharesPerLot: 100},
 	}
 
@@ -168,7 +168,7 @@ func TestDo持仓天数上限(t *testing.T) {
 	bt := core.Backtest{
 		Buyer:    alwaysBuyer{},
 		Seller:   sell.Or{sell.A持仓N天{Days: 5}},
-		Cost:     core.Cost{Slippage: protocol.Yuan(0)},
+		Cost:     core.Cost{Slippage: 0},
 		Position: core.PositionConfig{SharesPerLot: 100},
 	}
 
@@ -192,7 +192,7 @@ func TestDoT加1规则(t *testing.T) {
 	bt := core.Backtest{
 		Buyer:    alwaysBuyer{},
 		Seller:   alwaysSeller{},
-		Cost:     core.Cost{Slippage: protocol.Yuan(0)},
+		Cost:     core.Cost{Slippage: 0},
 		Position: core.PositionConfig{SharesPerLot: 100},
 	}
 
@@ -220,7 +220,7 @@ func TestDo纯策略卖出(t *testing.T) {
 	bt := core.Backtest{
 		Buyer:    alwaysBuyer{},
 		Seller:   alwaysSeller{},
-		Cost:     core.Cost{Slippage: protocol.Yuan(0)},
+		Cost:     core.Cost{Slippage: 0},
 		Position: core.PositionConfig{SharesPerLot: 100},
 	}
 
@@ -257,10 +257,10 @@ func testKline(t time.Time, open, high, low, close float64) *extend.Kline {
 		Unix: t.Unix(),
 		Kline: &protocol.Kline{
 			Time:  t,
-			Open:  protocol.Yuan(open),
-			High:  protocol.Yuan(high),
-			Low:   protocol.Yuan(low),
-			Close: protocol.Yuan(close),
+			Open:  open,
+			High:  high,
+			Low:   low,
+			Close: close,
 		},
 	}
 }

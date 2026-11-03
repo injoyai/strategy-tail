@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestAnalyzeSettlementOrderIndependent(t *testing.T) {
@@ -20,7 +19,7 @@ func TestAnalyzeSettlementOrderIndependent(t *testing.T) {
 			trades := make([]Trade, 4)
 			for i, profit := range []float64{100, -60, -60, 20} {
 				trades[i] = Trade{Code: "sh600000", BuyTime: sell.AddDate(0, 0, i-9), SellTime: sell,
-					BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan((1000 + profit) / 100),
+					BuyPrice: 10, SellPrice: (1000 + profit) / 100,
 					BuyCost: 1000, SellIncome: 1000 + profit, Quantity: 100}
 				if key != "buy_time" {
 					trades[i].BuyTime = sell.AddDate(0, 0, -5)
@@ -62,8 +61,8 @@ func TestAnalyzeUsesNetProfitAmount(t *testing.T) {
 		Code:       "sh600000",
 		BuyTime:    buyTime,
 		SellTime:   buyTime.AddDate(0, 0, 1),
-		BuyPrice:   protocol.Yuan(10),
-		SellPrice:  protocol.Yuan(10.5),
+		BuyPrice:   10,
+		SellPrice:  10.5,
 		BuyCost:    1005,
 		SellIncome: 1030,
 		Quantity:   100,
@@ -102,8 +101,8 @@ func TestExportYearTradesCSVWritesExplicitArtifact(t *testing.T) {
 		Code:       "sh600000",
 		BuyTime:    time.Date(2026, 1, 5, 15, 0, 0, 0, time.Local),
 		SellTime:   time.Date(2026, 1, 6, 15, 0, 0, 0, time.Local),
-		BuyPrice:   protocol.Yuan(10),
-		SellPrice:  protocol.Yuan(10.5),
+		BuyPrice:   10,
+		SellPrice:  10.5,
 		BuyCost:    1005,
 		SellIncome: 1030,
 		Quantity:   100,

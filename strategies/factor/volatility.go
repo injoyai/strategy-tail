@@ -26,11 +26,11 @@ func (f N日波动) Value(code string, dks extend.Klines) float64 {
 	var sum float64
 	rets := make([]float64, 0, n)
 	for i := 1; i < len(w); i++ {
-		prev := w[i-1].Close.Float64()
+		prev := w[i-1].Close
 		if prev == 0 {
 			return math.NaN()
 		}
-		r := w[i].Close.Float64()/prev - 1
+		r := w[i].Close/prev - 1
 		rets = append(rets, r)
 		sum += r
 	}
@@ -57,11 +57,11 @@ func (f N日振幅) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < n {
 		return math.NaN()
 	}
-	llv := dks.LLV(n).Float64()
+	llv := dks.LLV(n)
 	if llv == 0 {
 		return math.NaN()
 	}
-	return (dks.HHV(n).Float64() - llv) / llv
+	return (dks.HHV(n) - llv) / llv
 }
 
 // N日下行波动 是近 N 日日收益率的下行波动：sqrt( Σ min(r_i,0)^2 / N )。
@@ -85,11 +85,11 @@ func (f N日下行波动) Value(code string, dks extend.Klines) float64 {
 	w := dks[len(dks)-n-1:]
 	var ss float64
 	for i := 1; i < len(w); i++ {
-		prev := w[i-1].Close.Float64()
+		prev := w[i-1].Close
 		if prev == 0 {
 			return math.NaN()
 		}
-		r := w[i].Close.Float64()/prev - 1
+		r := w[i].Close/prev - 1
 		if r < 0 {
 			ss += r * r
 		}
@@ -120,11 +120,11 @@ func (f N日收益偏度) Value(code string, dks extend.Klines) float64 {
 	var sum float64
 	rets := make([]float64, 0, n)
 	for i := 1; i < len(w); i++ {
-		prev := w[i-1].Close.Float64()
+		prev := w[i-1].Close
 		if prev == 0 {
 			return math.NaN()
 		}
-		r := w[i].Close.Float64()/prev - 1
+		r := w[i].Close/prev - 1
 		rets = append(rets, r)
 		sum += r
 	}
@@ -165,7 +165,7 @@ func (f N日Parkinson波动) Value(code string, dks extend.Klines) float64 {
 	}
 	var sum float64
 	for _, k := range dks[len(dks)-n:] {
-		h, l := k.High.Float64(), k.Low.Float64()
+		h, l := k.High, k.Low
 		if l <= 0 || h < l {
 			return math.NaN()
 		}

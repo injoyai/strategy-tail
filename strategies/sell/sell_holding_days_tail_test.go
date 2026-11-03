@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // make尾盘K线 构造 n 根日K，最后一根的时间用 lastTime 指定，
@@ -24,10 +24,10 @@ func make尾盘K线(n int, lastTime time.Time) extend.Klines {
 			Unix: t.Unix(),
 			Kline: &protocol.Kline{
 				Time:   t,
-				Open:   protocol.Yuan(price),
-				Close:  protocol.Yuan(price),
-				High:   protocol.Yuan(price + 0.5),
-				Low:    protocol.Yuan(price - 0.5),
+				Open:   price,
+				Close:  price,
+				High:   price + 0.5,
+				Low:    price - 0.5,
 				Volume: 100,
 			},
 		}
@@ -90,10 +90,10 @@ func Test持仓N天尾盘_买入日不应卖出(t *testing.T) {
 		Unix: time.Date(2026, 1, 3, 0, 0, 0, 0, time.Local).Unix(),
 		Kline: &protocol.Kline{
 			Time:   time.Date(2026, 1, 3, 0, 0, 0, 0, time.Local),
-			Open:   protocol.Yuan(10.2),
-			Close:  protocol.Yuan(10.2),
-			High:   protocol.Yuan(10.7),
-			Low:    protocol.Yuan(9.7),
+			Open:   10.2,
+			Close:  10.2,
+			High:   10.7,
+			Low:    9.7,
 			Volume: 100,
 		},
 	}

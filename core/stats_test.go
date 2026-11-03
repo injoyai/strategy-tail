@@ -3,8 +3,6 @@ package core
 import (
 	"math"
 	"testing"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestProfitFactor百分比口径(t *testing.T) {
@@ -13,8 +11,8 @@ func TestProfitFactor百分比口径(t *testing.T) {
 	// B: 100 -> 99  收益率 -1%
 	// 期望 ProfitFactor = 10 / 1 = 10
 	trades := []Trade{
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11)},
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(99)},
+		{BuyPrice: 10, SellPrice: 11},
+		{BuyPrice: 100, SellPrice: 99},
 	}
 
 	stats := Stats(trades)
@@ -26,9 +24,9 @@ func TestProfitFactor百分比口径(t *testing.T) {
 
 func TestStats胜率和数量(t *testing.T) {
 	trades := []Trade{
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11)},
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(9)},
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(10)},
+		{BuyPrice: 10, SellPrice: 11},
+		{BuyPrice: 10, SellPrice: 9},
+		{BuyPrice: 10, SellPrice: 10},
 	}
 
 	stats := Stats(trades)
@@ -49,7 +47,7 @@ func TestStats胜率和数量(t *testing.T) {
 
 func TestStats无亏损时ProfitFactor为正无穷(t *testing.T) {
 	trades := []Trade{
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11)},
+		{BuyPrice: 10, SellPrice: 11},
 	}
 
 	stats := Stats(trades)
@@ -72,9 +70,9 @@ func TestStats包含百分比口径的盈亏指标(t *testing.T) {
 	// B: 10 -> 9    收益率 -10%
 	// C: 10 -> 11   收益率 +10%
 	trades := []Trade{
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(12)},
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(9)},
-		{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11)},
+		{BuyPrice: 10, SellPrice: 12},
+		{BuyPrice: 10, SellPrice: 9},
+		{BuyPrice: 10, SellPrice: 11},
 	}
 
 	stats := Stats(trades)
@@ -106,8 +104,8 @@ func TestStats空交易的百分比盈亏指标为零(t *testing.T) {
 func TestStats完整成交优先使用净收益(t *testing.T) {
 	// 原始价格上涨 10%，但费用后的实际回款低于买入成本，应按净亏损统计。
 	trades := []Trade{{
-		BuyPrice:   protocol.Yuan(10),
-		SellPrice:  protocol.Yuan(11),
+		BuyPrice:   10,
+		SellPrice:  11,
 		BuyCost:    1000,
 		SellIncome: 990,
 		Quantity:   100,
@@ -124,8 +122,8 @@ func TestStats完整成交优先使用净收益(t *testing.T) {
 
 func TestTradeProfitAmount完整成交与旧记录回退(t *testing.T) {
 	net := Trade{
-		BuyPrice:   protocol.Yuan(10),
-		SellPrice:  protocol.Yuan(11),
+		BuyPrice:   10,
+		SellPrice:  11,
 		BuyCost:    1005,
 		SellIncome: 1085,
 		Quantity:   100,
@@ -134,7 +132,7 @@ func TestTradeProfitAmount完整成交与旧记录回退(t *testing.T) {
 		t.Fatalf("expected net amount=80, got %v", got)
 	}
 
-	legacy := Trade{BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), Quantity: 100}
+	legacy := Trade{BuyPrice: 10, SellPrice: 11, Quantity: 100}
 	if got := tradeProfitAmount(legacy); math.Abs(got-100) > 1e-6 {
 		t.Fatalf("expected legacy gross fallback=100, got %v", got)
 	}

@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // makeKlinesFromCloses 用收盘价序列构造 Klines。
@@ -20,10 +20,10 @@ func makeKlinesFromCloses(closes []float64) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(p),
-				Close:  protocol.Yuan(p),
-				High:   protocol.Yuan(p),
-				Low:    protocol.Yuan(p),
+				Open:   p,
+				Close:  p,
+				High:   p,
+				Low:    p,
 				Volume: 100,
 			},
 		}

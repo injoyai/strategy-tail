@@ -5,7 +5,7 @@ import (
 )
 
 func MA(dks extend.Klines, n int) float64 {
-	return dks.MA(n).Float64()
+	return dks.MA(n)
 }
 
 func AverageVolume(dks extend.Klines) float64 {

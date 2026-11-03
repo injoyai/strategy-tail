@@ -6,7 +6,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 以下为包内测试夹具：手写 K 线与可观测求值行为的伪规则/伪操作数。
@@ -16,10 +16,10 @@ func makeKline(day int, open, high, low, close float64) *extend.Kline {
 	return &extend.Kline{
 		Kline: &protocol.Kline{
 			Time:  time.Date(2026, 10, day, 0, 0, 0, 0, time.UTC),
-			Open:  protocol.Yuan(open),
-			High:  protocol.Yuan(high),
-			Low:   protocol.Yuan(low),
-			Close: protocol.Yuan(close),
+			Open:  open,
+			High:  high,
+			Low:   low,
+			Close: close,
 		},
 	}
 }

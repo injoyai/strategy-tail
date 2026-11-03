@@ -4,6 +4,7 @@ import (
 	"embed"
 	"encoding/json"
 	"errors"
+
 	"log"
 	"net/http"
 	"os"
@@ -666,10 +667,10 @@ func klineSeries(ks extend.Klines) []klineRow {
 	for i, k := range ks {
 		rows = append(rows, klineRow{
 			Date:   k.Time.Format(time.DateOnly),
-			Open:   k.Open.Float64(),
-			Close:  k.Close.Float64(),
-			Low:    k.Low.Float64(),
-			High:   k.High.Float64(),
+			Open:   k.Open,
+			Close:  k.Close,
+			Low:    k.Low,
+			High:   k.High,
 			Volume: k.Volume,
 			DIF:    dif[i], DEA: dif[i] - hist[i], MACD: hist[i],
 		})

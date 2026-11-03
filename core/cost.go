@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ============================================================================
@@ -12,9 +12,9 @@ import (
 // 买入支出 = 成交价 × 数量 + 佣金 + 过户费
 // 成交价 = 原始价 + 滑点（买入向上滑点）
 // 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/reviews/code-review-2026-10-17.md 第 4 节）
-func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, totalCost float64) {
+func (c Cost) BuyCost(rawPrice float64, quantity int) (execPrice float64, totalCost float64) {
 	execPrice = rawPrice + c.Slippage
-	turnover := execPrice.Float64() * float64(quantity)
+	turnover := execPrice * float64(quantity)
 
 	commission := turnover * c.CommissionRate
 	if c.MinCommission > 0 && commission < c.MinCommission {
@@ -31,9 +31,9 @@ func (c Cost) BuyCost(rawPrice protocol.Price, quantity int) (execPrice protocol
 // 卖出收入 = 成交价 × 数量 - 佣金 - 印花税 - 过户费
 // 成交价 = 原始价 - 滑点（卖出向下滑点）
 // 过户费按沪深两市统一收取（深交所 2015-07-01 说明，见 docs/reviews/code-review-2026-10-17.md 第 4 节）
-func (c Cost) SellIncome(rawPrice protocol.Price, quantity int) (execPrice protocol.Price, netIncome float64) {
+func (c Cost) SellIncome(rawPrice float64, quantity int) (execPrice float64, netIncome float64) {
 	execPrice = rawPrice - c.Slippage
-	turnover := execPrice.Float64() * float64(quantity)
+	turnover := execPrice * float64(quantity)
 
 	commission := turnover * c.CommissionRate
 	if c.MinCommission > 0 && commission < c.MinCommission {

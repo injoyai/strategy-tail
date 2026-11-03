@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // T4 持仓标量操作数测试：持仓不可用/买入价非正/空前缀/找不到买入日
@@ -17,7 +16,7 @@ func t4Buy(day int, price float64) *core.Buy {
 	return &core.Buy{
 		Code:  "sh600000",
 		Time:  time.Date(2026, 10, day, 0, 0, 0, 0, time.UTC),
-		Price: protocol.Yuan(price),
+		Price: price,
 	}
 }
 
@@ -33,19 +32,19 @@ func TestT4PositionBuyPrice(t *testing.T) {
 	// 正常路径：买入价 10.5 元 = 10500 厘，厘级精确。
 	in := NewInput("sh600000", ks, nil, t4Buy(2, 10.5))
 	got := op.Value(in)
-	if got.Kind() != KindPrice || got.Price() != 10500 {
-		t.Fatalf("买入价(厘) = %v, 期望 10500", got)
+	if got.Kind() != KindPrice || got.Price() != 10.5 {
+		t.Fatalf("买入价(元) = %v, 期望 10500", got)
 	}
 
 	// 买入价 0 厘为有效值：旧组件（买入次日跌破买入价）无 buy<=0 守卫，
 	// 厘域不归一无效以保持精确语义。
 	inZero := NewInput("sh600000", ks, nil, t4Buy(2, 0))
 	gotZero := op.Value(inZero)
-	if gotZero.Kind() != KindPrice || gotZero.Price() != 0 {
+	if gotZero.Kind() != KindPrice || gotZero.Price() != 0.0 {
 		t.Fatalf("买入价 0 应有效为 0，实际 %v", gotZero)
 	}
 
-	if op.Name() != "买入价(厘)" {
+	if op.Name() != "买入价(元)" {
 		t.Fatalf("Name = %q", op.Name())
 	}
 }
@@ -155,7 +154,7 @@ func TestT4PositionHoldingDays(t *testing.T) {
 	intraday := &core.Buy{
 		Code:  "sh600000",
 		Time:  time.Date(2026, 10, 3, 14, 30, 0, 0, time.UTC),
-		Price: protocol.Yuan(10),
+		Price: 10,
 	}
 	if got := op.Value(NewInput("sh600000", ks, nil, intraday)); got.Kind() != KindFloat || got.Float() != 1 {
 		t.Fatalf("盘中买入次日计入，实际 %v, 期望 1", got)

@@ -115,7 +115,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 		if high120 <= 0 {
 			return false
 		}
-		closePrice := dks[n-2].Close.Float64()
+		closePrice := dks[n-2].Close
 		drawdown := (high120 - closePrice) / high120 * 100
 		if drawdown < dd {
 			return false
@@ -165,7 +165,7 @@ func (b A下跌企稳倍量) Buy(code string, dks extend.Klines) bool {
 	// 5. 右侧确认（仅 confirm5 档）：倍量日收盘站上 5 日均线
 	if mode == "confirm5" {
 		ma5 := f.A均线(5).Value(code, dks[:n-1]) // 截止昨日的 5 日均线
-		if today.Close.Float64() <= ma5 {
+		if today.Close <= ma5 {
 			return false
 		}
 	}

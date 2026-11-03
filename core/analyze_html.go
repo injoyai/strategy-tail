@@ -54,10 +54,10 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 		for i, k := range dks {
 			kline = append(kline, []any{
 				k.Time.Format(time.DateOnly),
-				k.Open.Float64(),
-				k.Close.Float64(),
-				k.Low.Float64(),
-				k.High.Float64(),
+				k.Open,
+				k.Close,
+				k.Low,
+				k.High,
 				k.Volume, indicators[i][0], indicators[i][1], indicators[i][2],
 			})
 		}
@@ -83,7 +83,7 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 					"date":  t.BuyTime.Format(time.DateOnly),
 					"time":  t.BuyTime.Format(time.TimeOnly),
 					"year":  year,
-					"price": t.BuyPrice.Float64(),
+					"price": t.BuyPrice,
 					"type":  "买",
 					"rate":  buyRate,
 				})
@@ -91,7 +91,7 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 					"date":  t.SellTime.Format(time.DateOnly),
 					"time":  t.SellTime.Format(time.TimeOnly),
 					"year":  year,
-					"price": t.SellPrice.Float64(),
+					"price": t.SellPrice,
 					"type":  sellLabel,
 					"rate":  buyRate,
 				})
@@ -99,10 +99,10 @@ func ExportTradeVisualHTML(years []int, yearlyTrades map[int][]Trade, getDayKlin
 					"year":      year,
 					"buyDate":   t.BuyTime.Format(time.DateOnly),
 					"buyTime":   t.BuyTime.Format(time.TimeOnly),
-					"buyPrice":  t.BuyPrice.Float64(),
+					"buyPrice":  t.BuyPrice,
 					"sellDate":  t.SellTime.Format(time.DateOnly),
 					"sellTime":  t.SellTime.Format(time.TimeOnly),
-					"sellPrice": t.SellPrice.Float64(),
+					"sellPrice": t.SellPrice,
 					"profit":    profit,
 					"rate":      buyRate,
 				})

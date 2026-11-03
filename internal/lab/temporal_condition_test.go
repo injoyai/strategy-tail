@@ -9,14 +9,14 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestTemporalConditionBoundaries(t *testing.T) {
 	bars := func(prices ...float64) extend.Klines {
 		ks := make(extend.Klines, len(prices))
 		for i, price := range prices {
-			ks[i] = &extend.Kline{Kline: &protocol.Kline{Time: time.Date(2025, 1, i+1, 0, 0, 0, 0, time.Local), Close: protocol.Yuan(price)}}
+			ks[i] = &extend.Kline{Kline: &protocol.Kline{Time: time.Date(2025, 1, i+1, 0, 0, 0, 0, time.Local), Close: price}}
 		}
 		return ks
 	}

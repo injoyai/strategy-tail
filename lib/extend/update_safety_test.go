@@ -3,6 +3,8 @@ package extend
 import (
 	"errors"
 	"fmt"
+	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/lib/update"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestUpdateLockExcludesOtherProcesses(t *testing.T) {
@@ -67,25 +69,25 @@ func TestUpdateJobsReportOnceAfterRetriesAndReturnFailures(t *testing.T) {
 
 func TestUpdateFreshnessSkipsRepeatedDownloads(t *testing.T) {
 	dir := t.TempDir()
-	db, err := xorms.NewSqlite(filepath.Join(dir, "update.db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	updated, err := tdx.NewUpdated(db, 15, 31)
+	updated, err := update.New(db, 15, 31)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := updated.Updated("pull"); err != nil {
+	if _, err := updated.IsUpdated("pull"); err != nil {
 		t.Fatal(err)
 	}
-	if err := updated.Update("pull"); err != nil {
+	if err := updated.Mark("pull"); err != nil {
 		t.Fatal(err)
 	}
 	pull := &PullKline{Config: PullKlineConfig{Dir: dir}, Types: []string{Day}, Updated: updated}
 	var last UpdateProgress
 	// An empty manager cannot download. A fresh batch must return before network work.
-	if err := pull.UpdateWithProgress(&tdx.Manage{}, true, func(p UpdateProgress) { last = p }); err != nil {
+	if err := pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) { last = p }); err != nil {
 		t.Fatal(err)
 	}
 	if !last.Skipped || last.Total != 0 {
@@ -95,16 +97,19 @@ func TestUpdateFreshnessSkipsRepeatedDownloads(t *testing.T) {
 
 func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 	dir := t.TempDir()
-	db, err := xorms.NewSqlite(filepath.Join(dir, "update.db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	updated, err := tdx.NewUpdated(db, updateCloseHour, updateCloseMinute)
+	updated, err := update.New(db, updateCloseHour, updateCloseMinute)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := updated.Updated("pull"); err != nil {
+	if _, err := updated.IsUpdated("pull"); err != nil {
+		t.Fatal(err)
+	}
+	if err := updated.Mark("pull"); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
@@ -123,10 +128,10 @@ func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 		{"prior batch", close.AddDate(0, 0, -1).Add(time.Hour), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := db.Where("`Key`=?", "pull").Update(&tdx.UpdateModel{Time: tc.at.Unix()}); err != nil {
+			if _, err := db.Where("`Key`=?", "pull").Cols("Time").Update(&update.Record{Time: tc.at.Unix()}); err != nil {
 				t.Fatal(err)
 			}
-			fresh, err := updated.Updated("pull")
+			fresh, err := updated.IsUpdated("pull")
 			if err != nil || fresh != tc.fresh {
 				t.Fatalf("fresh=%v err=%v want=%v", fresh, err, tc.fresh)
 			}
@@ -136,12 +141,12 @@ func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 
 func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 	dir := t.TempDir()
-	db, err := xorms.NewSqlite(filepath.Join(dir, "update.db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	updated, err := tdx.NewUpdated(db, updateCloseHour, updateCloseMinute)
+	updated, err := update.New(db, updateCloseHour, updateCloseMinute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +159,7 @@ func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 	jobs := map[string]int{}
 	var last UpdateProgress
 	var phases []UpdateProgress
-	err = pull.UpdateWithProgress(&tdx.Manage{}, true, func(p UpdateProgress) {
+	err = pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) {
 		phases = append(phases, p)
 		if p.Done > last.Done {
 			jobs[p.Stage+":"+p.Code]++
@@ -181,7 +186,7 @@ func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 			t.Fatalf("%s reported %d times", job, count)
 		}
 	}
-	if fresh, err := updated.Updated("pull"); err != nil || fresh {
+	if fresh, err := updated.IsUpdated("pull"); err != nil || fresh {
 		t.Fatalf("partial batch marked fresh: %v %v", fresh, err)
 	}
 }
@@ -207,12 +212,12 @@ func TestUpdateFailedCodeDoesNotPreventLaterSuccess(t *testing.T) {
 
 func TestFailedCodeDoesNotMarkWholeBatchUpdated(t *testing.T) {
 	dir := t.TempDir()
-	db, err := xorms.NewSqlite(filepath.Join(dir, "update.db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	updated, err := tdx.NewUpdated(db, 15, 31)
+	updated, err := update.New(db, 15, 31)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,13 +228,13 @@ func TestFailedCodeDoesNotMarkWholeBatchUpdated(t *testing.T) {
 	}
 	pull := &PullKline{Config: PullKlineConfig{Dir: dir, Codes: []string{"sh600000"}, Goroutines: 1}, Types: []string{Day}, Updated: updated}
 	var progress UpdateProgress
-	if err := pull.UpdateWithProgress(&tdx.Manage{}, true, func(p UpdateProgress) { progress = p }); err == nil {
+	if err := pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) { progress = p }); err == nil {
 		t.Fatal("failed stock was silently accepted")
 	}
 	if progress.Done != 1 || progress.Failed != 1 {
 		t.Fatalf("failed progress: %+v", progress)
 	}
-	if fresh, err := updated.Updated("pull"); err != nil || fresh {
+	if fresh, err := updated.IsUpdated("pull"); err != nil || fresh {
 		t.Fatalf("failed batch marked fresh: %v %v", fresh, err)
 	}
 	b, err := os.ReadFile(blocked)

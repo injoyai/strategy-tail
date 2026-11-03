@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/researchdata"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func statRow(market uint8, code, date, pe, dividend string) *protocol.TdxStat {

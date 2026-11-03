@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func macdTestKlines(n int) extend.Klines {
 	ks := make(extend.Klines, n)
 	for i := range ks {
-		ks[i] = &extend.Kline{Kline: &protocol.Kline{Close: protocol.Price(10000 + i*13 + (i%7)*97)}}
+		ks[i] = &extend.Kline{Kline: &protocol.Kline{Close: float64(10000+i*13+(i%7)*97) / 1000.0}}
 	}
 	return ks
 }
@@ -21,7 +21,7 @@ func macdTestKlines(n int) extend.Klines {
 func referenceMACD(ks extend.Klines, fast, slow, signal int) ([]float64, []float64) {
 	closes := make([]float64, len(ks))
 	for i := range ks {
-		closes[i] = ks[i].Close.Float64()
+		closes[i] = ks[i].Close
 	}
 	a, b := emaSeries(closes, fast), emaSeries(closes, slow)
 	dif := make([]float64, len(ks))

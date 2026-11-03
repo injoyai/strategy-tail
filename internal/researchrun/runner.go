@@ -13,7 +13,7 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // DataMode controls whether intraday bars are loaded for execution.

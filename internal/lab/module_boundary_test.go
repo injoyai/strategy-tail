@@ -30,9 +30,9 @@ func TestModuleDependencyBoundaries(t *testing.T) {
 		// 允许经接口传递引入；仍禁止依赖应用装配层（lab 主包）。
 		{dir: "internal/lab/builder", allowed: []string{module, module + "/core", module + "/lib/extend", module + "/strategies/buy", module + "/strategies/sell", module + "/strategies/factor"}},
 		{dir: "internal/lab/script", allowed: []string{module + "/core", module + "/strategies/buy", module + "/strategies/sell", module + "/strategies/factor", "github.com/traefik/yaegi/interp", "github.com/traefik/yaegi/stdlib"}},
-		{dir: "internal/researchrun", allowed: []string{module + "/core", module + "/lib/extend", "github.com/injoyai/logs", "github.com/injoyai/tdx/protocol"}},
-		{dir: "strategies/factor", allowed: []string{module + "/core", module + "/lib/extend", module + "/researchdata", module + "/strategies/util", "github.com/injoyai/tdx/protocol"}},
-		{dir: "strategies/rule", allowed: []string{module + "/core", module + "/lib/extend", module + "/researchdata", module + "/strategies/factor", "github.com/injoyai/tdx/protocol"}},
+		{dir: "internal/researchrun", allowed: []string{module + "/core", module + "/lib/extend", "github.com/injoyai/logs", "github.com/injoyai/tdx/v2/protocol"}},
+		{dir: "strategies/factor", allowed: []string{module + "/core", module + "/lib/extend", module + "/researchdata", module + "/strategies/util", "github.com/injoyai/tdx/v2/protocol"}},
+		{dir: "strategies/rule", allowed: []string{module + "/core", module + "/lib/extend", module + "/researchdata", module + "/strategies/factor", "github.com/injoyai/tdx/v2/protocol"}},
 	} {
 		t.Run(tc.dir, func(t *testing.T) {
 			entries, err := os.ReadDir(filepath.Join(root, tc.dir))

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 本文件为 package core 内部测试（_backtest / scanYear 未导出），
@@ -30,8 +30,8 @@ func dataBars(start time.Time, n int) extend.Klines {
 	for i := 0; i < n; i++ {
 		at := start.AddDate(0, 0, i)
 		ks = append(ks, &extend.Kline{Kline: &protocol.Kline{
-			Time: at, Open: protocol.Yuan(10), High: protocol.Yuan(10),
-			Low: protocol.Yuan(10), Close: protocol.Yuan(10), Volume: 100,
+			Time: at, Open: 10, High: 10,
+			Low: 10, Close: 10, Volume: 100,
 		}})
 	}
 	return ks
@@ -44,7 +44,7 @@ func TestBacktestOnlyHistoryNoTargetYear(t *testing.T) {
 	bt := Backtest{
 		Buyer:        dataBuyer{},
 		Seller:       dataSeller{},
-		Cost:         Cost{Slippage: protocol.Yuan(0)},
+		Cost:         Cost{Slippage: 0},
 		Position:     PositionConfig{SharesPerLot: 100},
 		GetDayKlines: func(string, time.Time, time.Time) (extend.Klines, error) { return dks, nil },
 		Goroutines:   1,
@@ -74,7 +74,7 @@ func TestBacktestProviderErrorSkipsCode(t *testing.T) {
 	bt := Backtest{
 		Buyer:    dataBuyer{},
 		Seller:   dataSeller{},
-		Cost:     Cost{Slippage: protocol.Yuan(0)},
+		Cost:     Cost{Slippage: 0},
 		Position: PositionConfig{SharesPerLot: 100},
 		GetDayKlines: func(code string, _, _ time.Time) (extend.Klines, error) {
 			if code == "bad" {

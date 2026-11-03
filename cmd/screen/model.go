@@ -5,7 +5,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 const (
@@ -70,7 +70,7 @@ func (this *Trade) Realtime(k *protocol.Kline) {
 		if k == nil {
 			return
 		}
-		this.SellPrice = k.Close.Float64()
+		this.SellPrice = k.Close
 	}
 	if this.BuyPrice > 0 {
 		this.Income = (this.SellPrice - this.BuyPrice) / this.BuyPrice * 100
@@ -83,7 +83,7 @@ func (this *Trade) Sell(s *core.Sell) *Trade {
 	}
 	this.Sold = true
 	this.SellTime = s.Time.Format(time.DateTime)
-	this.SellPrice = s.Price.Float64()
+	this.SellPrice = s.Price
 	this.Realtime(nil)
 	return this
 }
@@ -93,7 +93,7 @@ func (this *Trade) ToBuy() (core.Buy, error) {
 	return core.Buy{
 		Code:  this.Code,
 		Time:  t,
-		Price: protocol.Yuan(this.BuyPrice),
+		Price: this.BuyPrice,
 	}, err
 }
 
@@ -102,7 +102,7 @@ func (this *Trade) ToSell() (*core.Sell, error) {
 	return &core.Sell{
 		Code:  this.Code,
 		Time:  t,
-		Price: protocol.Yuan(this.SellPrice),
+		Price: this.SellPrice,
 	}, err
 }
 

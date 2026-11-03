@@ -9,7 +9,6 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // ============================================================================
@@ -25,7 +24,7 @@ func DefaultForwardDays() []int {
 type ForwardReturn struct {
 	Code     string
 	BuyTime  time.Time
-	BuyPrice protocol.Price
+	BuyPrice float64
 	// Returns: N天 -> 收益率% = (dks[i+N].Close - BuyPrice) / BuyPrice * 100
 	Returns map[int]float64
 	// KlineIndex 命中日在 dks 中的索引
@@ -117,9 +116,9 @@ func (this ForwardReturnAnalysis) Scan(code string, his, dks extend.Klines) []Fo
 			idx := i + n
 			if idx < len(dks) {
 				futureClose := dks[idx].Close
-				bp := buyPrice.Float64()
+				bp := buyPrice
 				if bp > 0 {
-					returns[n] = (futureClose.Float64() - bp) / bp * 100
+					returns[n] = (futureClose - bp) / bp * 100
 				}
 			}
 		}

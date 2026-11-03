@@ -3,22 +3,20 @@ package core
 import (
 	"math"
 	"testing"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 // 构造一批收益率有差异的交易用于蒙特卡洛测试。
 // 与项目回测口径一致：收益率 = (SellPrice - BuyPrice) / BuyPrice。
 func mcTestTrades() []Trade {
 	return []Trade{
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(110)},  // +10%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(104)},  // +4%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(102)},  // +2%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(101)},  // +1%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(95)},   // -5%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(92)},   // -8%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(98)},   // -2%
-		{BuyPrice: protocol.Yuan(100), SellPrice: protocol.Yuan(99)},   // -1%
+		{BuyPrice: 100, SellPrice: 110}, // +10%
+		{BuyPrice: 100, SellPrice: 104}, // +4%
+		{BuyPrice: 100, SellPrice: 102}, // +2%
+		{BuyPrice: 100, SellPrice: 101}, // +1%
+		{BuyPrice: 100, SellPrice: 95},  // -5%
+		{BuyPrice: 100, SellPrice: 92},  // -8%
+		{BuyPrice: 100, SellPrice: 98},  // -2%
+		{BuyPrice: 100, SellPrice: 99},  // -1%
 	}
 }
 
@@ -51,7 +49,7 @@ func TestMonteCarlo中位数接近确定性复利(t *testing.T) {
 	trades := mcTestTrades()
 	det := 100000.0
 	for _, t := range trades {
-		r := (t.SellPrice.Float64() - t.BuyPrice.Float64()) / t.BuyPrice.Float64()
+		r := (t.SellPrice - t.BuyPrice) / t.BuyPrice
 		det *= 1 + r
 	}
 	detReturn := (det - 100000) / 100000 * 100

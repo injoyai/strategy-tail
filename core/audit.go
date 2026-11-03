@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // ============================================================================
@@ -44,7 +43,7 @@ func AuditLookAhead(trades []Trade, cost Cost, getDayKlines func(code string) (e
 
 	// 按代码缓存日线数据及其 "日期 -> (Low,High)" 索引,避免重复拉取与构建
 	type dayRange struct {
-		Low, High protocol.Price
+		Low, High float64
 	}
 	type codeData struct {
 		index map[string]dayRange
@@ -108,8 +107,8 @@ func AuditLookAhead(trades []Trade, cost Cost, getDayKlines func(code string) (e
 			if t.BuyExecPrice < lo || t.BuyExecPrice > hi {
 				result.Issues = append(result.Issues, fmt.Sprintf(
 					"交易#%d [%s] 买入成交价 %.3f 超出 %s 日线区间 [%.3f, %.3f]±滑点(疑似前瞻偏差)",
-					idx, t.Code, t.BuyExecPrice.Float64(), buyDate,
-					dr.Low.Float64(), dr.High.Float64(),
+					idx, t.Code, t.BuyExecPrice, buyDate,
+					dr.Low, dr.High,
 				))
 			}
 		}
@@ -127,8 +126,8 @@ func AuditLookAhead(trades []Trade, cost Cost, getDayKlines func(code string) (e
 			if t.SellExecPrice < lo || t.SellExecPrice > hi {
 				result.Issues = append(result.Issues, fmt.Sprintf(
 					"交易#%d [%s] 卖出成交价 %.3f 超出 %s 日线区间 [%.3f, %.3f]±滑点(疑似前瞻偏差)",
-					idx, t.Code, t.SellExecPrice.Float64(), sellDate,
-					dr.Low.Float64(), dr.High.Float64(),
+					idx, t.Code, t.SellExecPrice, sellDate,
+					dr.Low, dr.High,
 				))
 			}
 		}
@@ -173,11 +172,11 @@ func AuditDataQuality(dks extend.Klines) []string {
 		seen[date] = true
 
 		// 负价格
-		if k.Open < 0 || k.High < 0 || k.Low < 0 || k.Close < 0 {
+		if k.Open < 0.0 || k.High < 0.0 || k.Low < 0.0 || k.Close < 0.0 {
 			issues = append(issues, fmt.Sprintf(
 				"负价格: %s 开%.3f 高%.3f 低%.3f 收%.3f",
-				date, k.Open.Float64(), k.High.Float64(),
-				k.Low.Float64(), k.Close.Float64(),
+				date, k.Open, k.High,
+				k.Low, k.Close,
 			))
 		}
 

@@ -108,5 +108,5 @@ func (b A指数站上MA) Buy(code string, dks extend.Klines) bool {
 	}
 
 	ma := f.A均线(period).Value(code, aligned)
-	return aligned[len(aligned)-1].Close.Float64() > ma
+	return aligned[len(aligned)-1].Close > ma
 }

@@ -6,7 +6,7 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 	"github.com/injoyai/strategy-tail/strategies/rule"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func A价格小于(f float64) A价格 {
@@ -90,7 +90,7 @@ func (b A过滤涨停) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	// 涨幅百分比比较经共用内核：单日涨幅 < 板块阈值。
-	c, err := rule.NewCompare(rule.RiseRate(), rule.Lt, rule.Literal(rule.FloatValue(threshold)))
+	c, err := rule.NewCompare(rule.ClosePrice(), rule.Lt, p2涨停价格(threshold))
 	if err != nil {
 		return false
 	}
@@ -135,7 +135,7 @@ func (b A涨停) Buy(code string, dks extend.Klines) bool {
 		return false
 	}
 	// 涨幅百分比比较经共用内核：单日涨幅 >= 板块阈值。
-	c, err := rule.NewCompare(rule.RiseRate(), rule.Ge, rule.Literal(rule.FloatValue(threshold)))
+	c, err := rule.NewCompare(rule.ClosePrice(), rule.Ge, p2涨停价格(threshold))
 	if err != nil {
 		return false
 	}
@@ -306,4 +306,21 @@ func (b A近N天最高价) Buy(code string, dks extend.Klines) bool {
 	}
 	today := dks[len(dks)-1]
 	return today.Close >= f.A最高价(days).Price(dks)
+}
+
+func p2涨停价格(threshold float64) rule.Operand {
+	return rule.OperandFunc("涨停判定价格", func(in rule.Input) rule.Value {
+		ks := in.Klines
+		if len(ks) == 0 {
+			return rule.InvalidValue()
+		}
+		base := ks[len(ks)-1].Last
+		if base == 0 {
+			base = ks[len(ks)-1].Open
+		}
+		if base == 0 {
+			return rule.InvalidValue()
+		}
+		return rule.PriceValue(base * (1 + threshold/100))
+	})
 }

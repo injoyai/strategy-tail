@@ -14,7 +14,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestBuilderWriteBoundaries(t *testing.T) {
@@ -69,8 +69,8 @@ func builderBars(n int) extend.Klines {
 	bars := make(extend.Klines, 0, n)
 	for i := 0; i < n; i++ {
 		at := time.Date(2025, 1, 2+i, 0, 0, 0, 0, time.Local)
-		close := protocol.Yuan(20 + 0.1*float64(i) + 0.5*math.Sin(float64(i)*2*math.Pi/30))
-		bars = append(bars, &extend.Kline{Unix: at.Unix(), FloatStock: 10000000000, Kline: &protocol.Kline{Time: at, Open: close, Close: close, High: close + 200, Low: close - 200, Volume: 10000}})
+		close := 20 + 0.1*float64(i) + 0.5*math.Sin(float64(i)*2*math.Pi/30)
+		bars = append(bars, &extend.Kline{Unix: at.Unix(), FloatStock: 10000000000, Kline: &protocol.Kline{Time: at, Open: close, Close: close, High: close + 0.2, Low: close - 0.2, Volume: 10000}})
 	}
 	return bars
 }
@@ -126,7 +126,7 @@ func TestBuilderGroupingAndIndependentStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	bars := builderBars(3)
-	bars[0].Close = protocol.Yuan(12)
+	bars[0].Close = 12
 	if !buyer.Buy("sh600000", bars[:1]) {
 		t.Fatal("nested OR did not match")
 	}
@@ -134,7 +134,7 @@ func TestBuilderGroupingAndIndependentStop(t *testing.T) {
 	if flat.Buy("sh600000", bars[:1]) {
 		t.Fatal("fixture must distinguish OR from flat AND")
 	}
-	bars[0].Close = protocol.Yuan(10)
+	bars[0].Close = 10
 	if buyer.Buy("sh600000", bars[:1]) {
 		t.Fatal("neither OR branch should match")
 	}
@@ -146,10 +146,10 @@ func TestBuilderGroupingAndIndependentStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bars[1].Close = protocol.Yuan(9)
-	bars[2].Close = protocol.Yuan(8)
+	bars[1].Close = 9
+	bars[2].Close = 8
 	signal, _ := spec.SellSignal.Seller()
-	if signal.Sell("sh600000", bars[:2], core.Buy{Price: protocol.Yuan(10)}) {
+	if signal.Sell("sh600000", bars[:2], core.Buy{Price: 10}) {
 		t.Fatal("fixture must leave MACD signal false")
 	}
 	bt := core.Backtest{Buyer: sb.A全部{}, Seller: seller, Position: core.PositionConfig{MaxPerCode: 1}}

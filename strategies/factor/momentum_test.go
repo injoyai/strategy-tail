@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ---- 测试工具（供 factor 包全部 *_test.go 共用）----
@@ -18,8 +18,8 @@ func mk(base time.Time, i int, o, h, l, c float64, vol int64) *extend.Kline {
 		Unix: tm.Unix(),
 		Kline: &protocol.Kline{
 			Time: tm,
-			Open: protocol.Yuan(o), Close: protocol.Yuan(c),
-			High: protocol.Yuan(h), Low: protocol.Yuan(l),
+			Open: o, Close: c,
+			High: h, Low: l,
 			Volume: vol,
 		},
 	}

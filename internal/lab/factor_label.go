@@ -4,7 +4,6 @@ import (
 	"math"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // LabelSkipReason 单次标签未能生成时的归因；LabelOK 表示成功。
@@ -90,7 +89,7 @@ func labelReturn(dks, future extend.Klines, signalIdx, horizon int, kind string)
 	if !ok {
 		return 0, LabelSkipInsufficientHorizon, false
 	}
-	var entry protocol.Price
+	var entry float64
 	entryVolume := int64(0)
 	switch kind {
 	case labelKindNextOpenToClose:
@@ -109,15 +108,15 @@ func labelReturn(dks, future extend.Klines, signalIdx, horizon int, kind string)
 	if entryVolume <= 0 {
 		return 0, LabelSkipUntradableEntry, false
 	}
-	if entry <= 0 {
+	if entry <= 0.0 {
 		return 0, LabelSkipMissingEntryPrice, false
 	}
 	exit := exitK.Close
-	if exit <= 0 {
+	if exit <= 0.0 {
 		return 0, LabelSkipMissingExitPrice, false
 	}
 
-	e, x := entry.Float64(), exit.Float64()
+	e, x := entry, exit
 	if math.IsNaN(e) || math.IsInf(e, 0) || math.IsNaN(x) || math.IsInf(x, 0) {
 		return 0, LabelSkipNonFiniteReturn, false
 	}

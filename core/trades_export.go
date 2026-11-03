@@ -79,9 +79,9 @@ func ExportTradesCSVWithError(strategyName, filename string, trades []Trade) (st
 		data = append(data, []any{
 			t.Code,
 			t.BuyTime.Format(time.DateTime),
-			round2(t.BuyPrice.Float64()),
+			round2(t.BuyPrice),
 			t.SellTime.Format(time.DateTime),
-			round2(t.SellPrice.Float64()),
+			round2(t.SellPrice),
 			t.Quantity,
 			round2(tradeProfitAmount(t)),
 			round2(tradeReturnRate(t)),
@@ -151,8 +151,8 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 				for _, k := range dks {
 					kline = append(kline, []any{
 						k.Time.Format(time.DateOnly),
-						k.Open.Float64(), k.Close.Float64(),
-						k.Low.Float64(), k.High.Float64(),
+						k.Open, k.Close,
+						k.Low, k.High,
 						k.Volume,
 					})
 				}
@@ -166,13 +166,13 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 						map[string]any{
 							"date":  t.BuyTime.Format(time.DateOnly),
 							"type":  "买",
-							"price": t.BuyPrice.Float64(),
+							"price": t.BuyPrice,
 							"rate":  tradeReturnRate(t),
 						},
 						map[string]any{
 							"date":  t.SellTime.Format(time.DateOnly),
 							"type":  sellLabel,
-							"price": t.SellPrice.Float64(),
+							"price": t.SellPrice,
 							"rate":  tradeReturnRate(t),
 						},
 					)
@@ -188,9 +188,9 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 		for _, t := range ts {
 			rows = append(rows, map[string]any{
 				"buyDate":   t.BuyTime.Format(time.DateTime),
-				"buyPrice":  t.BuyPrice.Float64(),
+				"buyPrice":  t.BuyPrice,
 				"sellDate":  t.SellTime.Format(time.DateTime),
-				"sellPrice": t.SellPrice.Float64(),
+				"sellPrice": t.SellPrice,
 				"quantity":  t.Quantity,
 				"profit":    tradeProfitAmount(t),
 				"rate":      tradeReturnRate(t),

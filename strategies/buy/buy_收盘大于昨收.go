@@ -16,7 +16,7 @@ func mustCompare(left rule.Operand, op rule.Op, right rule.Operand) rule.Compare
 	return c
 }
 
-// 收盘大于昨收规则 今收 > 昨收：两侧均取整数厘（protocol.Price）精确比较，
+// 收盘大于昨收规则 今收 > 昨收：两侧均取浮点元（float64）精确比较，
 // 保留厘级边界，不转浮点；昨收不足 2 根时为无效值，规则不触发。
 var 收盘大于昨收规则 = mustCompare(rule.ClosePrice(), rule.Gt, rule.PrevClosePrice())
 

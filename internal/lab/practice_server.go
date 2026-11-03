@@ -4,8 +4,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 // practice_server.go 盘感练习 HTTP 接口（实施文档 §4）。
@@ -35,8 +33,8 @@ type practiceKlineView struct {
 	HIST   *float64 `json:"hist"`
 }
 
-// practicePriceYuan 厘转元。
-func practicePriceYuan(p protocol.Price) float64 { return float64(p) / 1000 }
+// practicePriceYuan 返回元值。
+func practicePriceYuan(p float64) float64 { return p }
 
 // practiceKlineViews 投影 [0, through] 范围的日 K（through 越界夹到最后）。
 // withDate 仅复盘为 true；盲练不下发真实日期。
@@ -127,7 +125,7 @@ func practiceSessionViewOf(sess *practiceSession, m *practiceMarket) practiceSes
 	if sess.SellIndex >= 0 {
 		v.SellDay = practiceIntPtr(sess.SellIndex - sess.SignalIndex)
 	}
-	if day := m.dayAt(sess.CurrentIndex); day.Close > 0 {
+	if day := m.dayAt(sess.CurrentIndex); day.Close > 0.0 {
 		v.CurrentPrice = practicePriceYuan(day.Close)
 	}
 	active := sess.Phase == practicePhaseActive

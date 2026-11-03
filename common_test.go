@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 红利测试基准时间 固定时刻，避免依赖真实当前时间。

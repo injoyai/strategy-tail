@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestMACD买入后连跌默认买入后一天跌则卖出(t *testing.T) {
@@ -53,10 +53,10 @@ func makeMACD连跌K线(closes []float64) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(close),
-				Close:  protocol.Yuan(close),
-				High:   protocol.Yuan(close + 0.5),
-				Low:    protocol.Yuan(close - 0.5),
+				Open:   close,
+				Close:  close,
+				High:   close + 0.5,
+				Low:    close - 0.5,
 				Volume: 100,
 			},
 		}

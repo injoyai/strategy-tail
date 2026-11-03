@@ -19,8 +19,8 @@ func (s A跌破买入日开盘) Name() string {
 
 func (s A跌破买入日开盘) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	// 判断委托共用内核，与旧实现同序：先判"今日非买入日"（旧实现买入日
-	// 不触发的预检查，And 左侧短路保持次序），再比较末根收盘价(厘) <
-	// 买入日开盘价(厘)，Lt 厘级 int64 精确等旧 protocol.Price 直接比较。
+	// 不触发的预检查，And 左侧短路保持次序），再比较末根收盘价(元) <
+	// 买入日开盘价(元)，Lt 使用同单位价格直接比较。
 	// 买入日开盘价沿用旧逆序日期串匹配定位，找不到（或持仓不可用）返回
 	// 无效值，比较不触发等旧 return false。
 	notBuyDay, err := rule.NewRuleFunc("今日非买入日", func(in rule.Input) bool {
@@ -37,7 +37,7 @@ func (s A跌破买入日开盘) Sell(code string, dks extend.Klines, buy core.Bu
 	if err != nil {
 		return false
 	}
-	buyOpen := rule.OperandFunc("买入日开盘(厘)", func(in rule.Input) rule.Value {
+	buyOpen := rule.OperandFunc("买入日开盘(元)", func(in rule.Input) rule.Value {
 		pos, ok := in.Position()
 		if !ok {
 			return rule.InvalidValue()

@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type Screen struct {

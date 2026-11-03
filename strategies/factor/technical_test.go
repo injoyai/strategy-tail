@@ -16,7 +16,7 @@ func TestTechnicalFactors(t *testing.T) {
 		mk(base, 1, 10, 13, 10, 12, 300),
 		mk(base, 2, 12, 12, 9, 10, 900),
 	}
-	ks[2].Amount = 1234000
+	ks[2].Amount = 1234.0
 	ks[2].FloatStock = 1000000000
 	for _, tt := range []struct {
 		factor core.Factor
@@ -47,9 +47,9 @@ func TestTechnicalFactors(t *testing.T) {
 	flat := closes(base, 10, 10)
 	wantNaN(t, "零方差布林", (A布林下轨{Days: 2}).Value("", flat))
 	wantNaN(t, "零方差ZScore", ZScore值(2).Value("", flat))
-	// 普通均线按厘截断，布林统计保留浮点精度。
+	// v2 均线与布林统计均保留浮点精度。
 	precision := closes(base, 10, 10.001)
-	wantVal(t, "价格均线", A均线(2).Value("", precision), 10, 0)
+	wantVal(t, "价格均线", A均线(2).Value("", precision), 10.0005, 1e-12)
 	mean, std := closeMeanStd(precision, 2)
 	wantVal(t, "浮点均值", mean, 10.0005, 1e-12)
 	wantVal(t, "总体标准差", std, 0.0005, 1e-12)

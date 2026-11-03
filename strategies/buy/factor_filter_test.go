@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 	"github.com/injoyai/strategy-tail/strategies/rule"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // stubFactor 恒定返回预设值的因子桩。
@@ -25,8 +25,8 @@ func mkKline(base time.Time, i int, c float64) *extend.Kline {
 	tm := base.AddDate(0, 0, i)
 	return &extend.Kline{
 		Unix: tm.Unix(),
-		Kline: &protocol.Kline{Time: tm, Open: protocol.Yuan(c), Close: protocol.Yuan(c),
-			High: protocol.Yuan(c), Low: protocol.Yuan(c), Volume: 10000},
+		Kline: &protocol.Kline{Time: tm, Open: c, Close: c,
+			High: c, Low: c, Volume: 10000},
 	}
 }
 

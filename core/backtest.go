@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/bar"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ============================================================================
@@ -56,7 +56,7 @@ func (this Backtest) Run() {
 	logs.Info(this.Seller.Name() + " 卖出")
 	logs.Infof("成本: 佣金%.5f 印花税%.5f 滑点%.3f元 最低佣金%.1f元",
 		this.Cost.CommissionRate, this.Cost.StampDutyRate,
-		this.Cost.Slippage.Float64(), this.Cost.MinCommission)
+		this.Cost.Slippage, this.Cost.MinCommission)
 	logs.Infof("仓位: 单票%d笔 全局上限%d股/笔",
 		this.Position.MaxPerCode, this.Position.SharesPerLot)
 
@@ -199,7 +199,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	// 分钟线按日期分组（跳过Close=0的无效数据，通常是开盘集合竞价前的空记录）
 	m := map[string]protocol.Klines{}
 	for _, mk := range mks {
-		if mk.Close == 0 {
+		if mk.Close == 0.0 {
 			continue
 		}
 		key := mk.Time.Format(time.DateOnly)
@@ -291,7 +291,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 func (this Backtest) executeSell(
 	code string,
 	buy Buy,
-	sellRawPrice protocol.Price,
+	sellRawPrice float64,
 	pos PositionConfig,
 	cost Cost,
 	sellTime time.Time,
@@ -306,8 +306,8 @@ func (this Backtest) executeSell(
 
 	// BuyPrice/SellPrice 存含滑点和手续费的成交价（与原版一致）
 	// 原版: BuyPrice = buyExecPrice + buyFee; SellPrice = sellExecPrice - sellFee
-	buyFee := protocol.Yuan(buyExec.Float64() * cost.CommissionRate)
-	sellFee := protocol.Yuan(sellExec.Float64() * (cost.CommissionRate + cost.StampDutyRate))
+	buyFee := buyExec * cost.CommissionRate
+	sellFee := sellExec * (cost.CommissionRate + cost.StampDutyRate)
 
 	return Trade{
 		Code:          code,

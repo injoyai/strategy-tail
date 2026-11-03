@@ -1,16 +1,20 @@
 package extend
 
-import "github.com/injoyai/tdx/protocol"
+import (
+	"math"
+
+	"github.com/injoyai/tdx/v2/protocol"
+)
 
 type Info struct {
-	Code       string         `json:"code"`       //代码
-	Name       string         `json:"name"`       //名称
-	Price      protocol.Price `json:"price"`      //最新价
-	Turnover   float64        `json:"turnover"`   //换手率
-	FloatStock int64          `json:"floatStock"` //流通股本
-	TotalStock int64          `json:"totalStock"` //总股本
-	FloatValue protocol.Price `json:"floatValue"` //流通市值
-	TotalValue protocol.Price `json:"totalValue"` //总市值
+	Code       string  `json:"code"`       //代码
+	Name       string  `json:"name"`       //名称
+	Price      float64 `json:"price"`      //最新价
+	Turnover   float64 `json:"turnover"`   //换手率
+	FloatStock int64   `json:"floatStock"` //流通股本
+	TotalStock int64   `json:"totalStock"` //总股本
+	FloatValue float64 `json:"floatValue"` //流通市值
+	TotalValue float64 `json:"totalValue"` //总市值
 }
 
 type Kline struct {
@@ -23,12 +27,12 @@ type Kline struct {
 	//OuterDisc       int64
 }
 
-func (this *Kline) FloatValue() protocol.Price {
-	return this.Close * protocol.Price(this.FloatStock)
+func (this *Kline) FloatValue() float64 {
+	return this.Close * float64(this.FloatStock)
 }
 
-func (this *Kline) TotalValue() protocol.Price {
-	return this.Close * protocol.Price(this.TotalStock)
+func (this *Kline) TotalValue() float64 {
+	return this.Close * float64(this.TotalStock)
 }
 
 /*
@@ -45,8 +49,8 @@ func (this Klines) REF(n int) *Kline {
 }
 
 // HHV 近n天的最高价,同tdx公式命名
-func (this Klines) HHV(n int) protocol.Price {
-	p := protocol.Price(0)
+func (this Klines) HHV(n int) float64 {
+	p := 0.0
 	for i := len(this) - n; i < len(this); i++ {
 		if p < this[i].High {
 			p = this[i].High
@@ -56,10 +60,10 @@ func (this Klines) HHV(n int) protocol.Price {
 }
 
 // LLV 近n天的最低价,同tdx公式命名
-func (this Klines) LLV(n int) protocol.Price {
-	p := protocol.Price(0)
+func (this Klines) LLV(n int) float64 {
+	p := 0.0
 	for i := len(this) - n; i < len(this); i++ {
-		if p == 0 || p > this[i].Low {
+		if p == 0.0 || p > this[i].Low {
 			p = this[i].Low
 		}
 	}
@@ -67,54 +71,53 @@ func (this Klines) LLV(n int) protocol.Price {
 }
 
 // MA 均线
-func (ks Klines) MA(n int) protocol.Price {
+func (ks Klines) MA(n int) float64 {
 	if len(ks) < n {
-		return 0
+		return 0.0
 	}
-	sum := protocol.Price(0)
+	sum := 0.0
 	// 取最后n个
 	for _, k := range ks[len(ks)-n:] {
 		sum += k.Close
 	}
-	return sum / protocol.Price(n)
+	return sum / float64(n)
 }
 
 // EMA MACD的基础
-func (ks Klines) EMA(n int) protocol.Price {
+func (ks Klines) EMA(n int) float64 {
 	if len(ks) == 0 || n <= 0 {
-		return 0
+		return 0.0
 	}
 
 	ema := ks[0].Close
-	den := int64(n + 1)
-	num := int64(2)
+	den := float64(n + 1)
+	num := float64(2)
 
 	for i := 1; i < len(ks); i++ {
-		ema = protocol.Price(
-			(int64(ks[i].Close)*num + int64(ema)*(den-num)) / den,
-		)
+		ema = float64((ks[i].Close*num + ema*(den-num)) / den)
+
 	}
 	return ema
 }
 
 // MACD 常用于短线核心
-func (ks Klines) MACD() (dif, dea, hist protocol.Price) {
+func (ks Klines) MACD() (dif, dea, hist float64) {
 	if len(ks) == 0 {
-		return 0, 0, 0
+		return 0.0, 0.0, 0.0
 	}
 
 	ema12 := ks[0].Close
 	ema26 := ks[0].Close
-	den12 := int64(13)
-	den26 := int64(27)
-	denDea := int64(10)
-	num := int64(2)
+	den12 := float64(13)
+	den26 := float64(27)
+	denDea := float64(10)
+	num := float64(2)
 
 	for i := 1; i < len(ks); i++ {
-		ema12 = protocol.Price((int64(ks[i].Close)*num + int64(ema12)*(den12-num)) / den12)
-		ema26 = protocol.Price((int64(ks[i].Close)*num + int64(ema26)*(den26-num)) / den26)
+		ema12 = float64((ks[i].Close*num + ema12*(den12-num)) / den12)
+		ema26 = float64((ks[i].Close*num + ema26*(den26-num)) / den26)
 		dif = ema12 - ema26
-		dea = protocol.Price((int64(dif)*num + int64(dea)*(denDea-num)) / denDea)
+		dea = float64((dif*num + dea*(denDea-num)) / denDea)
 		hist = (dif - dea) * 2
 	}
 	return dif, dea, hist
@@ -125,11 +128,11 @@ func (ks Klines) RSI(n int) int64 {
 	if len(ks) == 0 || n <= 0 {
 		return 0
 	}
-	var gain, loss int64
+	var gain, loss float64
 	var rsi int64
 
 	for i := 1; i < len(ks); i++ {
-		diff := int64(ks[i].Close - ks[i-1].Close)
+		diff := ks[i].Close - ks[i-1].Close
 
 		if diff > 0 {
 			gain += diff
@@ -138,7 +141,7 @@ func (ks Klines) RSI(n int) int64 {
 		}
 
 		if i >= n+1 {
-			prev := int64(ks[i-n].Close - ks[i-n-1].Close)
+			prev := ks[i-n].Close - ks[i-n-1].Close
 			if prev > 0 {
 				gain -= prev
 			} else {
@@ -147,68 +150,69 @@ func (ks Klines) RSI(n int) int64 {
 		}
 
 		if i >= n && loss > 0 {
-			rsi = 100 * gain / (gain + loss)
+			rsi = int64(100 * gain / (gain + loss))
 		}
 	}
 	return rsi
 }
 
 // BOLL 布林带（洗盘神器）
-func (ks Klines) BOLL(n int) (upper, mid, lower protocol.Price) {
+func (ks Klines) BOLL(n int) (upper, mid, lower float64) {
 	if len(ks) < n || n <= 0 {
-		return 0, 0, 0
+		return 0.0, 0.0, 0.0
 	}
 
 	mid = ks.MA(n)
-	var sum int64
+	var sum float64
 	for _, k := range ks[len(ks)-n:] {
-		d := int64(k.Close - mid)
+		d := k.Close - mid
 		sum += d * d
 	}
-	std := protocol.I64Sqrt(sum / int64(n))
-	upper = mid + protocol.Price(std*2)
-	lower = mid - protocol.Price(std*2)
+	std := math.Sqrt(sum / float64(n))
+	upper = mid + std*2
+	lower = mid - std*2
 	return upper, mid, lower
 }
 
 // ATR 常用于判断是否该止损
-func (ks Klines) ATR(n int) protocol.Price {
+func (ks Klines) ATR(n int) float64 {
 	if len(ks) == 0 || n <= 0 {
-		return 0
+		return 0.0
 	}
-	var sum int64
-	var atr protocol.Price
+	var sum float64
+	var atr float64
 
 	for i := 1; i < len(ks); i++ {
 		h := ks[i].High
 		l := ks[i].Low
 		pc := ks[i-1].Close
 
-		tr := max(h-l, max((h-pc).Abs(), (l-pc).Abs()))
-		sum += int64(tr)
+		tr := max(h-l, max(math.Abs(h-pc), math.Abs(l-pc)))
+		sum += tr
 
 		if i >= n {
 			prev := max(ks[i-n+1].High-ks[i-n+1].Low,
-				max((ks[i-n+1].High-ks[i-n].Close).Abs(), (ks[i-n+1].Low-ks[i-n].Close).Abs()))
-			sum -= int64(prev)
-			atr = protocol.Price(sum / int64(n))
+				max(math.Abs(ks[i-n+1].High-ks[i-n].Close), math.Abs(ks[i-n+1].Low-ks[i-n].Close)))
+			sum -= prev
+			atr = sum / float64(n)
 		}
 	}
 	return atr
 }
 
-func (ks Klines) VWAP() protocol.Price {
+func (ks Klines) VWAP() float64 {
 	if len(ks) == 0 {
-		return 0
+		return 0.0
 	}
-	var volSum, amtSum int64
-	var vwap protocol.Price
+	var volSum int64
+	var amtSum float64
+	var vwap float64
 
 	for i := 0; i < len(ks); i++ {
 		volSum += ks[i].Volume
-		amtSum += int64(ks[i].Amount)
+		amtSum += ks[i].Amount
 		if volSum > 0 {
-			vwap = protocol.Price(amtSum / volSum)
+			vwap = amtSum / float64(volSum)
 		}
 	}
 	return vwap

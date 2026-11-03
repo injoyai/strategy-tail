@@ -33,12 +33,12 @@ func MACDDIF(dks extend.Klines, fast, slow int) []float64 {
 		return nil
 	}
 	dif := make([]float64, n)
-	emaFast, emaSlow := dks[0].Close.Float64(), dks[0].Close.Float64()
+	emaFast, emaSlow := dks[0].Close, dks[0].Close
 	fastAlpha := 2.0 / (float64(fast) + 1.0)
 	slowAlpha := 2.0 / (float64(slow) + 1.0)
 	for i := 0; i < n; i++ {
 		if i > 0 {
-			close := dks[i].Close.Float64()
+			close := dks[i].Close
 			if fast <= 1 {
 				emaFast = close
 			} else {

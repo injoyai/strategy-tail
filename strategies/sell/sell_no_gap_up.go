@@ -18,9 +18,9 @@ func (s A买入次日未高开) Name() string {
 }
 
 func (s A买入次日未高开) Sell(code string, dks extend.Klines, buy core.Buy) bool {
-	// 判断委托共用内核 And 组合：昨为买入日 且 今开(厘) <= 昨收(厘)。
+	// 判断委托共用内核 And 组合：昨为买入日 且 今开(元) <= 昨收(元)。
 	// 昨日定位经规则级逃逸口表达，沿用旧口径日期串比较（计划第 4 节
-	// 不统一各组件定位算法）；价格比较为 protocol.Price 厘级 int64
+	// 不统一各组件定位算法）；价格比较为 float64 原币种
 	// 精确比较，与旧 today.Open <= yesterday.Close 一致；n<2 或持仓
 	// 不可用不触发（昨收不足 2 根同样无效），等价旧 n<2 预检查。
 	isBuyDay, err := rule.NewRuleFunc("昨为买入日", func(in rule.Input) bool {

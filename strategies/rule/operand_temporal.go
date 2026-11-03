@@ -221,8 +221,8 @@ func GainPercent(days int) (Operand, error) {
 			if n < days+1 {
 				return InvalidValue()
 			}
-			startPrice := in.Klines[n-1-days].Close.Float64()
-			endPrice := in.Klines[n-1].Close.Float64()
+			startPrice := in.Klines[n-1-days].Close
+			endPrice := in.Klines[n-1].Close
 			if startPrice <= 0 {
 				return InvalidValue()
 			}
@@ -239,7 +239,7 @@ func LowFloat() Operand {
 		if len(in.Klines) == 0 {
 			return InvalidValue()
 		}
-		return FloatValue(in.Klines[len(in.Klines)-1].Low.Float64())
+		return FloatValue(in.Klines[len(in.Klines)-1].Low)
 	}}
 }
 

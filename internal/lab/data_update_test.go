@@ -3,6 +3,7 @@ package lab
 import (
 	"encoding/json"
 	"errors"
+	"github.com/injoyai/tdx/v2/lib/update"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,8 +16,8 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/xorms"
+
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestDataUpdateTradingDay(t *testing.T) {
@@ -48,15 +49,15 @@ func TestDataUpdateTradingDay(t *testing.T) {
 func TestDataUpdateStatusReadsSharedSuccessMarker(t *testing.T) {
 	dir := t.TempDir()
 	filename := filepath.Join(dir, "update.db")
-	db, err := xorms.NewSqlite(filename)
+	db, err := xorms.NewSQLite(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Sync2(new(tdx.UpdateModel)); err != nil {
+	if err := db.Sync2(new(update.Record)); err != nil {
 		t.Fatal(err)
 	}
 	last := time.Date(2026, 10, 12, 16, 0, 0, 0, time.Local)
-	if _, err := db.Insert(&tdx.UpdateModel{Key: "pull", Time: last.Unix()}); err != nil {
+	if _, err := db.Insert(&update.Record{Key: "pull", Time: last.Unix()}); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()

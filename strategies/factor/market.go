@@ -17,13 +17,13 @@ func (f A价格) Value(code string, dks extend.Klines) float64 {
 	k := dks[len(dks)-1]
 	switch f {
 	case "", "close":
-		return k.Close.Float64()
+		return k.Close
 	case "open":
-		return k.Open.Float64()
+		return k.Open
 	case "high":
-		return k.High.Float64()
+		return k.High
 	case "low":
-		return k.Low.Float64()
+		return k.Low
 	}
 	return math.NaN()
 }
@@ -45,7 +45,7 @@ func (A成交额) Value(code string, dks extend.Klines) float64 {
 	if len(dks) == 0 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].Amount.Float64()
+	return dks[len(dks)-1].Amount
 }
 
 // 流通市值 保留原条件的行情市值口径（亿元），缺失股本产生的 0 不改写为估算值。
@@ -56,7 +56,7 @@ func (A流通市值) Value(code string, dks extend.Klines) float64 {
 	if len(dks) == 0 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].FloatValue().Float64() / 1e8
+	return dks[len(dks)-1].FloatValue() / 1e8
 }
 
 // 单日涨幅 使用行情 RiseRate 的百分数口径，与 N日动量的原始比例不同。
@@ -79,9 +79,9 @@ func (A实体振幅占比) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	rangeValue := k.High.Float64() - k.Low.Float64()
+	rangeValue := k.High - k.Low
 	if rangeValue <= 0 {
 		return math.NaN()
 	}
-	return math.Abs(k.Close.Float64()-k.Open.Float64()) / rangeValue
+	return math.Abs(k.Close-k.Open) / rangeValue
 }

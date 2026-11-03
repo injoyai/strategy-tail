@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestBuildContextPreservesCatalogFactor(t *testing.T) {
@@ -17,9 +17,9 @@ func TestBuildContextPreservesCatalogFactor(t *testing.T) {
 	}
 	d1 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
 	dks := extend.Klines{
-		{Kline: &protocol.Kline{Time: d1, Close: protocol.Yuan(10)}},
-		{Kline: &protocol.Kline{Time: d1.AddDate(0, 0, 1), Close: protocol.Yuan(11)}},
-		{Kline: &protocol.Kline{Time: d1.AddDate(0, 0, 2), Close: protocol.Yuan(12)}},
+		{Kline: &protocol.Kline{Time: d1, Close: 10}},
+		{Kline: &protocol.Kline{Time: d1.AddDate(0, 0, 1), Close: 11}},
+		{Kline: &protocol.Kline{Time: d1.AddDate(0, 0, 2), Close: 12}},
 	}
 	want := legacy.Value("sh600000", dks)
 	got := contextual.ValueAt(core.FactorContext{Code: "sh600000", AsOf: dks[len(dks)-1].Time, Klines: dks})

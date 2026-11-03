@@ -9,7 +9,6 @@ import (
 	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // practice.go 盘感练习：会话状态机、成交与评价计算。
@@ -25,7 +24,7 @@ import (
 //     最后一根行情仍允许当日决策，再推进或主动结束才收口。
 //   - 未平仓只估值不虚构卖出；已实现收益只在真实卖出后产生。
 //
-// 价格单位约定：行情与费用沿用 protocol.Price（厘，0.001 元）；
+// 价格单位约定：行情与费用使用浮点元值；
 // 成交金额、预算与评价结果为元（float64）。
 
 // practiceFormatV1 练习落盘格式版本；读取时不认识即拒绝，不猜测。
@@ -94,42 +93,44 @@ type practiceCommand struct {
 	ExpectedRevision int64  `json:"expectedRevision"`
 }
 
-// practiceDayKline 快照内一根日 K。价格保留 protocol.Price 原始厘单位，
-// 不在此层转浮点；对外投影时才转元并按已揭示范围截断。
+// practiceDayKline 快照内一根日 K。价格使用浮点元值，
+// 对外投影按已揭示范围截断。
 // 指标窗口不足时为 nil（JSON null），不写 NaN／Inf。
 type practiceDayKline struct {
-	Unix   int64          `json:"unix"` // 真实交易日 Unix 秒；私有，不下发
-	Date   string         `json:"date"` // 真实日期（K 线自身时区格式化）；私有，复盘前不下发
-	Open   protocol.Price `json:"open"`
-	High   protocol.Price `json:"high"`
-	Low    protocol.Price `json:"low"`
-	Close  protocol.Price `json:"close"`
-	Volume int64          `json:"volume"`
-	MA5    *float64       `json:"ma5"` // 元
-	MA10   *float64       `json:"ma10"`
-	MA20   *float64       `json:"ma20"`
-	DIF    *float64       `json:"dif"` // 元；首根为 0（EMA 初始口径同 extend.MACD）
-	DEA    *float64       `json:"dea"`
-	HIST   *float64       `json:"hist"` // DIF−DEA，不乘 2（需求 §4.1）
+	Unix   int64    `json:"unix"` // 真实交易日 Unix 秒；私有，不下发
+	Date   string   `json:"date"` // 真实日期（K 线自身时区格式化）；私有，复盘前不下发
+	Open   float64  `json:"open"`
+	High   float64  `json:"high"`
+	Low    float64  `json:"low"`
+	Close  float64  `json:"close"`
+	Volume int64    `json:"volume"`
+	MA5    *float64 `json:"ma5"` // 元
+	MA10   *float64 `json:"ma10"`
+	MA20   *float64 `json:"ma20"`
+	DIF    *float64 `json:"dif"` // 元；首根为 0（EMA 初始口径同 extend.MACD）
+	DEA    *float64 `json:"dea"`
+	HIST   *float64 `json:"hist"` // DIF−DEA，不乘 2（需求 §4.1）
 }
 
 // practiceMarket 练习私有行情快照（market.json）。开题时一次写入，
 // 之后不可变；后续交易、复盘、重练只读本快照，不再访问行情库。
 type practiceMarket struct {
-	Version  int                   `json:"version"`
-	Code     string                `json:"code"` // 私有：复盘前不得出现在任何响应
-	Source   string                `json:"source"`
-	LoadedAt string                `json:"loadedAt"`           // UTC RFC3339
-	Days     []practiceDayKline    `json:"days"`               // 完整快照：预热背景＋信号日＋之后全部可用日线
-	Coverage *practiceScanCoverage `json:"coverage,omitempty"` // 出题扫描覆盖（含失败明细）；仅复盘披露
+	PriceUnit string                `json:"priceUnit"`
+	Version   int                   `json:"version"`
+	Code      string                `json:"code"` // 私有：复盘前不得出现在任何响应
+	Source    string                `json:"source"`
+	LoadedAt  string                `json:"loadedAt"`           // UTC RFC3339
+	Days      []practiceDayKline    `json:"days"`               // 完整快照：预热背景＋信号日＋之后全部可用日线
+	Coverage  *practiceScanCoverage `json:"coverage,omitempty"` // 出题扫描覆盖（含失败明细）；仅复盘披露
 }
 
 // practiceSession 练习会话（session.json）。每条命令在 Store 锁内读取、
 // 变更并原子写回；Revision 递增实现乐观并发，冲突方重新读取不自动重放。
 type practiceSession struct {
-	Version  int    `json:"version"`
-	ID       string `json:"id"`
-	Revision int64  `json:"revision"`
+	PriceUnit string `json:"priceUnit"`
+	Version   int    `json:"version"`
+	ID        string `json:"id"`
+	Revision  int64  `json:"revision"`
 
 	Phase string `json:"phase"` // preparing/active/finished/failed/cancelled
 	Stage string `json:"stage"` // 仅 active：waiting/holding/sold
@@ -190,18 +191,18 @@ var (
 // practiceCostSnapshot 练习费用快照：冻结调用时刻费率并将滑点清零
 // （需求 §5：按当前可见交易日收盘价成交，不加滑点）。
 func practiceCostSnapshot(c core.Cost) core.Cost {
-	c.Slippage = 0
+	c.Slippage = 0.0
 	return c
 }
 
 // practiceAffordableQuantity 计算含费预算内可买入的最大 100 股整数倍数量。
 // 从不含费上界按整手向下调整，费用按 core.Cost 同一口径（Cost.BuyCost）计算。
 // 返回 0 表示含费不足一手；返回值同时给出实际含费总支出（元）。
-func practiceAffordableQuantity(c core.Cost, rawPrice protocol.Price, budgetYuan float64) (int, float64) {
-	if rawPrice <= 0 || budgetYuan <= 0 {
+func practiceAffordableQuantity(c core.Cost, rawPrice float64, budgetYuan float64) (int, float64) {
+	if rawPrice <= 0.0 || budgetYuan <= 0 {
 		return 0, 0
 	}
-	upper := int(budgetYuan * 1000 / float64(rawPrice)) // 不含费上界（股；1 元 = 1000 厘）
+	upper := int(budgetYuan / rawPrice) // 不含费上界（股）
 	for qty := upper / core.SharesPerLot * core.SharesPerLot; qty >= core.SharesPerLot; qty -= core.SharesPerLot {
 		_, total := c.BuyCost(rawPrice, qty)
 		if total <= budgetYuan+practiceBudgetEpsilon {
@@ -245,7 +246,7 @@ func (s *practiceSession) applyCommand(m *practiceMarket, cmd practiceCommand) (
 			return false, errPracticeInvalidCommand
 		}
 		day := m.dayAt(s.CurrentIndex)
-		if day.Close <= 0 {
+		if day.Close <= 0.0 {
 			return false, errPracticeInvalidPrice
 		}
 		qty, total := practiceAffordableQuantity(s.Cost, day.Close, s.BudgetYuan)
@@ -265,7 +266,7 @@ func (s *practiceSession) applyCommand(m *practiceMarket, cmd practiceCommand) (
 			return false, errPracticeSameDaySell
 		}
 		day := m.dayAt(s.CurrentIndex)
-		if day.Close <= 0 {
+		if day.Close <= 0.0 {
 			return false, errPracticeInvalidPrice
 		}
 		_, net := s.Cost.SellIncome(day.Close, s.Quantity)
@@ -353,7 +354,7 @@ func (s *practiceSession) evaluate(m *practiceMarket) practiceEval {
 		return ev
 	}
 	for i := s.BuyIndex; i <= endIdx && i < len(m.Days); i++ {
-		pnl := float64(m.Days[i].Close)*float64(s.Quantity)/1000 - cost
+		pnl := m.Days[i].Close*float64(s.Quantity) - cost
 		pct := pnl / cost * 100
 		if pnl > ev.MaxFloatProfit {
 			ev.MaxFloatProfit, ev.MaxFloatProfitPct = pnl, pct
@@ -385,7 +386,7 @@ func buildPracticeMarket(code string, ks extend.Klines, source, loadedAt string)
 		if k == nil || k.Kline == nil {
 			return nil, fmt.Errorf("第 %d 根日K为空", i+1)
 		}
-		if k.Close <= 0 {
+		if k.Close <= 0.0 {
 			return nil, fmt.Errorf("第 %d 根日K收盘价无效", i+1)
 		}
 		if i > 0 && k.Unix <= prev {
@@ -401,8 +402,8 @@ func buildPracticeMarket(code string, ks extend.Klines, source, loadedAt string)
 		LoadedAt: loadedAt,
 		Days:     make([]practiceDayKline, len(ks)),
 	}
-	// MA 滚动和（厘，整除口径与 extend.Klines.MA 一致）。
-	var sum5, sum10, sum20 protocol.Price
+	// MA 浮点滚动和（元，与 extend.Klines.MA 一致）。
+	var sum5, sum10, sum20 float64
 	difs := util.MACDDIF(ks, 12, 26)
 	hists := util.MACDHistogram(ks, 12, 26, 9)
 	for i, k := range ks {
@@ -424,13 +425,13 @@ func buildPracticeMarket(code string, ks extend.Klines, source, loadedAt string)
 		d.Date = k.Time.Format(time.DateOnly)
 		d.Open, d.High, d.Low, d.Close, d.Volume = k.Open, k.High, k.Low, k.Close, k.Volume
 		if i >= 4 {
-			d.MA5 = yuanPtr(float64(sum5/5) / 1000)
+			d.MA5 = yuanPtr(sum5 / 5)
 		}
 		if i >= 9 {
-			d.MA10 = yuanPtr(float64(sum10/10) / 1000)
+			d.MA10 = yuanPtr(sum10 / 10)
 		}
 		if i >= 19 {
-			d.MA20 = yuanPtr(float64(sum20/20) / 1000)
+			d.MA20 = yuanPtr(sum20 / 20)
 		}
 		d.DIF = yuanPtr(difs[i])
 		d.DEA = yuanPtr(difs[i] - hists[i])

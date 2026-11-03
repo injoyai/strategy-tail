@@ -70,11 +70,11 @@ func tradeReturnRate(t Trade) float64 {
 	if t.BuyCost > 0 {
 		return t.Profit()
 	}
-	buy := t.BuyPrice.Float64()
+	buy := t.BuyPrice
 	if buy <= 0 {
 		return 0
 	}
-	return (t.SellPrice.Float64() - buy) / buy * 100
+	return (t.SellPrice - buy) / buy * 100
 }
 
 // tradeProfitAmount 计算单笔净盈亏（元）。完整成交使用实际收支；缺少成本
@@ -83,5 +83,5 @@ func tradeProfitAmount(t Trade) float64 {
 	if t.BuyCost > 0 {
 		return t.ProfitAmount()
 	}
-	return (t.SellPrice.Float64() - t.BuyPrice.Float64()) * float64(t.Quantity)
+	return (t.SellPrice - t.BuyPrice) * float64(t.Quantity)
 }

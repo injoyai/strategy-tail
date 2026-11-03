@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,6 +33,7 @@ type practiceBankBlock struct {
 	End int `json:"end"`
 }
 type practiceBank struct {
+	PriceUnit   string                `json:"priceUnit"`
 	Version     int                   `json:"version"`
 	ID          string                `json:"id"`
 	Phase       string                `json:"phase"`

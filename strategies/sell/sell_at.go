@@ -80,13 +80,13 @@ func (s SellTPSL) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if s.TakeProfit <= 0 && s.StopLoss <= 0 {
 		return false
 	}
-	buyPrice := buy.Price.Float64()
+	buyPrice := buy.Price
 	if buyPrice <= 0 {
 		return false
 	}
 
 	for i := 0; i < len(dks); i++ {
-		closePrice := dks[i].Close.Float64()
+		closePrice := dks[i].Close
 		rate := (closePrice - buyPrice) / buyPrice
 
 		trigger := false

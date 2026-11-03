@@ -9,7 +9,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // t3 时序操作数测试夹具：收盘序列驱动的 K 线（开高低随收盘派生），
@@ -23,10 +23,10 @@ func t3CloseKlines(closes ...float64) extend.Klines {
 		ks = append(ks, &extend.Kline{
 			Kline: &protocol.Kline{
 				Time:  time.Date(2026, 10, i+1, 0, 0, 0, 0, time.UTC),
-				Open:  protocol.Yuan(c - 0.5),
-				High:  protocol.Yuan(c + 2),
-				Low:   protocol.Yuan(c - 2),
-				Close: protocol.Yuan(c),
+				Open:  c - 0.5,
+				High:  c + 2,
+				Low:   c - 2,
+				Close: c,
 			},
 		})
 	}
@@ -54,7 +54,7 @@ func TestT3RefOperand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefOperand(1) 构造失败: %v", err)
 	}
-	if got := ref1.Value(in); got.Kind() != KindPrice || got.Price() != 12000 {
+	if got := ref1.Value(in); got.Kind() != KindPrice || got.Price() != 12.0 {
 		t.Fatalf("RefOperand(1, 今收厘) = %v, 期望昨收 12000", got)
 	}
 	ref3, err := RefOperand(3, closeFloat)
@@ -66,7 +66,7 @@ func TestT3RefOperand(t *testing.T) {
 	}
 
 	// Name 可见历史口径。
-	if ref1.Name() != "1天前·今收(厘)" {
+	if ref1.Name() != "1天前·今收(元)" {
 		t.Fatalf("RefOperand Name = %q", ref1.Name())
 	}
 
@@ -259,8 +259,8 @@ func TestT3GainPercent(t *testing.T) {
 	}
 
 	// 公式次序与旧 riseRateNDays 逐位一致（同输入直接对比手工展开式）。
-	start := ks[0].Close.Float64()
-	end := ks[5].Close.Float64()
+	start := ks[0].Close
+	end := ks[5].Close
 	want := (end - start) / start * 100
 	if got := g5.Value(in); got.Float() != want {
 		t.Fatalf("公式次序不一致: got %v, want %v", got.Float(), want)

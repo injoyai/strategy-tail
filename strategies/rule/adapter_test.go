@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestInputAsOfDerivedFromSnapshot(t *testing.T) {
@@ -89,7 +88,7 @@ func TestSellerAdapterPassesBuyToRule(t *testing.T) {
 	buy := core.Buy{
 		Code:  "sh600000",
 		Time:  buyTime,
-		Price: protocol.Yuan(12.34),
+		Price: 12.34,
 		Rise:  0.5,
 	}
 	if !adapter.Sell("sh600000", makeKlines(10, 11, 12), buy) {
@@ -139,7 +138,7 @@ func TestAdapterInjectsDataView(t *testing.T) {
 }
 
 func TestAdapterNameContract(t *testing.T) {
-	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(100)))
+	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(0.1)))
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
@@ -173,7 +172,7 @@ func TestAdapterNameContract(t *testing.T) {
 
 func TestSameRuleInstanceIsolatedAcrossCodesAndPositions(t *testing.T) {
 	// 同一规则实例跨不同代码、持仓与输入求值相互隔离：无跨调用状态。
-	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(protocol.Yuan(11))))
+	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(11)))
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
@@ -185,7 +184,7 @@ func TestSameRuleInstanceIsolatedAcrossCodesAndPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
-	buy := core.Buy{Code: "sh600000", Time: time.Unix(0, 0).UTC(), Price: protocol.Yuan(9)}
+	buy := core.Buy{Code: "sh600000", Time: time.Unix(0, 0).UTC(), Price: 9}
 	ksHigh := makeKlines(10, 11, 12)  // 末收 12 元 > 11 触发
 	ksLow := makeKlines(10, 11, 10.5) // 末收 10.5 元 不触发
 	type step struct {

@@ -4,6 +4,7 @@
 Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件（`strategies/buy|sell` 的 And/Or 组合子）→ `core.Backtest` 回测引擎 → `cmd/*` 各回测入口 → `lib/extend` 从 tdx 拉取 K 线并按"每股一个 sqlite db"落盘（`data/database/day-kline/`、`min-kline/`）。
 
 ## 架构与关键决策
+- **tdx v2 边界（2026-11-03）**：本地 `go.work` 和 `go.mod` 相对 replace 绑定同级 `../tdx`，保留 base 回调竞态补丁。业务价格/金额改用原币种浮点值；当前标准行情桥接显式使用 SDK `Klines()` 转回策略层整数手。旧 SQLite 整数列只在存储边界除以 1000，旧分钟 v101 可读，新写入 v102/KLM2 以 float64 位模式保留精度和原序号；更新旧压缩库时同事务升级版本。练习私有快照用 `priceUnit=yuan` 标记，无标记的旧快照按厘换算，指标和成交金额不二次缩放。迁移对照及限制见 `docs/guides/tdx-v2-migration.md`。
 - **分钟压缩的顺序兼容**：`protocol.Klines.Sort()` 是不稳定排序；同时间不同内容的记录必须先恢复原始扫描顺序，再沿用按文件年份过滤和排序，否则会改变分钟执行顺序。指数年度文件可能含其他年份的时间戳，不能在压缩迁移时顺便过滤。压缩格式通过独立序号保留顺序，上海日期键不能混用 UTC 日期。
 - **macOS/Docker 更新锁边界**：实测同一挂载文件的宿主机 `flock` 与容器 Linux `flock` 不互斥。从宿主机迁移行情时须同时持有容器侧更新锁或停容器，不能把跨进程锁误当成跨内核锁。
 - **TDX 异步等待兼容补丁**：根 `go.mod` 固定通过相对 replace 使用 `third_party/injoyai-base`（上游 v1.2.20，仅为回调列表注册和分发加同一把锁）。升级或删除替换前须确认上游已修复并重跑全仓竞态及行情空响应 100 次；Docker 下载模块前必须复制本地模块目录。来源与差异见 `third_party/README.md`，不要修改共享模块缓存或把临时路径写进构建配置。

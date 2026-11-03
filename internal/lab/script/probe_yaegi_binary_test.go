@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 	"github.com/traefik/yaegi/interp"
 	"github.com/traefik/yaegi/stdlib"
 
@@ -104,10 +104,10 @@ func makeProbeKlines() extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:  base.AddDate(0, 0, i),
-				Open:  protocol.Yuan(c - 0.1),
-				Close: protocol.Yuan(c),
-				High:  protocol.Yuan(c + 0.05),
-				Low:   protocol.Yuan(c - 0.15),
+				Open:  c - 0.1,
+				Close: c,
+				High:  c + 0.05,
+				Low:   c - 0.15,
 			},
 		})
 	}
@@ -116,10 +116,10 @@ func makeProbeKlines() extend.Klines {
 		Unix: base.AddDate(0, 0, n).Unix(),
 		Kline: &protocol.Kline{
 			Time:  base.AddDate(0, 0, n),
-			Open:  protocol.Yuan(14.4),
-			Close: protocol.Yuan(13.9),
-			High:  protocol.Yuan(14.5),
-			Low:   protocol.Yuan(13.3),
+			Open:  14.4,
+			Close: 13.9,
+			High:  14.5,
+			Low:   13.3,
 		},
 	})
 	return ks

@@ -31,7 +31,7 @@ func TestPracticeReportAccountAndFees(t *testing.T) {
 		t.Fatalf("eval=%+v", v.Eval)
 	}
 	// 复盘中的未来价格可以显示，但不能改变报告资金和回撤。
-	m.Days[4].Close = 1
+	m.Days[4].Close = 0.001
 	again := practiceReviewViewOf(s, m).Report
 	if again.Equity != r.Equity || *again.MaxDrawdown != *r.MaxDrawdown || again.EndDate != m.Days[3].Date {
 		t.Fatal("报告受到结束后行情影响")

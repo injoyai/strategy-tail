@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // 这些底层因子供现有条件组合使用，不自动加入研究目录。
@@ -20,14 +19,14 @@ func (f A均线) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < daysOr(int(f), 20) {
 		return math.NaN()
 	}
-	return f.Price(dks).Float64()
+	return f.Price(dks)
 }
 
-// Price 供条件保留整数价格比较；缺数据返回 0，调用方须先校验窗口。
-func (f A均线) Price(dks extend.Klines) protocol.Price {
+// Price 供条件使用价格域比较；缺数据返回 0，调用方须先校验窗口。
+func (f A均线) Price(dks extend.Klines) float64 {
 	n := daysOr(int(f), 20)
 	if len(dks) < n {
-		return 0
+		return 0.0
 	}
 	return dks.MA(n)
 }
@@ -79,7 +78,7 @@ func (f ATR值) Value(code string, dks extend.Klines) float64 {
 	}
 	var sum float64
 	for i := len(dks) - n; i < len(dks); i++ {
-		high, low, prev := dks[i].High.Float64(), dks[i].Low.Float64(), dks[i-1].Close.Float64()
+		high, low, prev := dks[i].High, dks[i].Low, dks[i-1].Close
 		tr := high - low
 		if d := high - prev; d > tr {
 			tr = d
@@ -101,12 +100,12 @@ func closeMeanStd(dks extend.Klines, n int) (float64, float64) {
 	window := dks[len(dks)-n:]
 	var sum float64
 	for _, k := range window {
-		sum += k.Close.Float64()
+		sum += k.Close
 	}
 	mean := sum / float64(n)
 	var sq float64
 	for _, k := range window {
-		d := k.Close.Float64() - mean
+		d := k.Close - mean
 		sq += d * d
 	}
 	return mean, math.Sqrt(sq / float64(n))
@@ -145,7 +144,7 @@ func (f ZScore值) Value(code string, dks extend.Klines) float64 {
 	if len(dks) == 0 || std <= 0 {
 		return math.NaN()
 	}
-	return (dks[len(dks)-1].Close.Float64() - mean) / std
+	return (dks[len(dks)-1].Close - mean) / std
 }
 
 // MACD柱值 保留原始柱值（不除收盘价、不乘 2），参数 0 默认 12/26/9。

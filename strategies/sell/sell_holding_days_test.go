@@ -6,7 +6,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func make持仓K线(n int) extend.Klines {
@@ -18,10 +18,10 @@ func make持仓K线(n int) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(price),
-				Close:  protocol.Yuan(price),
-				High:   protocol.Yuan(price + 0.5),
-				Low:    protocol.Yuan(price - 0.5),
+				Open:   price,
+				Close:  price,
+				High:   price + 0.5,
+				Low:    price - 0.5,
 				Volume: 100,
 			},
 		}

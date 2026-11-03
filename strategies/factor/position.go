@@ -22,12 +22,12 @@ func (f N日高低位) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < n {
 		return math.NaN()
 	}
-	hhv := dks.HHV(n).Float64()
-	llv := dks.LLV(n).Float64()
+	hhv := dks.HHV(n)
+	llv := dks.LLV(n)
 	if hhv == llv {
 		return math.NaN()
 	}
-	return (dks[len(dks)-1].Close.Float64() - llv) / (hhv - llv)
+	return (dks[len(dks)-1].Close - llv) / (hhv - llv)
 }
 
 // 收盘分位 是今收盘在近 N 日（含今日）收盘价中的分位：收盘 ≤ 今收盘 的天数占比，
@@ -46,10 +46,10 @@ func (f 收盘分位) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < n {
 		return math.NaN()
 	}
-	today := dks[len(dks)-1].Close.Float64()
+	today := dks[len(dks)-1].Close
 	cnt := 0
 	for _, k := range dks[len(dks)-n:] {
-		if k.Close.Float64() <= today {
+		if k.Close <= today {
 			cnt++
 		}
 	}
@@ -81,18 +81,18 @@ func (f K值) Value(code string, dks extend.Klines) float64 {
 			lo = 0
 		}
 		w := dks[lo : i+1]
-		hhv, llv := w[0].High.Float64(), w[0].Low.Float64()
+		hhv, llv := w[0].High, w[0].Low
 		for _, k2 := range w[1:] {
-			if v := k2.High.Float64(); v > hhv {
+			if v := k2.High; v > hhv {
 				hhv = v
 			}
-			if v := k2.Low.Float64(); v < llv {
+			if v := k2.Low; v < llv {
 				llv = v
 			}
 		}
 		rsv := 50.0
 		if hhv != llv {
-			rsv = (dks[i].Close.Float64() - llv) / (hhv - llv) * 100
+			rsv = (dks[i].Close - llv) / (hhv - llv) * 100
 		}
 		k = 2.0/3.0*k + 1.0/3.0*rsv
 	}

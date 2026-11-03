@@ -45,7 +45,7 @@ func (s A追踪止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		if !ok {
 			return rule.InvalidValue()
 		}
-		if pos.Price.Float64() <= 0 {
+		if pos.Price <= 0 {
 			return rule.InvalidValue()
 		}
 		buyIdx := -1
@@ -62,7 +62,7 @@ func (s A追踪止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		// 扫描买入日（含）到今天的最高收盘价
 		peak := 0.0
 		for i := buyIdx; i < n; i++ {
-			c := in.Klines[i].Close.Float64()
+			c := in.Klines[i].Close
 			if c > peak {
 				peak = c
 			}
@@ -70,7 +70,7 @@ func (s A追踪止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		if peak <= 0 {
 			return rule.InvalidValue()
 		}
-		current := in.Klines[n-1].Close.Float64()
+		current := in.Klines[n-1].Close
 		return rule.FloatValue((peak - current) / peak)
 	})
 	c, err := rule.NewCompare(drawdown, rule.Ge, rule.Literal(rule.FloatValue(s.Drawdown)))

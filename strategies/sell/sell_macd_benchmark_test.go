@@ -9,7 +9,7 @@ import (
 var macdBenchmarkResult bool
 
 func BenchmarkMACDReversal(b *testing.B) {
-	dks := t3cSeries(t3cCloses(1000, 10000, 9000), 100)
+	dks := t3cSeries(t3cCloses(1000, 10.0, 9.0), 100)
 	s := MACD反转{}
 	if !t3cMACD反转Oracle(s, dks) || !s.Sell("sh600000", dks, core.Buy{}) {
 		b.Fatal("夹具必须触发完整的反转判断")

@@ -12,8 +12,8 @@ import (
 	"github.com/injoyai/strategy-tail/researchdata"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // Market 表示市场（板块）类型。
@@ -124,12 +124,12 @@ const (
 	万                 = 1e4
 	亿                 = 1e8
 	DefaultGoroutines = 10
-	DatabaseDir       = tdx.DefaultDatabaseDir
+	DatabaseDir       = extend.DefaultDatabaseDir
 )
 
 var (
 	Pull         *extend.PullKline
-	Manage       *tdx.Manage
+	Manage       *manage.Manage
 	ResearchData researchdata.View = researchdata.NewHub()
 	runtimeOnce  sync.Once
 	runtimeErr   error
@@ -169,12 +169,12 @@ func Initialize() error {
 		logs.SetFormatter(logs.TimeFormatter)
 		runtimeErr = withRuntimeRoot(func() error {
 			var err error
-			Manage, err = tdx.NewManage(tdx.WithDialGbbqDefault())
+			Manage, err = manage.New(manage.WithDialGbbqDefault())
 			if err != nil {
 				return err
 			}
 
-			databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", tdx.DefaultDatabaseDir))
+			databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", extend.DefaultDatabaseDir))
 			researchPath := ResolveRuntimePath(cfg.GetString("research.valuation.database", "data/research/valuation.db"))
 			Pull, err = extend.NewPullKline(extend.PullKlineConfig{
 				Types:             cfg.GetStrings("pull.types", []string{extend.Day}),
@@ -288,7 +288,7 @@ func Get红利Codes() []string {
 				mu.Unlock()
 				return
 			}
-			price := k.Close.Float64()
+			price := k.Close
 			if price <= 0 {
 				mu.Lock()
 				skipped++

@@ -878,7 +878,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 				Klines: series[:base+i+1],
 				Data:   r.factorData,
 			})
-			ret := d.Dks[i+cfg.Window].Close.Float64()/d.Dks[i].Close.Float64() - 1
+			ret := d.Dks[i+cfg.Window].Close/d.Dks[i].Close - 1
 			// NaN/±Inf 值与该票该日一并剔除：spearmanIC/quantileAssign 契约要求入参无 NaN，
 			// 且 Inf 会传入 Quintiles 使 report.json 序列化失败（退化数据如收盘价 0）
 			if math.IsNaN(v) || math.IsInf(v, 0) || math.IsNaN(ret) || math.IsInf(ret, 0) {

@@ -18,10 +18,10 @@ func (s A买入次日跌破买入价) Name() string {
 }
 
 func (s A买入次日跌破买入价) Sell(code string, dks extend.Klines, buy core.Buy) bool {
-	// 判断委托共用内核 And 组合：昨为买入日 且 今收(厘) < 买入价(厘)。
+	// 判断委托共用内核 And 组合：昨为买入日 且 今收(元) < 买入价(元)。
 	// 昨日定位经规则级逃逸口表达，沿用旧口径日期串比较（计划第 4 节
 	// 不统一各组件定位算法），n<2 或持仓不可用不触发；价格比较为
-	// protocol.Price 厘级 int64 精确比较，与旧 today.Close < buy.Price
+	// float64 原币种 精确比较，与旧 today.Close < buy.Price
 	// 一致；买入价不做非正守卫（旧实现无）。
 	isBuyDay, err := rule.NewRuleFunc("昨为买入日", func(in rule.Input) bool {
 		n := len(in.Klines)

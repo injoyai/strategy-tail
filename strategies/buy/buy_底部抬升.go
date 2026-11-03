@@ -22,7 +22,7 @@ type A底顶部抬升 struct {
 
 type trendUpPoint struct {
 	index int
-	value int64 // 用 int64 比较，单位为厘
+	value float64 // 原币种价格
 }
 
 func (s A底顶部抬升) Name() string {
@@ -75,8 +75,8 @@ func findTrendUpPoints(ks extend.Klines, window int) (highs, lows []trendUpPoint
 			break
 		}
 
-		currentHigh := int64(ks[i].High)
-		currentLow := int64(ks[i].Low)
+		currentHigh := ks[i].High
+		currentLow := ks[i].Low
 		isHigh, isLow := isTrendUpPoint(ks, i, window, currentHigh, currentLow)
 
 		if isHigh && len(highs) < 2 && i <= nextHighMinIdx {
@@ -92,15 +92,15 @@ func findTrendUpPoints(ks extend.Klines, window int) (highs, lows []trendUpPoint
 	return highs, lows
 }
 
-func isTrendUpPoint(ks extend.Klines, index, window int, currentHigh, currentLow int64) (isHigh, isLow bool) {
+func isTrendUpPoint(ks extend.Klines, index, window int, currentHigh, currentLow float64) (isHigh, isLow bool) {
 	isHigh = true
 	isLow = true
 
 	for j := index - window; j < index; j++ {
-		if int64(ks[j].High) > currentHigh {
+		if ks[j].High > currentHigh {
 			isHigh = false
 		}
-		if int64(ks[j].Low) < currentLow {
+		if ks[j].Low < currentLow {
 			isLow = false
 		}
 	}
@@ -114,10 +114,10 @@ func isTrendUpPoint(ks extend.Klines, index, window int, currentHigh, currentLow
 		rightEnd = len(ks) - 1
 	}
 	for j := index + 1; j <= rightEnd; j++ {
-		if int64(ks[j].High) > currentHigh {
+		if ks[j].High > currentHigh {
 			isHigh = false
 		}
-		if int64(ks[j].Low) < currentLow {
+		if ks[j].Low < currentLow {
 			isLow = false
 		}
 	}
@@ -189,17 +189,17 @@ func (s A底顶部抬升) Explain(code string, dks extend.Klines) []core.Explain
 		core.ExplainStep{
 			Name:    "低点抬升",
 			Matched: l2.value > l1.value,
-			Detail:  fmt.Sprintf("L2 %.2f > L1 %.2f", priceFloat(l2.value), priceFloat(l1.value)),
+			Detail:  fmt.Sprintf("L2 %.2f > L1 %.2f", float64(l2.value), float64(l1.value)),
 		},
 		core.ExplainStep{
 			Name:    "高点抬升",
 			Matched: h2.value > h1.value,
-			Detail:  fmt.Sprintf("H2 %.2f > H1 %.2f", priceFloat(h2.value), priceFloat(h1.value)),
+			Detail:  fmt.Sprintf("H2 %.2f > H1 %.2f", float64(h2.value), float64(h1.value)),
 		},
 		core.ExplainStep{
 			Name:    "高低点关系",
 			Matched: l1.value < h1.value && l2.value < h2.value,
-			Detail:  fmt.Sprintf("L1 %.2f < H1 %.2f，L2 %.2f < H2 %.2f", priceFloat(l1.value), priceFloat(h1.value), priceFloat(l2.value), priceFloat(h2.value)),
+			Detail:  fmt.Sprintf("L1 %.2f < H1 %.2f，L2 %.2f < H2 %.2f", float64(l1.value), float64(h1.value), float64(l2.value), float64(h2.value)),
 		},
 	)
 
@@ -221,15 +221,11 @@ func (s A底顶部抬升) Explain(code string, dks extend.Klines) []core.Explain
 }
 
 func trendUpPointDesc(dks extend.Klines, p trendUpPoint, high bool) string {
-	price := dks[p.index].Low.Float64()
+	price := dks[p.index].Low
 	if high {
-		price = dks[p.index].High.Float64()
+		price = dks[p.index].High
 	}
 	return fmt.Sprintf("%s %.2f", dks[p.index].Time.Format("2006-01-02"), price)
-}
-
-func priceFloat(value int64) float64 {
-	return float64(value) / 1000
 }
 
 // Annotate 实现 core.Visualizer，返回策略识别的关键高低点标注。
@@ -253,10 +249,10 @@ func (s A底顶部抬升) Annotate(code string, dks extend.Klines) []core.Annota
 		anns = append(anns, core.Annotation{
 			Index: h.index,
 			Time:  dks[h.index].Time,
-			Price: dks[h.index].High.Float64(),
+			Price: dks[h.index].High,
 			Label: label,
 			Color: "#ef4444",
-			Note:  fmt.Sprintf("高点 %.2f @ %s", dks[h.index].High.Float64(), dks[h.index].Time.Format("2006-01-02")),
+			Note:  fmt.Sprintf("高点 %.2f @ %s", dks[h.index].High, dks[h.index].Time.Format("2006-01-02")),
 		})
 	}
 	for i, l := range lows {
@@ -267,10 +263,10 @@ func (s A底顶部抬升) Annotate(code string, dks extend.Klines) []core.Annota
 		anns = append(anns, core.Annotation{
 			Index: l.index,
 			Time:  dks[l.index].Time,
-			Price: dks[l.index].Low.Float64(),
+			Price: dks[l.index].Low,
 			Label: label,
 			Color: "#22c55e",
-			Note:  fmt.Sprintf("低点 %.2f @ %s", dks[l.index].Low.Float64(), dks[l.index].Time.Format("2006-01-02")),
+			Note:  fmt.Sprintf("低点 %.2f @ %s", dks[l.index].Low, dks[l.index].Time.Format("2006-01-02")),
 		})
 	}
 	return anns

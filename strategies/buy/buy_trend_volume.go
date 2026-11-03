@@ -26,7 +26,7 @@ func (b A收盘高于均线) Buy(code string, dks extend.Klines) bool {
 	if b.Period == 0 {
 		b.Period = 20
 	}
-	// 今收(浮点元) > N日均线（extend 整数厘均线）；均线窗口不足时为无效值，
+	// 今收(浮点元) > N日均线（extend 浮点均线）；均线窗口不足时为无效值，
 	// 比较不触发（与旧实现 len(dks)<period 预检行为等价）。
 	return mustCompare(rule.CloseFloat(), rule.Gt, rule.MAValue(b.Period)).
 		Eval(rule.NewInput(code, dks, nil, nil))
@@ -283,7 +283,7 @@ func (b A乖离率小于) Buy(code string, dks extend.Klines) bool {
 	if ma <= 0 {
 		return false
 	}
-	closePrice := dks[len(dks)-1].Close.Float64()
+	closePrice := dks[len(dks)-1].Close
 	bias := (closePrice - ma) / ma * 100
 	return bias < max
 }
@@ -334,7 +334,7 @@ func atr占比操作数(period int) rule.Operand {
 		if len(in.Klines) == 0 {
 			return rule.InvalidValue()
 		}
-		closePrice := in.Klines[len(in.Klines)-1].Close.Float64()
+		closePrice := in.Klines[len(in.Klines)-1].Close
 		if closePrice <= 0 {
 			return rule.InvalidValue()
 		}
@@ -442,7 +442,7 @@ func (b A均线多头排列) Buy(code string, dks extend.Klines) bool {
 	return and.Eval(rule.NewInput(code, dks, nil, nil))
 }
 
-// 实体阳线收阳规则 今收 > 今开（厘级整数严格比较），与已迁移的实体阴线
+// 实体阳线收阳规则 今收 > 今开（浮点价格严格比较），与已迁移的实体阴线
 // 收阴规则（今开 > 今收）对称；旧实现为浮点元比较，可表示价格范围内两者
 // 等价，且与阴线侧已验收口径一致。
 var 实体阳线收阳规则 = mustCompare(rule.ClosePrice(), rule.Gt, rule.OpenPrice())

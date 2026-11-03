@@ -154,8 +154,8 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 		for _, k := range fr.HitsBefore {
 			ks = append(ks, hitKline{
 				Time: k.Time.Format("2006-01-02"),
-				Open: k.Open.Float64(), Close: k.Close.Float64(),
-				Low: k.Low.Float64(), High: k.High.Float64(),
+				Open: k.Open, Close: k.Close,
+				Low: k.Low, High: k.High,
 				Volume: k.Volume,
 			})
 		}
@@ -163,16 +163,16 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 		if fr.BuyKline != nil {
 			ks = append(ks, hitKline{
 				Time: fr.BuyKline.Time.Format("2006-01-02"),
-				Open: fr.BuyKline.Open.Float64(), Close: fr.BuyKline.Close.Float64(),
-				Low: fr.BuyKline.Low.Float64(), High: fr.BuyKline.High.Float64(),
+				Open: fr.BuyKline.Open, Close: fr.BuyKline.Close,
+				Low: fr.BuyKline.Low, High: fr.BuyKline.High,
 				Volume: fr.BuyKline.Volume,
 			})
 		}
 		for _, k := range fr.HitsAfter {
 			ks = append(ks, hitKline{
 				Time: k.Time.Format("2006-01-02"),
-				Open: k.Open.Float64(), Close: k.Close.Float64(),
-				Low: k.Low.Float64(), High: k.High.Float64(),
+				Open: k.Open, Close: k.Close,
+				Low: k.Low, High: k.High,
 				Volume: k.Volume,
 			})
 		}
@@ -183,7 +183,7 @@ func ExportForwardReturnHTML(buyerName string, summaries []ForwardReturnSummary,
 			CodeName:   fr.CodeName,
 			Date:       fr.BuyTime.Format("2006-01-02"),
 			Year:       fr.Year,
-			BuyPrice:   fr.BuyPrice.Float64(),
+			BuyPrice:   fr.BuyPrice,
 			Klines:     ks,
 			BuyIdx:     buyIdx,
 			BeforeDays: klineBefore,

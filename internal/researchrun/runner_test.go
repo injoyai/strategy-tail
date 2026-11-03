@@ -10,7 +10,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type alwaysBuyer struct{}
@@ -229,8 +229,8 @@ func TestForEachCodeDataSplitsWarmupWindow(t *testing.T) {
 				at = time.Date(2024, 1, i, 0, 0, 0, 0, time.Local)
 			}
 			all[i] = &extend.Kline{Kline: &protocol.Kline{
-				Time: at, Open: protocol.Yuan(price), High: protocol.Yuan(price),
-				Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+				Time: at, Open: price, High: price,
+				Low: price, Close: price, Volume: 100,
 			}}
 		}
 		return all, nil
@@ -310,8 +310,8 @@ func testKlines() extend.Klines {
 	for i, price := range prices {
 		at := base.AddDate(0, 0, i+3)
 		result[i] = &extend.Kline{Kline: &protocol.Kline{
-			Time: at, Open: protocol.Yuan(price), High: protocol.Yuan(price),
-			Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+			Time: at, Open: price, High: price,
+			Low: price, Close: price, Volume: 100,
 		}}
 	}
 	return result
@@ -324,8 +324,8 @@ func klinesInYear(year int) extend.Klines {
 	for i, price := range prices {
 		result[i] = &extend.Kline{Kline: &protocol.Kline{
 			Time: time.Date(year, 1, i+1, 0, 0, 0, 0, time.Local),
-			Open: protocol.Yuan(price), High: protocol.Yuan(price),
-			Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+			Open: price, High: price,
+			Low: price, Close: price, Volume: 100,
 		}}
 	}
 	return result
@@ -469,8 +469,8 @@ func TestForEachCodeYearDataValidatesConfig(t *testing.T) {
 // klineOn 构造指定日期与价格的日 K。
 func klineOn(at time.Time, price float64) *extend.Kline {
 	return &extend.Kline{Kline: &protocol.Kline{
-		Time: at, Open: protocol.Yuan(price), High: protocol.Yuan(price),
-		Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+		Time: at, Open: price, High: price,
+		Low: price, Close: price, Volume: 100,
 	}}
 }
 

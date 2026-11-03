@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // glueKline 构造带昨收/量/额字段的 K 线（价格为元，内部转厘），
@@ -13,20 +13,20 @@ import (
 func glueKline(last, open, high, low, close float64, volume int64, amountYuan float64) *extend.Kline {
 	return &extend.Kline{
 		Kline: &protocol.Kline{
-			Last:   protocol.Yuan(last),
-			Open:   protocol.Yuan(open),
-			High:   protocol.Yuan(high),
-			Low:    protocol.Yuan(low),
-			Close:  protocol.Yuan(close),
+			Last:   last,
+			Open:   open,
+			High:   high,
+			Low:    low,
+			Close:  close,
 			Volume: volume,
-			Amount: protocol.Yuan(amountYuan),
+			Amount: amountYuan,
 		},
 	}
 }
 
 // assertOperand 断言操作数求值结果：KindInvalid 只要求无效，
 // KindPrice 精确断言 int64 厘值，KindFloat 按 1e-9 容差断言。
-func assertOperand(t *testing.T, what string, op Operand, in Input, wantKind Kind, wantPrice protocol.Price, wantFloat float64) {
+func assertOperand(t *testing.T, what string, op Operand, in Input, wantKind Kind, wantPrice float64, wantFloat float64) {
 	t.Helper()
 	got := op.Value(in)
 	if got.Kind() != wantKind {
@@ -35,7 +35,7 @@ func assertOperand(t *testing.T, what string, op Operand, in Input, wantKind Kin
 	switch wantKind {
 	case KindPrice:
 		if got.Price() != wantPrice {
-			t.Fatalf("%s: Price = %d, 期望 %d", what, got.Price(), wantPrice)
+			t.Fatalf("%s: Price = %v, 期望 %v", what, got.Price(), wantPrice)
 		}
 	case KindFloat:
 		if math.Abs(got.Float()-wantFloat) > 1e-9 {
@@ -58,31 +58,31 @@ func TestKlineFieldOperands(t *testing.T) {
 		name  string
 		op    Operand
 		kind  Kind
-		price protocol.Price
+		price float64
 		fl    float64
 	}{
-		{"今收厘", ClosePrice(), KindPrice, 12340, 0},
-		{"今收元", CloseFloat(), KindFloat, 0, 12.34},
-		{"今开厘", OpenPrice(), KindPrice, 12000, 0},
-		{"昨收厘", PrevClosePrice(), KindPrice, 10500, 0},
-		{"昨开厘", PrevOpenPrice(), KindPrice, 9900, 0},
-		{"今量", Volume(), KindFloat, 0, 250},
-		{"今额", Turnover(), KindFloat, 0, 2000.5},
+		{"今收厘", ClosePrice(), KindPrice, 12.34, 0},
+		{"今收元", CloseFloat(), KindFloat, 0.0, 12.34},
+		{"今开厘", OpenPrice(), KindPrice, 12.0, 0},
+		{"昨收厘", PrevClosePrice(), KindPrice, 10.5, 0},
+		{"昨开厘", PrevOpenPrice(), KindPrice, 9.9, 0},
+		{"今量", Volume(), KindFloat, 0.0, 250},
+		{"今额", Turnover(), KindFloat, 0.0, 2000.5},
 	} {
 		assertOperand(t, c.name, c.op, in, c.kind, c.price, c.fl)
 	}
 	// 单根前缀：今字段有效，昨字段（n-2 越界）无效。
 	one := NewInput("sh600000", ks[:1], nil, nil)
-	assertOperand(t, "单根今收厘", ClosePrice(), one, KindPrice, 10500, 0)
-	assertOperand(t, "单根昨收", PrevClosePrice(), one, KindInvalid, 0, 0)
-	assertOperand(t, "单根昨开", PrevOpenPrice(), one, KindInvalid, 0, 0)
+	assertOperand(t, "单根今收厘", ClosePrice(), one, KindPrice, 10.5, 0)
+	assertOperand(t, "单根昨收", PrevClosePrice(), one, KindInvalid, 0.0, 0)
+	assertOperand(t, "单根昨开", PrevOpenPrice(), one, KindInvalid, 0.0, 0)
 	// 空前缀：全部无效，不补 0。
 	empty := NewInput("sh600000", nil, nil, nil)
 	for _, op := range []Operand{
 		ClosePrice(), CloseFloat(), OpenPrice(),
 		PrevClosePrice(), PrevOpenPrice(), Volume(), Turnover(),
 	} {
-		assertOperand(t, "空前缀"+op.Name(), op, empty, KindInvalid, 0, 0)
+		assertOperand(t, "空前缀"+op.Name(), op, empty, KindInvalid, 0.0, 0)
 	}
 }
 
@@ -98,25 +98,25 @@ func TestFactorOperands(t *testing.T) {
 		name  string
 		op    Operand
 		kind  Kind
-		price protocol.Price
+		price float64
 		fl    float64
 	}{
-		{"MA浮点元", MAValue(2), KindFloat, 0, 11.25},
-		{"MA整数厘", MAPrice(2), KindPrice, 11250, 0},
-		{"RSI浮点", RSIFloat(2), KindFloat, 0, 100 - 100/1.8},
-		{"RSI整数截断", RSIInt(2), KindFloat, 0, 44},
-		{"前N日均量不含今日", PrevAvgVolume(2), KindFloat, 0, 200},
-		{"今量", Volume(), KindFloat, 0, 900},
-		{"今额", Turnover(), KindFloat, 0, 2700},
-		{"单日涨幅", RiseRate(), KindFloat, 0, -20},
-		{"ATR", ATR(2), KindFloat, 0, 3.25},
-		{"布林下轨", BollLower(2, 2), KindFloat, 0, 8.75},
-		{"乖离率", BiasPercent(2), KindFloat, 0, ((10.0 - 11.25) / 11.25) * 100},
-		{"ZScore", ZScore(2), KindFloat, 0, -1},
-		{"最高价含今日", HighestValue(2, true), KindFloat, 0, 13},
-		{"最低价含今日", LowestValue(2, true), KindFloat, 0, 9},
-		{"最高价厘含今日", HighestPrice(2, true), KindPrice, 13000, 0},
-		{"最低价厘含今日", LowestPrice(2, true), KindPrice, 9000, 0},
+		{"MA浮点元", MAValue(2), KindFloat, 0.0, 11.25},
+		{"MA整数厘", MAPrice(2), KindPrice, 11.25, 0},
+		{"RSI浮点", RSIFloat(2), KindFloat, 0.0, 100 - 100/1.8},
+		{"RSI整数截断", RSIInt(2), KindFloat, 0.0, 44},
+		{"前N日均量不含今日", PrevAvgVolume(2), KindFloat, 0.0, 200},
+		{"今量", Volume(), KindFloat, 0.0, 900},
+		{"今额", Turnover(), KindFloat, 0.0, 2700},
+		{"单日涨幅", RiseRate(), KindFloat, 0.0, -20},
+		{"ATR", ATR(2), KindFloat, 0.0, 3.25},
+		{"布林下轨", BollLower(2, 2), KindFloat, 0.0, 8.75},
+		{"乖离率", BiasPercent(2), KindFloat, 0.0, ((10.0 - 11.25) / 11.25) * 100},
+		{"ZScore", ZScore(2), KindFloat, 0.0, -1},
+		{"最高价含今日", HighestValue(2, true), KindFloat, 0.0, 13},
+		{"最低价含今日", LowestValue(2, true), KindFloat, 0.0, 9},
+		{"最高价厘含今日", HighestPrice(2, true), KindPrice, 13.0, 0},
+		{"最低价厘含今日", LowestPrice(2, true), KindPrice, 9.0, 0},
 	} {
 		assertOperand(t, c.name, c.op, in, c.kind, c.price, c.fl)
 	}
@@ -126,9 +126,9 @@ func TestMarketCapOperand(t *testing.T) {
 	k := glueKline(0, 9.5, 11, 9, 10, 100, 1500)
 	k.FloatStock = 1_000_000_000
 	in := NewInput("sh600000", extend.Klines{k}, nil, nil)
-	assertOperand(t, "流通市值亿元", MarketCap(), in, KindFloat, 0, 100)
+	assertOperand(t, "流通市值亿元", MarketCap(), in, KindFloat, 0.0, 100)
 	assertOperand(t, "流通市值空前缀", MarketCap(),
-		NewInput("sh600000", nil, nil, nil), KindInvalid, 0, 0)
+		NewInput("sh600000", nil, nil, nil), KindInvalid, 0.0, 0)
 }
 
 func TestHighestLowestWindowSwitch(t *testing.T) {
@@ -142,24 +142,24 @@ func TestHighestLowestWindowSwitch(t *testing.T) {
 		name  string
 		op    Operand
 		kind  Kind
-		price protocol.Price
+		price float64
 		fl    float64
 	}{
-		{"最高含今日", HighestValue(2, true), KindFloat, 0, 20.5},
-		{"最高不含今日", HighestValue(2, false), KindFloat, 0, 12.5},
-		{"最低含今日", LowestValue(2, true), KindFloat, 0, 1},
-		{"最低不含今日", LowestValue(2, false), KindFloat, 0, 8},
-		{"最高厘含今日", HighestPrice(2, true), KindPrice, 20500, 0},
-		{"最高厘不含今日", HighestPrice(2, false), KindPrice, 12500, 0},
-		{"最低厘含今日", LowestPrice(2, true), KindPrice, 1000, 0},
-		{"最低厘不含今日", LowestPrice(2, false), KindPrice, 8000, 0},
-		{"三天窗口含今日有效", HighestValue(3, true), KindFloat, 0, 20.5},
+		{"最高含今日", HighestValue(2, true), KindFloat, 0.0, 20.5},
+		{"最高不含今日", HighestValue(2, false), KindFloat, 0.0, 12.5},
+		{"最低含今日", LowestValue(2, true), KindFloat, 0.0, 1},
+		{"最低不含今日", LowestValue(2, false), KindFloat, 0.0, 8},
+		{"最高厘含今日", HighestPrice(2, true), KindPrice, 20.5, 0},
+		{"最高厘不含今日", HighestPrice(2, false), KindPrice, 12.5, 0},
+		{"最低厘含今日", LowestPrice(2, true), KindPrice, 1.0, 0},
+		{"最低厘不含今日", LowestPrice(2, false), KindPrice, 8.0, 0},
+		{"三天窗口含今日有效", HighestValue(3, true), KindFloat, 0.0, 20.5},
 	} {
 		assertOperand(t, c.name, c.op, in, c.kind, c.price, c.fl)
 	}
 	// 不含今日需要 days+1 根预热：3 根配 days=3 → 无效；含今日则刚好有效。
-	assertOperand(t, "不含今日预热不足", HighestValue(3, false), in, KindInvalid, 0, 0)
-	assertOperand(t, "不含今日厘预热不足", LowestPrice(3, false), in, KindInvalid, 0, 0)
+	assertOperand(t, "不含今日预热不足", HighestValue(3, false), in, KindInvalid, 0.0, 0)
+	assertOperand(t, "不含今日厘预热不足", LowestPrice(3, false), in, KindInvalid, 0.0, 0)
 }
 
 func TestPrevAvgVolumeScaledSemantics(t *testing.T) {
@@ -169,9 +169,9 @@ func TestPrevAvgVolumeScaledSemantics(t *testing.T) {
 		glueKline(0, 1, 2, 0.5, 1, 900, 0),
 	}
 	in := NewInput("sh600000", ks, nil, nil)
-	assertOperand(t, "均量×1.5", PrevAvgVolumeScaled(2, 1.5), in, KindFloat, 0, 300)
+	assertOperand(t, "均量×1.5", PrevAvgVolumeScaled(2, 1.5), in, KindFloat, 0.0, 300)
 	// ratio==0：0 乘出 0 是合法浮点值，胶水不吞 0（是否视为阈值不生效由门面决定）。
-	assertOperand(t, "ratio=0", PrevAvgVolumeScaled(2, 0), in, KindFloat, 0, 0)
+	assertOperand(t, "ratio=0", PrevAvgVolumeScaled(2, 0), in, KindFloat, 0.0, 0)
 	// 基准 <=0：零量基准没有可比性 → 无效值，而非 0×ratio。
 	zeroVol := extend.Klines{
 		glueKline(0, 1, 2, 0.5, 1, 0, 0),
@@ -179,9 +179,9 @@ func TestPrevAvgVolumeScaledSemantics(t *testing.T) {
 		glueKline(0, 1, 2, 0.5, 1, 900, 0),
 	}
 	assertOperand(t, "基准为零", PrevAvgVolumeScaled(2, 1.5),
-		NewInput("sh600000", zeroVol, nil, nil), KindInvalid, 0, 0)
+		NewInput("sh600000", zeroVol, nil, nil), KindInvalid, 0.0, 0)
 	// 预热不足：前 N 日均量需 N+1 根。
-	assertOperand(t, "预热不足", PrevAvgVolumeScaled(3, 1.5), in, KindInvalid, 0, 0)
+	assertOperand(t, "预热不足", PrevAvgVolumeScaled(3, 1.5), in, KindInvalid, 0.0, 0)
 }
 
 func TestVolumeRatioDivisionOrder(t *testing.T) {
@@ -237,24 +237,24 @@ func TestFactorOperandsInvalidValues(t *testing.T) {
 		{"乖离率空前缀", empty, BiasPercent(2)},
 		{"ZScore空前缀", empty, ZScore(2)},
 	} {
-		assertOperand(t, c.name, c.op, c.in, KindInvalid, 0, 0)
+		assertOperand(t, c.name, c.op, c.in, KindInvalid, 0.0, 0)
 	}
 	// NaN/±Inf 归无效：零方差（布林/ZScore）、均线为零（乖离）、除零（涨幅 +Inf）。
 	flat := NewInput("sh600000", extend.Klines{
 		glueKline(10, 10, 10, 10, 10, 0, 0),
 		glueKline(10, 10, 10, 10, 10, 0, 0),
 	}, nil, nil)
-	assertOperand(t, "零方差布林", BollLower(2, 2), flat, KindInvalid, 0, 0)
-	assertOperand(t, "零方差ZScore", ZScore(2), flat, KindInvalid, 0, 0)
+	assertOperand(t, "零方差布林", BollLower(2, 2), flat, KindInvalid, 0.0, 0)
+	assertOperand(t, "零方差ZScore", ZScore(2), flat, KindInvalid, 0.0, 0)
 	zero := NewInput("sh600000", extend.Klines{
 		glueKline(0, 0, 0, 0, 0, 0, 0),
 		glueKline(0, 0, 0, 0, 0, 0, 0),
 	}, nil, nil)
-	assertOperand(t, "均线为零乖离", BiasPercent(2), zero, KindInvalid, 0, 0)
+	assertOperand(t, "均线为零乖离", BiasPercent(2), zero, KindInvalid, 0.0, 0)
 	inf := NewInput("sh600000", extend.Klines{
 		glueKline(0, 0, 5, 1, 10, 0, 0),
 	}, nil, nil)
-	assertOperand(t, "涨幅除零正无穷", RiseRate(), inf, KindInvalid, 0, 0)
+	assertOperand(t, "涨幅除零正无穷", RiseRate(), inf, KindInvalid, 0.0, 0)
 }
 
 func TestOperandFuncEscapeHatch(t *testing.T) {
@@ -266,17 +266,17 @@ func TestOperandFuncEscapeHatch(t *testing.T) {
 	seenLen := 0
 	op := OperandFunc("测试操作数", func(cur Input) Value {
 		seenLen = len(cur.Klines)
-		return PriceValue(12345)
+		return PriceValue(12.345)
 	})
 	if op.Name() != "测试操作数" {
 		t.Fatalf("Name = %q, 期望 %q", op.Name(), "测试操作数")
 	}
 	v := op.Value(in)
-	if !v.Valid() || v.Kind() != KindPrice || v.Price() != 12345 {
+	if !v.Valid() || v.Kind() != KindPrice || v.Price() != 12.345 {
 		t.Fatalf("OperandFunc 求值 = %s, 期望厘值 12345", v)
 	}
 	if seenLen != len(ks) {
-		t.Fatalf("OperandFunc 收到的前缀长度 = %d, 期望 %d", seenLen, len(ks))
+		t.Fatalf("OperandFunc 收到的前缀长度 = %v, 期望 %v", seenLen, len(ks))
 	}
 	if OperandFunc("空函数", nil).Value(in).Valid() {
 		t.Fatal("nil 函数应返回无效值")
@@ -343,7 +343,7 @@ func TestOperandDiagnosticNames(t *testing.T) {
 	if got := MAPrice(0).Name(); got != "均线(20)" {
 		t.Fatalf("MAPrice(0).Name = %q, 期望默认窗口可见", got)
 	}
-	if got := ClosePrice().Name(); got != "今收(厘)" {
+	if got := ClosePrice().Name(); got != "今收(元)" {
 		t.Fatalf("ClosePrice.Name = %q", got)
 	}
 }

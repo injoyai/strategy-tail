@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // make回踩K线 构造 K 线，可指定每日的 close、low。
@@ -23,10 +23,10 @@ func make回踩K线(closes, lows []float64) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(closes[i] - 0.1),
-				Close:  protocol.Yuan(closes[i]),
-				High:   protocol.Yuan(high),
-				Low:    protocol.Yuan(low),
+				Open:   closes[i] - 0.1,
+				Close:  closes[i],
+				High:   high,
+				Low:    low,
 				Volume: 100,
 			},
 		}

@@ -10,7 +10,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func momentumLowVolatilitySpec(t *testing.T) BuilderSpec {
@@ -41,10 +41,10 @@ func momentumLowVolatilityBars(prices []float64) extend.Klines {
 				day = day.AddDate(0, 0, 1)
 			}
 		}
-		p := protocol.Yuan(price)
+		p := price
 		bars[i] = &extend.Kline{Unix: day.Unix(), Kline: &protocol.Kline{
 			Time: day, Open: p, High: p, Low: p, Close: p,
-			Volume: 10_000_000, Amount: protocol.Yuan(100_000_000),
+			Volume: 10_000_000, Amount: 100_000_000,
 		}}
 	}
 	return bars
@@ -94,14 +94,14 @@ func TestMomentumLowVolatilityEntry(t *testing.T) {
 			case "amihud_illiquidity":
 				illiquid := momentumLowVolatilityBars(prices)
 				for _, bar := range illiquid {
-					bar.Amount = protocol.Yuan(1_000_000)
+					bar.Amount = 1_000_000
 				}
 				if b.Buy("sh600000", illiquid) || buyer.Buy("sh600000", illiquid) {
 					t.Fatal("单位成交额引起的价格波动过大时必须拒绝")
 				}
 				// 零成交额表示不可用，不得以 0 因子值放行。
 				illiquid = momentumLowVolatilityBars(prices)
-				illiquid[126].Amount = 0
+				illiquid[126].Amount = 0.0
 				if b.Buy("sh600000", illiquid) || buyer.Buy("sh600000", illiquid) {
 					t.Fatal("缺少成交额必须拒绝")
 				}
@@ -146,7 +146,7 @@ func TestMomentumLowVolatilityExit(t *testing.T) {
 				t.Fatalf("未覆盖的风控 %s", node.ComponentID)
 			}
 			bars := momentumLowVolatilityBars(prices)
-			position := core.Buy{Code: "sh600000", Time: bars[0].Time, Price: protocol.Yuan(10)}
+			position := core.Buy{Code: "sh600000", Time: bars[0].Time, Price: 10}
 			if seller.Sell(position.Code, bars[:len(bars)-1], position) || !seller.Sell(position.Code, bars, position) {
 				t.Fatal("风控未按阈值触发，请检查百分数转换与交易日计数")
 			}

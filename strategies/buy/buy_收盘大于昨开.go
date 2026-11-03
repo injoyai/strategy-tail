@@ -5,7 +5,7 @@ import (
 	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
-// 收盘大于昨开规则 今收 > 昨开：两侧均取整数厘（protocol.Price）精确比较；
+// 收盘大于昨开规则 今收 > 昨开：两侧均取浮点元（float64）精确比较；
 // 昨开不足 2 根时为无效值，规则不触发。
 var 收盘大于昨开规则 = mustCompare(rule.ClosePrice(), rule.Gt, rule.PrevOpenPrice())
 

@@ -196,7 +196,7 @@ func (s A时间止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 	if n == 0 {
 		return false
 	}
-	buyPrice := buy.Price.Float64()
+	buyPrice := buy.Price
 	if buyPrice <= 0 {
 		return false
 	}
@@ -345,7 +345,7 @@ func (s A移动止盈) Sell(code string, dks extend.Klines, b core.Buy) bool {
 			if in.Klines[i].Time.Before(pos.Time) {
 				break
 			}
-			profit := (in.Klines[i].High.Float64() - buyPrice) / buyPrice
+			profit := (in.Klines[i].High - buyPrice) / buyPrice
 			if profit > maxProfit {
 				maxProfit = profit
 			}

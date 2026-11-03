@@ -397,7 +397,7 @@ func calculateRequiredCapital(allTrades []Trade, pos PositionConfig) float64 {
 		buyCost := t.BuyCost
 		if buyCost <= 0 {
 			// 兼容旧数据：用原始价格 × 数量估算
-			buyCost = t.BuyPrice.Float64() * float64(sharesPerLot)
+			buyCost = t.BuyPrice * float64(sharesPerLot)
 		}
 
 		// 从买入日到卖出日（含），每日都在持仓

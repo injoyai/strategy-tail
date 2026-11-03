@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // P3 组迁移行为快照（台账附录 A：buy_price_above_ma / buy_volume_double /
@@ -24,10 +24,10 @@ func p3Series(closes []float64, volumes []int64) extend.Klines {
 	for i := range closes {
 		ks[i] = &extend.Kline{Kline: &protocol.Kline{
 			Time:   base.AddDate(0, 0, i),
-			Open:   protocol.Yuan(closes[i]),
-			High:   protocol.Yuan(closes[i]),
-			Low:    protocol.Yuan(closes[i]),
-			Close:  protocol.Yuan(closes[i]),
+			Open:   closes[i],
+			High:   closes[i],
+			Low:    closes[i],
+			Close:  closes[i],
 			Volume: volumes[i],
 		}}
 	}

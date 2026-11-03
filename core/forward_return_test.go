@@ -46,7 +46,7 @@ func TestScanForwardReturns(t *testing.T) {
 	// N=1: dks[1].Close=11, return = (11-10)/10*100 = 10%
 	// N=3: dks[3].Close=13, return = (13-10)/10*100 = 30%
 	r0 := results[0]
-	if r0.BuyPrice.Float64() != 10 {
+	if r0.BuyPrice != 10 {
 		t.Fatalf("buyPrice: expected 10, got %v", r0.BuyPrice)
 	}
 	if r0.Returns[1] != 10.0 {

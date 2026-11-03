@@ -14,12 +14,12 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 基线来自拆分因子前的组件；逐前缀覆盖预热期、默认参数、零量与平价窗口。
 func TestConditionFactorEquivalence(t *testing.T) {
-	raw, err := os.ReadFile("testdata/condition_baseline.json")
+	raw, err := os.ReadFile("testdata/condition_baseline_v2.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,16 +72,17 @@ func conditionBaselineBars(flat bool) extend.Klines {
 	rng := rand.New(rand.NewSource(27))
 	start := time.Date(2025, 1, 1, 15, 0, 0, 0, time.UTC)
 	var bars extend.Klines
-	price := protocol.Price(10000)
+	priceMillis := int64(10000)
 	for i := 0; i < 320; i++ {
-		open := price
+		openMillis := priceMillis
 		if !flat {
-			price += protocol.Price(rng.Intn(1601) - 800)
-			if price < 3000 {
-				price = 3000
+			priceMillis += int64(rng.Intn(1601) - 800)
+			if priceMillis < 3000 {
+				priceMillis = 3000
 			}
 		}
-		high, low := max(open, price)+300, min(open, price)-300
+		open, price := float64(openMillis)/1000, float64(priceMillis)/1000
+		high, low := float64(max(openMillis, priceMillis)+300)/1000, float64(min(openMillis, priceMillis)-300)/1000
 		volume := int64(1000 + rng.Intn(30000))
 		if i%40 < 8 {
 			volume = 0
@@ -89,7 +90,7 @@ func conditionBaselineBars(flat bool) extend.Klines {
 		at := start.AddDate(0, 0, i)
 		bars = append(bars, &extend.Kline{Unix: at.Unix(), FloatStock: 10000000000,
 			Kline: &protocol.Kline{Time: at, Open: open, Close: price, High: high, Low: low, Volume: volume,
-				Amount: protocol.Price(float64(volume) * price.Float64() * 1000)}})
+				Amount: float64(volume) * price}})
 	}
 	return bars
 }

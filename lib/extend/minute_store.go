@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,15 +16,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2"
+	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
-const minuteStoreVersion = 101
+const minuteStoreVersion = 102
 const minuteRecordSize = 96
 const minuteBlockLimit = 100000 * minuteRecordSize
 
-var minuteMagic = []byte{'K', 'L', 'M', '1', 96, 0, 0, 0}
+var minuteMagic = []byte{'K', 'L', 'M', '2', 96, 0, 0, 0}
 var minuteZone, minuteZoneError = time.LoadLocation("Asia/Shanghai")
 
 type minuteRecord struct {
@@ -46,7 +48,12 @@ func appendMinuteRecord(raw []byte, r minuteRecord) ([]byte, error) {
 	if k == nil || k.Time.Nanosecond() != 0 {
 		return nil, fmt.Errorf("分钟压缩只接受非空、整秒时间记录")
 	}
-	for _, v := range [...]uint64{r.Sequence, uint64(k.Last), uint64(k.Open), uint64(k.High), uint64(k.Low), uint64(k.Close), uint64(k.Order), uint64(k.Volume), uint64(k.Amount), uint64(k.Time.Unix()), uint64(k.UpCount), uint64(k.DownCount)} {
+	for _, v := range []float64{k.Last, k.Open, k.High, k.Low, k.Close, k.Amount} {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, fmt.Errorf("分钟价格/金额必须为有限值")
+		}
+	}
+	for _, v := range [...]uint64{r.Sequence, math.Float64bits(k.Last), math.Float64bits(k.Open), math.Float64bits(k.High), math.Float64bits(k.Low), math.Float64bits(k.Close), uint64(k.Order), uint64(k.Volume), math.Float64bits(k.Amount), uint64(k.Time.Unix()), uint64(k.UpCount), uint64(k.DownCount)} {
 		raw = binary.LittleEndian.AppendUint64(raw, v)
 	}
 	return raw, nil
@@ -100,7 +107,7 @@ func decodeMinuteBlock(data []byte, reader **gzip.Reader) ([]minuteRecord, error
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	if len(raw) < len(minuteMagic) || len(raw) > minuteBlockLimit+len(minuteMagic) || !bytes.Equal(raw[:len(minuteMagic)], minuteMagic) || (len(raw)-len(minuteMagic))%minuteRecordSize != 0 {
+	if len(raw) < len(minuteMagic) || len(raw) > minuteBlockLimit+len(minuteMagic) || !(bytes.Equal(raw[:len(minuteMagic)], minuteMagic) || bytes.Equal(raw[:len(minuteMagic)], []byte{'K', 'L', 'M', '1', 96, 0, 0, 0})) || (len(raw)-len(minuteMagic))%minuteRecordSize != 0 {
 		return nil, fmt.Errorf("无效的分钟压缩块或不支持的版本")
 	}
 	records := make([]minuteRecord, 0, (len(raw)-len(minuteMagic))/minuteRecordSize)
@@ -112,7 +119,15 @@ func decodeMinuteBlock(data []byte, reader **gzip.Reader) ([]minuteRecord, error
 		if v[0] < 0 {
 			return nil, fmt.Errorf("分钟记录序号为负")
 		}
-		k := &protocol.Kline{Last: protocol.Price(v[1]), Open: protocol.Price(v[2]), High: protocol.Price(v[3]), Low: protocol.Price(v[4]), Close: protocol.Price(v[5]), Order: int(v[6]), Volume: v[7], Amount: protocol.Price(v[8]), Time: time.Unix(v[9], 0).In(time.Local), UpCount: int(v[10]), DownCount: int(v[11])}
+		k := &protocol.Kline{Last: float64(v[1]) / 1000.0, Open: float64(v[2]) / 1000.0, High: float64(v[3]) / 1000.0, Low: float64(v[4]) / 1000.0, Close: float64(v[5]) / 1000.0, Order: int(v[6]), Volume: v[7], Amount: float64(v[8]) / 1000.0, Time: time.Unix(v[9], 0).In(time.Local), UpCount: int(v[10]), DownCount: int(v[11])}
+		if raw[3] == '2' {
+			k.Last = math.Float64frombits(uint64(v[1]))
+			k.Open = math.Float64frombits(uint64(v[2]))
+			k.High = math.Float64frombits(uint64(v[3]))
+			k.Low = math.Float64frombits(uint64(v[4]))
+			k.Close = math.Float64frombits(uint64(v[5]))
+			k.Amount = math.Float64frombits(uint64(v[8]))
+		}
 		records = append(records, minuteRecord{uint64(v[0]), k})
 	}
 	return records, nil
@@ -128,7 +143,7 @@ func initMinuteStore(db *sql.DB) error {
 		"CREATE TABLE KlineBlock (Day INTEGER PRIMARY KEY, Data BLOB NOT NULL)",
 		"CREATE TABLE KlineMeta (ID INTEGER PRIMARY KEY CHECK(ID=1), NextSequence INTEGER NOT NULL, LastUnix INTEGER NOT NULL, RecordCount INTEGER NOT NULL)",
 		"INSERT INTO KlineMeta VALUES (1,1,0,0)",
-		"PRAGMA user_version=101",
+		"PRAGMA user_version=102",
 	} {
 		if _, err = tx.Exec(query); err != nil {
 			return err
@@ -140,7 +155,7 @@ func initMinuteStore(db *sql.DB) error {
 func minuteVersion(q minuteQuery) (int, error) {
 	var version int
 	err := q.QueryRow("PRAGMA user_version").Scan(&version)
-	if err == nil && version != 0 && version != minuteStoreVersion {
+	if err == nil && version != 0 && version != 101 && version != minuteStoreVersion {
 		err = fmt.Errorf("不支持的分钟库版本 %d", version)
 	}
 	return version, err
@@ -148,6 +163,10 @@ func minuteVersion(q minuteQuery) (int, error) {
 
 func readMinuteRecords(q minuteQuery, version int) ([]minuteRecord, error) {
 	if version == 0 {
+		legacy, err := legacyPriceScale(q)
+		if err != nil {
+			return nil, err
+		}
 		rows, err := q.Query("SELECT rowid,Last,Open,High,Low,Close,`Order`,Volume,Amount,Time,UpCount,DownCount FROM Kline ORDER BY rowid")
 		if err != nil {
 			return nil, err
@@ -165,6 +184,9 @@ func readMinuteRecords(q minuteQuery, version int) ([]minuteRecord, error) {
 				return nil, fmt.Errorf("分钟库包含负 rowid")
 			}
 			k.Time = at.In(time.Local)
+			if legacy {
+				scaleBar(k, .001)
+			}
 			records = append(records, minuteRecord{uint64(seq), k})
 		}
 		return records, rows.Err()
@@ -266,7 +288,7 @@ func writeMinuteGroups(tx *sql.Tx, groups map[int][]minuteRecord) error {
 	return nil
 }
 
-func updateCompressedMinute(db *sql.DB, m *tdx.Manage, code string, year int, ks protocol.Klines) (protocol.Klines, error) {
+func updateCompressedMinute(db *sql.DB, m *manage.Manage, code string, year int, ks protocol.Klines) (protocol.Klines, error) {
 	if minuteZoneError != nil {
 		return nil, minuteZoneError
 	}
@@ -283,10 +305,10 @@ func updateCompressedMinute(db *sql.DB, m *tdx.Manage, code string, year int, ks
 		last = time.Unix(lastUnix, 0).In(time.Local)
 	}
 	if len(ks) == 0 {
-		err := m.Do(func(c *tdx.Client) error {
-			resp, err := c.GetKlineMinute241Until(code, func(k *protocol.Kline) bool { return k.Time.Before(last) })
+		err := m.Do(func(c tdx.Client) error {
+			resp, err := FetchStandardMinute(c, code, func(k *protocol.Kline) bool { return k.Time.Before(last) }, true)
 			if err == nil && resp != nil {
-				ks = resp.List
+				ks = resp
 			}
 			return err
 		})
@@ -374,6 +396,9 @@ func updateCompressedMinute(db *sql.DB, m *tdx.Manage, code string, year int, ks
 	if _, err = tx.Exec("UPDATE KlineMeta SET NextSequence=?,LastUnix=?,RecordCount=? WHERE ID=1", next, lastUnix, count); err != nil {
 		return nil, err
 	}
+	if _, err = tx.Exec("PRAGMA user_version=102"); err != nil {
+		return nil, err
+	}
 	return ks, tx.Commit()
 }
 
@@ -431,7 +456,7 @@ func CompressMinuteDatabase(filename string) (result MinuteCompression, err erro
 	if err != nil {
 		return result, err
 	}
-	if version == minuteStoreVersion {
+	if version == minuteStoreVersion || version == 101 {
 		return result, nil
 	}
 	var objects int

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // make阴线收回K线 构造 K 线，每日可指定 open/close/high/low。
@@ -18,10 +18,10 @@ func make阴线收回K线(opens, closes, highs, lows []float64) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(opens[i]),
-				Close:  protocol.Yuan(closes[i]),
-				High:   protocol.Yuan(highs[i]),
-				Low:    protocol.Yuan(lows[i]),
+				Open:   opens[i],
+				Close:  closes[i],
+				High:   highs[i],
+				Low:    lows[i],
 				Volume: 100,
 			},
 		}

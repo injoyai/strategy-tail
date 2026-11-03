@@ -27,7 +27,7 @@ func (f MACD柱强度) Value(code string, dks extend.Klines) float64 {
 	if !ok {
 		return math.NaN()
 	}
-	close := dks[len(dks)-1].Close.Float64()
+	close := dks[len(dks)-1].Close
 	if close == 0 {
 		return math.NaN()
 	}
@@ -46,7 +46,7 @@ func (f MACD柱增量) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	n := len(dks)
-	close := dks[n-1].Close.Float64()
+	close := dks[n-1].Close
 	if close == 0 {
 		return math.NaN()
 	}

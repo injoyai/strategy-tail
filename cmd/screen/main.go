@@ -6,7 +6,7 @@ import (
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func init() {
@@ -19,7 +19,7 @@ func main() {
 
 	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
 	logs.PanicErr(err)
-	db, err := xorms.NewSqlite(screenDBPath())
+	db, err := xorms.NewSQLite(screenDBPath())
 	if err != nil {
 		logs.Panicf("初始化服务失败: %v\n", err)
 	}

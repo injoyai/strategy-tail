@@ -13,7 +13,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // practice_test.go 盘感练习领域状态机与存储测试。
@@ -35,7 +35,7 @@ func practiceTestKlines(closes []float64) extend.Klines {
 	ks := make(extend.Klines, len(closes))
 	for i, c := range closes {
 		at := base.AddDate(0, 0, i)
-		price := protocol.Yuan(c)
+		price := c
 		ks[i] = &extend.Kline{
 			Unix: at.Unix(),
 			Kline: &protocol.Kline{
@@ -109,7 +109,7 @@ func TestPracticeAffordableQuantity(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			qty, total := practiceAffordableQuantity(practiceTestCost, protocol.Yuan(tc.price), tc.budget)
+			qty, total := practiceAffordableQuantity(practiceTestCost, tc.price, tc.budget)
 			if qty != tc.wantQty || !practiceAlmost(total, tc.wantCost) {
 				t.Fatalf("got (%d, %v), want (%d, %v)", qty, total, tc.wantQty, tc.wantCost)
 			}
@@ -144,7 +144,7 @@ func TestBuildPracticeMarketIndicatorsMatchExtend(t *testing.T) {
 		for _, c := range []struct {
 			n   int
 			got *float64
-			ext protocol.Price
+			ext float64
 		}{
 			{5, d.MA5, prefix.MA(5)},
 			{10, d.MA10, prefix.MA(10)},
@@ -156,8 +156,8 @@ func TestBuildPracticeMarketIndicatorsMatchExtend(t *testing.T) {
 				}
 				continue
 			}
-			if c.got == nil || *c.got != float64(c.ext)/1000 {
-				t.Fatalf("第 %d 根 MA%d: got %v, want %v", i+1, c.n, c.got, float64(c.ext)/1000)
+			if c.got == nil || *c.got != c.ext {
+				t.Fatalf("第 %d 根 MA%d: got %v, want %v", i+1, c.n, c.got, c.ext)
 			}
 		}
 
@@ -479,7 +479,7 @@ func TestPracticeStoreLifecycle(t *testing.T) {
 		t.Fatalf("preparing 会话不正确: %+v", sess)
 	}
 	// 费用快照冻结：滑点清零、其余字段保留。
-	if sess.Cost.Slippage != 0 || sess.Cost.CommissionRate != cost.CommissionRate || sess.Cost.MinCommission != cost.MinCommission {
+	if sess.Cost.Slippage != 0.0 || sess.Cost.CommissionRate != cost.CommissionRate || sess.Cost.MinCommission != cost.MinCommission {
 		t.Fatalf("费用快照不正确: %+v", sess.Cost)
 	}
 
@@ -753,7 +753,7 @@ func TestPracticeEvalExactNumbers(t *testing.T) {
 // TestPracticeInvalidPrice 快照中出现无效价格时拒绝成交且状态不变。
 func TestPracticeInvalidPrice(t *testing.T) {
 	m := practiceTestMarket(t, []float64{10, 11})
-	m.Days[0].Close = 0 // 手工构造损坏价格（buildPracticeMarket 本身已拒绝该输入）
+	m.Days[0].Close = 0.0 // 手工构造损坏价格（buildPracticeMarket 本身已拒绝该输入）
 	s := practiceTestSession(m, 0)
 	if _, err := s.applyCommand(m, practiceTestCmd("buy", "c1", 1)); !errors.Is(err, errPracticeInvalidPrice) {
 		t.Fatalf("零价买入应拒绝: %v", err)
@@ -764,7 +764,7 @@ func TestPracticeInvalidPrice(t *testing.T) {
 
 	// 买入后推进到零价日卖出同样拒绝。
 	m2 := practiceTestMarket(t, []float64{10, 11})
-	m2.Days[1].Close = 0
+	m2.Days[1].Close = 0.0
 	s2 := practiceTestSession(m2, 0)
 	if _, err := s2.applyCommand(m2, practiceTestCmd("buy", "c1", 1)); err != nil {
 		t.Fatalf("买入失败: %v", err)

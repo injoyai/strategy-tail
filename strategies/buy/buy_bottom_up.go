@@ -130,7 +130,7 @@ func (s A底部抬升) Explain(code string, dks extend.Klines) []core.ExplainSte
 	steps = append(steps, core.ExplainStep{
 		Name:    "底部抬升",
 		Matched: l2.value > l1.value,
-		Detail:  fmt.Sprintf("L2 %.2f > L1 %.2f", priceFloat(l2.value), priceFloat(l1.value)),
+		Detail:  fmt.Sprintf("L2 %.2f > L1 %.2f", float64(l2.value), float64(l1.value)),
 	})
 
 	hasHighBetween := false
@@ -169,10 +169,10 @@ func (s A底部抬升) Annotate(code string, dks extend.Klines) []core.Annotatio
 		anns = append(anns, core.Annotation{
 			Index: h.index,
 			Time:  dks[h.index].Time,
-			Price: dks[h.index].High.Float64(),
+			Price: dks[h.index].High,
 			Label: label,
 			Color: "#ef4444",
-			Note:  fmt.Sprintf("高点 %.2f @ %s", dks[h.index].High.Float64(), dks[h.index].Time.Format("2006-01-02")),
+			Note:  fmt.Sprintf("高点 %.2f @ %s", dks[h.index].High, dks[h.index].Time.Format("2006-01-02")),
 		})
 	}
 	for i, l := range lows {
@@ -183,10 +183,10 @@ func (s A底部抬升) Annotate(code string, dks extend.Klines) []core.Annotatio
 		anns = append(anns, core.Annotation{
 			Index: l.index,
 			Time:  dks[l.index].Time,
-			Price: dks[l.index].Low.Float64(),
+			Price: dks[l.index].Low,
 			Label: label,
 			Color: "#22c55e",
-			Note:  fmt.Sprintf("低点 %.2f @ %s", dks[l.index].Low.Float64(), dks[l.index].Time.Format("2006-01-02")),
+			Note:  fmt.Sprintf("低点 %.2f @ %s", dks[l.index].Low, dks[l.index].Time.Format("2006-01-02")),
 		})
 	}
 	return anns

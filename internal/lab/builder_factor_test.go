@@ -43,7 +43,7 @@ func TestBuilderFactorConditionsShareStrategyRules(t *testing.T) {
 			bars := conditionBaselineBars(false)
 			for end := 0; end <= len(bars); end++ {
 				want := variants[1].Buyer.Buy("sh600000", bars[:end])
-				if buyer.Buy("sh600000", bars[:end]) != want || seller.Sell("sh600000", bars[:end], core.Buy{Price: 999}) != want {
+				if buyer.Buy("sh600000", bars[:end]) != want || seller.Sell("sh600000", bars[:end], core.Buy{Price: 0.999}) != want {
 					t.Fatalf("第%d个前缀的因子条件不一致", end)
 				}
 			}

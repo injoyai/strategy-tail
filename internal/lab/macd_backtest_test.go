@@ -20,7 +20,7 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestMACDReportExportsOriginalNetCosts(t *testing.T) {
@@ -28,7 +28,7 @@ func TestMACDReportExportsOriginalNetCosts(t *testing.T) {
 	old := common.Pull
 	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: t.TempDir()}}
 	t.Cleanup(func() { common.Pull = old })
-	trade := core.Trade{Code: "sh600000", BuyTime: time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local), SellTime: time.Date(2025, 1, 3, 15, 0, 0, 0, time.Local), BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1005, SellIncome: 1090, Quantity: 100}
+	trade := core.Trade{Code: "sh600000", BuyTime: time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local), SellTime: time.Date(2025, 1, 3, 15, 0, 0, 0, time.Local), BuyPrice: 10, SellPrice: 11, BuyCost: 1005, SellIncome: 1090, Quantity: 100}
 	cfg := defaultMACDConfig()
 	rep := &Report{Config: cfg, Source: "macd", StartedAt: "2025-01-01T10:00:00+08:00", FinishedAt: "2025-01-01T10:00:01+08:00", Variants: []VariantReport{{Name: "MACD", Stats: newTradeStatsJSON(core.Stats([]core.Trade{trade})), Trades: toTradeJSON([]core.Trade{trade})}}}
 	if err := saveReport(rep, nil, nil, []researchrun.Result{{Trades: []core.Trade{trade}}}); err != nil {
@@ -84,7 +84,7 @@ func TestMACDDefaultsMatchCurrentCLIComposition(t *testing.T) {
 	}
 	changed := *cfg.MACD
 	changed.MaxPrice = 5
-	ks := extend.Klines{&extend.Kline{Kline: &protocol.Kline{Close: protocol.Yuan(10)}}}
+	ks := extend.Klines{&extend.Kline{Kline: &protocol.Kline{Close: 10}}}
 	if changed.buyer().(sb.And)[1].Buy("sh600000", ks) {
 		t.Fatal("price parameter was ignored")
 	}
@@ -124,7 +124,7 @@ func TestMACDConditionsUseOnlySelectedRules(t *testing.T) {
 	if !reflect.DeepEqual(cfg.MACD.buyer(), want) {
 		t.Fatalf("disabled conditions remain active: %+v", cfg.MACD.buyer())
 	}
-	ks := extend.Klines{&extend.Kline{Kline: &protocol.Kline{Close: protocol.Yuan(10)}}}
+	ks := extend.Klines{&extend.Kline{Kline: &protocol.Kline{Close: 10}}}
 	if cfg.MACD.buyer().Buy("sh600000", ks) {
 		t.Fatal("enabled price condition ignored")
 	}
@@ -174,7 +174,7 @@ func TestMACDYearsRetainOtherYearsWhenOneYearIsMissing(t *testing.T) {
 		ks := extend.Klines{}
 		for i := 0; i < 5; i++ {
 			date := time.Date(2025, 1, 2+i, 0, 0, 0, 0, time.Local)
-			ks = append(ks, &extend.Kline{Unix: date.Unix(), Kline: &protocol.Kline{Time: date, Close: protocol.Yuan(10 + float64(i)), Open: protocol.Yuan(10 + float64(i)), High: protocol.Yuan(11 + float64(i)), Low: protocol.Yuan(9 + float64(i))}})
+			ks = append(ks, &extend.Kline{Unix: date.Unix(), Kline: &protocol.Kline{Time: date, Close: 10 + float64(i), Open: 10 + float64(i), High: 11 + float64(i), Low: 9 + float64(i)}})
 		}
 		return ks, nil
 	}

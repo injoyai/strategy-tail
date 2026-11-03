@@ -17,7 +17,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type accountBuyer struct{ onlyDate string }
@@ -36,7 +36,7 @@ func accountBars(dates []string, prices ...float64) extend.Klines {
 	ks := make(extend.Klines, len(prices))
 	for i, p := range prices {
 		d, _ := time.ParseInLocation(time.DateOnly, dates[i], time.Local)
-		v := protocol.Yuan(p)
+		v := p
 		ks[i] = &extend.Kline{Unix: d.Unix(), Kline: &protocol.Kline{Time: d, Open: v, Close: v, High: v, Low: v, Volume: 1000}}
 	}
 	return ks
@@ -113,7 +113,7 @@ func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 	dates := []string{"2025-01-02", "2025-01-03"}
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
-	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: protocol.Yuan(.01)}
+	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: .01}
 	r, accounts, _, benchmark, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 	nearAccount(t, accounts[0].Points[1].Return, 3.776)
 	nearAccount(t, benchmark[1].Return, 10)
 	nearAccount(t, tr.SellIncome, 22800) // 期末估值不虚构卖出费用。
-	if data["sh600001"][1].Close != protocol.Yuan(12) {
+	if data["sh600001"][1].Close != 12 {
 		t.Fatal("source K-lines changed")
 	}
 }
@@ -173,7 +173,7 @@ func TestAccountSellsBeforeRebuyAndUsesMinutePrice(t *testing.T) {
 	cfg := accountTestConfig(data, accountBuyer{}, ss.A持仓N天{Days: 1})
 	d, _ := time.ParseInLocation(time.DateTime, "2025-01-03 09:31:00", time.Local)
 	cfg.GetMinKlines = func(string, time.Time, time.Time) (protocol.Klines, error) {
-		p := protocol.Yuan(11)
+		p := 11.0
 		return protocol.Klines{&protocol.Kline{Time: d, Open: p, Close: p, High: p, Low: p}}, nil
 	}
 	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 10000, MaxPositions: 1, OrderBudget: 10000})
@@ -186,7 +186,7 @@ func TestAccountSellsBeforeRebuyAndUsesMinutePrice(t *testing.T) {
 	}
 	nearAccount(t, accounts[0].Points[1].Equity, 11000)
 	nearAccount(t, accounts[0].Points[1].Cash, 1000)
-	if data["sh600001"][1].Close != protocol.Yuan(20) {
+	if data["sh600001"][1].Close != 20 {
 		t.Fatal("minute sell contaminated buy close")
 	}
 }

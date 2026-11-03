@@ -20,7 +20,7 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // DoLegacy 保留原版逐日 joinKlines 算法，仅校正 T+1 和 Virtual 末日日线估值。
@@ -36,7 +36,7 @@ func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks proto
 
 	m := map[string]protocol.Klines{}
 	for _, mk := range mks {
-		if mk.Close == 0 {
+		if mk.Close == 0.0 {
 			continue
 		}
 		key := mk.Time.Format(time.DateOnly)
@@ -121,7 +121,7 @@ func legacyExecuteSell(
 	this core.Backtest,
 	code string,
 	buy core.Buy,
-	sellRawPrice protocol.Price,
+	sellRawPrice float64,
 	pos core.PositionConfig,
 	cost core.Cost,
 	sellTime time.Time,
@@ -134,8 +134,8 @@ func legacyExecuteSell(
 	buyExec, buyCost := cost.BuyCost(buy.Price, quantity)
 	sellExec, sellIncome := cost.SellIncome(sellRawPrice, quantity)
 
-	buyFee := protocol.Yuan(buyExec.Float64() * cost.CommissionRate)
-	sellFee := protocol.Yuan(sellExec.Float64() * (cost.CommissionRate + cost.StampDutyRate))
+	buyFee := buyExec * cost.CommissionRate
+	sellFee := sellExec * (cost.CommissionRate + cost.StampDutyRate)
 
 	return core.Trade{
 		Code:          code,
@@ -204,7 +204,7 @@ func genRandomData(rnd *rand.Rand) equivData {
 		low := math.Min(open, close) * (1 - rnd.Float64()*0.02)
 		return &extend.Kline{
 			Unix:       t.Unix(),
-			Kline:      &protocol.Kline{Time: t, Open: protocol.Yuan(open), High: protocol.Yuan(high), Low: protocol.Yuan(low), Close: protocol.Yuan(close), Volume: int64(rnd.Intn(100000) + 1000), Amount: protocol.Yuan(close * 10000)},
+			Kline:      &protocol.Kline{Time: t, Open: open, High: high, Low: low, Close: close, Volume: int64(rnd.Intn(100000) + 1000), Amount: close * 10000},
 			Turnover:   rnd.Float64() * 5,
 			FloatStock: int64(400000000 + rnd.Intn(500000000)),
 			TotalStock: int64(600000000 + rnd.Intn(500000000)),
@@ -218,7 +218,7 @@ func genRandomData(rnd *rand.Rand) equivData {
 			t = t.AddDate(0, 0, 2)
 		}
 		his[i] = genDay(t, price)
-		price = his[i].Close.Float64()
+		price = his[i].Close
 	}
 
 	dks := make(extend.Klines, dksDays)
@@ -228,7 +228,7 @@ func genRandomData(rnd *rand.Rand) equivData {
 			day = day.AddDate(0, 0, 1)
 		}
 		dks[i] = genDay(day, price)
-		price = dks[i].Close.Float64()
+		price = dks[i].Close
 		day = day.AddDate(0, 0, 1)
 	}
 
@@ -238,21 +238,21 @@ func genRandomData(rnd *rand.Rand) equivData {
 		if rnd.Intn(3) == 0 {
 			continue
 		}
-		p := dk.Open.Float64()
+		p := dk.Open
 		t := time.Date(dk.Time.Year(), dk.Time.Month(), dk.Time.Day(), 9, 31, 0, 0, time.Local)
 		for j := 0; j < minuteBars; j++ {
 			mp := p * (1 + (rnd.Float64()-0.5)*0.003)
 			invalid := rnd.Intn(100) < 5
 			k := &protocol.Kline{
 				Time:   t.Add(time.Duration(j) * time.Minute),
-				Open:   protocol.Yuan(mp),
-				High:   protocol.Yuan(mp * 1.001),
-				Low:    protocol.Yuan(mp * 0.999),
+				Open:   mp,
+				High:   mp * 1.001,
+				Low:    mp * 0.999,
 				Volume: int64(rnd.Intn(5000) + 100),
 			}
 			if !invalid {
-				k.Close = protocol.Yuan(mp)
-				k.Amount = protocol.Yuan(mp * 1000)
+				k.Close = mp
+				k.Amount = mp * 1000
 			}
 			mks = append(mks, k)
 			p = mp
@@ -328,7 +328,7 @@ func TestDo与逐日参考实现等价(t *testing.T) {
 							CommissionRate:  0.0001,
 							StampDutyRate:   0.0005,
 							TransferFeeRate: 0.00001,
-							Slippage:        protocol.Yuan(0.01),
+							Slippage:        0.01,
 						},
 						Position: core.PositionConfig{MaxPerCode: maxPerCode, SharesPerLot: 100},
 					}

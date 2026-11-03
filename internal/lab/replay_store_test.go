@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // replayFixture 构造待保存报告（变体 0 有回放、变体 1 无记录）与已加载行情副本。
@@ -35,7 +35,7 @@ func replayFixture(t *testing.T) (*Report, []*ReplayVariant, map[string]extend.K
 	for i := 0; i < 3; i++ {
 		date := time.Date(2025, 1, 2+i, 0, 0, 0, 0, time.Local)
 		ks = append(ks, &extend.Kline{Unix: date.Unix(), Kline: &protocol.Kline{Time: date,
-			Open: protocol.Yuan(10), Close: protocol.Yuan(10 + float64(i)), High: protocol.Yuan(11), Low: protocol.Yuan(9)}})
+			Open: 10, Close: 10 + float64(i), High: 11, Low: 9}})
 	}
 	return rep, []*ReplayVariant{rv, nil}, map[string]extend.Klines{"sh600000": ks}
 }

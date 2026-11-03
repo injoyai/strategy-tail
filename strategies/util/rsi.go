@@ -18,7 +18,7 @@ func CalcRSI(dks extend.Klines, period int) float64 {
 	gainSum := 0.0
 	lossSum := 0.0
 	for i := start; i < len(dks); i++ {
-		change := dks[i].Close.Float64() - dks[i-1].Close.Float64()
+		change := dks[i].Close - dks[i-1].Close
 		if change > 0 {
 			gainSum += change
 		} else if change < 0 {

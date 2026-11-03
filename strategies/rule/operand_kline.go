@@ -2,16 +2,16 @@ package rule
 
 // K 线字段操作数：附录 A 组件所需的当日/上一交易日原始字段。
 //
-// 命名即合同：Price 后缀为整数厘（protocol.Price，int64 精确比较），
+// 命名即合同：Price 后缀为价格域（float64，原币种价格），
 // Float 后缀为浮点元；Prev 前缀取上一交易日（索引 n-2）。
 // 空前缀返回无效值；Prev 系列在不足 2 根时返回无效值，不补 0。
 // 此处只读取 K 线原始字段，不做任何窗口统计；指标公式统一见
 // operand_factor.go（委托 strategies/factor 现有实现）。
 
-// ClosePrice 今收（整数厘）。保留厘级整数比较的组件使用
+// ClosePrice 今收（浮点元）。保留浮点价格比较的组件使用
 // （如唐奇安下沿、收盘大于昨收/昨开的精确表达）。
 func ClosePrice() Operand {
-	return factorOperand{name: "今收(厘)", eval: func(in Input) Value {
+	return factorOperand{name: "今收(元)", eval: func(in Input) Value {
 		if len(in.Klines) == 0 {
 			return InvalidValue()
 		}
@@ -26,13 +26,13 @@ func CloseFloat() Operand {
 		if len(in.Klines) == 0 {
 			return InvalidValue()
 		}
-		return FloatValue(in.Klines[len(in.Klines)-1].Close.Float64())
+		return FloatValue(in.Klines[len(in.Klines)-1].Close)
 	}}
 }
 
-// OpenPrice 今开（整数厘）。
+// OpenPrice 今开（浮点元）。
 func OpenPrice() Operand {
-	return factorOperand{name: "今开(厘)", eval: func(in Input) Value {
+	return factorOperand{name: "今开(元)", eval: func(in Input) Value {
 		if len(in.Klines) == 0 {
 			return InvalidValue()
 		}
@@ -40,9 +40,9 @@ func OpenPrice() Operand {
 	}}
 }
 
-// PrevClosePrice 昨收（整数厘，n-2 根）。不足 2 根返回无效值。
+// PrevClosePrice 昨收（浮点元，n-2 根）。不足 2 根返回无效值。
 func PrevClosePrice() Operand {
-	return factorOperand{name: "昨收(厘)", eval: func(in Input) Value {
+	return factorOperand{name: "昨收(元)", eval: func(in Input) Value {
 		if len(in.Klines) < 2 {
 			return InvalidValue()
 		}
@@ -50,9 +50,9 @@ func PrevClosePrice() Operand {
 	}}
 }
 
-// PrevOpenPrice 昨开（整数厘，n-2 根）。不足 2 根返回无效值。
+// PrevOpenPrice 昨开（浮点元，n-2 根）。不足 2 根返回无效值。
 func PrevOpenPrice() Operand {
-	return factorOperand{name: "昨开(厘)", eval: func(in Input) Value {
+	return factorOperand{name: "昨开(元)", eval: func(in Input) Value {
 		if len(in.Klines) < 2 {
 			return InvalidValue()
 		}
@@ -77,6 +77,6 @@ func Turnover() Operand {
 		if len(in.Klines) == 0 {
 			return InvalidValue()
 		}
-		return FloatValue(in.Klines[len(in.Klines)-1].Amount.Float64())
+		return FloatValue(in.Klines[len(in.Klines)-1].Amount)
 	}}
 }

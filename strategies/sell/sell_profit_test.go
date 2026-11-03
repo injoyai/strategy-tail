@@ -5,12 +5,11 @@ import (
 	"testing"
 
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestProfitNoAllocations(t *testing.T) {
-	dks := t3cSeries([]protocol.Price{10000, 11000}, 100)
-	buy := core.Buy{Time: dks[0].Time, Price: 10000}
+	dks := t3cSeries([]float64{10.0, 11.0}, 100)
+	buy := core.Buy{Time: dks[0].Time, Price: 10.0}
 	for _, tc := range []struct {
 		name string
 		pct  float64
@@ -32,8 +31,8 @@ func TestProfitNoAllocations(t *testing.T) {
 }
 
 func BenchmarkProfit(b *testing.B) {
-	dks := t3cSeries([]protocol.Price{10000, 11000}, 100)
-	buy := core.Buy{Time: dks[0].Time, Price: 10000}
+	dks := t3cSeries([]float64{10.0, 11.0}, 100)
+	buy := core.Buy{Time: dks[0].Time, Price: 10.0}
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		macdBenchmarkResult = A盈利(0.1).Sell("sh600000", dks, buy)

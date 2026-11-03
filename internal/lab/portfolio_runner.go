@@ -620,8 +620,8 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 			if day < startDate || day > endDate {
 				continue
 			}
-			localClose[day] = k.Close.Float64()
-			localOpen[day] = k.Open.Float64()
+			localClose[day] = k.Close
+			localOpen[day] = k.Open
 		}
 		localVals := make([]map[string]float64, len(fcs))
 		for i := range fcs {

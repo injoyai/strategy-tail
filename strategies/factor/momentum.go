@@ -30,11 +30,11 @@ func (f N日动量) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < days+1 {
 		return math.NaN()
 	}
-	base := dks[len(dks)-days-1].Close.Float64()
+	base := dks[len(dks)-days-1].Close
 	if base == 0 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].Close.Float64()/base - 1
+	return dks[len(dks)-1].Close/base - 1
 }
 
 // 均线偏离 是收盘价相对 N 日均线的偏离率：(close - MA(N)) / MA(N)。
@@ -56,7 +56,7 @@ func (f 均线偏离) Value(code string, dks extend.Klines) float64 {
 	if ma == 0 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].Close.Float64()/ma - 1
+	return dks[len(dks)-1].Close/ma - 1
 }
 
 // N日斜率 是近 N 日收盘价线性回归斜率的相对值：slope / mean(close)。
@@ -79,7 +79,7 @@ func (f N日斜率) Value(code string, dks extend.Klines) float64 {
 	var sumX, sumY, sumXX, sumXY float64
 	for i, kline := range window {
 		x := float64(i)
-		y := kline.Close.Float64()
+		y := kline.Close
 		sumX += x
 		sumY += y
 		sumXX += x * x

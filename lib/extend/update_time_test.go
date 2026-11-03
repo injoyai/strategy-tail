@@ -2,13 +2,13 @@ package extend
 
 import (
 	"bytes"
+	"github.com/injoyai/tdx/v2/lib/update"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx"
-	"github.com/injoyai/tdx/lib/xorms"
+	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestLastSuccessfulUpdate(t *testing.T) {
@@ -22,19 +22,19 @@ func TestLastSuccessfulUpdate(t *testing.T) {
 	if _, err := os.Stat(filename); !os.IsNotExist(err) {
 		t.Fatal("status read created a database")
 	}
-	db, err := xorms.NewSqlite(filename)
+	db, err := xorms.NewSQLite(filename)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	if err := db.Sync2(new(tdx.UpdateModel)); err != nil {
+	if err := db.Sync2(new(update.Record)); err != nil {
 		t.Fatal(err)
 	}
 	for _, timestamp := range []int64{-1, 0, time.Date(2026, 10, 12, 16, 0, 0, 0, time.FixedZone("CST", 8*3600)).Unix()} {
 		if _, err := db.Exec(`DELETE FROM "update"`); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := db.Insert(&tdx.UpdateModel{Key: "pull", Time: timestamp}); err != nil {
+		if _, err := db.Insert(&update.Record{Key: "pull", Time: timestamp}); err != nil {
 			t.Fatal(err)
 		}
 		last, err := pull.LastSuccessfulUpdate()

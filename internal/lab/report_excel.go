@@ -4,10 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/xuri/excelize/v2"
 	"net/http"
 	"os"
-
-	"github.com/xuri/excelize/v2"
 )
 
 var errReportExcelTooLarge = errors.New("数据超过单个工作表上限（1048575 行），请缩小回测范围")

@@ -11,7 +11,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // interp_test.go 验证正式脚本（strategies/script/matrix.go）经 Yaegi 实例化后
@@ -166,10 +166,10 @@ func makeDownKlines() extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:  base.AddDate(0, 0, i),
-				Open:  protocol.Yuan(c + 0.1),
-				Close: protocol.Yuan(c),
-				High:  protocol.Yuan(c + 0.15),
-				Low:   protocol.Yuan(c - 0.05),
+				Open:  c + 0.1,
+				Close: c,
+				High:  c + 0.15,
+				Low:   c - 0.05,
 			},
 		})
 	}

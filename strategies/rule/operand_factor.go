@@ -6,7 +6,6 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // 因子操作数胶水（T2 前置）：把 strategies/factor 的现有数值实现包装成
@@ -16,8 +15,8 @@ import (
 //   - 只委托因子现有实现，不复制任何计算公式；窗口长度、零值默认与
 //     NaN 语义全部以因子为准（含 days<=0 时因子自身的默认替换）；
 //   - 无效值归一集中在此处：浮点结果一律经 FloatValue（NaN/±Inf → 无效值），
-//     不补 0；厘域因子缺数据返回 0，与真实 0 价无法区分，故 priceOperand
-//     以同因子的浮点口径（NaN=缺数据）判定有效性后再取厘值；
+//     不补 0；价格域因子缺数据返回 0，与真实 0 价无法区分，故 priceOperand
+//     以同因子的浮点口径（NaN=缺数据）判定有效性后再取价格值；
 //   - 组件合同守卫不放胶水："MA<=0 不触发"这类守卫由门面用
 //     NewCompare(MAValue(p), Gt, Literal(FloatValue(0))) 与主比较 NewAnd
 //     组合表达——无效值同样让守卫不成立，语义等价且在规则名中可见；
@@ -62,13 +61,13 @@ func floatOperand(name string, eval func(code string, dks extend.Klines) float64
 	}}
 }
 
-// priceOperand 包装因子整数厘取值：厘域因子缺数据返回 0，与真实 0 价
+// priceOperand 包装因子价格域取值：价格域因子缺数据返回 0，与真实 0 价
 // 无法区分，因此以同因子的浮点口径（NaN=缺数据）判定有效性，有效时才
-// 取厘值——窗口与默认值语义仍由因子单方提供，胶水不复制窗口判断。
+// 取价格值——窗口与默认值语义仍由因子单方提供，胶水不复制窗口判断。
 func priceOperand(
 	name string,
 	floatEval func(code string, dks extend.Klines) float64,
-	priceEval func(code string, dks extend.Klines) protocol.Price,
+	priceEval func(code string, dks extend.Klines) float64,
 ) Operand {
 	return factorOperand{name: name, eval: func(in Input) Value {
 		if math.IsNaN(floatEval(in.Code, in.Klines)) {
@@ -102,11 +101,10 @@ func MAValue(days int) Operand {
 	return floatOperand(ma.Name(), ma.Value)
 }
 
-// MAPrice N 日简单均线（整数厘，extend 口径 dks.MA(n)）。供保留厘级
-// 整数比较的组件使用（如现价大于N日均线的整数等价表达）。
+// MAPrice N 日简单均线（浮点元，extend 口径 dks.MA(n)）。供价格域比较使用。
 func MAPrice(days int) Operand {
 	ma := f.A均线(days)
-	return priceOperand(ma.Name(), ma.Value, func(_ string, dks extend.Klines) protocol.Price {
+	return priceOperand(ma.Name(), ma.Value, func(_ string, dks extend.Klines) float64 {
 		return ma.Price(dks)
 	})
 }
@@ -178,14 +176,14 @@ func HighestValue(days int, includeToday bool) Operand {
 	})
 }
 
-// HighestPrice 近 N 日最高价（整数厘），有效性由浮点口径判定（见 priceOperand）。
+// HighestPrice 近 N 日最高价（浮点元），有效性由浮点口径判定（见 priceOperand）。
 func HighestPrice(days int, includeToday bool) Operand {
 	fa := f.A最高价(days)
 	return priceOperand(windowName(includeToday, fa.Name()),
 		func(code string, dks extend.Klines) float64 {
 			return fa.Value(code, prior(dks, includeToday))
 		},
-		func(_ string, dks extend.Klines) protocol.Price {
+		func(_ string, dks extend.Klines) float64 {
 			return fa.Price(prior(dks, includeToday))
 		})
 }
@@ -198,14 +196,14 @@ func LowestValue(days int, includeToday bool) Operand {
 	})
 }
 
-// LowestPrice 近 N 日最低价（整数厘），窗口开关同 HighestPrice。
+// LowestPrice 近 N 日最低价（浮点元），窗口开关同 HighestPrice。
 func LowestPrice(days int, includeToday bool) Operand {
 	fa := f.A最低价(days)
 	return priceOperand(windowName(includeToday, fa.Name()),
 		func(code string, dks extend.Klines) float64 {
 			return fa.Value(code, prior(dks, includeToday))
 		},
-		func(_ string, dks extend.Klines) protocol.Price {
+		func(_ string, dks extend.Klines) float64 {
 			return fa.Price(prior(dks, includeToday))
 		})
 }
@@ -245,7 +243,7 @@ func BiasPercent(days int) Operand {
 		if math.IsNaN(m) || m == 0 {
 			return math.NaN()
 		}
-		return (dks[len(dks)-1].Close.Float64() - m) / m * 100
+		return (dks[len(dks)-1].Close - m) / m * 100
 	})
 }
 

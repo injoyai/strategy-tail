@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ========== BenchmarkReturn 基准收益率 ==========
@@ -16,9 +16,9 @@ func TestBenchmarkReturn区间收益(t *testing.T) {
 	// 区间收益 = 12/10 - 1 = 20%
 	t0 := time.Date(2024, 1, 2, 15, 0, 0, 0, time.Local)
 	dks := extend.Klines{
-		&extend.Kline{Unix: t0.Unix(), Kline: &protocol.Kline{Time: t0, Close: protocol.Yuan(10)}},
-		&extend.Kline{Unix: t0.AddDate(0, 0, 1).Unix(), Kline: &protocol.Kline{Time: t0.AddDate(0, 0, 1), Close: protocol.Yuan(11)}},
-		&extend.Kline{Unix: t0.AddDate(0, 0, 2).Unix(), Kline: &protocol.Kline{Time: t0.AddDate(0, 0, 2), Close: protocol.Yuan(12)}},
+		&extend.Kline{Unix: t0.Unix(), Kline: &protocol.Kline{Time: t0, Close: 10}},
+		&extend.Kline{Unix: t0.AddDate(0, 0, 1).Unix(), Kline: &protocol.Kline{Time: t0.AddDate(0, 0, 1), Close: 11}},
+		&extend.Kline{Unix: t0.AddDate(0, 0, 2).Unix(), Kline: &protocol.Kline{Time: t0.AddDate(0, 0, 2), Close: 12}},
 	}
 	r := BenchmarkReturn(dks)
 	if math.Abs(r-0.20) > 1e-6 {
@@ -29,7 +29,7 @@ func TestBenchmarkReturn区间收益(t *testing.T) {
 func TestBenchmarkReturn数据不足返回0(t *testing.T) {
 	t0 := time.Date(2024, 1, 2, 15, 0, 0, 0, time.Local)
 	single := extend.Klines{
-		&extend.Kline{Unix: t0.Unix(), Kline: &protocol.Kline{Time: t0, Close: protocol.Yuan(10)}},
+		&extend.Kline{Unix: t0.Unix(), Kline: &protocol.Kline{Time: t0, Close: 10}},
 	}
 	if r := BenchmarkReturn(single); r != 0 {
 		t.Fatalf("数据不足期望 0, 实际 %v", r)
@@ -94,14 +94,14 @@ func TestComputeTradeAlphaBeta使用净收益(t *testing.T) {
 	d3 := d1.AddDate(0, 0, 2)
 	d4 := d1.AddDate(0, 0, 3)
 	trades := []Trade{
-		{BuyTime: d1, SellTime: d2, BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1000, SellIncome: 1050},
-		{BuyTime: d3, SellTime: d4, BuyPrice: protocol.Yuan(10), SellPrice: protocol.Yuan(11), BuyCost: 1000, SellIncome: 1150},
+		{BuyTime: d1, SellTime: d2, BuyPrice: 10, SellPrice: 11, BuyCost: 1000, SellIncome: 1050},
+		{BuyTime: d3, SellTime: d4, BuyPrice: 10, SellPrice: 11, BuyCost: 1000, SellIncome: 1150},
 	}
 	benchmark := extend.Klines{
-		&extend.Kline{Unix: d1.Unix(), Kline: &protocol.Kline{Time: d1, Close: protocol.Yuan(100)}},
-		&extend.Kline{Unix: d2.Unix(), Kline: &protocol.Kline{Time: d2, Close: protocol.Yuan(110)}},
-		&extend.Kline{Unix: d3.Unix(), Kline: &protocol.Kline{Time: d3, Close: protocol.Yuan(100)}},
-		&extend.Kline{Unix: d4.Unix(), Kline: &protocol.Kline{Time: d4, Close: protocol.Yuan(120)}},
+		&extend.Kline{Unix: d1.Unix(), Kline: &protocol.Kline{Time: d1, Close: 100}},
+		&extend.Kline{Unix: d2.Unix(), Kline: &protocol.Kline{Time: d2, Close: 110}},
+		&extend.Kline{Unix: d3.Unix(), Kline: &protocol.Kline{Time: d3, Close: 100}},
+		&extend.Kline{Unix: d4.Unix(), Kline: &protocol.Kline{Time: d4, Close: 120}},
 	}
 
 	alpha, beta := computeTradeAlphaBeta(trades, benchmark)

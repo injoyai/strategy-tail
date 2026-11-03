@@ -10,15 +10,15 @@ import (
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // writeDayDBCloses 按收盘价序列写伪造日K sqlite（表结构同 server_test.go
 // writeFakeDayDB；区别：每日收盘可指定，构造有方向的因子序列）。
 func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSqlite(filepath.Join(dir, extend.DirDay, code+".db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,8 @@ func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base tim
 		rows = append(rows, &extend.Kline{
 			Unix: tm.Unix(),
 			Kline: &protocol.Kline{
-				Time: tm, Open: protocol.Yuan(c), Close: protocol.Yuan(c),
-				High: protocol.Yuan(c), Low: protocol.Yuan(c), Volume: 10000,
+				Time: tm, Open: c, Close: c,
+				High: c, Low: c, Volume: 10000,
 			},
 		})
 	}
@@ -49,7 +49,7 @@ func writeDayDBOHLC(t *testing.T, dir, code string, opens, closes []float64, bas
 	if len(opens) != len(closes) {
 		t.Fatalf("opens/closes 长度不一致: %d/%d", len(opens), len(closes))
 	}
-	db, err := xorms.NewSqlite(filepath.Join(dir, extend.DirDay, code+".db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func writeDayDBOHLC(t *testing.T, dir, code string, opens, closes []float64, bas
 		rows = append(rows, &extend.Kline{
 			Unix: tm.Unix(),
 			Kline: &protocol.Kline{
-				Time: tm, Open: protocol.Yuan(opens[i]), Close: protocol.Yuan(closes[i]),
-				High: protocol.Yuan(hi), Low: protocol.Yuan(lo), Volume: 10000,
+				Time: tm, Open: opens[i], Close: closes[i],
+				High: hi, Low: lo, Volume: 10000,
 			},
 		})
 	}
@@ -83,7 +83,7 @@ func (f fnFac) Value(_ string, dks extend.Klines) float64 {
 	if len(dks) < 3 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].Close.Float64()/dks[len(dks)-3].Close.Float64() - 1
+	return dks[len(dks)-1].Close/dks[len(dks)-3].Close - 1
 }
 
 // TestFillCrossSection 走伪造日K DB + ForEachCodeData 真实路径：

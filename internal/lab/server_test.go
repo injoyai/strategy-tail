@@ -17,8 +17,8 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // server_test.go 按 httptest 走 API 契约（设计文档 §8）：
@@ -515,7 +515,7 @@ func TestServerStopSameOrigin(t *testing.T) {
 // 每天开10收10.5（+5%，不触发涨停过滤），恒价保证买入条件每日为真。
 func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSqlite(filepath.Join(dir, extend.DirDay, code+".db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -530,10 +530,10 @@ func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 			Unix: tm.Unix(),
 			Kline: &protocol.Kline{
 				Time:   tm,
-				Open:   protocol.Yuan(10),
-				Close:  protocol.Yuan(10.5),
-				High:   protocol.Yuan(10.6),
-				Low:    protocol.Yuan(9.9),
+				Open:   10,
+				Close:  10.5,
+				High:   10.6,
+				Low:    9.9,
 				Volume: 10000,
 			},
 		})

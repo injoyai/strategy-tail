@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // --- Task 2 Step 2/5：观察层构建与无前视合同 ---
@@ -55,8 +55,8 @@ func (f *flakeyFactor) ValueAt(core.FactorContext) float64 {
 
 func obsKline(at time.Time, price float64) *extend.Kline {
 	return &extend.Kline{Kline: &protocol.Kline{
-		Time: at, Open: protocol.Yuan(price), High: protocol.Yuan(price),
-		Low: protocol.Yuan(price), Close: protocol.Yuan(price), Volume: 100,
+		Time: at, Open: price, High: price,
+		Low: price, Close: price, Volume: 100,
 	}}
 }
 

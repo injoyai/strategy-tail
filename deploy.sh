@@ -59,7 +59,7 @@ trap rollback EXIT
 
 check_idle
 echo "==> 构建镜像 ${IMAGE}:latest"
-docker build -t "${IMAGE}:latest" "${ROOT}"
+docker build --build-context "tdx=${ROOT}/../tdx" -t "${IMAGE}:latest" "${ROOT}"
 # 构建期间可能启动任务，切换前再次检查；不可读取状态时停止部署。
 check_idle
 if [ "${old_exists}" -eq 1 ]; then

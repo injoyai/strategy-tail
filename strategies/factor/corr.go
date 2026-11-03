@@ -53,7 +53,7 @@ func (f 量价相关) Value(code string, dks extend.Klines) float64 {
 	xs := make([]float64, n)
 	ys := make([]float64, n)
 	for i, k := range w {
-		xs[i] = k.Close.Float64()
+		xs[i] = k.Close
 		ys[i] = float64(k.Volume)
 	}
 	return Pearson(xs, ys)

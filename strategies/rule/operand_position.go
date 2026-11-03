@@ -2,8 +2,7 @@ package rule
 
 // 持仓标量操作数（T4）：附录 C 持仓批次组件所需的当前时刻持仓指标。
 //
-// 命名即合同（同 operand_kline.go）：Price 后缀为整数厘（protocol.Price，
-// int64 精确比较），Float 后缀为浮点元，Percent 后缀为浮点比率。
+// 命名即合同（同 operand_kline.go）：Price 后缀为浮点价格域，Float 后缀为浮点元，Percent 后缀为浮点比率。
 // 持仓不可用（买入侧求值或调用方未提供）一律返回无效值，
 // 不伪造买入价或买入时间（Input.Position 契约）。
 //
@@ -12,11 +11,11 @@ package rule
 // A持仓N天/A持仓N天尾盘 的既定口径，随构造器文档固化；
 // 其余组件各自的日期串/逆序定位算法保留在各自门面与逃逸口中。
 
-// PositionBuyPrice 买入价（整数厘）。保留厘级整数比较的组件使用
+// PositionBuyPrice 买入价（浮点元）。保留浮点价格比较的组件使用
 // （如买入次日跌破买入价的精确表达）。持仓不可用返回无效值。
-// 不做 buy<=0 守卫：旧组件无此预检查，买入价 0 厘为有效值以保持精确语义。
+// 不做 buy<=0 守卫：旧组件无此预检查，买入价 0 元为有效值以保持精确语义。
 func PositionBuyPrice() Operand {
-	return factorOperand{name: "买入价(厘)", eval: func(in Input) Value {
+	return factorOperand{name: "买入价(元)", eval: func(in Input) Value {
 		pos, ok := in.Position()
 		if !ok {
 			return InvalidValue()
@@ -31,10 +30,10 @@ func PositionBuyPrice() Operand {
 func PositionBuyPriceFloat() Operand {
 	return factorOperand{name: "买入价(元)", eval: func(in Input) Value {
 		pos, ok := in.Position()
-		if !ok || pos.Price.Float64() <= 0 {
+		if !ok || pos.Price <= 0 {
 			return InvalidValue()
 		}
-		return FloatValue(pos.Price.Float64())
+		return FloatValue(pos.Price)
 	}}
 }
 
@@ -51,11 +50,11 @@ func (positionProfitOperand) Name() string { return "持仓收益率" }
 
 func (positionProfitOperand) Value(in Input) Value {
 	pos, ok := in.Position()
-	if !ok || pos.Price.Float64() <= 0 || len(in.Klines) == 0 {
+	if !ok || pos.Price <= 0 || len(in.Klines) == 0 {
 		return InvalidValue()
 	}
-	buy := pos.Price.Float64()
-	last := in.Klines[len(in.Klines)-1].Close.Float64()
+	buy := pos.Price
+	last := in.Klines[len(in.Klines)-1].Close
 	return FloatValue((last - buy) / buy)
 }
 

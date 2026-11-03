@@ -166,7 +166,7 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 ```bash
 node --test internal/lab/web/*.mjs
 python3 tests/deploy_test.py
-# macOS / Linux，Go 1.25.4+
+# macOS / Linux，Go 1.25.4+；同级 ../tdx 必须是配套的 tdx/v2 工作区
 TZ=Asia/Shanghai go test ./internal/lab/... ./strategies/buy ./strategies/sell ./internal/researchrun
 go build ./...
 go vet ./internal/lab/...
@@ -307,3 +307,9 @@ git diff --check
 因子分析、组合运行、组合验证和行情更新也使用相同规则。因子股票处理结束后，继续显示 IC 统计、分组收益、年度结果和报告生成等真实阶段；组合任务分别显示变换、合成、模拟交易、指标、归因与保存。行情更新分别统计日线和分钟线标的数，估值采集及保存阶段不估算百分比，失败汇总仍使用累计数量。后台完成后若页面仍在下载报告，任务栏显示“读取结果”，读取成功才显示完成；读取失败可重试读取，不重新运行任务。
 
 盘感练习以题库组织：选择策略和年份先建立固定快照题库，再开始一次训练。训练内“开始下一题”直接复用题库且不重复；“结束本题”保留训练，“结束训练并生成报告”统计本次正式作答。最后一题结束自动生成报告，支持下载与逐题复盘。旧记录在“历史单题 / 重练”中保留，不自动归入训练。详见[题库训练约定](docs/plans/2026-10-19-practice-training.md)。
+
+### 本地 tdx v2 依赖
+
+当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值；旧 SQLite 数据保留原格式，由读取边界转换。策略均线精度变化及兼容边界见 [v2 迁移说明](docs/guides/tdx-v2-migration.md)。
+
+`./deploy.sh` 会将本地 SDK 作为 Docker 命名构建上下文传入；手动构建使用 `docker build --build-context tdx=../tdx -t strategy-lab .`。

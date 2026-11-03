@@ -25,8 +25,8 @@ func ExportYearTradesCSV(year int, trades []Trade) (string, error) {
 	for _, trade := range sorted {
 		data = append(data, []any{
 			trade.Code,
-			trade.BuyTime.Format(time.DateTime), trade.BuyPrice.Float64(),
-			trade.SellTime.Format(time.DateTime), trade.SellPrice.Float64(),
+			trade.BuyTime.Format(time.DateTime), trade.BuyPrice,
+			trade.SellTime.Format(time.DateTime), trade.SellPrice,
 			tradeProfitAmount(trade),
 			tradeReturnRate(trade),
 			trade.HoldingDays(),

@@ -9,12 +9,12 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // 补充搭建器目录之外的策略，基线在迁移其计算前冻结。
 func TestAdditionalConditionFactorEquivalence(t *testing.T) {
-	raw, err := os.ReadFile("testdata/factor_migration_baseline.json")
+	raw, err := os.ReadFile("testdata/factor_migration_baseline_v2.json")
 	if err != nil {
 		t.Fatal(err)
 	}

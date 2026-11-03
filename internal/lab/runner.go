@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"math/rand/v2"
+
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -24,7 +25,6 @@ import (
 	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
 )
 
 // runner.go 回测任务执行器：单任务互斥 + 进度上报 + 落盘。
@@ -884,9 +884,9 @@ func toTradeJSON(trades []core.Trade) []TradeJSON {
 		out = append(out, TradeJSON{
 			Code:        t.Code,
 			BuyTime:     t.BuyTime.Format(time.DateTime),
-			BuyPrice:    t.BuyPrice.Float64(),
+			BuyPrice:    t.BuyPrice,
 			SellTime:    t.SellTime.Format(time.DateTime),
-			SellPrice:   t.SellPrice.Float64(),
+			SellPrice:   t.SellPrice,
 			Quantity:    t.Quantity,
 			Profit:      t.ProfitAmount(),
 			Rate:        t.Profit(),
@@ -942,8 +942,8 @@ func fromTradeJSON(ts []TradeJSON) []core.Trade {
 	for _, t := range ts {
 		buyTime, _ := time.Parse(time.DateTime, t.BuyTime)
 		sellTime, _ := time.Parse(time.DateTime, t.SellTime)
-		buyPrice := protocol.Yuan(t.BuyPrice)
-		sellPrice := protocol.Yuan(t.SellPrice)
+		buyPrice := t.BuyPrice
+		sellPrice := t.SellPrice
 		out = append(out, core.Trade{
 			Code:      t.Code,
 			BuyTime:   buyTime,

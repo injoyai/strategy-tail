@@ -8,7 +8,6 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestWindowFactors(t *testing.T) {
@@ -32,20 +31,20 @@ func TestWindowFactors(t *testing.T) {
 	}
 	// 前日窗口不受今日极值影响；原行情 LLV 的零值语义也必须保留。
 	wantVal(t, "昨日高点", A最高价(2).Value("", ks[:2]), 13, 0)
-	ks[2].Low = 0
+	ks[2].Low = 0.0
 	wantVal(t, "末日零低点", A最低价(2).Value("", ks), 0, 0)
-	ks[1].Low, ks[2].Low = 0, 9000
+	ks[1].Low, ks[2].Low = 0.0, 9.0
 	wantVal(t, "沿用行情零值处理", A最低价(2).Value("", ks), 9, 0)
 	// 原始价格比较不经过浮点，避免大数在转换时丢掉一厘。
-	ks[2].High = protocol.Price(1<<54 + 1)
+	ks[2].High = 1.8014398509481984e+13
 	if got := A最高价(2).Price(ks); got != ks[2].High {
-		t.Fatalf("原始最高价 = %d, want %d", got, ks[2].High)
+		t.Fatalf("原始最高价 = %v, want %v", got, ks[2].High)
 	}
 	ks[2].Close = ks[2].High
 	if got := A均线(1).Price(ks); got != ks[2].Close {
-		t.Fatalf("原始均线 = %d, want %d", got, ks[2].Close)
+		t.Fatalf("原始均线 = %v, want %v", got, ks[2].Close)
 	}
-	if A最低价(2).Price(ks[:1]) != 0 || A最高价(2).Price(nil) != 0 {
+	if A最低价(2).Price(ks[:1]) != 0.0 || A最高价(2).Price(nil) != 0.0 {
 		t.Fatal("原始价格缺数据返回 0，数值因子缺数据返回 NaN")
 	}
 	for _, factor := range []core.Factor{A最高价(0), A最低价(0), A均量(0)} {

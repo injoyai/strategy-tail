@@ -3,14 +3,13 @@ package lab
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/xuri/excelize/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/xuri/excelize/v2"
 )
 
 func TestReportExcelIncludesAllTradesAndFrozenStats(t *testing.T) {

@@ -3,8 +3,6 @@ package rule
 import (
 	"math"
 	"testing"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 func TestCompareThresholdBoundaries(t *testing.T) {
@@ -34,14 +32,14 @@ func TestCompareThresholdBoundaries(t *testing.T) {
 		{"浮点 小于 Ge", FloatValue(9.999), Ge, FloatValue(10), false},
 		{"浮点 小于 Eq", FloatValue(9.999), Eq, FloatValue(10), false},
 		// 整数厘域，阈值 10000 厘（10.000 元）
-		{"厘价 相等 Lt", PriceValue(10000), Lt, PriceValue(10000), false},
-		{"厘价 相等 Le", PriceValue(10000), Le, PriceValue(10000), true},
-		{"厘价 相等 Gt", PriceValue(10000), Gt, PriceValue(10000), false},
-		{"厘价 相等 Ge", PriceValue(10000), Ge, PriceValue(10000), true},
-		{"厘价 相等 Eq", PriceValue(10000), Eq, PriceValue(10000), true},
-		{"厘价 高 1 厘 Gt", PriceValue(10001), Gt, PriceValue(10000), true},
-		{"厘价 高 1 厘 Gt 反向", PriceValue(10000), Gt, PriceValue(10001), false},
-		{"厘价 低 1 厘 Lt", PriceValue(9999), Lt, PriceValue(10000), true},
+		{"厘价 相等 Lt", PriceValue(10.0), Lt, PriceValue(10.0), false},
+		{"厘价 相等 Le", PriceValue(10.0), Le, PriceValue(10.0), true},
+		{"厘价 相等 Gt", PriceValue(10.0), Gt, PriceValue(10.0), false},
+		{"厘价 相等 Ge", PriceValue(10.0), Ge, PriceValue(10.0), true},
+		{"厘价 相等 Eq", PriceValue(10.0), Eq, PriceValue(10.0), true},
+		{"厘价 高 1 厘 Gt", PriceValue(10.001), Gt, PriceValue(10.0), true},
+		{"厘价 高 1 厘 Gt 反向", PriceValue(10.0), Gt, PriceValue(10.001), false},
+		{"厘价 低 1 厘 Lt", PriceValue(9.999), Lt, PriceValue(10.0), true},
 		// 0/缺省参数语义：0 是真实阈值，不是无界
 		{"零阈值 Eq 命中", FloatValue(0), Eq, FloatValue(0), true},
 		{"负值偏离 Gt", FloatValue(-0.0001), Gt, FloatValue(0), false},
@@ -69,7 +67,7 @@ func TestCompareThresholdBoundaries(t *testing.T) {
 func TestCompareCentBoundaryNotLost(t *testing.T) {
 	// 厘级边界不能因统一转 float64 丢失：相邻厘价的比较走 int64 精确语义。
 	// 12.345 与 12.346 元相差 1 厘，浮点化再比较可能吞掉该差异。
-	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(protocol.Yuan(12.345)-1)))
+	rule, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(12.345-0.001)))
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
@@ -92,8 +90,8 @@ func TestCompareInvalidAndCrossKindNotTrigger(t *testing.T) {
 		{"右侧负无穷", FloatValue(1), FloatValue(math.Inf(-1))},
 		{"左侧显式无效", InvalidValue(), FloatValue(1)},
 		{"右侧显式无效", FloatValue(1), InvalidValue()},
-		{"跨域 价对浮点", PriceValue(12345), FloatValue(12.345)},
-		{"跨域 浮点对价", FloatValue(12.345), PriceValue(12345)},
+		{"跨域 价对浮点", PriceValue(12.345), FloatValue(12.345)},
+		{"跨域 浮点对价", FloatValue(12.345), PriceValue(12.345)},
 	}
 	for _, c := range cases {
 		for _, op := range ops {
@@ -149,11 +147,11 @@ func TestCompareConstructorRejects(t *testing.T) {
 }
 
 func TestCompareName(t *testing.T) {
-	rule, err := NewCompare(closeOperand{}, Ge, Literal(PriceValue(20000)))
+	rule, err := NewCompare(closeOperand{}, Ge, Literal(PriceValue(20.0)))
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
-	if got, want := rule.Name(), "close >= 20000"; got != want {
+	if got, want := rule.Name(), "close >= 20"; got != want {
 		t.Fatalf("Name = %q, 期望 %q", got, want)
 	}
 }
@@ -203,9 +201,9 @@ func TestRangeBoundaries(t *testing.T) {
 		{"点区间 含未命中", FloatValue(8), mv(FloatValue(7)), mv(FloatValue(7)), true, true, false},
 		{"点区间 不含恒假", FloatValue(7), mv(FloatValue(7)), mv(FloatValue(7)), false, false, false},
 		// 整数厘域区间
-		{"厘价区间 内", PriceValue(12345), mv(PriceValue(12340)), mv(PriceValue(12350)), true, true, true},
-		{"厘价区间 上边界", PriceValue(12350), mv(PriceValue(12340)), mv(PriceValue(12350)), true, true, true},
-		{"厘价区间 超出", PriceValue(12351), mv(PriceValue(12340)), mv(PriceValue(12350)), true, true, false},
+		{"厘价区间 内", PriceValue(12.345), mv(PriceValue(12.34)), mv(PriceValue(12.35)), true, true, true},
+		{"厘价区间 上边界", PriceValue(12.35), mv(PriceValue(12.34)), mv(PriceValue(12.35)), true, true, true},
+		{"厘价区间 超出", PriceValue(12.351), mv(PriceValue(12.34)), mv(PriceValue(12.35)), true, true, false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -230,8 +228,8 @@ func TestRangeInvalidOperandNotTrigger(t *testing.T) {
 	}{
 		{"NaN 不触发", Literal(InvalidValue()), mv(FloatValue(0)), nil},
 		{"操作数 NaN 字面量不触发", Literal(FloatValue(math.NaN())), mv(FloatValue(-1)), mv(FloatValue(1))},
-		{"跨域 操作数厘对浮点界", Literal(PriceValue(12345)), mv(FloatValue(0)), nil},
-		{"跨域 操作数浮点对厘界", Literal(FloatValue(1)), mv(PriceValue(0)), nil},
+		{"跨域 操作数厘对浮点界", Literal(PriceValue(12.345)), mv(FloatValue(0)), nil},
+		{"跨域 操作数浮点对厘界", Literal(FloatValue(1)), mv(PriceValue(0.0)), nil},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -267,7 +265,7 @@ func TestRangeConstructorRejects(t *testing.T) {
 		t.Fatal("下限大于上限应拒绝构造")
 	}
 	// 上下限值域不一致
-	if _, err := NewRange(Literal(FloatValue(1)), mv(PriceValue(1)), mv(FloatValue(2)), true, true); err == nil {
+	if _, err := NewRange(Literal(FloatValue(1)), mv(PriceValue(0.001)), mv(FloatValue(2)), true, true); err == nil {
 		t.Fatal("上下限跨值域应拒绝构造")
 	}
 	// Max=0 退化为无上限是门面的映射职责：内核把 0 当真实边界
@@ -281,18 +279,18 @@ func TestRangeConstructorRejects(t *testing.T) {
 }
 
 func TestRangeName(t *testing.T) {
-	rule, err := NewRange(closeOperand{}, mv(PriceValue(200)), mv(PriceValue(12000)), true, true)
+	rule, err := NewRange(closeOperand{}, mv(PriceValue(0.2)), mv(PriceValue(12.0)), true, true)
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
-	if got, want := rule.Name(), "close∈[200,12000]"; got != want {
+	if got, want := rule.Name(), "close∈[0.2,12]"; got != want {
 		t.Fatalf("Name = %q, 期望 %q", got, want)
 	}
-	openRule, err := NewRange(closeOperand{}, nil, mv(PriceValue(12000)), false, false)
+	openRule, err := NewRange(closeOperand{}, nil, mv(PriceValue(12.0)), false, false)
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
-	if got, want := openRule.Name(), "close∈(-∞,12000)"; got != want {
+	if got, want := openRule.Name(), "close∈(-∞,12)"; got != want {
 		t.Fatalf("Name = %q, 期望 %q", got, want)
 	}
 }
@@ -442,14 +440,14 @@ func TestRulesWithEmptyPrefixDoNotPanic(t *testing.T) {
 	if in.AsOf().IsZero() != true {
 		t.Fatal("空前缀 AsOf 应为零值")
 	}
-	cmp, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(100)))
+	cmp, err := NewCompare(closeOperand{}, Gt, Literal(PriceValue(0.1)))
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}
 	if cmp.Eval(in) {
 		t.Fatal("空前缀比较不得触发")
 	}
-	rng, err := NewRange(closeOperand{}, mv(PriceValue(1)), nil, true, false)
+	rng, err := NewRange(closeOperand{}, mv(PriceValue(0.001)), nil, true, false)
 	if err != nil {
 		t.Fatalf("构造失败: %v", err)
 	}

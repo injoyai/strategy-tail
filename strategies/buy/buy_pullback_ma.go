@@ -53,7 +53,7 @@ func (s A回踩N日均线) Buy(code string, dks extend.Klines) bool {
 
 	// 判断委托共用内核，四条件与旧实现逐条同构（台账风险 §13.14）：
 	// 预热门槛沿用旧式 max(period,support)+touchDays+1；条件2 今收>当日
-	// MA 与 今收>昨收（整数厘精确比较）两条比较表达；条件1 昨收≤昨日 MA
+	// MA 与 今收>昨收（价格比较）两条比较表达；条件1 昨收≤昨日 MA
 	// 用 CountWindow 窗口 1 天不含今日表达（谓词按昨日截断前缀求值）；
 	// 条件3 触及判定用 CountWindow(touchDays,1) 逐日按截断前缀重算均线，
 	// 与旧循环 f.A均线(period).Value(code, dks[:i+1]) 口径一致；

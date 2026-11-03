@@ -8,7 +8,7 @@ import (
 	"github.com/injoyai/strategy-tail/strategies/rule"
 )
 
-// 实体阴线收阴规则 今开 > 今收（厘级整数严格比较），即当天收阴。
+// 实体阴线收阴规则 今开 > 今收（浮点价格严格比较），即当天收阴。
 var 实体阴线收阴规则 = mustCompare(rule.OpenPrice(), rule.Gt, rule.ClosePrice())
 
 // 实体阴线占比操作数 实体占振幅比例：数值计算委托 factor.A实体振幅占比，
@@ -33,7 +33,7 @@ func 实体阴线占比操作数() rule.Operand {
 //  2. 实体比例：(开盘价 - 收盘价) / (最高价 - 最低价) ≥ MinBodyRatio。
 //     MinBodyRatio <= 0 表示只要收阴即可（不校验实体比例）。
 //
-// 判断委托共用规则内核（strategies/rule）：收阴为厘级整数比较；
+// 判断委托共用规则内核（strategies/rule）：收阴为浮点价格比较；
 // 实体占比为 factor 数值经操作数与阈值（Ge）比较。"MinBodyRatio<=0
 // 只要收阴"的退化语义保留在本门面，不经内核代答。
 type A实体阴线 struct {

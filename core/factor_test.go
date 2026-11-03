@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // stubFactor 测试桩：恒返回构造时设定的值。
@@ -34,10 +34,10 @@ func mkKline(base time.Time, i int, close float64) *extend.Kline {
 		Unix: tm.Unix(),
 		Kline: &protocol.Kline{
 			Time:   tm,
-			Open:   protocol.Yuan(close),
-			Close:  protocol.Yuan(close),
-			High:   protocol.Yuan(close),
-			Low:    protocol.Yuan(close),
+			Open:   close,
+			Close:  close,
+			High:   close,
+			Low:    close,
 			Volume: 10000,
 		},
 	}

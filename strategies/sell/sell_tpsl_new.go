@@ -52,7 +52,7 @@ func (s A止盈止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		if !ok {
 			return false
 		}
-		buyPrice := pos.Price.Float64()
+		buyPrice := pos.Price
 		if buyPrice <= 0 {
 			return false
 		}
@@ -69,7 +69,7 @@ func (s A止盈止损) Sell(code string, dks extend.Klines, buy core.Buy) bool {
 		}
 		// 只检查买入日之后的K线（不含买入日当天）
 		for i := buyIdx + 1; i < n; i++ {
-			closePrice := in.Klines[i].Close.Float64()
+			closePrice := in.Klines[i].Close
 			rate := (closePrice - buyPrice) / buyPrice
 			if s.TakeProfit > 0 && rate >= s.TakeProfit {
 				return true

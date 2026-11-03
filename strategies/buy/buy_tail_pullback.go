@@ -52,9 +52,9 @@ func (s A阴线收回) Buy(code string, dks extend.Klines) bool {
 	}
 
 	today := dks[len(dks)-1]
-	open := today.Open.Float64()
-	close := today.Close.Float64()
-	low := today.Low.Float64()
+	open := today.Open
+	close := today.Close
+	low := today.Low
 
 	// 条件1：当天收阴且有实体
 	if close >= open {

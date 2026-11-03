@@ -75,7 +75,7 @@ func (b A收盘价站上长期均线) Buy(code string, dks extend.Klines) bool {
 	if ma <= 0 {
 		return false
 	}
-	closePrice := dks[len(dks)-1].Close.Float64()
+	closePrice := dks[len(dks)-1].Close
 	threshold := ma * (1 + b.Margin/100)
 	return closePrice > threshold
 }
@@ -130,7 +130,7 @@ func (b A浅回调至均线) Buy(code string, dks extend.Klines) bool {
 	}
 
 	today := dks[n-1]
-	closePrice := today.Close.Float64()
+	closePrice := today.Close
 
 	// 统计近期高点
 	highest := f.A最高价(highLookback).Value(code, dks)

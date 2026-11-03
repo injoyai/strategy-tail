@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestReportMACDUsesStrategyConvention(t *testing.T) {
 	ks := extend.Klines{}
 	for i, close := range []float64{10, 11, 9, 12, 13} {
-		ks = append(ks, &extend.Kline{Kline: &protocol.Kline{Time: time.Date(2024, 1, i+1, 0, 0, 0, 0, time.Local), Close: protocol.Yuan(close)}})
+		ks = append(ks, &extend.Kline{Kline: &protocol.Kline{Time: time.Date(2024, 1, i+1, 0, 0, 0, 0, time.Local), Close: close}})
 	}
 	values := reportMACD(ks)
 	if len(values) != len(ks) || values[1][0] == 0 || values[1][2] == 0 {

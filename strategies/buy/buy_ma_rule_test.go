@@ -16,7 +16,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // ---- 数据构造（确定性）----
@@ -27,10 +27,10 @@ func t3bCloseKlines(closes []float64) extend.Klines {
 		ks = append(ks, &extend.Kline{
 			Kline: &protocol.Kline{
 				Time:  time.Date(2026, 1, i+1, 0, 0, 0, 0, time.Local),
-				Open:  protocol.Yuan(c - 0.5),
-				High:  protocol.Yuan(c + 2),
-				Low:   protocol.Yuan(c - 2),
-				Close: protocol.Yuan(c),
+				Open:  c - 0.5,
+				High:  c + 2,
+				Low:   c - 2,
+				Close: c,
 			},
 		})
 	}
@@ -44,10 +44,10 @@ func t3bOHLC(closes, lows []float64) extend.Klines {
 		ks = append(ks, &extend.Kline{
 			Kline: &protocol.Kline{
 				Time:  time.Date(2026, 1, i+1, 0, 0, 0, 0, time.Local),
-				Open:  protocol.Yuan(c),
-				High:  protocol.Yuan(math.Max(c, lows[i]) + 1),
-				Low:   protocol.Yuan(lows[i]),
-				Close: protocol.Yuan(c),
+				Open:  c,
+				High:  math.Max(c, lows[i]) + 1,
+				Low:   lows[i],
+				Close: c,
 			},
 		})
 	}
@@ -160,13 +160,13 @@ func t3bOracle回踩均线(s A回踩N日均线, code string, dks extend.Klines) 
 	yesterday := dks[n-2]
 	maPeriodToday := f.A均线(period).Value(code, dks)
 	maPeriodYesterday := f.A均线(period).Value(code, dks[:n-1])
-	if today.Close.Float64() <= maPeriodToday {
+	if today.Close <= maPeriodToday {
 		return false
 	}
-	if today.Close.Float64() <= yesterday.Close.Float64() {
+	if today.Close <= yesterday.Close {
 		return false
 	}
-	if yesterday.Close.Float64() > maPeriodYesterday {
+	if yesterday.Close > maPeriodYesterday {
 		return false
 	}
 	touched := false
@@ -174,14 +174,14 @@ func t3bOracle回踩均线(s A回踩N日均线, code string, dks extend.Klines) 
 	if windowStart < 0 {
 		windowStart = 0
 	}
-	lowestLow := dks[windowStart].Low.Float64()
+	lowestLow := dks[windowStart].Low
 	for i := windowStart; i < n-1; i++ {
 		maAtDay := f.A均线(period).Value(code, dks[:i+1])
-		if dks[i].Low.Float64() <= maAtDay {
+		if dks[i].Low <= maAtDay {
 			touched = true
 		}
-		if dks[i].Low.Float64() < lowestLow {
-			lowestLow = dks[i].Low.Float64()
+		if dks[i].Low < lowestLow {
+			lowestLow = dks[i].Low
 		}
 	}
 	if !touched {
@@ -229,8 +229,8 @@ func t3bOracle近N日涨幅(b A近N日涨幅小于, code string, dks extend.Klin
 	if n < days+1 {
 		return false
 	}
-	startPrice := dks[n-1-days].Close.Float64()
-	endPrice := dks[n-1].Close.Float64()
+	startPrice := dks[n-1-days].Close
+	endPrice := dks[n-1].Close
 	if startPrice <= 0 {
 		return false
 	}

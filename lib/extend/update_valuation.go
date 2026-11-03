@@ -2,17 +2,17 @@ package extend
 
 import (
 	"fmt"
+	"github.com/injoyai/tdx/v2/extend/manage"
 
 	"github.com/injoyai/strategy-tail/researchdata"
 	tdxdata "github.com/injoyai/strategy-tail/researchdata/tdx"
-	"github.com/injoyai/tdx"
 )
 
-func (this *PullKline) updateValuation(m *tdx.Manage, progress UpdateProgress, report func(UpdateProgress)) (UpdateProgress, error) {
+func (this *PullKline) updateValuation(m *manage.Manage, progress UpdateProgress, report func(UpdateProgress)) (UpdateProgress, error) {
 	if this.Config.ValuationDatabase == "" {
 		return progress, nil
 	}
-	fresh, err := this.Updated.Updated("valuation")
+	fresh, err := this.Updated.IsUpdated("valuation")
 	if err != nil {
 		return progress, err
 	}
@@ -39,14 +39,14 @@ func (this *PullKline) updateValuation(m *tdx.Manage, progress UpdateProgress, r
 	written, skipped := 0, 0
 	store, err := researchdata.OpenSQLiteStore(this.Config.ValuationDatabase)
 	if err == nil {
-		written, skipped, err = tdxdata.Sync(m.IPool, store)
+		written, skipped, err = tdxdata.Sync(m.ClientPool, store)
 		closeErr := store.Close()
 		if err == nil {
 			err = closeErr
 		}
 	}
 	if err == nil {
-		err = this.Updated.Update("valuation")
+		err = this.Updated.Mark("valuation")
 	}
 	progress.Done++
 	progress.StageDone, progress.StageTotal = 1, 1

@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // testBars 生成 n 根恒价日 K（N天前符合 只关心前缀长度，不关心价格）。
@@ -15,8 +15,8 @@ func testBars(n int) extend.Klines {
 	for i := 0; i < n; i++ {
 		at := base.AddDate(0, 0, i)
 		ks = append(ks, &extend.Kline{Kline: &protocol.Kline{
-			Time: at, Open: protocol.Yuan(10), High: protocol.Yuan(10),
-			Low: protocol.Yuan(10), Close: protocol.Yuan(10), Volume: 100,
+			Time: at, Open: 10, High: 10,
+			Low: 10, Close: 10, Volume: 100,
 		}})
 	}
 	return ks

@@ -8,7 +8,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // T3 时序批次 A 组迁移行为快照（台账附录 B：buy_macd_negative /
@@ -33,10 +33,10 @@ func t3aCloseKlines(closes ...float64) extend.Klines {
 		ks = append(ks, &extend.Kline{
 			Kline: &protocol.Kline{
 				Time:  time.Date(2026, 1, i+1, 0, 0, 0, 0, time.Local),
-				Open:  protocol.Yuan(c - 0.5),
-				High:  protocol.Yuan(c + 2),
-				Low:   protocol.Yuan(c - 2),
-				Close: protocol.Yuan(c),
+				Open:  c - 0.5,
+				High:  c + 2,
+				Low:   c - 2,
+				Close: c,
 			},
 		})
 	}
@@ -728,7 +728,7 @@ func TestT3aRSI超卖回升快照(t *testing.T) {
 	// 持续上涨序列 RSI 高位：昨 RSI<threshold 不成立，不触发。
 	rally := t3aCloseKlines(t3aRandWalk(8, 20)...)
 	for i := range rally {
-		rally[i].Close = protocol.Yuan(10 * math.Pow(1.02, float64(i)))
+		rally[i].Close = 10 * math.Pow(1.02, float64(i))
 		rally[i].Open = rally[i].Close
 	}
 	if (RSI超卖回升{}).Buy("sh600000", rally) {

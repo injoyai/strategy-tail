@@ -123,7 +123,7 @@ func maPositionStreak(code string, dks extend.Klines, period, days int, above bo
 	count := 0
 	for end := len(dks); end >= period && count < days; end-- {
 		ma := A均线(period).Value(code, dks[:end])
-		close := dks[end-1].Close.Float64()
+		close := dks[end-1].Close
 		if above && close <= ma || !above && close > ma {
 			break
 		}

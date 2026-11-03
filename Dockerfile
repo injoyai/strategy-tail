@@ -9,16 +9,21 @@ WORKDIR /build
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
-# 先复制依赖清单并下载，利用层缓存
-COPY go.mod go.sum ./
+# 先复制工作区和依赖清单；编译时只下载实际使用的模块
+COPY go.mod go.sum go.work go.work.sum ./
+COPY --from=tdx /go.mod /go.sum /tdx/
 COPY third_party/injoyai-base ./third_party/injoyai-base
-RUN go mod download
 
 # golang:alpine 基础镜像不含 tzdata，运行阶段从这里拷贝时区数据
 RUN apk add --no-cache tzdata
 
+COPY --from=tdx /*.go /tdx/
+COPY --from=tdx /protocol /tdx/protocol
+COPY --from=tdx /internal /tdx/internal
+COPY --from=tdx /lib /tdx/lib
+COPY --from=tdx /extend /tdx/extend
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab
 
 ###############################################################################
 #                                  运行阶段

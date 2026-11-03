@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/injoyai/tdx/v2/lib/update"
+	"github.com/robfig/cron/v3"
 	"sort"
 	"strings"
 	"sync"
@@ -18,10 +20,10 @@ import (
 	"github.com/injoyai/strategy-tail/core"       // 选股核心模块
 	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
 	"github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx" // 通达信SDK
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
-	"github.com/robfig/cron/v3"
+	"github.com/injoyai/tdx/v2" // 通达信SDK
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
+
 	"xorm.io/xorm"
 )
 
@@ -44,7 +46,7 @@ type ScreenService struct {
 	lastPrices        map[string]*protocol.Kline //最新价格,非交易日也获取,用于填充历史买点的现价
 	subscribers       map[*fbr.Websocket]bool
 
-	update *tdx.Updated //
+	update *update.Tracker //
 
 	lastBuys   []*Trade // 最新买点快照(含策略/标签)
 	lastSells  []*Trade // 最新卖点快照(交易列表)
@@ -230,7 +232,7 @@ func (this *ScreenService) init() error {
 
 	if this.update == nil {
 		// 复用 this.DB,避免同一 trade.db 被两个独立 engine 同时打开并发访问(各自连接池可能互相锁库)。
-		update, err := tdx.NewUpdated(this.DB, 15, 31)
+		update, err := update.New(this.DB, 15, 31)
 		if err != nil {
 			return err
 		}
@@ -253,7 +255,7 @@ func (this *ScreenService) _update() {
 		logs.Err(err)
 		return
 	}
-	if update, err := this.update.Updated("history"); err != nil || !update {
+	if update, err := this.update.IsUpdated("history"); err != nil || !update {
 		if err := this.updateHistoryTrade(); err != nil {
 			logs.Err(err)
 			return
@@ -262,7 +264,7 @@ func (this *ScreenService) _update() {
 			logs.Err(err)
 			return
 		}
-		logs.PrintErr(this.update.Update("history"))
+		logs.PrintErr(this.update.Mark("history"))
 	}
 }
 
@@ -376,7 +378,7 @@ func (this *ScreenService) realtimeBuys() {
 					Code:     code,
 					Name:     common.Manage.Codes.GetName(code),
 					BuyTime:  last.Time.Format(time.DateTime),
-					BuyPrice: last.Close.Float64(),
+					BuyPrice: last.Close,
 					BuyRise:  last.RiseRate(),
 					Strategy: s.Key,
 					Tags:     s.checkTags(code, ks),
@@ -466,10 +468,10 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	for _, k := range ks {
 		klines = append(klines, ChartKline{
 			Time:   k.Time.Format("2006-01-02"),
-			Open:   k.Open.Float64(),
-			High:   k.High.Float64(),
-			Low:    k.Low.Float64(),
-			Close:  k.Close.Float64(),
+			Open:   k.Open,
+			High:   k.High,
+			Low:    k.Low,
+			Close:  k.Close,
 			Volume: k.Volume,
 		})
 	}
@@ -523,7 +525,7 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 		} else {
 			//持仓中:用最新收盘价作为现价,计算实时收益率
 			if len(ks) > 0 && ks[len(ks)-1] != nil {
-				dt.CurrPrice = ks[len(ks)-1].Close.Float64()
+				dt.CurrPrice = ks[len(ks)-1].Close
 				if t.BuyPrice > 0 {
 					dt.ProfitRate = (dt.CurrPrice - t.BuyPrice) / t.BuyPrice * 100
 				}
@@ -699,14 +701,14 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 
 			//实时获取历史分钟数据
 			var mks protocol.Klines
-			err := common.Manage.Do(func(c *tdx.Client) error {
-				resp, err := c.GetKlineMinuteUntil(code, func(k *protocol.Kline) bool {
+			err := common.Manage.Do(func(c tdx.Client) error {
+				resp, err := extend.FetchStandardMinute(c, code, func(k *protocol.Kline) bool {
 					return k.Time.Before(time.Now().AddDate(0, 0, -days-3))
-				})
+				}, false)
 				if err != nil {
 					return err
 				}
-				mks = resp.List
+				mks = resp
 				return nil
 			})
 
@@ -752,7 +754,7 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 								Code:     code,
 								Name:     common.Manage.Codes.GetName(code),
 								BuyTime:  b.Time.Format(time.DateTime),
-								BuyPrice: b.Price.Float64(),
+								BuyPrice: b.Price,
 								BuyRise:  b.Rise,
 								Strategy: st.Key,
 								Tags:     st.checkTags(code, hisKs),
@@ -791,13 +793,16 @@ func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, erro
 		if end > len(codes) {
 			end = len(codes)
 		}
-		if err := common.Manage.Do(func(c *tdx.Client) error {
+		if err := common.Manage.Do(func(c tdx.Client) error {
 			quotes, err := c.GetQuote(codes[i:end]...)
 			if err != nil {
 				return err
 			}
 			for _, q := range quotes {
-				quoteKline[protocol.AddPrefix(q.Code)] = q.Kline
+				if q.Standard == nil {
+					return fmt.Errorf("非标准行情无法用于当前选股模型: %s", q.Instrument.String())
+				}
+				quoteKline[q.Instrument.Exchange.String()+q.Instrument.Code] = q.Standard.Kline
 			}
 			return nil
 		}); err != nil {

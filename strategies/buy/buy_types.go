@@ -2,7 +2,7 @@ package buy
 
 import (
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // A创业板 是只买入创业板股票的过滤条件。

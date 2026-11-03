@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 func makeExportTrade(code string, buy time.Time) Trade {
@@ -15,10 +13,10 @@ func makeExportTrade(code string, buy time.Time) Trade {
 		Code:          code,
 		BuyTime:       buy,
 		SellTime:      buy.AddDate(0, 0, 1),
-		BuyPrice:      protocol.Yuan(10.05),
-		SellPrice:     protocol.Yuan(10.30),
-		BuyExecPrice:  protocol.Yuan(10.00),
-		SellExecPrice: protocol.Yuan(10.35),
+		BuyPrice:      10.05,
+		SellPrice:     10.30,
+		BuyExecPrice:  10.00,
+		SellExecPrice: 10.35,
 		BuyCost:       1005,
 		SellIncome:    1030,
 		Quantity:      100,

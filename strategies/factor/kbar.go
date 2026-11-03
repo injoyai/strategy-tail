@@ -17,11 +17,11 @@ func (f 实体幅度) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	o := k.Open.Float64()
+	o := k.Open
 	if o == 0 {
 		return math.NaN()
 	}
-	return math.Abs(k.Close.Float64()-o) / o
+	return math.Abs(k.Close-o) / o
 }
 
 // 上影占比 是上影线占全幅比例：(high - max(open, close)) / (high - low)。
@@ -35,12 +35,12 @@ func (f 上影占比) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	h, l := k.High.Float64(), k.Low.Float64()
+	h, l := k.High, k.Low
 	if h == l {
 		return 0
 	}
-	top := k.Open.Float64()
-	if c := k.Close.Float64(); c > top {
+	top := k.Open
+	if c := k.Close; c > top {
 		top = c
 	}
 	return (h - top) / (h - l)
@@ -57,12 +57,12 @@ func (f 下影占比) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	h, l := k.High.Float64(), k.Low.Float64()
+	h, l := k.High, k.Low
 	if h == l {
 		return 0
 	}
-	bot := k.Open.Float64()
-	if c := k.Close.Float64(); c < bot {
+	bot := k.Open
+	if c := k.Close; c < bot {
 		bot = c
 	}
 	return (bot - l) / (h - l)
@@ -81,12 +81,12 @@ func (f 全幅占比) Value(code string, dks extend.Klines) float64 {
 	if len(dks) < 2 {
 		return math.NaN()
 	}
-	prev := dks[len(dks)-2].Close.Float64()
+	prev := dks[len(dks)-2].Close
 	if prev == 0 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	return (k.High.Float64() - k.Low.Float64()) / prev
+	return (k.High - k.Low) / prev
 }
 
 // K线重心 是收盘价在当日高低区间中的相对位置：(2·Close - High - Low) / (High - Low)。
@@ -103,9 +103,9 @@ func (f K线重心) Value(code string, dks extend.Klines) float64 {
 		return math.NaN()
 	}
 	k := dks[len(dks)-1]
-	h, l := k.High.Float64(), k.Low.Float64()
+	h, l := k.High, k.Low
 	if h == l {
 		return 0
 	}
-	return (2*k.Close.Float64() - h - l) / (h - l)
+	return (2*k.Close - h - l) / (h - l)
 }

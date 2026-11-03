@@ -3,18 +3,16 @@ package rule
 import (
 	"math"
 	"strconv"
-
-	"github.com/injoyai/tdx/protocol"
 )
 
 // Kind 值的值域。比较只在同值域内进行：跨域不触发、不转换，
-// 保证厘级整数价格边界不因统一转 float64 丢失（计划第 4 节"窗口与精度"）。
+// 价格与百分比等数值均以 float64 保存，但保留语义域，防止单位混用。
 type Kind uint8
 
 const (
 	// KindInvalid 无效值：缺数据、NaN、±Inf。不参与任何比较、不补 0。
 	KindInvalid Kind = iota
-	// KindPrice 行情整数价格，单位厘（protocol.Price），按 int64 精确比较。
+	// KindPrice 行情价格，单位为证券原币种值。
 	KindPrice
 	// KindFloat 浮点值：元、比率、百分数、计数等，按 float64 比较。
 	KindFloat
@@ -38,12 +36,15 @@ func (k Kind) String() string {
 // 保证 NaN/±Inf 一律落为 KindInvalid，比较侧不必重复防御。
 type Value struct {
 	kind  Kind
-	price protocol.Price
+	price float64
 	num   float64
 }
 
-// PriceValue 以整数厘价格构造值，保留 protocol.Price 的精确比较能力。
-func PriceValue(p protocol.Price) Value {
+// PriceValue 以浮点元价格构造值，不与百分比等数值隐式转换。
+func PriceValue(p float64) Value {
+	if math.IsNaN(p) || math.IsInf(p, 0) {
+		return InvalidValue()
+	}
 	return Value{kind: KindPrice, price: p}
 }
 
@@ -66,8 +67,8 @@ func (v Value) Kind() Kind { return v.kind }
 // Valid 报告值是否可参与比较。
 func (v Value) Valid() bool { return v.kind != KindInvalid }
 
-// Price 返回整数厘价格；非 KindPrice 时返回 0。
-func (v Value) Price() protocol.Price { return v.price }
+// Price 返回浮点元价格；非 KindPrice 时返回 0。
+func (v Value) Price() float64 { return v.price }
 
 // Float 返回浮点值；非 KindFloat 时返回 NaN。
 func (v Value) Float() float64 { return v.num }
@@ -76,7 +77,7 @@ func (v Value) Float() float64 { return v.num }
 func (v Value) String() string {
 	switch v.kind {
 	case KindPrice:
-		return strconv.FormatInt(int64(v.price), 10)
+		return strconv.FormatFloat(v.price, 'g', -1, 64)
 	case KindFloat:
 		return strconv.FormatFloat(v.num, 'g', -1, 64)
 	default:

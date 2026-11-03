@@ -15,8 +15,8 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/lib/xorms"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // runner_report_test.go Task 6：Runner 双模式元数据（source/strategySpec/comparison）、
@@ -472,7 +472,7 @@ func waitRunnerDone(t *testing.T, r *Runner) {
 // 涨跌幅极小（不触涨停过滤），FloatStock 保证流通市值 ≥ 20 亿。
 func writePresetDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSqlite(filepath.Join(dir, extend.DirDay, code+".db"))
+	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -485,19 +485,19 @@ func writePresetDayDB(t *testing.T, dir, code string, days int, base time.Time) 
 		tm := base.AddDate(0, 0, i)
 		k := &protocol.Kline{
 			Time:   tm,
-			Open:   protocol.Yuan(10.08),
-			Close:  protocol.Yuan(10.28),
-			High:   protocol.Yuan(10.32),
-			Low:    protocol.Yuan(10.00),
+			Open:   10.08,
+			Close:  10.28,
+			High:   10.32,
+			Low:    10.00,
 			Volume: 10000,
 		}
 		if i%2 == 1 { // 阴线：盘中跌破 MA5（low 9.95），尾盘收回（close 10.32 ≥ MA5≈10.30）
 			k = &protocol.Kline{
 				Time:   tm,
-				Open:   protocol.Yuan(10.58),
-				Close:  protocol.Yuan(10.32),
-				High:   protocol.Yuan(10.62),
-				Low:    protocol.Yuan(9.95),
+				Open:   10.58,
+				Close:  10.32,
+				High:   10.62,
+				Low:    9.95,
 				Volume: 10000,
 			}
 		}

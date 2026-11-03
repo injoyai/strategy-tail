@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func Test策略旧名保持兼容(t *testing.T) {
@@ -37,8 +37,8 @@ func aliasTestKlines(volumes ...int64) extend.Klines {
 	for i, volume := range volumes {
 		at := time.Date(2026, 1, i+1, 0, 0, 0, 0, time.Local)
 		result[i] = &extend.Kline{Kline: &protocol.Kline{
-			Time: at, Open: protocol.Yuan(10), High: protocol.Yuan(10),
-			Low: protocol.Yuan(10), Close: protocol.Yuan(10), Volume: volume,
+			Time: at, Open: 10, High: 10,
+			Low: 10, Close: 10, Volume: volume,
 		}}
 	}
 	return result

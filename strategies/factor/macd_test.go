@@ -17,7 +17,7 @@ func TestMACD柱强度和增量(t *testing.T) {
 		2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
 	)
 	hist := util.MACDHistogram(ks, 12, 26, 9)
-	close := ks[len(ks)-1].Close.Float64()
+	close := ks[len(ks)-1].Close
 
 	wantVal(t, "MACD柱强度", (MACD柱强度{}).Value("sh600000", ks), hist[len(hist)-1]/close, 1e-12)
 	wantVal(t, "MACD柱增量", (MACD柱增量{}).Value("sh600000", ks),

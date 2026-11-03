@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // A上证N日均线向上 是以上证指数5日均线方向作为市场过滤条件的买入策略。

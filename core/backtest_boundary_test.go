@@ -9,7 +9,7 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/sell"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestDoMultiPositionTPlusOne(t *testing.T) {
@@ -23,8 +23,8 @@ func TestDoMultiPositionTPlusOne(t *testing.T) {
 				}
 				minutes := protocol.Klines{{
 					Time: core.DayOf(bars[1].Time).Add(9*time.Hour + 30*time.Minute),
-					Open: protocol.Yuan(10), High: protocol.Yuan(10.02),
-					Low: protocol.Yuan(10), Close: protocol.Yuan(10.02), Volume: 1000,
+					Open: 10, High: 10.02,
+					Low: 10, Close: 10.02, Volume: 1000,
 				}}
 				if days == 3 {
 					bars = append(bars, testKline(start.AddDate(0, 0, 2), 10.3, 10.3, 10.3, 10.3))
@@ -62,8 +62,8 @@ func TestDoKeepsInputUnchanged(t *testing.T) {
 	}
 	minutes := protocol.Klines{{
 		Time: core.DayOf(bars[1].Time).Add(9*time.Hour + 30*time.Minute),
-		Open: protocol.Yuan(10.5), High: protocol.Yuan(10.5),
-		Low: protocol.Yuan(10.5), Close: protocol.Yuan(10.5), Volume: 1000,
+		Open: 10.5, High: 10.5,
+		Low: 10.5, Close: 10.5, Volume: 1000,
 	}}
 	wantHis, wantBars, wantMinutes := cloneKlines(his), cloneKlines(bars), cloneMinKlines(minutes)
 	bt := core.Backtest{
@@ -110,7 +110,7 @@ func TestDoVirtualUsesFinalDailyClose(t *testing.T) {
 					if i > 0 {
 						at = wantTime
 					}
-					p := protocol.Yuan(price)
+					p := price
 					minutes = append(minutes, &protocol.Kline{Time: at, Open: p, High: p, Low: p, Close: p})
 				}
 				bt := core.Backtest{

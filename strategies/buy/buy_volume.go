@@ -218,7 +218,7 @@ func (b BuyCloseBelowMA) Buy(code string, dks extend.Klines) bool {
 
 	today := dks[len(dks)-1]
 	ma := f.A均线(b.Period).Value(code, dks)
-	return today.Close.Float64() < ma
+	return today.Close < ma
 }
 
 // BreakMA 是突破均线买入条件。
@@ -246,7 +246,7 @@ func (b BreakMA) Buy(code string, dks extend.Klines) bool {
 	yesterday := dks[n-2]
 	maNow := f.A均线(b.Period).Value(code, dks)
 	maPrev := f.A均线(b.Period).Value(code, dks[:n-1])
-	if yesterday.Close.Float64() >= maPrev || today.Close.Float64() <= maNow {
+	if yesterday.Close >= maPrev || today.Close <= maNow {
 		return false
 	}
 

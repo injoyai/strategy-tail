@@ -14,7 +14,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // practice_prepare_test.go 盘感练习出题测试：年份/买入侧校验、扫描求值、
@@ -59,7 +59,7 @@ func practiceTestKlinesFrom(start time.Time, closes []float64) extend.Klines {
 	ks := make(extend.Klines, len(closes))
 	for i, c := range closes {
 		at := start.AddDate(0, 0, i)
-		price := protocol.Yuan(c)
+		price := c
 		ks[i] = &extend.Kline{
 			Unix: at.Unix(),
 			Kline: &protocol.Kline{
@@ -376,7 +376,7 @@ func TestPracticeStartPracticeEndToEnd(t *testing.T) {
 		sess.Revision != 1 || sess.SignalIndex != 0 || sess.CurrentIndex != 0 {
 		t.Fatalf("出题完成状态不正确: %+v", sess)
 	}
-	if sess.Cost.Slippage != 0 || sess.BudgetYuan != practiceBudgetYuan {
+	if sess.Cost.Slippage != 0.0 || sess.BudgetYuan != practiceBudgetYuan {
 		t.Fatalf("开题快照不正确: cost=%+v budget=%v", sess.Cost, sess.BudgetYuan)
 	}
 	if m == nil || len(m.Days) != 5 || m.Code != "sh600002" {

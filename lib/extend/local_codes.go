@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // LocalStockCodes 从日线库文件名枚举股票，保留已退市但仍有本地数据的代码。

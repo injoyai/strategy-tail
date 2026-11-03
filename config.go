@@ -5,7 +5,6 @@ import (
 
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func init() {
@@ -20,7 +19,7 @@ func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int,
 		CommissionRate:  cfg.GetFloat64("backtest.cost.commission_rate", 0.0001),
 		StampDutyRate:   cfg.GetFloat64("backtest.cost.stamp_duty_rate", 0.0005),
 		TransferFeeRate: cfg.GetFloat64("backtest.cost.transfer_fee_rate", 0.00001),
-		Slippage:        protocol.Yuan(cfg.GetFloat64("backtest.cost.slippage", 0.01)),
+		Slippage:        cfg.GetFloat64("backtest.cost.slippage", 0.01),
 		MinCommission:   cfg.GetFloat64("backtest.cost.min_commission", 0),
 	}
 	pos = core.PositionConfig{

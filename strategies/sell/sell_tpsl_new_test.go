@@ -5,7 +5,6 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
 )
 
 func Test止盈止损_达到止盈应卖出(t *testing.T) {
@@ -32,8 +31,8 @@ func Test止盈止损_达到止损应卖出(t *testing.T) {
 	// 把买入后的价格调低，使跌幅超过3%
 	// 10.5 * 0.97 = 10.185，需要收盘价低于此
 	for i := 6; i < len(ks); i++ {
-		ks[i].Close = protocol.Yuan(10.0)
-		ks[i].Open = protocol.Yuan(10.0)
+		ks[i].Close = 10.0
+		ks[i].Open = 10.0
 	}
 
 	s := A止盈止损{TakeProfit: 0.05, StopLoss: 0.03}

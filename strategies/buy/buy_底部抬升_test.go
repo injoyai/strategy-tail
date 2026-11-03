@@ -7,7 +7,7 @@ import (
 
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/protocol"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestFindTrendUpPointsInsufficientHistory(t *testing.T) {
@@ -181,10 +181,10 @@ func makeTrendUp连续K线(n int) extend.Klines {
 			Unix: base.AddDate(0, 0, i).Unix(),
 			Kline: &protocol.Kline{
 				Time:   base.AddDate(0, 0, i),
-				Open:   protocol.Yuan(price),
-				Close:  protocol.Yuan(price),
-				High:   protocol.Yuan(price),
-				Low:    protocol.Yuan(price),
+				Open:   price,
+				Close:  price,
+				High:   price,
+				Low:    price,
 				Volume: 100,
 			},
 		}
@@ -193,6 +193,6 @@ func makeTrendUp连续K线(n int) extend.Klines {
 }
 
 func setTrendUpPoint(ks extend.Klines, index int, high, low float64) {
-	ks[index].High = protocol.Yuan(high)
-	ks[index].Low = protocol.Yuan(low)
+	ks[index].High = high
+	ks[index].Low = low
 }

@@ -14,8 +14,8 @@ func BenchmarkReturn(dks extend.Klines) float64 {
 	if len(dks) < 2 {
 		return 0
 	}
-	first := dks[0].Close.Float64()
-	last := dks[len(dks)-1].Close.Float64()
+	first := dks[0].Close
+	last := dks[len(dks)-1].Close
 	if first <= 0 {
 		return 0
 	}
@@ -73,13 +73,13 @@ func computeTradeAlphaBeta(trades []Trade, benchmarkKlines extend.Klines) (alpha
 	// 按日期索引基准收盘价
 	dateClose := make(map[string]float64, len(sortedKlines))
 	for _, k := range sortedKlines {
-		dateClose[k.Time.Format(time.DateOnly)] = k.Close.Float64()
+		dateClose[k.Time.Format(time.DateOnly)] = k.Close
 	}
 
 	stratReturns := make([]float64, 0, len(trades))
 	benchReturns := make([]float64, 0, len(trades))
 	for _, t := range trades {
-		if t.BuyCost <= 0 && t.BuyPrice.Float64() <= 0 {
+		if t.BuyCost <= 0 && t.BuyPrice <= 0 {
 			continue
 		}
 		stratR := tradeReturnRate(t) / 100
