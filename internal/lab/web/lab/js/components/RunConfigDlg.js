@@ -1,16 +1,18 @@
 import { state } from '../store.js';
 import { ACCOUNT_CONFIG } from '../config.js';
+import { DIVIDEND_STOCKS } from '../constants.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
   name: 'RunConfigDlg',
   mixins: [dlgMixin],
   data() {
-    return {cfg: {}, mode: 'builder', run: null, submitting: false, error: '', errorKey: ''};
+    return {cfg: {}, sampleChoice: 'all', mode: 'builder', run: null, submitting: false, error: '', errorKey: ''};
   },
   setup() {
     return {
       account: ACCOUNT_CONFIG,
+      dividendStocks: DIVIDEND_STOCKS,
       years: [{key: 'startYear', label: '开始年份'}, {key: 'endYear', label: '结束年份'}],
       exits: [
         {on: 'holdingOn', key: 'holdingDays', label: '持仓上限', unit: '交易日', step: 1},
@@ -23,11 +25,27 @@ export default {
     openDlg(mode, run) {
       if (this.submitting || state.taskRunning) return;
       this.cfg = {...state.runCfg};
+      this.sampleChoice = this.cfg.sampleMode;
+      if (this.cfg.sampleMode === 'codes') {
+        const codes = this.cfg.sampleCodes.split(',').map(s => s.trim()).filter(Boolean).join(',');
+        if (codes === DIVIDEND_STOCKS.map(s => s.code).join(',')) this.sampleChoice = 'dividend';
+        else if (DIVIDEND_STOCKS.some(s => s.code === codes)) this.sampleChoice = codes;
+      }
       this.mode = mode;
       this.run = run;
       this.error = ''; this.errorKey = '';
       this.open = true;
       this.$nextTick(() => this.$el.querySelector('#run-startYear')?.focus());
+    },
+    selectSample() {
+      const stock = DIVIDEND_STOCKS.find(s => s.code === this.sampleChoice);
+      if (this.sampleChoice === 'dividend' || stock) {
+        this.cfg.sampleMode = 'codes';
+        this.cfg.sampleCodes = stock ? stock.code : DIVIDEND_STOCKS.map(s => s.code).join(',');
+      } else {
+        this.cfg.sampleMode = this.sampleChoice;
+      }
+      this.error = ''; this.errorKey = '';
     },
     closeDlg() {
       if (this.submitting) return;
@@ -91,16 +109,21 @@ export default {
         </div>
       </div>
       <div class="form-row"><label for="run-sampleMode">股票范围</label>
-        <select id="run-sampleMode" v-model="cfg.sampleMode" :aria-invalid="String(errorKey==='sampleMode')" :aria-describedby="errorKey==='sampleMode' ? 'runConfigError' : undefined">
+        <select id="run-sampleMode" v-model="sampleChoice" @change="selectSample" :aria-invalid="String(errorKey==='sampleMode')" :aria-describedby="errorKey==='sampleMode' ? 'runConfigError' : undefined">
           <option value="all">全部沪深主板</option><option value="random">随机样本</option><option value="codes">指定代码</option>
+          <optgroup label="红利参考股">
+            <option value="dividend">红利参考股（20只）</option>
+            <option v-for="s in dividendStocks" :key="s.code" :value="s.code">{{ s.code.slice(2) }} {{ s.name }}</option>
+          </optgroup>
         </select>
       </div>
       <div v-if="cfg.sampleMode==='random'" class="form-row"><label for="run-sampleSize">样本数量</label>
         <input id="run-sampleSize" type="number" step="1" v-model.number="cfg.sampleSize" :aria-invalid="String(errorKey==='sampleSize')" :aria-describedby="errorKey==='sampleSize' ? 'runConfigError' : undefined">
       </div>
       <div v-if="cfg.sampleMode==='codes'" class="form-row"><label for="run-sampleCodes">股票代码</label>
-        <input id="run-sampleCodes" type="text" v-model="cfg.sampleCodes" placeholder="sh600000,sz000001" :aria-invalid="String(errorKey==='sampleCodes')" :aria-describedby="errorKey==='sampleCodes' ? 'runConfigError' : undefined">
+        <input id="run-sampleCodes" type="text" v-model="cfg.sampleCodes" @input="sampleChoice='codes'" placeholder="sh600000,sz000001" :aria-invalid="String(errorKey==='sampleCodes')" :aria-describedby="errorKey==='sampleCodes' ? 'runConfigError' : undefined">
       </div>
+      <p v-if="sampleChoice==='dividend' || dividendStocks.some(s => s.code===sampleChoice)" class="hint">人工参考名单，非历史指数成分或实时股息率排名；可编辑股票代码。</p>
       <template v-if="mode!=='builder'">
         <h4>卖出规则</h4>
         <div v-for="e in exits" :key="e.key" class="form-row run-config-exit">

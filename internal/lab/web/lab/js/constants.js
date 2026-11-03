@@ -21,3 +21,27 @@ export const NAV_GROUPS = [
 ];
 
 export const TASK_LABEL = {backtest: '策略回测', data_update: '数据更新', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证', practice_prepare: '盘感练习出题'};
+
+// 人工研究样本，不表示实时股息率排名或历史指数成员。
+export const DIVIDEND_STOCKS = [
+  {code: 'sh601398', name: '工商银行'},
+  {code: 'sh601939', name: '建设银行'},
+  {code: 'sh601288', name: '农业银行'},
+  {code: 'sh601988', name: '中国银行'},
+  {code: 'sh601328', name: '交通银行'},
+  {code: 'sh601166', name: '兴业银行'},
+  {code: 'sh601088', name: '中国神华'},
+  {code: 'sh601225', name: '陕西煤业'},
+  {code: 'sh600188', name: '兖矿能源'},
+  {code: 'sh601898', name: '中煤能源'},
+  {code: 'sh600900', name: '长江电力'},
+  {code: 'sh600886', name: '国投电力'},
+  {code: 'sh601006', name: '大秦铁路'},
+  {code: 'sh600028', name: '中国石化'},
+  {code: 'sh601857', name: '中国石油'},
+  {code: 'sh600019', name: '宝钢股份'},
+  {code: 'sh601668', name: '中国建筑'},
+  {code: 'sz000895', name: '双汇发展'},
+  {code: 'sh600941', name: '中国移动'},
+  {code: 'sh601728', name: '中国电信'},
+];

@@ -7,9 +7,11 @@ const moduleURL = s => 'data:text/javascript;base64,' + Buffer.from(s).toString(
 const state = globalThis.runConfigTestState = {};
 globalThis.runConfigTestAccount = (await import(moduleURL(read('./lab/js/config.js').replace("import { state } from './store.js';", 'const state = globalThis.runConfigTestState;')))).ACCOUNT_CONFIG;
 globalThis.runConfigTestMixin = (await import(moduleURL(read('./lab/js/components/dlgMixin.js')))).dlgMixin;
+globalThis.runConfigTestDividendStocks = (await import(moduleURL(read('./lab/js/constants.js')))).DIVIDEND_STOCKS;
 const {default: Dialog} = await import(moduleURL(read('./lab/js/components/RunConfigDlg.js')
   .replace("import { state } from '../store.js';", 'const state = globalThis.runConfigTestState;')
   .replace("import { ACCOUNT_CONFIG } from '../config.js';", 'const ACCOUNT_CONFIG = globalThis.runConfigTestAccount;')
+  .replace("import { DIVIDEND_STOCKS } from '../constants.js';", 'const DIVIDEND_STOCKS = globalThis.runConfigTestDividendStocks;')
   .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.runConfigTestMixin;')));
 function instance(mode = 'builder', run = async () => true) {
   Object.assign(state, {taskRunning: false, builderMsg: {text: ''}, scriptMsg: {text: ''},
@@ -95,4 +97,43 @@ test('提交失败保留选择并可重试，共享任务占用时不启动', as
   await ctx.confirm(); assert.equal(ctx.error, '网络断开'); assert.equal(ctx.open, true);
   ctx.run = async () => true;
   await ctx.confirm(); assert.equal(ctx.open, false);
+});
+
+test('红利组选项提交20只完整代码，两种回测模式共用，取消不修改共享配置', async () => {
+  const expected = ['sh601398', 'sh601939', 'sh601288', 'sh601988', 'sh601328', 'sh601166',
+    'sh601088', 'sh601225', 'sh600188', 'sh601898', 'sh600900', 'sh600886', 'sh601006',
+    'sh600028', 'sh601857', 'sh600019', 'sh601668', 'sz000895', 'sh600941', 'sh601728'];
+  assert.deepEqual(globalThis.runConfigTestDividendStocks.map(s => s.code), expected);
+  for (const mode of ['builder', 'simple']) {
+    let submitted;
+    const ctx = instance(mode, async () => {submitted = structuredClone(state.runCfg); return true;});
+    ctx.sampleChoice = 'dividend'; ctx.selectSample();
+    assert.equal(state.runCfg.sampleMode, 'all');
+    assert.equal(ctx.cfg.sampleMode, 'codes');
+    assert.deepEqual(ctx.cfg.sampleCodes.split(','), expected);
+    await ctx.confirm();
+    assert.equal(submitted.sampleMode, 'codes');
+    assert.deepEqual(submitted.sampleCodes.split(','), expected);
+    ctx.openDlg(mode, async () => true);
+    assert.equal(ctx.sampleChoice, 'dividend');
+    ctx.sampleChoice = 'sh601166'; ctx.selectSample(); ctx.closeDlg();
+    assert.equal(state.runCfg.sampleCodes, expected.join(','));
+  }
+});
+
+test('单只红利股与自选代码、随机和全部范围互相切换，不残留预设模式', async () => {
+  const ctx = instance();
+  for (const stock of globalThis.runConfigTestDividendStocks) {
+    ctx.sampleChoice = stock.code; ctx.selectSample();
+    assert.equal(ctx.cfg.sampleMode, 'codes');
+    assert.equal(ctx.cfg.sampleCodes, stock.code);
+    assert.equal(ctx.validate(), true);
+  }
+  await ctx.confirm(); ctx.openDlg('builder', async () => true);
+  assert.equal(ctx.sampleChoice, 'sh601728');
+  for (const choice of ['random', 'all', 'codes']) {
+    ctx.sampleChoice = choice; ctx.selectSample();
+    assert.equal(ctx.cfg.sampleMode, choice);
+  }
+  assert.equal(ctx.cfg.sampleCodes, 'sh601728');
 });
