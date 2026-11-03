@@ -2,7 +2,6 @@ package extend
 
 import (
 	"database/sql"
-	"math"
 	"strings"
 
 	"github.com/injoyai/tdx/v2/protocol"
@@ -59,19 +58,4 @@ func normalizeLegacyDays(q minuteQuery, ks Klines) error {
 		}
 	}
 	return nil
-}
-func legacyWriteBar(k *protocol.Kline, legacy bool) *protocol.Kline {
-	if !legacy {
-		return k
-	}
-	copy := *k
-	scaleBar(&copy, 1000)
-	// Preserve integer affinity and the legacy milli precision after floating conversion.
-	copy.Last = math.Round(copy.Last)
-	copy.Open = math.Round(copy.Open)
-	copy.High = math.Round(copy.High)
-	copy.Low = math.Round(copy.Low)
-	copy.Close = math.Round(copy.Close)
-	copy.Amount = math.Round(copy.Amount)
-	return &copy
 }

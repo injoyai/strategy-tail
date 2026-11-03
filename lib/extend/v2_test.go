@@ -60,10 +60,7 @@ func TestV2LegacyIntegerScaleIsReadWithoutMutation(t *testing.T) {
 	if k.Close != 12.345 || k.Amount != 123456.789 {
 		t.Fatalf("wrong price scale: %+v", k)
 	}
-	written := legacyWriteBar(k, true)
-	if written == k || math.Abs(written.Close-12345) > 1e-8 || k.Close != 12.345 {
-		t.Fatal("legacy write changed source or unit")
-	}
+
 }
 
 func TestV2LegacyMinuteBlockDecodesMilliPrices(t *testing.T) {
@@ -88,7 +85,7 @@ func TestV2MinuteRejectsNonFinitePrice(t *testing.T) {
 	}
 }
 
-func TestV2LegacyRawMinuteIncrementalUpdate(t *testing.T) {
+func TestV2LegacyRawMinuteSourceOverlay(t *testing.T) {
 	dir := t.TempDir()
 	const code = "sh600000"
 	db, e := xorms.NewSQLite(filepath.Join(dir, DirMinute, code, code+"-2026.db"))
@@ -109,7 +106,7 @@ func TestV2LegacyRawMinuteIncrementalUpdate(t *testing.T) {
 	if e != nil || len(got) != 1 || got[0].Close != 12.345 || got[0].Amount != 1234.567 {
 		t.Fatal(got, e)
 	}
-	if _, e = p.updateMinuteKlineYear(nil, code, 2026, protocol.Klines{{Time: at, Close: 1.001, Amount: 2345.678}}); e != nil {
+	if e = saveSourceMinutes(p, code, 2026, protocol.Klines{{Time: at, Close: 1.001, Amount: 2345.678}}); e != nil {
 		t.Fatal(e)
 	}
 	got, e = p.MinKlines(code, at, at.Add(time.Hour))
@@ -125,13 +122,13 @@ func TestV2LegacyRawMinuteIncrementalUpdate(t *testing.T) {
 		t.Fatal(e)
 	}
 	legacy, e := legacyPriceScale(db.DB().DB)
-	if e != nil || !legacy || len(stored) != 1 || math.Abs(stored[0].Close-1001) > 1e-8 {
+	if e != nil || !legacy || len(stored) != 1 || math.Abs(stored[0].Close-12345) > 1e-8 {
 		t.Fatal(stored, legacy, e)
 	}
 }
 
-// A partial update must keep the old day readable while upgrading only the refreshed day.
-func TestV2LegacyCompressedIncrementalUpdate(t *testing.T) {
+// Existing KLM1 blocks remain readable without rewriting their version.
+func TestV2LegacyCompressedReader(t *testing.T) {
 	db, e := sql.Open("sqlite", ":memory:")
 	if e != nil {
 		t.Fatal(e)
@@ -164,15 +161,12 @@ func TestV2LegacyCompressedIncrementalUpdate(t *testing.T) {
 	if _, e = db.Exec("PRAGMA user_version=101"); e != nil {
 		t.Fatal(e)
 	}
-	if _, e = updateCompressedMinute(db, nil, "sh600000", 2026, protocol.Klines{{Time: at.AddDate(0, 0, 1), Close: 10.123456}}); e != nil {
-		t.Fatal(e)
-	}
 	version, e := minuteVersion(db)
-	if e != nil || version != 102 {
+	if e != nil || version != 101 {
 		t.Fatal(version, e)
 	}
 	got, e := readMinuteRecords(db, version)
-	if e != nil || len(got) != 2 || got[0].Bar.Close != 10.555 || got[1].Bar.Close != 10.123456 {
+	if e != nil || len(got) != 2 || got[0].Bar.Close != 10.555 || got[1].Bar.Close != 10.555 {
 		t.Fatal(got, e)
 	}
 }

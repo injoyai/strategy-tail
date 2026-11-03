@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"os"
@@ -66,6 +67,7 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	oracleDB.Close()
 	oracle := protocol.Klines{}
 	for _, k := range original {
+		k.Time = k.Time.In(protocol.Location())
 		if k.Time.Year() == year {
 			oracle = append(oracle, k)
 		}
@@ -92,9 +94,13 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	if err != nil || result.Changed {
 		t.Fatalf("resume=%+v err=%v", result, err)
 	}
-	// Refresh the final bar and append another day through the existing updater.
+	legacyBytes, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Refresh the final bar and append another day through the SDK source store.
 	last := ks[4].Time
-	_, err = p.updateMinuteKlineYear(nil, code, year, protocol.Klines{{Time: last, Close: 0.444}, {Time: last.Add(time.Minute), Close: 0.445}})
+	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last, Close: 0.444}, {Time: last.Add(time.Minute), Close: 0.445}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,25 +111,29 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	if len(got) != len(want)+1 || got[len(got)-2].Close != 0.444 || got[len(got)-1].Close != 0.445 {
 		t.Fatalf("update changed boundary: %+v", got)
 	}
-	_, err = p.updateMinuteKlineYear(nil, code, year, protocol.Klines{{Time: last.Add(time.Minute), Close: 0.445}})
+	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last.Add(time.Minute), Close: 0.445}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
 		t.Fatalf("repeat update changed bars: %v", err)
 	}
-	_, err = p.updateMinuteKlineYear(nil, code, year, protocol.Klines{{Time: last.Add(time.Minute + time.Nanosecond), Close: 0.999}})
+	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last.Add(time.Minute + time.Nanosecond), Close: 0.999}})
 	if err == nil {
 		t.Fatal("fractional update accepted")
 	}
 	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
 		t.Fatalf("failed transaction changed records: %v", err)
 	}
-	if _, err = p.updateMinuteKlineYear(emptyKlineManager(t), code, year, nil); err != nil {
+	if err = saveSourceMinutes(p, code, year, nil); err != nil {
 		t.Fatal(err)
 	}
 	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
 		t.Fatalf("empty response changed compressed data: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(legacyBytes, after) {
+		t.Fatal("source updates rewrote legacy compressed file", err)
 	}
 }
 
@@ -195,6 +205,9 @@ func TestMinuteReadersDuringAtomicCompression(t *testing.T) {
 		bars = append(bars, &protocol.Kline{Time: at.Add(time.Duration(i) * time.Minute), Close: float64(i+1) / 1000.0})
 	}
 	legacyMinuteFixture(t, path, bars)
+	for _, k := range bars {
+		k.Time = k.Time.In(protocol.Location())
+	}
 	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
 	var wg sync.WaitGroup
 	results := make(chan error, 3)

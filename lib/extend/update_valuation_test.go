@@ -17,7 +17,7 @@ type unavailableValuationPool struct {
 
 func TestKlineFailureStillProcessesValuation(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, DirDay), []byte("existing data"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, SourceDir), []byte("existing data"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	pull, err := NewPullKline(PullKlineConfig{Dir: dir, Codes: []string{"sh600519"}, Types: []string{Day}, ValuationDatabase: filepath.Join(t.TempDir(), "valuation.db")})
@@ -48,7 +48,7 @@ func TestFreshKlinesDoNotSkipMissingValuationAndAllowRetry(t *testing.T) {
 	if _, err = pull.Updated.IsUpdated("pull"); err != nil {
 		t.Fatal(err)
 	}
-	if err = pull.Updated.Mark("pull"); err != nil {
+	if err = pull.Updated.Mark(pull.sourceUpdateKey()); err != nil {
 		t.Fatal(err)
 	}
 	pool := &unavailableValuationPool{}

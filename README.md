@@ -78,7 +78,7 @@ type Seller interface {
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
 | 更新本地行情 | `go run ./cmd/update` | 可能触发全市场校验或联网更新，耗时较长 |
-| 压缩本地分钟库 | `TZ=Asia/Shanghai go run ./cmd/kline-compress -dir data/database -workers 4` | 先部署支持压缩格式的程序，再逐库无损转换；可中断后重跑 |
+| 压缩本地分钟库 | `TZ=Asia/Shanghai go run ./cmd/kline-compress -dir data/database -workers 4` | 仅处理旧 `min-kline/`；新 `source/` 不压缩，可中断后重跑 |
 | 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `0.0.0.0:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
 | 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
@@ -86,7 +86,7 @@ type Seller interface {
 
 `cmd/` 仅保留以上五个入口，参数、配置归属和副作用见[命令说明](cmd/README.md)。原 `diagnoser`、`screen-realtime`、`screen-kline`、`future`、`market-regime` 为固定参数的诊断、演示或专项研究命令，已移除；通用的 `core.Diagnoser`、`core.Screen` 和 `core.ForwardReturnAnalysis` 保留，已有数据与报告不迁移。
 
-回测与实验室“全量/随机”样本从 `pull.database` 下的 `day-kline/*.db` 枚举本地主板股票，保留已有日线库的退市代码，排除指数与临时文件；本地目录缺失或没有股票时直接报错。显式指定代码的行为不变，实时选股与行情更新仍使用当前在市列表。
+回测与实验室“全量/随机”样本合并枚举 `pull.database` 下旧 `day-kline/*.db` 与新 `source/cn/stock/day/*.db` 的本地主板股票，保留已有日线库的退市代码，排除指数与临时文件；本地目录缺失或没有股票时直接报错。显式指定代码的行为不变，实时选股与行情更新仍使用当前在市列表。
 
 组合研究优先使用 `research.universe` 配置的历史成员文件；缺失或加载失败时退回本地日线股票池。每次枚举股票池时刷新成员集合，之后的成员检查和质量快照复用该集合，不逐票扫描目录；下次枚举可发现新增日线库。本地池仅覆盖已保存的数据，不保证退市数据完整，也没有逐日成员关系，PIT 仍为 `unverified`，只支持探索级证据。
 
@@ -315,3 +315,5 @@ git diff --check
 当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值；旧 SQLite 数据保留原格式，由读取边界转换。策略均线精度变化及兼容边界见 [v2 迁移说明](docs/guides/tdx-v2-migration.md)。
 
 `./deploy.sh` 会将本地 SDK 作为 Docker 命名构建上下文传入；手动构建使用 `docker build --build-context tdx=../tdx -t strategy-lab .`。
+
+新行情由 SDK 拉取并写入 `pull.database/source/`，只保存源日期／日期时分，不附加时区或 Unix 时间戳；查询合并旧历史和新记录，重叠时使用新记录。详见 [源时间与数据层约定](docs/guides/source-time-storage.md)。

@@ -160,8 +160,8 @@ func TestKlineUpdatesReturnDataDirectoryError(t *testing.T) {
 	pull := &PullKline{Config: PullKlineConfig{Dir: blocked, Goroutines: 1}}
 
 	for name, update := range map[string]func() error{
-		"day":    func() error { return pull.updateDayKline(nil, nil) },
-		"minute": func() error { return pull.updateMinKline(nil, nil) },
+		"day":    func() error { return pull.UpdateWithProgress(nil, true, nil) },
+		"minute": func() error { return pull.UpdateWithProgress(nil, true, nil) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			err := update()
@@ -172,7 +172,7 @@ func TestKlineUpdatesReturnDataDirectoryError(t *testing.T) {
 	}
 }
 
-// 验证分钟线增量更新以 UTC 命中落库的边界数据,刷新最后一根K线且不产生重复行、不误删更早数据。
+// SDK 源时间覆盖最新边界，查询合并旧分钟库且不重复、不丢更早数据。
 func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
 	dir := t.TempDir()
 	const code = "sz001381"
@@ -201,12 +201,12 @@ func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
 		{Time: last.Add(time.Minute), Close: 0.111},
 	}
 	pull := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	if _, err := pull.updateMinuteKlineYear(nil, code, year, ks); err != nil {
+	if err := saveSourceMinutes(pull, code, year, ks); err != nil {
 		t.Fatal(err)
 	}
 
-	rows := protocol.Klines{}
-	if err := db.Find(&rows); err != nil {
+	rows, err := pull.MinKlines(code, last, last)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 3 {

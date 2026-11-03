@@ -16,7 +16,7 @@ import (
 
 var (
 	csMu    sync.RWMutex
-	csStore = map[string]map[time.Time]map[string]int{} // key → day → code → 名次(1起)
+	csStore = map[string]map[string]map[string]int{} // key → source date → code → 名次(1起)
 )
 
 // TopNKey 生成快照 key：因子名 + 方向，保证多变体多方向互不覆盖。
@@ -27,9 +27,9 @@ func TopNKey(factorName string, asc bool) string {
 	return factorName + "|desc"
 }
 
-// SetCrossSection 写入某日某 key 的排名快照（ranked[0] 为第 1 名），同 key 整体覆盖。
+// SetCrossSection 按源日期标签写入排名（ranked[0] 为第 1 名），不把日期当真实时刻。
 func SetCrossSection(day time.Time, key string, ranked []string) {
-	day = DayOf(day)
+	date := day.Format(time.DateOnly)
 	ranks := make(map[string]int, len(ranked))
 	for i, code := range ranked {
 		ranks[code] = i + 1
@@ -38,22 +38,22 @@ func SetCrossSection(day time.Time, key string, ranked []string) {
 	defer csMu.Unlock()
 	byDay, ok := csStore[key]
 	if !ok {
-		byDay = map[time.Time]map[string]int{}
+		byDay = map[string]map[string]int{}
 		csStore[key] = byDay
 	}
-	byDay[day] = ranks
+	byDay[date] = ranks
 }
 
 // CrossSectionRank 查询某日某 key 下 code 的名次（1 起）；未命中返回 0。
 func CrossSectionRank(day time.Time, key, code string) int {
-	day = DayOf(day)
+	date := day.Format(time.DateOnly)
 	csMu.RLock()
 	defer csMu.RUnlock()
 	byDay, ok := csStore[key]
 	if !ok {
 		return 0
 	}
-	ranks, ok := byDay[day]
+	ranks, ok := byDay[date]
 	if !ok {
 		return 0
 	}
@@ -64,5 +64,5 @@ func CrossSectionRank(day time.Time, key, code string) int {
 func ClearCrossSection() {
 	csMu.Lock()
 	defer csMu.Unlock()
-	csStore = map[string]map[time.Time]map[string]int{}
+	csStore = map[string]map[string]map[string]int{}
 }

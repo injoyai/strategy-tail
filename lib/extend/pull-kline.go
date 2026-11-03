@@ -3,7 +3,6 @@ package extend
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,11 +15,11 @@ import (
 	"github.com/injoyai/logs"
 	"github.com/injoyai/tdx/v2"
 	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/lib/update"
 	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 	"github.com/robfig/cron/v3"
-	"xorm.io/xorm"
 )
 
 const (
@@ -55,12 +54,13 @@ func hasAnyPrefix(code string, prefixes []string) bool {
 }
 
 type PullKlineConfig struct {
-	Codes             []string  //操作代码
-	Types             []string  //更新类型
-	Dir               string    //数据位置
-	Goroutines        int       //协程数量
-	StartAt           time.Time //数据开始时间
-	ValuationDatabase string    // 非空时，每个收盘批次额外采集沪深主板估值快照。
+	Store             pull.Store // Optional source-time storage; owned by the caller.
+	Codes             []string   //操作代码
+	Types             []string   //更新类型
+	Dir               string     //数据位置
+	Goroutines        int        //协程数量
+	StartAt           time.Time  //数据开始时间
+	ValuationDatabase string     // 非空时，每个收盘批次额外采集沪深主板估值快照。
 }
 
 func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
@@ -148,7 +148,7 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 			return nil
 		}
 	}
-	updated, err := this.Updated.IsUpdated("pull")
+	updated, err := this.Updated.IsUpdated(this.sourceUpdateKey())
 	if err != nil {
 		return err
 	}
@@ -192,6 +192,21 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 	if this.Config.ValuationDatabase != "" {
 		progress.Total++
 	}
+	store, closeStore, storeErr := this.openSourceStore(true)
+	if closeStore != nil {
+		defer closeStore()
+	}
+	var service *pull.Service
+	if storeErr == nil {
+		start := ""
+		if !this.Config.StartAt.IsZero() {
+			start = this.Config.StartAt.Format("20060102")
+		}
+		service, storeErr = pull.New(&pull.Config{Store: store, Codes: codes, Manage: m, StartAt: start, Day: seen[Day], Minute: seen[Minute]})
+		if service != nil {
+			defer service.Close()
+		}
+	}
 	var updateErrors []error
 	for _, kind := range types {
 		progress.Stage, progress.Code = kind, ""
@@ -206,12 +221,12 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 			}
 			emit()
 		}
-		switch kind {
-		case Day:
-			err = this.updateDayKline(m, codes, onCode)
-		case Minute:
-			err = this.updateMinKline(m, codes, onCode)
-		}
+		err = runUpdateCodes(codes, this.Config.Goroutines, func(code string) error {
+			if storeErr != nil {
+				return storeErr
+			}
+			return fetchSource(service, m, code, kind)
+		}, onCode)
 		if err != nil {
 			updateErrors = append(updateErrors, fmt.Errorf("%s: %w", kind, err))
 		}
@@ -228,7 +243,10 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 	progress.Stage, progress.Code = "finalize", ""
 	progress.StageDone, progress.StageTotal = 0, 0
 	emit()
-	return this.Updated.Mark("pull")
+	if err := this.Updated.Mark("pull"); err != nil {
+		return err
+	}
+	return this.Updated.Mark(this.sourceUpdateKey())
 }
 
 func (this *PullKline) Name() string {
@@ -258,7 +276,7 @@ func (this *PullKline) DayKline(code string, n ...int) (*Kline, error) {
 	return ks[len(ks)+_n], nil
 }
 
-func (this *PullKline) DayKlinesAll(code string) (Klines, error) {
+func (this *PullKline) legacyDayKlines(code string, start, end time.Time) (Klines, error) {
 	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
 
 	if !exists(filename) {
@@ -272,36 +290,32 @@ func (this *PullKline) DayKlinesAll(code string) (Klines, error) {
 	defer db.Close()
 
 	data := Klines{}
-	err = db.Asc("Unix").Find(&data)
+	query := db.Asc("Unix")
+	var floor time.Time
+	if !start.IsZero() {
+		floor, _ = time.ParseInLocation(time.DateOnly, start.Format(time.DateOnly), protocol.Location())
+		query = query.Where("Unix >= ?", floor.Unix())
+	}
+	if !end.IsZero() {
+		limit, _ := time.ParseInLocation(time.DateOnly, end.Format(time.DateOnly), protocol.Location())
+		query = query.Where("Unix < ?", limit.AddDate(0, 0, 1).Unix())
+	}
+	err = query.Find(&data)
+	if err == nil && !floor.IsZero() {
+		var previous Klines
+		err = db.Where("Unix < ?", floor.Unix()).Desc("Unix").Limit(1).Find(&previous)
+		data = append(previous, data...)
+	}
 	if err == nil {
 		err = normalizeLegacyDays(db.DB().DB, data)
+		for _, k := range data {
+			k.Time = k.Time.In(protocol.Location())
+		}
 	}
 	return data, err
 }
 
-func (this *PullKline) DayKlines(code string, start, end time.Time) (Klines, error) {
-	code = protocol.AddPrefix(code)
-	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
-
-	if !exists(filename) {
-		return Klines{}, nil
-	}
-
-	db, err := xorms.NewSQLite(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	data := Klines{}
-	err = db.Where("Unix >= ? and Unix <= ?", start.Unix(), end.Unix()).Asc("Unix").Find(&data)
-	if err == nil {
-		err = normalizeLegacyDays(db.DB().DB, data)
-	}
-	return data, err
-}
-
-func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Klines, error) {
+func (this *PullKline) legacyMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
 	years := []int(nil)
 	for i := start.Year(); i <= end.Year(); i++ {
 		years = append(years, i)
@@ -347,114 +361,6 @@ func (this *PullKline) MinKlines(code string, start, end time.Time) (protocol.Kl
 	return ks, nil
 }
 
-func (this *PullKline) updateDayKline(m *manage.Manage, codes []string, report ...func(string, error)) error {
-	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
-		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
-	}
-	return runUpdateCodes(codes, this.Config.Goroutines, func(code string) (err error) {
-		//连接数据库
-		db, err := xorms.NewSQLite(filepath.Join(this.Config.Dir, DirDay, code+".db"))
-		if err != nil {
-			return err
-		}
-		defer db.Close()
-
-		if err = db.Sync2(new(Kline)); err != nil {
-			return err
-		}
-
-		legacy, err := legacyPriceScale(db.DB().DB)
-		if err != nil {
-			return err
-		}
-
-		//2. 获取最后一条数据
-		last := new(Kline)
-		if _, err = db.Desc("Unix").Get(last); err != nil {
-			return err
-		}
-
-		if legacy {
-			scaleBar(last.Kline, .001)
-		}
-
-		//3. 从服务器获取数据
-		var resp protocol.Klines
-		err = m.Do(func(c tdx.Client) error {
-			resp, err = FetchStandardDay(c, code, func(k *protocol.Kline) bool {
-				return k.Time.Before(last.Time) || k.Time.Before(this.Config.StartAt)
-			})
-			return err
-		})
-		if err != nil {
-			return err
-		}
-
-		//4. 插入数据库
-		if resp == nil || len(resp) == 0 {
-			// 未上市等情况可能暂无行情，空响应不应删除已有数据或计为失败。
-			return nil
-		}
-		err = db.SessionFunc(func(session *xorm.Session) error {
-			if _, er := session.Where("Unix >= ?", last.Time.Unix()).Delete(new(Kline)); er != nil {
-				return er
-			}
-			for _, v := range resp {
-				if v.Time.Before(last.Time) {
-					continue
-				}
-				k := &Kline{
-					Unix:       v.Time.Unix(),
-					Kline:      v,
-					Turnover:   0,
-					FloatStock: 0,
-					TotalStock: 0,
-				}
-				if eq := m.Gbbq.GetEquity(code, v.Time); eq != nil {
-					k.Turnover = eq.Turnover(v.Volume * 100)
-					k.FloatStock = eq.Float
-					k.TotalStock = eq.Total
-				}
-				k.Kline = legacyWriteBar(k.Kline, legacy)
-				if _, er := session.Insert(k); er != nil {
-					return er
-				}
-			}
-			return nil
-		})
-
-		return err
-	}, report...)
-}
-
-func (this *PullKline) updateMinKline(m *manage.Manage, codes []string, report ...func(string, error)) error {
-	if err := os.MkdirAll(this.Config.Dir, os.ModePerm); err != nil {
-		return fmt.Errorf("创建 K 线数据目录 %q: %w", this.Config.Dir, err)
-	}
-	year := time.Now().Year()
-	return runUpdateCodes(codes, this.Config.Goroutines, func(code string) (err error) {
-		//指数仅更新白名单（上证指数/沪深300），其余指数跳过分钟数据更新
-		if protocol.IsIndex(code) && !hasAnyPrefix(code, 指数白名单) {
-			return nil
-		}
-
-		ks := protocol.Klines{}
-		//判断数据库文件是否存在,如果今年的数据库文件不存在,则按年向前填充
-		filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
-		if !exists(filename) {
-			//尝试更新去年的数据
-			ks, err = this.updateMinuteKlineYear(m, code, year-1, ks)
-			if err != nil {
-				return err
-			}
-		}
-		//更新今年的数据
-		_, err = this.updateMinuteKlineYear(m, code, year, ks)
-
-		return err
-	}, report...)
-}
-
 // Unlike bar.GoRetry, this retains the terminal error and reports each job once.
 func runUpdateCodes(codes []string, workers int, update func(string) error, report ...func(string, error)) error {
 	if workers <= 0 {
@@ -495,88 +401,4 @@ func runUpdateCodes(codes []string, workers int, update func(string) error, repo
 		return fmt.Errorf("更新失败 %d/%d（首个错误：%w）", failed, len(codes), firstErr)
 	}
 	return nil
-}
-
-func (this *PullKline) updateMinuteKlineYear(m *manage.Manage, code string, year int, ks protocol.Klines) (protocol.Klines, error) {
-
-	//去年的数据库文件
-	filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+conv.String(year)+".db")
-	newFile := !exists(filename)
-
-	db, err := xorms.NewSQLite(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-	if newFile {
-		if err = initMinuteStore(db.DB().DB); err != nil {
-			return nil, err
-		}
-	}
-	version, err := minuteVersion(db.DB().DB)
-	if err != nil {
-		return nil, err
-	}
-	if version == minuteStoreVersion || version == 101 {
-		return updateCompressedMinute(db.DB().DB, m, code, year, ks)
-	}
-
-	if err = db.Sync2(new(protocol.Kline)); err != nil {
-		return nil, err
-	}
-
-	legacy, err := legacyPriceScale(db.DB().DB)
-	if err != nil {
-		return nil, err
-	}
-	//获取最新一条数据
-	last := new(protocol.Kline)
-	_, err = db.Desc("Time").Get(last)
-	if err != nil {
-		return nil, err
-	}
-
-	if last.Time.IsZero() == false && legacy {
-		scaleBar(last, .001)
-	}
-	if len(ks) == 0 {
-		err = m.Do(func(c tdx.Client) error {
-			resp, err := FetchStandardMinute(c, code, func(k *protocol.Kline) bool {
-				return k.Time.Before(last.Time)
-			}, true)
-			if err != nil {
-				return err
-			}
-			ks = resp
-			return nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(ks) == 0 {
-		// 未上市等情况可能暂无行情，空响应不应删除已有数据或计为失败。
-		return ks, nil
-	}
-
-	err = db.SessionFunc(func(session *xorm.Session) error {
-		// xorm SQLite 方言按 DatabaseTZ(默认 UTC)将 time.Time 列格式化为 datetime 字符串落库,
-		// 删除条件必须用 UTC 格式化才能命中落库字面量,否则永远匹配不上;
-		// 只删除 last 边界一条再重插 >= last 的数据,
-		// 既避免 last 边界重复插入,又能刷新盘中尚在形成中的最后一根K线。
-		if _, err := session.Where("Time = ?", last.Time.UTC().Format(time.DateTime)).Delete(new(protocol.Kline)); err != nil {
-			return err
-		}
-		for _, v := range ks {
-			if v.Time.Before(last.Time) || v.Time.After(time.Date(year+1, 1, 1, 0, 0, 0, 0, time.Local)) {
-				continue
-			}
-			if _, err = session.Insert(legacyWriteBar(v, legacy)); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-
-	return ks, err
 }

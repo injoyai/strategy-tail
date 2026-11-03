@@ -6,17 +6,6 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-type Info struct {
-	Code       string  `json:"code"`       //代码
-	Name       string  `json:"name"`       //名称
-	Price      float64 `json:"price"`      //最新价
-	Turnover   float64 `json:"turnover"`   //换手率
-	FloatStock int64   `json:"floatStock"` //流通股本
-	TotalStock int64   `json:"totalStock"` //总股本
-	FloatValue float64 `json:"floatValue"` //流通市值
-	TotalValue float64 `json:"totalValue"` //总市值
-}
-
 type Kline struct {
 	Unix            int64 `xorm:"pk"`
 	*protocol.Kline `xorm:"extends"`

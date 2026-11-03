@@ -81,10 +81,10 @@ func TestUpdateFreshnessSkipsRepeatedDownloads(t *testing.T) {
 	if _, err := updated.IsUpdated("pull"); err != nil {
 		t.Fatal(err)
 	}
-	if err := updated.Mark("pull"); err != nil {
+	pull := &PullKline{Config: PullKlineConfig{Dir: dir}, Types: []string{Day}, Updated: updated}
+	if err := updated.Mark(pull.sourceUpdateKey()); err != nil {
 		t.Fatal(err)
 	}
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir}, Types: []string{Day}, Updated: updated}
 	var last UpdateProgress
 	// An empty manager cannot download. A fresh batch must return before network work.
 	if err := pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) { last = p }); err != nil {
@@ -150,7 +150,7 @@ func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, kind := range []string{DirDay, DirMinute} {
+	for _, kind := range []string{SourceDir} {
 		if err := os.WriteFile(filepath.Join(dir, kind), []byte("existing data"), 0644); err != nil {
 			t.Fatal(err)
 		}
@@ -222,7 +222,7 @@ func TestFailedCodeDoesNotMarkWholeBatchUpdated(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A regular file prevents opening the stock database, before any network call.
-	blocked := filepath.Join(dir, DirDay)
+	blocked := filepath.Join(dir, SourceDir)
 	if err := os.WriteFile(blocked, []byte("existing data"), 0644); err != nil {
 		t.Fatal(err)
 	}

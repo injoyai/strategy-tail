@@ -16,8 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -119,7 +117,7 @@ func decodeMinuteBlock(data []byte, reader **gzip.Reader) ([]minuteRecord, error
 		if v[0] < 0 {
 			return nil, fmt.Errorf("分钟记录序号为负")
 		}
-		k := &protocol.Kline{Last: float64(v[1]) / 1000.0, Open: float64(v[2]) / 1000.0, High: float64(v[3]) / 1000.0, Low: float64(v[4]) / 1000.0, Close: float64(v[5]) / 1000.0, Order: int(v[6]), Volume: v[7], Amount: float64(v[8]) / 1000.0, Time: time.Unix(v[9], 0).In(time.Local), UpCount: int(v[10]), DownCount: int(v[11])}
+		k := &protocol.Kline{Last: float64(v[1]) / 1000.0, Open: float64(v[2]) / 1000.0, High: float64(v[3]) / 1000.0, Low: float64(v[4]) / 1000.0, Close: float64(v[5]) / 1000.0, Order: int(v[6]), Volume: v[7], Amount: float64(v[8]) / 1000.0, Time: time.Unix(v[9], 0).In(protocol.Location()), UpCount: int(v[10]), DownCount: int(v[11])}
 		if raw[3] == '2' {
 			k.Last = math.Float64frombits(uint64(v[1]))
 			k.Open = math.Float64frombits(uint64(v[2]))
@@ -183,7 +181,7 @@ func readMinuteRecords(q minuteQuery, version int) ([]minuteRecord, error) {
 			if seq < 0 {
 				return nil, fmt.Errorf("分钟库包含负 rowid")
 			}
-			k.Time = at.In(time.Local)
+			k.Time = at.In(protocol.Location())
 			if legacy {
 				scaleBar(k, .001)
 			}
@@ -286,120 +284,6 @@ func writeMinuteGroups(tx *sql.Tx, groups map[int][]minuteRecord) error {
 		}
 	}
 	return nil
-}
-
-func updateCompressedMinute(db *sql.DB, m *manage.Manage, code string, year int, ks protocol.Klines) (protocol.Klines, error) {
-	if minuteZoneError != nil {
-		return nil, minuteZoneError
-	}
-	var lastUnix, next int64
-	var count int
-	if err := db.QueryRow("SELECT LastUnix,NextSequence,RecordCount FROM KlineMeta WHERE ID=1").Scan(&lastUnix, &next, &count); err != nil {
-		return nil, err
-	}
-	if next < 1 || count < 0 {
-		return nil, fmt.Errorf("无效的分钟压缩库元数据")
-	}
-	last := time.Time{}
-	if count > 0 {
-		last = time.Unix(lastUnix, 0).In(time.Local)
-	}
-	if len(ks) == 0 {
-		err := m.Do(func(c tdx.Client) error {
-			resp, err := FetchStandardMinute(c, code, func(k *protocol.Kline) bool { return k.Time.Before(last) }, true)
-			if err == nil && resp != nil {
-				ks = resp
-			}
-			return err
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(ks) == 0 {
-		return ks, nil
-	}
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
-	groups := map[int][]minuteRecord{}
-	if count > 0 {
-		groups[minuteDay(last)] = nil
-	}
-	end := time.Date(year+1, 1, 1, 0, 0, 0, 0, time.Local)
-	for _, k := range ks {
-		if k == nil {
-			return nil, fmt.Errorf("分钟更新包含空记录")
-		}
-		if !k.Time.Before(last) && !k.Time.After(end) {
-			groups[minuteDay(k.Time)] = nil
-		}
-	}
-	var reader *gzip.Reader
-	for day := range groups {
-		var data []byte
-		err = tx.QueryRow("SELECT Data FROM KlineBlock WHERE Day=?", day).Scan(&data)
-		if err == sql.ErrNoRows {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		records, err := decodeMinuteBlock(data, &reader)
-		if err != nil {
-			return nil, err
-		}
-		for _, r := range records {
-			if count > 0 && r.Bar.Time.Equal(last) {
-				count--
-				continue
-			}
-			groups[day] = append(groups[day], r)
-		}
-	}
-	for _, k := range ks {
-		if k.Time.Before(last) || k.Time.After(end) {
-			continue
-		}
-		if next == int64(^uint64(0)>>1) {
-			return nil, fmt.Errorf("分钟记录序号溢出")
-		}
-		groups[minuteDay(k.Time)] = append(groups[minuteDay(k.Time)], minuteRecord{uint64(next), k})
-		next++
-		count++
-	}
-	if err = writeMinuteGroups(tx, groups); err != nil {
-		return nil, err
-	}
-	lastUnix = 0
-	if count > 0 {
-		var data []byte
-		if err = tx.QueryRow("SELECT Data FROM KlineBlock ORDER BY Day DESC LIMIT 1").Scan(&data); err != nil {
-			return nil, err
-		}
-		records, err := decodeMinuteBlock(data, &reader)
-		if err != nil {
-			return nil, err
-		}
-		if len(records) == 0 {
-			return nil, fmt.Errorf("最新分钟压缩块为空")
-		}
-		lastUnix = records[0].Bar.Time.Unix()
-		for _, r := range records {
-			if r.Bar.Time.Unix() > lastUnix {
-				lastUnix = r.Bar.Time.Unix()
-			}
-		}
-	}
-	if _, err = tx.Exec("UPDATE KlineMeta SET NextSequence=?,LastUnix=?,RecordCount=? WHERE ID=1", next, lastUnix, count); err != nil {
-		return nil, err
-	}
-	if _, err = tx.Exec("PRAGMA user_version=102"); err != nil {
-		return nil, err
-	}
-	return ks, tx.Commit()
 }
 
 // MinuteCompression describes one verified replacement; records and order are preserved.

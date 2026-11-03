@@ -5,6 +5,7 @@
 ## 使用与开发指南
 
 - [tdx v2 迁移与数据口径](guides/tdx-v2-migration.md)
+- [行情源时间与新旧数据读取](guides/source-time-storage.md)
 
 - [项目目录与代码入口](guides/project-layout.md)
 - [命令入口与配置归属](../cmd/README.md)

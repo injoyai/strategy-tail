@@ -105,3 +105,18 @@ func TestCrossSection_Clear后不可查(t *testing.T) {
 
 // 防 lint：rand 引用占位（保持 import 稳定，供后续扩展随机并发写测试）
 var _ = rand.Int
+
+// Calendar labels must not depend on the Location pointer or an assumed absolute midnight.
+func TestCrossSectionSourceDateIgnoresLocation(t *testing.T) {
+	defer ClearCrossSection()
+	day := time.Date(2026, 11, 3, 15, 0, 0, 0, time.FixedZone("exchange", 8*3600))
+	SetCrossSection(day, "zone", []string{"sh600000"})
+	for _, loc := range []*time.Location{time.UTC, time.FixedZone("same-offset", 8*3600), time.FixedZone("other-offset", -5*3600)} {
+		if got := CrossSectionRank(time.Date(2026, 11, 3, 0, 0, 0, 0, loc), "zone", "sh600000"); got != 1 {
+			t.Fatal(loc, got)
+		}
+	}
+	if got := CrossSectionRank(day.AddDate(0, 0, 1), "zone", "sh600000"); got != 0 {
+		t.Fatal("different source date matched", got)
+	}
+}
