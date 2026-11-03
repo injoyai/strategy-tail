@@ -464,8 +464,17 @@ func (s *ScreenService) Diagnose(code, strategyKey string) (*DiagnoseResponse, e
 	}
 
 	//组装K线数据
-	klines := make([]ChartKline, 0, len(ks))
-	for _, k := range ks {
+	chartKlines := ks
+	if common.Pull != nil {
+		// 图表补齐缓存之前的本地历史，诊断和标注仍使用原有策略输入。
+		history, err := common.Pull.DayKlines(code, time.Time{}, core.DayOf(ks[0].Time).Add(-time.Second))
+		if err != nil {
+			return nil, fmt.Errorf("读取图表历史失败: %w", err)
+		}
+		chartKlines = append(history, ks...)
+	}
+	klines := make([]ChartKline, 0, len(chartKlines))
+	for _, k := range chartKlines {
 		klines = append(klines, ChartKline{
 			Time:   k.Time.Format("2006-01-02"),
 			Open:   k.Open,

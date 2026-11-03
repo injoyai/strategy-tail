@@ -67,6 +67,44 @@ func TestDiagnoseAllStrategies(t *testing.T) {
 	}
 }
 
+func TestDiagnoseChartIncludesHistoryBeforeStrategyCache(t *testing.T) {
+	oldPull, oldManage := common.Pull, common.Manage
+	common.Manage = &manage.Manage{Codes: codes.NewBase()}
+	dir := t.TempDir()
+	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	t.Cleanup(func() { common.Pull, common.Manage = oldPull, oldManage })
+	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, "sh600000.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if err := db.Sync2(new(extend.Kline)); err != nil {
+		t.Fatal(err)
+	}
+	base := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
+	ks := extend.Klines{}
+	for i := 0; i < 400; i++ {
+		day := base.AddDate(0, 0, i)
+		ks = append(ks, &extend.Kline{Unix: day.Unix(), Kline: &protocol.Kline{
+			Time: day, Open: 10, Close: 10, High: 11, Low: 9}})
+	}
+	if _, err := db.Insert(ks); err != nil {
+		t.Fatal(err)
+	}
+	// 缓存中的末日价格包含尚未落库的实时变化。
+	live := *ks[399].Kline
+	live.Close = 12
+	s := &ScreenService{DB: testTradeDB(t), Strategies: []Strategy{{Key: "always", Name: "全部", Buyer: buy.A全部{}}},
+		realtimeDayKlines: map[string]extend.Klines{"sh600000": {{Unix: ks[399].Unix, Kline: &live}}}}
+	got, err := s.Diagnose("sh600000", "always")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Klines) != 400 || got.Klines[0].Time != "2020-01-01" || got.Klines[399].Close != 12 {
+		t.Fatal("图表应包含完整本地历史，并保留缓存中的最新行情")
+	}
+}
+
 func TestHistoryReplacementRollsBackAndClearsEmptyResult(t *testing.T) {
 	s := &ScreenService{DB: testTradeDB(t)}
 	old := &Trade{Code: "sh600000", BuyTime: "2025-01-02 15:00:00", BuyPrice: 10}

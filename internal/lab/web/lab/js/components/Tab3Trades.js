@@ -129,11 +129,8 @@ export default {
           this.$refs.klinePanel?.scrollIntoView({block: 'start', behavior: 'auto'});
           this.$refs.klinePanel?.focus({preventScroll: true});
         }
-        // 拉取买入前30天到卖出后5天。
-        const from = new Date(t.buyTime); from.setDate(from.getDate() - 30);
-        const to = new Date(t.sellTime); to.setDate(to.getDate() + 5);
-        const fmt = d => d.toISOString().slice(0, 10);
-        const ks = await Api.kline(t.code, fmt(from), fmt(to));
+        // 初始视窗聚焦交易，但缩放与平移可浏览全部本地日线。
+        const ks = await Api.kline(t.code, '', '');
         if (request !== this.klineRequest) return;
         if (!ks.length) throw new Error('该区间暂无日K数据，请先更新行情后重试');
         this.klineLoading = false;
@@ -155,7 +152,10 @@ export default {
         {date: t.sellTime.slice(0, 10), price: t.sellPrice, kind: t.virtual === true ? 'est' : 'sell',
           text: `${t.virtual === true ? '期末估值' : '卖出'} ${t.sellTime} · ${t.sellPrice.toFixed(2)} 元`},
       ];
-      const missing = this.klineC.setData({rows: ks, markers, view: 'all', identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
+      const from = new Date(t.buyTime); from.setDate(from.getDate() - 30);
+      const to = new Date(t.sellTime); to.setDate(to.getDate() + 5);
+      const missing = this.klineC.setData({rows: ks, markers,
+        view: {from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10)}, identity: `${t.code}/${t.buyTime}/${t.sellTime}`,
         title: `${stockLabel(t.code, state.stockNames)}（${t.variant} · 收益 ${t.rate.toFixed(2)}%）`});
       this.klineWarning = missing.length ? `${missing.map(m => m.kind === 'buy' ? '买入' : m.kind === 'est' ? '期末估值' : '卖出').join('、')}当日缺少日K，未绘制对应标记；时间与价格见上方交易信息。` : '';
     },
@@ -196,6 +196,7 @@ export default {
       <button type="button" class="secondary" aria-label="缩小K线" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.zoom(0.8)">− 缩小</button>
       <button type="button" class="secondary" aria-label="放大K线" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.zoom(1.25)">＋ 放大</button>
       <button type="button" class="secondary" :disabled="!klineC || klineLoading || !!klineErr" @click="klineC?.fitContent()">显示全程</button>
+      <span class="hint">滚轮或加减键缩放，左右拖动查看更多行情</span>
     </div>
     <p v-if="klineLoading" class="empty" role="status">加载K线中…</p>
     <div v-else-if="klineErr" class="warnbar" role="alert">K线加载失败：{{ klineErr }} <button type="button" class="secondary" @click="showKline(klineTrade)">重试</button></div>

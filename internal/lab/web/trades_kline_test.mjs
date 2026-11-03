@@ -45,7 +45,7 @@ test('连续选择交易复用图表，B/S 使用实际成交价，图表容器�
   assert.equal(ctx.klineErr, ''); assert.equal(ctx.klineLoading, false);
   assert.equal(mounts, 1); assert.equal(chart.options.length, 2); assert.equal(ctx.scrolls, 0);
   assert.match(chart.options[1].title, /sz000001/);
-  assert.equal(chart.options[1].view, 'all');
+  assert.deepEqual(chart.options[1].view, {from:'2024-12-03',to:'2025-01-08'});
   const markers = K.normalize(chart.options[1]).markers;
   assert.deepEqual(markers.map(m => [m.timestamp,m.price]), [[Date.parse('2025-01-02T00:00:00+08:00'),10.5], [Date.parse('2025-01-03T00:00:00+08:00'),11.5]]);
   assert.deepEqual(markers.map(m => m.label), ['B','S']);
@@ -58,6 +58,14 @@ test('连续选择交易复用图表，B/S 使用实际成交价，图表容器�
     const [tableHost] = elements(tree, v => v.props?.ref === 'tradeTable');
     assert.ok(tableHost); assert.equal(tableHost.children, null);
   }
+});
+
+test('交易明细加载完整本地行情，不按初始视窗裁剪请求', async () => {
+  const ctx=instance(), calls=[];
+  Api.kline=async (...args)=>{calls.push(args);return bars;};
+  await ctx.showKline(trade());
+  assert.deepEqual(calls,[['sh600000','','']]);
+  assert.deepEqual(chart.options[0].rows,bars);
 });
 
 test('K线工具按钮调用共享图表能力，加载与错误时禁用且不占图表宿主', async () => {

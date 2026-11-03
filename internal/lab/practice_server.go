@@ -42,9 +42,8 @@ func practiceKlineViews(m *practiceMarket, signalIndex, through int, withDate bo
 	if through >= len(m.Days) {
 		through = len(m.Days) - 1
 	}
-	start := max(0, signalIndex-120)
-	views := make([]practiceKlineView, 0, through-start+1)
-	for i := start; i <= through; i++ {
+	views := make([]practiceKlineView, 0, through+1)
+	for i := 0; i <= through; i++ {
 		k := m.Days[i]
 		v := practiceKlineView{
 			Day:    i - signalIndex,

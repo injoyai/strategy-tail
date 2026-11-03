@@ -117,11 +117,22 @@ func TestPracticeAuditInitialHistoryWindow(t *testing.T) {
 	m := practiceTestMarket(t, closes)
 	sess := practiceTestSession(m, 150)
 	v := practiceSessionViewOf(sess, m)
-	if len(v.Days) != 121 || v.Days[0].Day != -120 || v.Days[len(v.Days)-1].Day != 0 {
-		t.Fatalf("初始应显示前 120 日及信号日，got %d 根、起点 %d", len(v.Days), v.Days[0].Day)
+	if len(v.Days) != 151 || v.Days[0].Day != -150 || v.Days[len(v.Days)-1].Day != 0 {
+		t.Fatalf("应提供当前可见日之前的全部快照历史，got %d 根、起点 %d", len(v.Days), v.Days[0].Day)
 	}
-	if v.Days[0].MA20 == nil {
-		t.Fatal("裁剪显示窗口不能丢失预热指标")
+	if v.Days[0].MA20 != nil || v.Days[19].MA20 == nil {
+		t.Fatal("完整历史应保留原有指标预热空值")
+	}
+	for _, day := range v.Days {
+		if day.Date != "" || day.Day > 0 {
+			t.Fatal("盲练历史不能泄露真实日期或未来行情")
+		}
+	}
+	sess.CurrentIndex = 160
+	sess.Phase = practicePhaseFinished
+	rv := practiceReviewViewOf(sess, m)
+	if len(rv.Days) != 181 || rv.Days[0].Day != -150 || rv.Days[len(rv.Days)-1].Day != 30 {
+		t.Fatalf("复盘应保留全部历史且仍遵循结束后20日边界：%d 根", len(rv.Days))
 	}
 }
 

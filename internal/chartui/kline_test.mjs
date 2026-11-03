@@ -17,10 +17,11 @@ function runtime() {
         createOverlay(o) {this.markers.push(o);}, removeOverlay() {this.markers=[];},
         resize() {assert.equal(this.disposed,false);this.resizes++;}, setBarSpace(space) {this.space=space;}, getBarSpace() {return {bar:12};},
         getSize() {return {width:el.clientWidth-70,height:300};}, setLayoutOptions(options) {this.layoutOptions=options;},
+        getLayoutOptions() {return {barSpaceLimit:{min:1,max:50,...this.layoutOptions?.barSpaceLimit}};},
         setOffsetRightDistance(distance) {this.offset=distance;},
         subscribeAction(name,fn) {(this.actions??=new Map()).set(name,fn);}, unsubscribeAction(name) {this.actions.delete(name);},
         overrideYAxis(options) {this.axisOptions=options;}, scrollToRealTime() {this.atEnd=true;},
-        scrollByDistance(d) {this.scrolled=d;}, zoomAtCoordinate(scale) {this.zoom=scale;}, scrollToDataIndex() {}};
+        scrollByDistance(d) {this.scrolled=d;}, zoomAtCoordinate(scale) {this.zoom=scale;}, scrollToDataIndex(index) {this.index=index;}};
       charts.push(c);return c;
     }, dispose(el) {charts.find(c=>c.el===el).disposed=true;}};
   const context = {klinecharts:lib, queueMicrotask, ResizeObserver:class {
@@ -87,7 +88,7 @@ test('完整区间按主图宽度适配，手动调整后保留缩放，恢复�
   await Promise.resolve();
   assert.equal(chart.space,(320-48)/600);
   assert.equal(chart.layoutOptions.barSpaceLimit.min,chart.space,'长区间允许小于一像素的柱间距');
-  assert.equal(chart.offset,24);assert.equal(chart.data.length,600);assert.equal(chart.atEnd,true);
+  assert.equal(chart.offset,24);assert.equal(chart.data.length,600);assert.equal(chart.index,599);
   r.el.clientWidth=800;mounted.resize();await Promise.resolve();
   assert.equal(chart.space,(730-48)/600,'默认全程视图随容器变化适配');
   mounted.zoom(1.25);chart.space=4;
@@ -101,6 +102,27 @@ test('完整区间按主图宽度适配，手动调整后保留缩放，恢复�
   mounted.clear();const previous=chart.space;mounted.fitContent();assert.equal(chart.space,previous);
   mounted.dispose();mounted.zoom(1.25);mounted.fitContent();await Promise.resolve();
   assert.equal(chart.actions.size,0);
+});
+
+test('默认视图可缩至全部已加载行情，日期视窗只定位而不裁剪数据', async () => {
+  const r=runtime();r.el.clientWidth=390;
+  const mounted=r.mount(r.el), chart=r.charts[0];
+  const rows=Array.from({length:1000},(_,i)=>({...row(i),date:new Date(Date.UTC(2020,0,1+i)).toISOString().slice(0,10)}));
+  mounted.setData({identity:'history',rows,view:{from:rows[700].date,to:rows[729].date}});
+  await Promise.resolve();
+  assert.equal(chart.data.length,1000);
+  assert.equal(chart.space,(320-48)/30);
+  assert.equal(chart.index,729);
+  assert.equal(chart.layoutOptions.barSpaceLimit.min,(320-48)/1000);
+  chart.space=0.3;chart.getBarSpace=()=>({bar:chart.space});
+  mounted.zoom(0.8);
+  assert.equal(chart.zoom,((320-48)/1000)/0.3,'最后一步缩放达到边界，不因越界停在边界之前');
+  chart.space=2;
+  mounted.setData({identity:'history',rows,view:{from:rows[700].date,to:rows[729].date}});await Promise.resolve();
+  assert.equal(chart.space,2,'相同日期视窗的数据更新保留手动缩放');
+  mounted.setData({identity:'practice',rows:rows.slice(0,800)});await Promise.resolve();
+  assert.equal(chart.layoutOptions.barSpaceLimit.min,(320-48)/800,'普通视图也允许不足一像素的柱间距');
+  mounted.dispose();
 });
 
 test('无组件时降级；无效时间、重复交易日和无效价格明确失败', () => {

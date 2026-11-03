@@ -144,9 +144,8 @@ func ExportTradesHTMLWithError(strategyName, filename string, trades []Trade, ge
 
 		// K线与买卖点（拉不到日线时跳过图，仅保留明细）
 		if getDayKlines != nil {
-			start := ts[0].BuyTime.AddDate(0, 0, -30) // 前置30日给均线预热
 			end := ts[len(ts)-1].SellTime
-			if dks, err := getDayKlines(code, start, end); err == nil && len(dks) > 0 {
+			if dks, err := getDayKlines(code, time.Time{}, end); err == nil && len(dks) > 0 {
 				kline := make([][]any, 0, len(dks))
 				for _, k := range dks {
 					kline = append(kline, []any{

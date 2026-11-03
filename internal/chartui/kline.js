@@ -202,20 +202,22 @@
     if (maPeriods.length) chart.createIndicator({name: 'STRATEGY_MA', calcParams: maPeriods, paneId: 'candle_pane'}, true);
     chart.createIndicator({name: 'STRATEGY_VOLUME', paneId: 'strategy_volume'});
     if (macd) chart.createIndicator({name: 'STRATEGY_MACD', paneId: 'strategy_macd'});
-    let data = [], byTime = new Map(), identity = Symbol(), view, fitted = false, alive = true;
+    let data = [], byTime = new Map(), identity = Symbol(), view, pendingView, fitted = false, alive = true;
     chart.setFormatter({formatDate: ({timestamp}) => byTime.get(timestamp)?.label || ''});
     chart.setDataLoader({getBars: ({type, callback}) => callback(type === 'init' ? data : [], false)});
     chart.setSymbol({ticker: '日K', pricePrecision: 2, volumePrecision: 0});
     chart.setPeriod({type: 'day', span: 1});
-    const fitContent = () => {
+    const fitRange = (from = 0, to = data.length) => {
       if (!alive || !data.length || !el.clientWidth || !el.clientHeight) return;
       const width = chart.getSize('candle_pane', 'main').width;
       if (width <= 48) return;
-      const space = Math.min(12, (width - 48) / data.length);
-      chart.setLayoutOptions({barSpaceLimit: {min: Math.min(1, space)}});
+      const space = Math.min(12, (width - 48) / Math.max(1, to - from));
       chart.setBarSpace(space);
       chart.setOffsetRightDistance(24);
-      chart.scrollToRealTime(0);
+      chart.scrollToDataIndex(to - 1, 0);
+    };
+    const fitContent = () => {
+      fitRange();
       fitted = true;
     };
     const stopFitting = () => { fitted = false; };
@@ -224,7 +226,9 @@
     const zoom = scale => {
       if (!alive || !data.length || !Number.isFinite(scale) || scale <= 0) return;
       fitted = false;
-      chart.zoomAtCoordinate(scale);
+      const space = chart.getBarSpace().bar;
+      const {min, max} = chart.getLayoutOptions().barSpaceLimit;
+      chart.zoomAtCoordinate(Math.max(min, Math.min(max, space * scale)) / space);
     };
     const resize = () => {
       if (!alive || !el.clientWidth || !el.clientHeight) return;
@@ -232,7 +236,19 @@
       if (macd) chart.setPaneOptions({id: 'strategy_macd', height: Math.max(100, Math.round(el.clientHeight * 0.26)), minHeight: 80});
       chart.resize();
       // KLineChart measures the price axis in its queued layout first.
-      queueMicrotask(() => { if (fitted) fitContent(); });
+      queueMicrotask(() => {
+        if (!alive || !el.clientWidth || !el.clientHeight || !data.length) return;
+        const width = chart.getSize('candle_pane', 'main').width;
+        if (width <= 48) return;
+        // Every view can zoom out to all supplied bars, including on narrow screens.
+        chart.setLayoutOptions({barSpaceLimit: {min: Math.min(1, (width - 48) / data.length)}});
+        if (pendingView) {
+          const from = data.findIndex(bar => bar.label >= pendingView.from);
+          const end = data.findIndex(bar => bar.label > pendingView.to);
+          fitRange(Math.max(0, from), end < 0 ? data.length : end);
+          pendingView = undefined;
+        } else if (fitted) fitContent();
+      });
     };
     const observer = new ResizeObserver(resize);
     observer.observe(el);
@@ -276,11 +292,16 @@
         for (const [markerIndex, marker] of normalized.markers.entries()) chart.createOverlay({name: 'strategyTrade', groupId: 'strategy_trades',
           lock: true, points: [{timestamp: marker.timestamp, value: marker.price}], extendData: {...marker, markerIndex},
           onRightClick: ({event}) => {event?.preventDefault?.();}});
-        if (identity !== options.identity || view !== options.view) {
+        const sameView = view === options.view || (view && options.view && typeof view === 'object' &&
+          typeof options.view === 'object' && view.from === options.view.from && view.to === options.view.to);
+        if (identity !== options.identity || !sameView) {
           identity = options.identity;
           view = options.view;
           fitted = view === 'all';
-          if (!fitted) {
+          pendingView = undefined;
+          if (view && typeof view === 'object') {
+            pendingView = view;
+          } else if (!fitted) {
             chart.setBarSpace(Math.max(2, Math.min(12, (el.clientWidth - 70) / Math.max(1, Math.min(data.length, el.clientWidth < 600 ? 60 : 120)))));
             chart.scrollToRealTime(0);
           }
@@ -288,7 +309,7 @@
         resize();
         return normalized.missing;
       },
-      clear() { data = []; byTime.clear(); fitted = false; identity = Symbol(); tradeStates.delete(chart); chart.removeOverlay({groupId: 'strategy_trades'}); chart.resetData(); },
+      clear() { data = []; byTime.clear(); fitted = false; pendingView = undefined; identity = Symbol(); tradeStates.delete(chart); chart.removeOverlay({groupId: 'strategy_trades'}); chart.resetData(); },
       dispose() {
         if (!alive) return;
         alive = false; fitted = false; tradeStates.delete(chart); observer.disconnect(); el.removeEventListener('keydown', keydown);

@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func makeExportTrade(code string, buy time.Time) Trade {
@@ -20,6 +23,23 @@ func makeExportTrade(code string, buy time.Time) Trade {
 		BuyCost:       1005,
 		SellIncome:    1030,
 		Quantity:      100,
+	}
+}
+
+func TestTradesHTMLLoadsAllHistoryThroughReportEnd(t *testing.T) {
+	chdirTemp(t)
+	trade := makeExportTrade("sh600000", time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local))
+	calls := 0
+	path, err := ExportTradesHTMLWithError("完整历史", "history", []Trade{trade}, func(code string, from, to time.Time) (extend.Klines, error) {
+		calls++
+		if code != trade.Code || !from.IsZero() || !to.Equal(trade.SellTime) {
+			t.Fatalf("行情应从可用历史起点读取至报告末日: %s %v %v", code, from, to)
+		}
+		return extend.Klines{{Kline: &protocol.Kline{Time: trade.BuyTime, Open: trade.BuyPrice,
+			Close: trade.BuyPrice, High: trade.BuyPrice, Low: trade.BuyPrice}}}, nil
+	})
+	if err != nil || path == "" || calls != 1 {
+		t.Fatalf("生成历史图表: path=%s calls=%d err=%v", path, calls, err)
 	}
 }
 
