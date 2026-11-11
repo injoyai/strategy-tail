@@ -434,7 +434,7 @@ docker `golang:1.25-alpine`，宿主沙箱覆盖执行，TZ=Asia/Shanghai、CGO_
 
 扩大到全仓竞态后额外发现的 Lab 内存采样器及 TDX 回调列表竞争已处理。采样器在读取峰值前等待后台协程退出，正常及失败清理由同一停止操作负责；行情测试关闭连接后等待客户端结束，避免跨测试复用仍在读的缓冲区。
 
-用户已明确授权项目内本地依赖补丁。根 `go.mod` 通过相对 replace 指向 `third_party/injoyai-base`，保留上游 v1.2.20 完整快照，仅在 `maps/wait/map_wait.go` 为回调注册和分发共用互斥锁。根 Dockerfile 在模块下载前复制本地依赖。来源、校验与升级约定见 [依赖维护说明](../../third_party/README.md)。
+本轮经用户授权接入本地依赖补丁。根 `go.mod` 当时通过相对 replace 使用上游 v1.2.20 的本地快照，仅在 `maps/wait/map_wait.go` 为回调注册和分发共用互斥锁。根 Dockerfile 在模块下载前复制本地依赖。来源、校验与差异见历史提交 `69d1371` 中的 `third_party/README.md`。
 
 本次均使用实际根 `go.mod`，无临时 modfile／overlay：全量普通测试、构建、vet、全仓 `-race` 通过；行情空响应用例 `-race -count=100` 通过；部署脚本 7 项通过；真实 Dockerfile 构建本地检查镜像 `strategy-tail-lab:base-race-fix-20261018` 成功。未替换现有服务、推送镜像或提交代码。
 

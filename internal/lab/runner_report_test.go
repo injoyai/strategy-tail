@@ -14,7 +14,6 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
-	sb "github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -235,9 +234,8 @@ func TestBuildComparisonSummary(t *testing.T) {
 	}
 }
 
-// TestRunnerAdvancedReportSourceScript 高级模式报告 source=script，
-// 不带 strategySpec/comparison；报告落盘路径与既有行为一致。
-func TestRunnerAdvancedReportSourceScript(t *testing.T) {
+// TestRunnerBuilderReportOmitsComparison 验证搭建器报告只保存自身的策略快照。
+func TestRunnerBuilderReportOmitsComparison(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
@@ -246,10 +244,17 @@ func TestRunnerAdvancedReportSourceScript(t *testing.T) {
 	writeFakeDayDB(t, dir, "sh600000", 250, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
 
 	r := NewRunner()
+	spec := baseSpec()
+	spec.SellSignal = nil
+	spec.Risks = []*BuilderNode{bCond("risk_holding_days", map[string]any{"days": 1.0})}
+	buyer, err := spec.Buyer()
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg := RunConfig{StartYear: 2025, EndYear: 2025,
-		SampleMode: "codes", SampleCodes: []string{"sh600000"}, HoldingDays: 1,
-		ScriptName: "matrix"}
-	variants := []core.Variant{{Name: "基线·全买", Buyer: sb.And{sb.A价格{Min: 2, Max: 120}, sb.A过滤涨停{}}}}
+		SampleMode: "codes", SampleCodes: []string{"sh600000"}, Builder: &spec,
+		ScriptName: sourceBuilder}
+	variants := []core.Variant{{Name: spec.Name, Buyer: buyer}}
 	if err := r.Start(cfg, variants); err != nil {
 		t.Fatal(err)
 	}
@@ -259,23 +264,23 @@ func TestRunnerAdvancedReportSourceScript(t *testing.T) {
 	if rep == nil {
 		t.Fatal("无最新报告")
 	}
-	if rep.Source != "script" {
-		t.Fatalf("高级模式 source = %q, want script", rep.Source)
+	if rep.Source != sourceBuilder {
+		t.Fatalf("搭建器 source = %q, want builder", rep.Source)
 	}
 	if rep.StrategySpec != nil || rep.Comparison != nil {
-		t.Fatalf("高级模式不应有 strategySpec/comparison: %+v", rep)
+		t.Fatalf("搭建器不应有 strategySpec/comparison: %+v", rep)
 	}
 	if rep.Coverage.Completed != 1 || len(rep.Variants) != 1 || rep.Variants[0].Stats.Total == 0 {
-		t.Fatalf("高级模式基础行为被破坏: coverage=%+v variants=%d", rep.Coverage, len(rep.Variants))
+		t.Fatalf("搭建器基础行为被破坏: coverage=%+v variants=%d", rep.Coverage, len(rep.Variants))
 	}
 
-	// 落盘 report.json：source=script，无 strategySpec/comparison 键
+	// 落盘 report.json：source=builder，无 strategySpec/comparison 键
 	b, err := os.ReadFile(filepath.Join("output", "trades", rep.RunID(), "report.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"source": "script"`) { // MarshalIndent 冒号带空格
-		t.Fatalf("report.json 缺少 source=script: %s", b)
+	if !strings.Contains(string(b), `"source": "builder"`) { // MarshalIndent 冒号带空格
+		t.Fatalf("report.json 缺少 source=builder: %s", b)
 	}
 	if strings.Contains(string(b), "strategySpec") || strings.Contains(string(b), "comparison") {
 		t.Fatalf("report.json 不应有 strategySpec/comparison: %s", b)
@@ -441,7 +446,7 @@ func TestRunnerUniverseAndProvenance(t *testing.T) {
 	}
 
 	// 注入 View 后 ResearchDataView 标识相应变化。
-	r3 := NewRunnerWithDeps(researchdata.NewHub(), custom)
+	r3 := NewRunnerWithDeps(researchdata.NewStore(), custom)
 	if dp := r3.dataProvenance(); dp.ResearchDataView != "injected" {
 		t.Fatalf("注入 View 后 ResearchDataView = %q, want injected", dp.ResearchDataView)
 	}

@@ -12,16 +12,14 @@ strategy-tail/
 │   ├── buy/                   # 买入条件与组合子
 │   ├── sell/                  # 卖出条件与独立风控
 │   ├── factor/                # 因子计算、目录与工厂
-│   ├── util/                  # 策略共用计算
-│   └── script/                # 兼容脚本及 Lab 保存路径
+│   └── util/                  # 策略共用计算
 ├── researchdata/              # PIT 数据契约与研究视图
 ├── lib/extend/                # TDX 协议数据到策略 K 线的转换
 ├── internal/
 │   ├── marketstore/           # 外部 MySQL 数据源的只读查询
 │   ├── lab/                   # Web 实验室与任务编排
 │   │   ├── builder/           # 搭建器目录、规则校验与条件构建
-│   │   ├── factorstats/       # 因子统计与中性化纯计算
-│   │   └── script/            # 脚本解释器、符号表与单元测试
+│   │   └── factorstats/       # 因子统计与中性化纯计算
 │   ├── portfolioresearch/     # 组合研究算法
 │   └── researchrun/           # 研究数据加载与执行
 ├── docs/
@@ -41,9 +39,7 @@ strategy-tail/
 
 ## Lab 模块入口
 
-`internal/lab/` 负责服务装配、任务编排和存储，独立逻辑按三条边界归入 `builder`、`factorstats`、`script`。父包中的 `builder.go`、`factor_stats.go`、`interp.go` 保留已有类型及调用入口。
-
-三个子包均不反向导入 `lab`：`builder` 依赖核心与策略组件；`factorstats` 只依赖标准库；`script` 依赖核心、策略组件和 Yaegi。原 `lab.LoadScript`、`lab.CheckScript`、`lab.ProjectSymbols` 保留转发入口，加载令牌和超时控制只在子包中维护。
+`internal/lab/` 负责服务装配、任务编排和存储。`builder` 处理策略构建，`factorstats` 处理因子统计。
 
 搭建器、共用因子条件和统计结果在父包使用类型别名，字段与 JSON 格式保持一致。搭建器校验通过 `Validate(mode)` 访问，共用因子条件通过 `Validate`、`Build`、`Describe` 访问；旧的私有方法不作为跨包接口。
 
@@ -52,18 +48,17 @@ strategy-tail/
 | HTTP 路由、静态资源与服务装配 | [server.go](../../internal/lab/server.go) |
 | 任务初始化与收尾、互斥、停止、状态与报告 | [task.go](../../internal/lab/task.go)、[runner.go](../../internal/lab/runner.go)、[reports.go](../../internal/lab/reports.go) |
 | 账户回测与多变体加载 | [account_backtest.go](../../internal/lab/account_backtest.go)、[researchrun/runner.go](../../internal/researchrun/runner.go) |
-| 自由搭建器目录、规则与模板 | [builder/catalog.go](../../internal/lab/builder/catalog.go)、[builder/spec.go](../../internal/lab/builder/spec.go)、[builder/filter.go](../../internal/lab/builder/filter.go)、[builder/template.go](../../internal/lab/builder/template.go) |
+| 自由搭建器目录与规则 | [builder/catalog.go](../../internal/lab/builder/catalog.go)、[builder/spec.go](../../internal/lab/builder/spec.go)、[builder/filter.go](../../internal/lab/builder/filter.go) |
 | 搭建器存储与 HTTP 接口 | [builder_store.go](../../internal/lab/builder_store.go)、[builder_server.go](../../internal/lab/builder_server.go) |
 | 因子分析、观察样本与评价标签 | [analysis.go](../../internal/lab/analysis.go)、[factor_analysis_v4.go](../../internal/lab/factor_analysis_v4.go)、[factor_observation.go](../../internal/lab/factor_observation.go)、[factor_label.go](../../internal/lab/factor_label.go) |
 | 因子统计诊断 | [factorstats/ic.go](../../internal/lab/factorstats/ic.go)、[factorstats/turnover.go](../../internal/lab/factorstats/turnover.go)、[factorstats/neutralize.go](../../internal/lab/factorstats/neutralize.go) |
 | 候选、研究协议与验证 | [factor_candidate.go](../../internal/lab/factor_candidate.go)、[research_protocol.go](../../internal/lab/research_protocol.go)、[factor_validation.go](../../internal/lab/factor_validation.go) |
 | 组合模型、实验执行与接口 | [factor_model.go](../../internal/lab/factor_model.go)、[portfolio_experiment_store.go](../../internal/lab/portfolio_experiment_store.go)、[portfolio_runner.go](../../internal/lab/portfolio_runner.go)、[portfolio_handlers.go](../../internal/lab/portfolio_handlers.go) |
 | 组合计算与交易会计 | [portfolioresearch/](../../internal/portfolioresearch/) |
-| 兼容脚本执行与符号注册 | [script/interp.go](../../internal/lab/script/interp.go)、[script/symbols.go](../../internal/lab/script/symbols.go)；[原入口转发](../../internal/lab/interp.go) |
 | MySQL 行情状态 | [data_update.go](../../internal/lab/data_update.go) |
 | 前端页面、组件和样式 | [index.html](../../internal/lab/web/lab/index.html)、[app.js](../../internal/lab/web/lab/js/app.js)、[lab.css](../../internal/lab/web/lab/css/lab.css) |
 
-脚本加载、超时、初始化安全和 Yaegi 绑定测试放在子包；HTTP 生命周期测试留在父包。两者通过编译期嵌入共用 [strategy.go](../../internal/lab/script/testdata/strategy.go) 夹具，不依赖测试时工作目录。运行 `go test ./internal/lab/...` 覆盖两层测试。
+运行 `go test ./internal/lab/...` 验证 Lab API、搭建器和因子统计。
 
 搭建器工厂覆盖测试、统计诊断手算与边界测试随实现归入子包；存储、候选接入、完整回测与报告快照测试保留在父包。条件基线继续逐前缀对比已有哈希，目录整理不更新其预期值。
 
@@ -90,11 +85,11 @@ strategy-tail/
 
 ## 运行目录与维护边界
 
-- `data/` 保存行情与 Lab 状态，`output/` 保存报告，`bin/` 保存二进制；三者均被 Git 忽略。文档整理不移动真实数据。
-- [deploy.sh](../../deploy.sh) 挂载 `data/`、`output/`、`config/` 和 `strategies/script/`；[Dockerfile](../../Dockerfile) 从 `cmd/lab` 构建服务。调整这些路径需要单独处理配置与存量数据兼容。
+- `data/` 保存本地运行状态，`output/` 保存报告，`bin/` 保存二进制。三者均被 Git 忽略。
+- [deploy.sh](../../deploy.sh) 挂载 `data/`、`output/` 和 `config/`。[Dockerfile](../../Dockerfile) 从 `cmd/lab` 构建服务。调整这些路径需要单独处理配置与存量数据兼容。
 - Lab 的 `web/lab/` 由 `go:embed` 嵌入，前端测试位于 `internal/lab/web/*.mjs`；保持资源和测试的相对位置。
 - `AGENTS.md`、`PROJECT_RULES.md`、`MEMORY.md`、`CONTEXT.md`、`DESIGN.md`、`UX-CONTRACT.md` 留在根目录，作为协作、术语与设计的固定入口。
-- `cmd/backtest/main.go` 是作者的调参草稿入口，保留现有内容和路径。
+- 日常回测使用 Lab。临时回测脚本放在 `.tmp/backtest/`，调用方式见[临时回测指南](ad-hoc-backtest.md)。
 - 设计与计划保留文档标注日期和历史状态；旧记录不能代替当前源码与测试结果。发布候选的历史 hash 不因目录迁移而重新冻结。
 
 ## 目录改造验收（2026-10-17）

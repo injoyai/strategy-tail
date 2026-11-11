@@ -15,9 +15,9 @@ func TestConfigUsesRuntimeRoot(t *testing.T) {
 		if got := cfg.GetInt("screen.port"); got != 9191 {
 			t.Fatalf("screen.port = %d, want root config value 9191", got)
 		}
-		cost, pos, years, benchmark, iterations := LoadBacktestConfig()
-		if cost.CommissionRate != 0.002 || pos.MaxPerCode != 3 || len(years) != 1 || years[0] != 2025 || benchmark != "sh000001" || iterations != 42 {
-			t.Fatalf("root backtest config not loaded: %v %v %v %s %d", cost, pos, years, benchmark, iterations)
+		cost, pos := LoadBacktestConfig()
+		if cost.CommissionRate != 0.002 || pos.MaxPerCode != 3 {
+			t.Fatalf("root backtest config not loaded: %v %v", cost, pos)
 		}
 		if Pull != nil || Manage != nil || DefaultUniverse != nil {
 			t.Fatal("loading config must not initialize runtime resources")
@@ -31,7 +31,7 @@ func TestConfigUsesRuntimeRoot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	config := "screen:\n  port: 9191\nbacktest:\n  cost:\n    commission_rate: 0.002\n  position:\n    max_per_code: 3\n  years: [2025]\n  benchmark: sh000001\n  monte_carlo_iterations: 42\n"
+	config := "screen:\n  port: 9191\nbacktest:\n  cost:\n    commission_rate: 0.002\n  position:\n    max_per_code: 3\n"
 	if err := os.WriteFile(filepath.Join(root, "config/config.yaml"), []byte(config), 0644); err != nil {
 		t.Fatal(err)
 	}

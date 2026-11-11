@@ -14,7 +14,7 @@
   tdx/                 # module github.com/injoyai/tdx/v2
 ```
 
-`go.work` 同时使用这两个模块；`go.mod` 的相对 `replace` 保证关闭工作区时也使用同一份本地 SDK。清单中的 `v2.0.0` 不代表已验证同名远程发布可用。当前构建依赖本地 SDK 的实际源码，单独复制 strategy-tail 不能构建。原有 `third_party/injoyai-base` 修补依赖继续保留。
+`go.work` 同时使用这两个模块；`go.mod` 的相对 `replace` 保证关闭工作区时也使用同一份本地 SDK。清单中的 `v2.0.0` 不代表已验证同名远程发布可用。当前构建依赖本地 SDK 的实际源码，单独复制 strategy-tail 不能构建。`github.com/injoyai/base` 使用包含并发回调修复的发布版 `v1.2.24`。
 
 ```sh
 go list -m github.com/injoyai/tdx/v2

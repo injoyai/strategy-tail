@@ -24,9 +24,6 @@ import (
 //
 // API 契约见设计文档 §5：
 //
-//	GET/PUT  /api/script        读/写脚本（strategies/script/matrix.go 单一事实源）
-//	POST     /api/script/check  Yaegi 干跑校验
-//	POST     /api/run           启动回测（单任务互斥）
 //	GET      /api/status        进度查询
 //	POST     /api/stop          停止任务
 //	GET      /api/report/latest 最新报告
@@ -48,14 +45,9 @@ import (
 //	GET      /api/factor-candidates/{id} 候选详情（含实时兼容状态）
 //	PUT      /api/factor-candidates/{id} 追加候选修订（expectedRevision 冲突 409）
 //	GET      /api/builder/components 搭建器组件目录（可运行 + 不可用及原因）
-//	GET      /api/builder/templates  搭建器内置模板
 //	GET/POST /api/builder/strategies 策略库列表 / 新建（201）
 //	GET/PUT  /api/builder/strategies/{id} 读取 / 覆盖保存（expectedVersion 冲突 409）
-//	POST     /api/builder/strategies/{id}/copy 复制策略（201，源不变）
 //	POST     /api/builder/run 启动搭建器回测（请求问题 400，任务互斥 409）
-
-// ScriptPath 策略脚本路径（页面编辑器直接读写该文件）。
-const ScriptPath = "strategies/script/matrix.go"
 
 // Server lab 服务。
 type Server struct {
@@ -143,18 +135,9 @@ func (s *Server) wirePracticeStores() {
 
 // registerRoutes 注册全部 REST 路由。
 //
-// 写端点同源校验约定：非 GET 请求默认经 withSameOrigin 防 CSRF；仅豁免
-// /api/script/check（无副作用的纯校验，供外部工具调用；该豁免是否保留另行
-// 评估）。以下端点已在 handler 内嵌校验、不重复包装：macd/run、
-// report/{id} DELETE 与 builder 四个写端点。
+// 写端点通过 withSameOrigin 或 handler 内的同源校验防止跨站写入。
 func (s *Server) registerRoutes() {
-	s.mux.HandleFunc("GET /api/macd/config", s.handleMACDConfig)
-	s.mux.HandleFunc("POST /api/macd/run", s.handleMACDRun)
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
-	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
-	s.mux.HandleFunc("PUT /api/script", withSameOrigin(s.handlePutScript))
-	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)
-	s.mux.HandleFunc("POST /api/run", withSameOrigin(s.handleRun))
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("POST /api/stop", withSameOrigin(s.handleStop))
 	s.mux.HandleFunc("GET /api/report/latest", s.handleLatestReport)
@@ -181,12 +164,10 @@ func (s *Server) registerRoutes() {
 
 	// 搭建器：自由组合策略（设计文档 §5）。写端点已在 handler 内校验同源。
 	s.mux.HandleFunc("GET /api/builder/components", s.handleBuilderComponents)
-	s.mux.HandleFunc("GET /api/builder/templates", s.handleBuilderTemplates)
 	s.mux.HandleFunc("GET /api/builder/strategies", s.handleBuilderListStrategies)
 	s.mux.HandleFunc("POST /api/builder/strategies", s.handleBuilderCreateStrategy)
 	s.mux.HandleFunc("GET /api/builder/strategies/{id}", s.handleBuilderGetStrategy)
 	s.mux.HandleFunc("PUT /api/builder/strategies/{id}", s.handleBuilderUpdateStrategy)
-	s.mux.HandleFunc("POST /api/builder/strategies/{id}/copy", s.handleBuilderCopyStrategy)
 	s.mux.HandleFunc("POST /api/builder/run", s.handleBuilderRun)
 
 	// 盘感练习（实施文档 §4）。写端点已在 handler 内校验同源。
@@ -264,101 +245,6 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// handleGetScript 读取当前脚本。
-func (s *Server) handleGetScript(w http.ResponseWriter, r *http.Request) {
-	data, err := os.ReadFile(ScriptPath)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "读取脚本失败: "+err.Error())
-		return
-	}
-	writeJSON(w, map[string]any{"content": string(data)})
-}
-
-// handlePutScript 保存脚本（PUT 即落盘，无草稿态）。
-func (s *Server) handlePutScript(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
-		return
-	}
-	if strings.TrimSpace(req.Content) == "" {
-		writeErr(w, http.StatusBadRequest, "脚本内容为空")
-		return
-	}
-	// 保存前先校验，避免存入无法编译的脚本覆盖可用版本
-	if err := CheckScript(req.Content); err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := atomicWrite(ScriptPath, []byte(req.Content)); err != nil {
-		writeErr(w, http.StatusInternalServerError, "保存脚本失败: "+err.Error())
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
-}
-
-// handleCheckScript Yaegi 干跑校验，返回编译错误。
-func (s *Server) handleCheckScript(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Content string `json:"content"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
-		return
-	}
-	if err := CheckScript(req.Content); err != nil {
-		writeJSON(w, map[string]any{"ok": false, "error": err.Error()})
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true})
-}
-
-// handleRun 启动回测：Yaegi 加载脚本（编译期报错）→ 校验变体 → 入队。
-func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
-	var cfg RunConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
-		return
-	}
-	src, err := os.ReadFile(ScriptPath)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "读取脚本失败: "+err.Error())
-		return
-	}
-	variants, err := LoadScript(string(src))
-	if err != nil {
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	// 变体名去重校验（同名变体会互相覆盖 CSV）
-	seen := map[string]bool{}
-	for _, v := range variants {
-		if v.Name == "" {
-			writeErr(w, http.StatusBadRequest, "存在未命名变体")
-			return
-		}
-		if seen[v.Name] {
-			writeErr(w, http.StatusBadRequest, "变体名重复: "+v.Name)
-			return
-		}
-		seen[v.Name] = true
-	}
-	cfg.ScriptName = scriptName()
-	if err := s.runner.Start(cfg, variants); err != nil {
-		writeErr(w, http.StatusConflict, err.Error())
-		return
-	}
-	writeJSON(w, map[string]any{"ok": true, "variants": len(variants)})
-}
-
-// scriptName 脚本文件名（去扩展名）作为报告标识。
-func scriptName() string {
-	base := filepath.Base(ScriptPath)
-	return strings.TrimSuffix(base, filepath.Ext(base))
-}
-
 // handleStatus 进度查询。
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.runner.Status())
@@ -401,14 +287,14 @@ func (s *Server) handleFactors(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, f.All())
 }
 
-// handleAnalyze 启动因子分析（不加载脚本，与回测共用 Runner 互斥）。
+// handleAnalyze 启动因子分析，与回测共用 Runner 互斥。
 func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	var cfg AnalyzeConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 		writeErr(w, http.StatusBadRequest, "请求体无效: "+err.Error())
 		return
 	}
-	cfg.ScriptName = scriptName()
+	cfg.ScriptName = "因子分析"
 	if err := s.runner.StartAnalysis(cfg); err != nil {
 		writeErr(w, http.StatusConflict, err.Error())
 		return

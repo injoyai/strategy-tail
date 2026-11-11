@@ -14,7 +14,6 @@ export const state = reactive({
 
   // —— 02 策略与运行 ——
   runMode: 'builder',    // builder | simple
-  macdCfg: null,
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
     endYear: 2026,
@@ -28,7 +27,7 @@ export const state = reactive({
     slOn: false,
     stopLoss: 8,
   },
-  scriptMsg: {text: '', ok: true},   // 02 消息条
+  runMsg: {text: '', ok: true},   // 02 消息条
   factorMsg: {text: '', ok: true},   // 01 消息条
   focusCondReq: null,                // {kind, days}：跨页定位条件卡请求（02 页消费）。
                                      // 约定：写入方先 push simpleConds → switchTab(1) → 再写本字段，
@@ -45,7 +44,6 @@ export const state = reactive({
   // —— 02 自由搭建（策略搭建器；树结构与后端 BuilderSpec 同形） ——
   builderCatalog: [],                // 可运行组件目录（GET /api/builder/components）
   builderUnavailable: [],            // 暂未接入组件及原因（仅展示说明）
-  builderTemplates: [],              // 内置模板（GET /api/builder/templates）
   builderStrategies: [],             // 已保存策略列表（GET /api/builder/strategies）
   builderSpec: null,                 // 当前编辑的 spec {version, name, buy, sellSignal, holdToEnd, risks}
   builderId: '',                     // 当前策略 ID（''=未保存草稿）

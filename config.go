@@ -38,7 +38,7 @@ func MySQLDSN() (string, error) {
 
 // LoadBacktestConfig 读取回测公共配置；未配置项使用以下默认值。
 // 卖出和风控由各命令或 Lab 请求构造为 Seller。
-func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int, benchmark string, mcIterations int) {
+func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig) {
 	cost = core.Cost{
 		CommissionRate:  cfg.GetFloat64("backtest.cost.commission_rate", 0.0001),
 		StampDutyRate:   cfg.GetFloat64("backtest.cost.stamp_duty_rate", 0.0005),
@@ -51,8 +51,5 @@ func LoadBacktestConfig() (cost core.Cost, pos core.PositionConfig, years []int,
 		MaxPerCode:   cfg.GetInt("backtest.position.max_per_code", 1),
 		SharesPerLot: cfg.GetInt("backtest.position.shares_per_lot", 100),
 	}
-	years = cfg.GetInts("backtest.years", []int{2020, 2021, 2022, 2023, 2024, 2025, 2026})
-	benchmark = cfg.GetString("backtest.benchmark", "sh000300")
-	mcIterations = cfg.GetInt("backtest.monte_carlo_iterations", 1000)
 	return
 }

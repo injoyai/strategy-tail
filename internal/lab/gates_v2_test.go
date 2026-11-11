@@ -1,6 +1,6 @@
 package lab
 
-// gates_v2.go v2 多因子组合研究发布门禁评估（实施计划 Task 12 发布门禁）。
+// gates_v2_test.go v2 多因子组合研究发布门禁评估（实施计划 Task 12 发布门禁）。
 //
 // 本文件只定义发布门禁的纯函数：输入 = 证据集合 + 检查结果（由
 // release_v2_test.go 运行既有测试 / 读取文件后构造），输出 = 门禁结果表与
@@ -95,7 +95,7 @@ var releaseGateDefs = []ReleaseGateDef{
 	{Category: GateCategoryMigration, Name: "v1_products_readable",
 		Purpose: "v1 不可变历史不受影响：factor_validation/candidate/analysis store 既有产物与测试全部可读可测"},
 	{Category: GateCategoryMigration, Name: "legacy_api_compatible",
-		Purpose: "旧客户端 API 兼容：/api/status、/api/run、/api/script、/api/factors、候选/策略路由行为不变"},
+		Purpose: "状态、因子目录、候选与策略路由契约"},
 	{Category: GateCategoryCorrectness, Name: "e2e_golden_case",
 		Purpose: "端到端金标准：Task 11 固定案例全链手算断言 + 真实 runner 全链 + 泄漏复证通过"},
 	{Category: GateCategoryCorrectness, Name: "accounting_identity",

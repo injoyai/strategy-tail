@@ -16,7 +16,7 @@ func (r *MySQLReader) ResearchView() (researchdata.View, error) {
 		return nil, fmt.Errorf("检查 MySQL 研究数据表: %w", err)
 	}
 	if !exists {
-		return researchdata.NewHub(), nil
+		return researchdata.EmptyView{}, nil
 	}
 	return researchdata.NewMySQLView(r.db), nil
 }

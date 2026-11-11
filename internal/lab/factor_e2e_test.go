@@ -4,31 +4,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
-)
-
-// topNScript TopN 买入脚本：动量(2) 降序第 1 名，每日只买横截面最强一票。
-const topNScript = `package main
-
-import (
-	"github.com/injoyai/strategy-tail/core"
-	f "github.com/injoyai/strategy-tail/strategies/factor"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
+	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
-
-func Strategy() []core.Variant {
-	return []core.Variant{
-		{Name: "动量TopN1", Buyer: sb.A因子TopN{Factor: f.N日动量{Days: 2}, N: 1, Asc: false}},
-	}
-}
-`
 
 // TestServerTopNRun 端到端：回测前填充快照 → 仅买 TopN 票 → 任务结束清理。
 func TestServerTopNRun(t *testing.T) {
@@ -53,24 +37,14 @@ func TestServerTopNRun(t *testing.T) {
 		20, 19.8, 19.6, 19.4, 19.2, 19, 18.8, 18.6,
 	}, base)
 
-	if err := os.MkdirAll(filepath.Dir(ScriptPath), 0755); err != nil {
+	server := NewServer()
+	h := server.Handler()
+	cfg := RunConfig{StartYear: 2025, EndYear: 2025, SampleMode: "codes", SampleCodes: []string{"sh600001", "sh600002"}, HoldingDays: 1, ScriptName: "TopN"}
+	variants := []core.Variant{{Name: "动量TopN1", Buyer: sb.A因子TopN{Factor: f.N日动量{Days: 2}, N: 1}}}
+	if err := server.runner.Start(cfg, variants); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ScriptPath, []byte(topNScript), 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	h := NewServer().Handler()
-
-	cfg := map[string]any{
-		"startYear": 2025, "endYear": 2025,
-		"sampleMode": "codes", "sampleCodes": []string{"sh600001", "sh600002"},
-		"holdingDays": 1,
-	}
-	res := doReq(t, h, http.MethodPost, "/api/run", cfg, http.StatusOK)
-	if !bytes.Contains(res, []byte(`"ok":true`)) {
-		t.Fatalf("run 响应异常: %s", res)
-	}
+	var res []byte
 
 	// 轮询至完成（模板同 TestServerRunLifecycle）
 	deadline := time.Now().Add(30 * time.Second)
@@ -123,8 +97,7 @@ func TestServerTopNRun(t *testing.T) {
 }
 
 // TestServerStrategyRunLifecycle 简单模式端到端：/api/strategy/run 合法请求 →
-// 4 个稳定顺序变体 → 最新报告含 source/strategySpec/comparison；
-// 全程不读取、不写入 ScriptPath（脚本文件不存在也能运行）。
+// 4 个稳定顺序变体 → 最新报告含 source/strategySpec/comparison。
 func TestServerStrategyRunLifecycle(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -191,10 +164,6 @@ func TestServerStrategyRunLifecycle(t *testing.T) {
 		t.Fatalf("单条件摘要数 = %d, want 2", len(rep.Comparison.FactorVariants))
 	}
 
-	// 简单模式不读写脚本：ScriptPath 自始至终不存在
-	if _, err := os.Stat(ScriptPath); !os.IsNotExist(err) {
-		t.Fatalf("简单模式不应读写脚本文件: %v", err)
-	}
 }
 
 // TestServerFactorsAPI 端到端：/api/factors 直出目录，新字段与既有字段并存。

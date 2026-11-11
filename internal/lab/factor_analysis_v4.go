@@ -160,8 +160,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	if terr != nil {
 		return nil, fmt.Errorf("试验登记失败: %w", terr)
 	}
-	// finishTrial 全部返回路径的收敛点：Finish 失败不影响主返回值（与
-	// 兼容镜像同样的 best-effort 约定），但任何路径都不得遗漏。
+	// finishTrial 记录各返回路径的结果。记录失败时保留原有返回值。
 	finishTrial := func(status TrialStatus, msg string) {
 		_ = trials.Finish(trial.ID, TrialResult{Status: status, Message: msg})
 	}

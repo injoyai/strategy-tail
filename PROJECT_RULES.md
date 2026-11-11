@@ -31,9 +31,9 @@ strategies/
   buy/       ← 买入策略，命名习惯：buy_*.go
   sell/      ← 卖出策略，命名习惯：sell_*.go
   util/      ← 策略共用计算（MACD/RSI 等）
-lib/extend/  ← K 线模型与拉取
+lib/extend/  ← 策略 K 线模型与转换
 cmd/
-  backtest/  ← 作者保留的历史调参入口
+  lab/       ← 策略实验室与回测
   screen/    ← 实时选股 + Web 监控
 .tmp/backtest/ ← 一次性回测脚本、探针与中间文件（可清理）
 output/      ← 所有报告/CSV/HTML 统一输出目录（按模块分子文件夹）
@@ -279,7 +279,7 @@ type PositionConfig struct {
 
 * 组合级（跨仓位）规则无法用单仓位 Seller 表达，如需新增须单独评估，不要塞回引擎的 per-position 路径；
 
-* 风控参数从 `config.yaml` 的 `backtest.risk.*` 读取后在回测入口（`cmd/backtest`）构造为 Seller，不要放在 `common` 公共配置里。
+* 风控参数由运行请求或具体策略配置提供，组装策略时构造为 `Seller`。
 
 ### 6.4 交易记录
 
@@ -336,7 +336,7 @@ type Trade struct {
 
 ### 6.8 配置化
 
-所有回测参数通过 `config.yaml` 的 `backtest:` 段配置，`common.LoadBacktestConfig()` 统一加载。
+`common.LoadBacktestConfig()` 从 `config.yaml` 加载成本与逐股仓位。年份、股票范围和卖出规则由运行请求指定。
 
 ### 6.9 项目数据只读与临时回测
 
@@ -384,12 +384,6 @@ type Trade struct {
 * 不写"未来可能用到"的参数；
 
 * 删除时直接删，不留 `// removed`、不重命名 `_` 占位。
-
-### 不要整理 `cmd/backtest/main.go`
-
-* [cmd/backtest/main.go](cmd/backtest/main.go) 是作者保留的历史调参草稿，行情按只读运行时加载。日常策略试验走 [§6.9 的临时回测流程](#69-项目数据只读与临时回测)。
-
-* 仅当作者明确要求修改该文件时才动它，不要顺手清理。
 
 ***
 

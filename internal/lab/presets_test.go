@@ -44,7 +44,7 @@ func TestBuildPresetBuyer(t *testing.T) {
 	}
 }
 
-// TestPresetBuildersMatchMatrix 各 Builder 与 strategies/script/matrix.go
+// TestPresetBuildersMatchMatrix 各 Builder 与冻结的策略配置
 // 的 Buyer 参数逐项一致。matrix.go 带 //go:build ignore 不能 import，
 // 按其参数复刻期望 Buyer，通过组件 Name()（参数的函数）比较锁定。
 func TestPresetBuildersMatchMatrix(t *testing.T) {

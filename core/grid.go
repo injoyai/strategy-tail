@@ -89,23 +89,6 @@ func GridSearch(bt Backtest, paramName string, paramValues []float64, paramSette
 	return results
 }
 
-// GridSearchHeatmap 基于两组参数的网格搜索结果构建二维热力图。
-//
-// 外层 map 键为 paramA 的取值（格式化为字符串），内层 map 键为 paramB 的取值，
-// 值为对应参数组合下的指标（如年化收益率均值）。
-//
-// 注意：当前 GridSearch 仅支持单参数搜索，真正的二维热力图
-// 需要多参数联合搜索（Stage 4 实现），此处为占位桩函数。
-func GridSearchHeatmap(results []GridSearchResult, paramA, paramB string) map[string]map[string]float64 {
-	heatmap := make(map[string]map[string]float64)
-	// TODO: Stage 4 实现多参数联合搜索后，在此填充热力图数据。
-	// 预期逻辑：
-	//   1. 从 results 中筛选 ParamName == paramA 和 ParamName == paramB 的记录
-	//   2. 按年份对齐，聚合同一参数组合下的指标均值
-	//   3. 以 paramA 取值为行、paramB 取值为列填入 heatmap
-	return heatmap
-}
-
 // String 格式化输出单条网格搜索结果，便于日志打印和调试。
 func (r GridSearchResult) String() string {
 	return fmt.Sprintf("[%s=%.4f] 年份=%d 交易=%d 胜率=%.2f%% 年化=%.2f%% 回撤=%.2f%% 夏普=%.2f 盈亏比=%.2f",

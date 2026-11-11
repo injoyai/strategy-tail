@@ -79,7 +79,6 @@ docker run -d \
     -v "${ROOT}/data:/app/data" \
     -v "${ROOT}/output:/app/output" \
     -v "${ROOT}/config:/app/config:ro" \
-    -v "${ROOT}/strategies/script:/app/strategies/script" \
     "${IMAGE}:latest"
 
 for _ in $(seq 1 30); do

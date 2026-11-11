@@ -87,7 +87,7 @@ export default {
       let started = false;
       try {
         started = await this.run();
-        if (!started) this.error = (this.mode === 'builder' ? state.builderMsg.text : state.scriptMsg.text) || '回测未启动，请检查策略和配置';
+        if (!started) this.error = (this.mode === 'builder' ? state.builderMsg.text : state.runMsg.text) || '回测未启动，请检查策略和配置';
       } catch (e) { this.error = e.message; }
       finally { this.submitting = false; }
       if (started) this.closeDlg();

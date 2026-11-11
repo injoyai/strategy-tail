@@ -150,7 +150,7 @@ func TestCandidateFullChain(t *testing.T) {
 }
 
 // TestCandidateHistoryAndRestart 历史不覆盖 + 重启恢复：
-// 两次分析分别可读、latest 指向第二次、候选绑定第一次、兼容镜像指向第二次。
+// 两次分析分别可读、latest 指向第二次、候选绑定第一次。
 func TestCandidateHistoryAndRestart(t *testing.T) {
 	dir := t.TempDir()
 	setupAnalysisData(t, dir)
@@ -216,18 +216,7 @@ func TestCandidateHistoryAndRestart(t *testing.T) {
 	if !strings.Contains(string(res), created.Candidate.ID) {
 		t.Fatalf("重启后候选列表缺失: %s", res)
 	}
-	// 兼容镜像指向第二份
-	mirror, err := os.ReadFile(filepath.Join(dir, "ana", "momentum", "report.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var mirrorRep AnalysisReport
-	if err := json.Unmarshal(mirror, &mirrorRep); err != nil {
-		t.Fatal(err)
-	}
-	if mirrorRep.AnalysisID != rep2.AnalysisID {
-		t.Fatalf("兼容镜像应指向第二份: %q", mirrorRep.AnalysisID)
-	}
+
 }
 
 // TestCandidateLegacyCompatibility 旧合同兼容：

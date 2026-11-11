@@ -14,13 +14,14 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
+	ss "github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestBuilderWriteBoundaries(t *testing.T) {
 	t.Chdir(t.TempDir())
 	h := NewServer().Handler()
-	for _, path := range []string{"/api/builder/strategies", "/api/builder/strategies/st_20990101T000000000Z_00000000", "/api/builder/strategies/st_20990101T000000000Z_00000000/copy", "/api/builder/run"} {
+	for _, path := range []string{"/api/builder/strategies", "/api/builder/strategies/st_20990101T000000000Z_00000000", "/api/builder/run"} {
 		method := http.MethodPost
 		if strings.HasSuffix(path, "00000000") {
 			method = http.MethodPut
@@ -92,8 +93,11 @@ func TestBuilderLargeWindowInsufficientHistory(t *testing.T) {
 	}
 }
 
-func TestBuilderTemplateTradesMatchCLI(t *testing.T) {
-	spec := BuilderTemplates()[0].Spec
+func TestBuilderTradesMatchDirectComposition(t *testing.T) {
+	spec := baseSpec()
+	spec.Buy = bGroup("and", bCond("buy_all", nil), bCond("buy_price", map[string]any{"min": 2.0}))
+	spec.SellSignal = nil
+	spec.Risks = []*BuilderNode{bCond("risk_holding_days", map[string]any{"days": 3.0})}
 	buyer, err := spec.Buyer()
 	if err != nil {
 		t.Fatal(err)
@@ -102,9 +106,8 @@ func TestBuilderTemplateTradesMatchCLI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := defaultMACDConfig()
 	bars := builderBars(320)
-	wantBT := core.Backtest{Buyer: cfg.MACD.buyer(), Seller: cfg.seller(), Cost: core.DefaultCost(), Position: core.PositionConfig{MaxPerCode: 1}}
+	wantBT := core.Backtest{Buyer: sb.And{sb.A全部{}, sb.A价格{Min: 2}}, Seller: ss.A持仓N天{Days: 3}, Cost: core.DefaultCost(), Position: core.PositionConfig{MaxPerCode: 1}}
 	want := wantBT.Do("sh600000", cloneBuilderBars(bars[:60]), cloneBuilderBars(bars[60:]), nil)
 	gotBT := wantBT
 	gotBT.Buyer = buyer
@@ -114,7 +117,7 @@ func TestBuilderTemplateTradesMatchCLI(t *testing.T) {
 		t.Fatal("fixture did not exercise trades")
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatal("builder trades differ from direct CLI composition")
+		t.Fatal("builder trades differ from direct composition")
 	}
 }
 
@@ -215,7 +218,9 @@ func TestBuilderDraftRunAndSnapshotIsolation(t *testing.T) {
 	if _, err := server.builderStore.Update(saved.ID, draft.Spec, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.builderStore.Copy(saved.ID, "副本"); err != nil {
+	copySpec := draft.Spec
+	copySpec.Name = "副本"
+	if _, err := server.builderStore.Create(copySpec); err != nil {
 		t.Fatal(err)
 	}
 	var persisted Report

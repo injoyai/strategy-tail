@@ -132,7 +132,7 @@ func TestRunAnalysis(t *testing.T) {
 		t.Fatalf("Summary = %+v", rep.Summary)
 	}
 	// report.json 落盘并携带 coverage 与 summary
-	buf, err := os.ReadFile(filepath.Join("output", "factor", "momentum", "report.json"))
+	buf, err := os.ReadFile(filepath.Join("output", "factor", "momentum", rep.AnalysisID, "report.json"))
 	if err != nil {
 		t.Fatalf("report.json 不存在: %v", err)
 	}
@@ -754,7 +754,7 @@ func TestRunAnalysisMultiYearCoverage(t *testing.T) {
 		}
 	}
 	// 落盘报告携带新增字段（前端与历史文件按字段存在性降级）
-	buf, err := os.ReadFile(filepath.Join("output", "factor", "momentum", "report.json"))
+	buf, err := os.ReadFile(filepath.Join("output", "factor", "momentum", rep.AnalysisID, "report.json"))
 	if err != nil {
 		t.Fatalf("report.json 不存在: %v", err)
 	}

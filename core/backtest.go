@@ -35,7 +35,7 @@ type Backtest struct {
 	// 仓位管理（零值=不限笔数；SharesPerLot<=0 时 executeSell 回退一手100股）
 	Position PositionConfig
 
-	// MCIterations 蒙特卡洛模拟次数（<=0 时默认1000），对应 config.yaml 的 backtest.monte_carlo_iterations
+	// MCIterations 蒙特卡洛模拟次数（<=0 时默认 1000）。
 	MCIterations int
 }
 

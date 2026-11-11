@@ -30,15 +30,3 @@ backtest:
     max_positions: 0           # 兼容字段；逐股引擎不执行跨股票的全局持仓限制
     max_per_code: 0            # 单票最大同时持仓笔数，0=不限
     shares_per_lot: 100        # 每笔买入股数，A 股一手=100 股
-
-  # LoadBacktestConfig 返回的候选年份；cmd/backtest 当前使用代码中的 years。
-  years:
-    - 2024
-    - 2025
-    - 2026
-
-  # 逐股回测基准；Lab 账户对比使用上证指数 sh000001。
-  benchmark: "sh000300"
-
-  # 标准 Backtest.Run 的蒙特卡洛模拟次数
-  monte_carlo_iterations: 1000

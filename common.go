@@ -127,7 +127,7 @@ const (
 var (
 	Pull         *extend.MarketReader
 	Manage       *extend.MarketData
-	ResearchData researchdata.View = researchdata.NewHub()
+	ResearchData researchdata.View = researchdata.EmptyView{}
 	runtimeOnce  sync.Once
 	runtimeErr   error
 

@@ -222,18 +222,16 @@ const App = {
           } else {
             state.currentReport = await Api.latestReport();
             this.switchTab(2);
-            // 根据 source 恢复正确的结果说明，不把高级多变体脚本误当成多条件组合
+            // 组合回测完成后展示对照摘要。
             if (state.currentReport.source === 'simple' && state.currentReport.comparison) {
               const c = state.currentReport.comparison;
-              state.scriptMsg = {text: `多条件组合对照已生成：基准 ${c.baselineTrades} 笔 → 组合 ${c.combinedTrades} 笔` +
+              state.runMsg = {text: `多条件组合对照已生成：基准 ${c.baselineTrades} 笔 → 组合 ${c.combinedTrades} 笔` +
                 (c.retentionRate == null ? '' : `（${state.currentReport.config?.account ? '成交数比' : '保留'} ${(c.retentionRate * 100).toFixed(1)}%）`) +
                 '，详见“回测结果”摘要。', ok: true};
-            } else if (state.currentReport.source === 'macd') {
-              state.scriptMsg = {text: '参数回测完成，已载入结果。', ok: true};
             } else if (state.currentReport.source === 'builder') {
-              state.scriptMsg = {text: '搭建器回测完成，已载入结果。', ok: true};
+              state.runMsg = {text: '搭建器回测完成，已载入结果。', ok: true};
             } else {
-              state.scriptMsg = {text: '已载入高级脚本多变体报告。', ok: true};
+              state.runMsg = {text: '已载入回测报告。', ok: true};
             }
           }
           this.renderTaskProgress(s);

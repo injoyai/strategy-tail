@@ -345,7 +345,7 @@ func (r *Runner) practiceSourceOf() practiceKlineSource {
 
 // practiceStartCost 读取当前费用配置作为开题快照（滑点在快照内清零）。
 func practiceStartCost() core.Cost {
-	cost, _, _, _, _ := common.LoadBacktestConfig()
+	cost, _ := common.LoadBacktestConfig()
 	return cost
 }
 

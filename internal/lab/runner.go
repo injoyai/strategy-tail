@@ -43,11 +43,11 @@ type RunConfig struct {
 	HoldingDays int     `json:"holdingDays"` // 持仓N天强制平仓；0=不启用
 	TakeProfit  float64 `json:"takeProfit"`  // 止盈比例（0.10=10%）；0=不启用
 	StopLoss    float64 `json:"stopLoss"`    // 止损比例；0=不启用
-	// 脚本文件名（报告目录标识，取脚本名去扩展名）
+	// 报告目录标识。
 	ScriptName string          `json:"scriptName"`
-	MACD       *MACDParameters `json:"macd,omitempty"`
+	MACD       json.RawMessage `json:"macd,omitempty"` // 历史参数回测报告的配置快照
 	// Builder 搭建器模式（自由组合条件树，设计文档 §2/§4）：
-	// 卖出规则由条件树管理，与 MACD 参数回测、简单卖出参数互斥。
+	// 卖出规则由条件树管理，与简单卖出参数互斥。
 	Builder *BuilderSpec   `json:"builder,omitempty"`
 	Account *AccountConfig `json:"account,omitempty"`
 }
@@ -65,42 +65,45 @@ func (c RunConfig) Validate() error {
 	if err := c.validateSample(); err != nil {
 		return err
 	}
+	if len(c.MACD) != 0 {
+		return fmt.Errorf("MACD 参数仅用于历史报告")
+	}
 	if c.Builder != nil {
 		if c.StartYear < 1990 {
 			return fmt.Errorf("起始年份不能早于 1990")
 		}
 		if c.SampleMode == "codes" {
-			if err := validateMACDCodes(c.SampleCodes); err != nil {
+			if err := validateBuilderCodes(c.SampleCodes); err != nil {
 				return err
 			}
-		}
-		if c.MACD != nil {
-			return fmt.Errorf("搭建器模式不能与 MACD 参数回测同时使用")
 		}
 		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
 			return fmt.Errorf("搭建器模式的卖出规则由条件树管理，请勿混入持仓天数/止盈/止损")
 		}
 		return c.Builder.Validate("run")
 	}
-	if c.MACD != nil {
-		if c.HoldingDays != 0 || c.TakeProfit != 0 || c.StopLoss != 0 {
-			return fmt.Errorf("参数回测使用 MACD 反转卖出，请勿混入其他卖出规则")
-		}
-		if c.StartYear < 1990 {
-			return fmt.Errorf("起始年份不能早于 1990")
-		}
-		if c.SampleMode == "codes" {
-			if err := validateMACDCodes(c.SampleCodes); err != nil {
-				return err
-			}
-		}
-		return c.MACD.validate()
-	}
 	if c.HoldingDays <= 0 && c.TakeProfit <= 0 && c.StopLoss <= 0 {
 		return fmt.Errorf("卖出规则至少启用一项（持仓天数/止盈/止损）")
 	}
 	if c.HoldingDays < 0 || c.TakeProfit < 0 || c.StopLoss < 0 {
 		return fmt.Errorf("卖出参数不能为负")
+	}
+	return nil
+}
+
+func validateBuilderCodes(codes []string) error {
+	if len(codes) > 10000 {
+		return fmt.Errorf("指定股票不能超过 10000 只")
+	}
+	for _, code := range codes {
+		if len(code) != 8 || (code[:2] != "sh" && code[:2] != "sz") {
+			return fmt.Errorf("股票代码须为 sh 或 sz 前缀加六位数字")
+		}
+		for _, c := range code[2:] {
+			if c < '0' || c > '9' {
+				return fmt.Errorf("股票代码须为 sh 或 sz 前缀加六位数字")
+			}
+		}
 	}
 	return nil
 }
@@ -153,19 +156,7 @@ func (c RunConfig) seller() core.Seller {
 		}
 		return s
 	}
-	if c.MACD != nil {
-		if !c.MACD.conditions().SellMACD {
-			return ss.Or{}
-		}
-		return ss.Or{ss.MACD反转{Lookback: c.MACD.SellLookback}}
-	}
-	sellers := []core.Seller(nil)
-	if c.HoldingDays > 0 {
-		sellers = append(sellers, ss.A持仓N天{Days: c.HoldingDays})
-	}
-	if c.TakeProfit > 0 || c.StopLoss > 0 {
-		sellers = append(sellers, ss.A止盈止损{TakeProfit: c.TakeProfit, StopLoss: c.StopLoss})
-	}
+	sellers := c.defaultSellerList()
 	if len(sellers) == 1 {
 		return sellers[0]
 	}
@@ -199,9 +190,8 @@ func (c RunConfig) recordedDefaultSeller(rc *builder.RecordContext) core.Seller 
 	}
 }
 
-// 报告来源：script=高级脚本模式，simple=声明式简单模式，builder=自由搭建模式。
+// 报告来源。
 const (
-	sourceScript  = "script"
 	sourceSimple  = "simple"
 	sourceBuilder = "builder"
 )
@@ -466,7 +456,7 @@ func (r *Runner) dataProvenance() DataProvenance {
 	}
 }
 
-// Start 启动高级模式回测（已在运行则报错）。variants 由调用方经 Yaegi 加载并校验通过。
+// Start 启动回测，variants 由调用方构建。
 func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
 	return r.startBacktest(cfg, variants, nil)
 }
@@ -481,7 +471,7 @@ func (r *Runner) StartStrategy(cfg RunConfig, variants []core.Variant, spec Stra
 	return r.startBacktest(cfg, variants, &spec)
 }
 
-// startBacktest 内部启动路径：spec 为 nil 时按高级模式（source=script）处理。
+// startBacktest 持有共用任务锁并启动回测。
 func (r *Runner) startBacktest(cfg RunConfig, variants []core.Variant, spec *StrategySpec) error {
 	if err := cfg.Validate(); err != nil {
 		return err
@@ -686,9 +676,6 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	r.totalCodes.Store(int64(len(codes)))
 
 	years := cfg.years()
-	if cfg.MACD != nil {
-		r.totalCodes.Store(int64(len(codes) * len(years)))
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -716,13 +703,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	}
 
 	seller := cfg.seller()
-	cost, pos, _, _, _ := common.LoadBacktestConfig()
-	if cfg.MACD != nil && cost == (core.Cost{}) {
-		cost = core.DefaultCost()
-	}
+	cost, pos := common.LoadBacktestConfig()
 	// 账户模式接入原因记录（R07/R15）：记录包装器只旁路登记评估帧，
-	// 不改变求值次数、短路顺序与成交结果。仅记录变体保留 Seller；
-	// 脚本变体（非 RecordedBuyer）与 MACD 变体保持原行为。
+	// 不改变求值次数、短路顺序与成交结果。仅记录变体保留 Seller。
 	runVariants := make([]researchrun.Variant, len(variants))
 	var contexts []*builder.RecordContext
 	if cfg.Account != nil {
@@ -742,7 +725,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 					if s, err := cfg.Builder.RecordSeller(rc); err == nil {
 						rv.Seller = s
 					}
-				case cfg.MACD == nil:
+				default:
 					rv.Seller = cfg.recordedDefaultSeller(rc)
 				}
 			}
@@ -750,16 +733,8 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		runVariants[i] = rv
 	}
 
-	execute := researchrun.Run
-	if cfg.MACD != nil {
-		execute = runMACDYears
-	}
 	if cfg.Account == nil {
-		unit := "stocks"
-		if cfg.MACD != nil {
-			unit = "stock_years"
-		}
-		r.setTaskProgress("backtest", unit, researchrun.Progress{Phase: "backtesting", Total: int(r.totalCodes.Load())})
+		r.setTaskProgress("backtest", "stocks", researchrun.Progress{Phase: "backtesting", Total: int(r.totalCodes.Load())})
 	}
 	runCfg := researchrun.Config{
 		Codes:         codes,
@@ -779,8 +754,6 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 			unit := "stocks"
 			if progress.Phase == "simulating" {
 				unit = "trading_days"
-			} else if cfg.MACD != nil && cfg.Account == nil {
-				unit = "stock_years"
 			}
 			r.setTaskProgress("backtest", unit, progress)
 			r.totalCodes.Store(int64(progress.Total))
@@ -797,7 +770,7 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	if cfg.Account != nil {
 		run, accounts, replays, benchmark, loaded, err = runAccountBacktest(ctx, runCfg, *cfg.Account, contexts...)
 	} else {
-		run, err = execute(ctx, runCfg)
+		run, err = researchrun.Run(ctx, runCfg)
 	}
 	if errors.Is(err, context.Canceled) {
 		return nil, errStopped
@@ -808,18 +781,14 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	r.setTaskProgress("backtest", "", researchrun.Progress{Phase: "reporting"})
 	researchrun.LogCoverage(run.Coverage)
 
-	// 汇总报告（变体顺序保持脚本返回顺序，页面按需排序）
+	// 汇总报告，保持变体输入顺序。
 	report := &Report{
 		Config:     cfg,
 		StartedAt:  started.Format(time.RFC3339),
 		FinishedAt: time.Now().Format(time.RFC3339),
 		Variants:   make([]VariantReport, 0, len(variants)),
 		Coverage:   run.Coverage,
-		Source:     sourceScript,
 		Benchmark:  benchmark,
-	}
-	if cfg.MACD != nil {
-		report.Source = "macd"
 	}
 	if cfg.Builder != nil {
 		report.Source = sourceBuilder

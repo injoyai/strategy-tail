@@ -5,7 +5,6 @@
 package researchdata
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"sort"
@@ -129,44 +128,19 @@ func (r Record) Validate() error {
 	return nil
 }
 
-// Query describes a provider fetch. Start and End apply to EventAt. AsOf is a
-// mandatory availability cutoff; providers must not knowingly return revisions
-// that were unavailable at that time.
-type Query struct {
-	Dataset string
-	Codes   []string
-	Start   time.Time
-	End     time.Time
-	AsOf    time.Time
-}
-
-func (q Query) Validate() error {
-	if strings.TrimSpace(q.Dataset) == "" {
-		return fmt.Errorf("researchdata: query dataset is empty")
-	}
-	if q.AsOf.IsZero() {
-		return fmt.Errorf("researchdata: query as-of time is empty")
-	}
-	if !q.Start.IsZero() && !q.End.IsZero() && q.End.Before(q.Start) {
-		return fmt.Errorf("researchdata: query end precedes start")
-	}
-	return nil
-}
-
-// Provider supplies one or more normalized datasets. Fetch should return raw
-// revisions; Store applies the final point-in-time filter and de-duplication.
-type Provider interface {
-	ID() string
-	Catalog() []DatasetSpec
-	Fetch(context.Context, Query) ([]Record, error)
-}
-
 // View is the minimal read contract consumed by context-aware factors. A
 // database-backed implementation can replace Store without changing factors.
 type View interface {
 	Latest(dataset, code string, asOf time.Time) (Record, bool)
 	Range(dataset, code string, start, end, asOf time.Time) []Record
 }
+
+// EmptyView serves reads when no research dataset is configured.
+type EmptyView struct{}
+
+func (EmptyView) Latest(string, string, time.Time) (Record, bool) { return Record{}, false }
+
+func (EmptyView) Range(string, string, time.Time, time.Time, time.Time) []Record { return nil }
 
 func cloneRecord(r Record) Record {
 	r.Values = cloneMap(r.Values)

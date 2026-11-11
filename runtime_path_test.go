@@ -89,10 +89,6 @@ func TestCommonCommandEntrypointsInitializeRuntime(t *testing.T) {
 			source.Write(data)
 		}
 		text := source.String()
-		// 离线迁移命令仅复用连接配置，不应初始化真实行情服务器。
-		if strings.HasPrefix(entry.Name(), "migrate-") && strings.Contains(text, "common.MySQLDSN()") {
-			continue
-		}
 		if !strings.Contains(text, "func main(") ||
 			!strings.Contains(text, `"github.com/injoyai/strategy-tail"`) {
 			continue

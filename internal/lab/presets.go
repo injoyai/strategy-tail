@@ -10,7 +10,7 @@ import (
 // presets.go 简单模式的预设 Buyer 目录。
 //
 // 显式 slice + 工厂函数，不用反射或字符串动态装配；Buyer 仍由
-// buy.And 与现有原子 Buyer 构成，参数与 strategies/script/matrix.go
+// buy.And 与现有原子 Buyer 构成，参数与最初的回测预设
 // 的四个脚本 Buyer 逐项一致（TestPresetBuildersMatchMatrix 锁定）。
 // matrix.go 仍是高级模式脚本的单一事实源，两边改动须同步。
 

@@ -34,7 +34,7 @@ type entry struct {
 	ImplementationVersion int
 }
 
-// registry 全部因子目录（显式列表，不用反射：Yaegi 与 IDE 跳转友好）。
+// registry 显式登记所有因子，便于查找实现。
 // Default 是默认窗口的唯一来源：Build(kind,0) 与目录 DefaultDays 均取自该字段。
 // Example 只解释原始值含义，不提供阈值推荐、评级或经验收益。
 var registry = []entry{

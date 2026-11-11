@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/injoyai/strategy-tail/internal/lab/builder"
 )
 
 // builder_store.go 搭建器策略库存储（设计文档 §5）。
@@ -220,41 +218,4 @@ func (s *BuilderStore) Update(id string, spec BuilderSpec, expectedVersion int) 
 		return nil, err
 	}
 	return current, nil
-}
-
-// Copy 复制策略为新的策略身份：新 ID、版本 1、可选新名称；源策略不变。
-func (s *BuilderStore) Copy(id, newName string) (*BuilderStrategy, error) {
-	if err := builder.ValidateName(newName); err != nil {
-		return nil, err
-	}
-	p, err := s.strategyPath(id)
-	if err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	source, err := readStrategy(p)
-	if err != nil {
-		return nil, err
-	}
-	now := time.Now()
-	newID, err := newBuilderStrategyID(now, nil)
-	if err != nil {
-		return nil, err
-	}
-	spec := source.Spec
-	spec.Name = newName
-	copied := &BuilderStrategy{
-		ID:        newID,
-		Name:      newName,
-		Version:   1,
-		CreatedAt: now,
-		UpdatedAt: now,
-		Spec:      spec,
-	}
-	if err := s.writeStrategy(copied); err != nil {
-		return nil, err
-	}
-	return copied, nil
 }

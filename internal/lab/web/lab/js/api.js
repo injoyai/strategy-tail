@@ -16,14 +16,7 @@ export async function api(method, url, body) {
 export const Api = {
   stockNames: () => api('GET', '/api/stock-names'),
   stockInfo: (code, asOf = '') => api('GET', '/api/stock-info/' + encodeURIComponent(code) + (asOf ? '?asOf=' + encodeURIComponent(asOf) : '')),
-  macdConfig: () => api('GET', '/api/macd/config'),
-  runMACD: cfg => api('POST', '/api/macd/run', cfg),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
-  // 脚本编辑器 / 回测
-  getScript: () => api('GET', '/api/script'),
-  checkScript: content => api('POST', '/api/script/check', {content}),
-  saveScript: content => api('PUT', '/api/script', {content}),
-  runBacktest: cfg => api('POST', '/api/run', cfg),
   runStrategy: spec => api('POST', '/api/strategy/run', spec),
   stop: () => api('POST', '/api/stop'),
   status: () => api('GET', '/api/status'),
@@ -54,14 +47,11 @@ export const Api = {
   strategyPresets: () => api('GET', '/api/strategy-presets'),
   // 策略搭建器（自由组合条件树）
   builderComponents: () => api('GET', '/api/builder/components'),
-  builderTemplates: () => api('GET', '/api/builder/templates'),
   builderStrategies: () => api('GET', '/api/builder/strategies'),
   builderStrategy: id => api('GET', '/api/builder/strategies/' + encodeURIComponent(id)),
   createBuilderStrategy: spec => api('POST', '/api/builder/strategies', {spec}),
   updateBuilderStrategy: (id, spec, expectedVersion) =>
     api('PUT', '/api/builder/strategies/' + encodeURIComponent(id), {spec, expectedVersion}),
-  copyBuilderStrategy: (id, name) =>
-    api('POST', '/api/builder/strategies/' + encodeURIComponent(id) + '/copy', {name}),
   runBuilder: cfg => api('POST', '/api/builder/run', cfg),
   // 候选因子
   candidates: includeArchived => api('GET', '/api/factor-candidates' + (includeArchived ? '?includeArchived=true' : '')),

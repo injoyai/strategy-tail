@@ -12,7 +12,6 @@ ENV GOPROXY=${GOPROXY}
 # 先复制工作区和依赖清单；编译时只下载实际使用的模块
 COPY go.mod go.sum go.work go.work.sum ./
 COPY --from=tdx /go.mod /go.sum /tdx/
-COPY third_party/injoyai-base ./third_party/injoyai-base
 
 # golang:alpine 基础镜像不含 tzdata，运行阶段从这里拷贝时区数据
 RUN apk add --no-cache tzdata
@@ -41,7 +40,7 @@ COPY --from=builder /out/lab ./lab
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# 运行时读写目录（data/output/strategies/script/config 由 deploy.sh 挂载回项目目录）
+# 运行时读写目录（data/output/config 由 deploy.sh 挂载回项目目录）
 EXPOSE 8765
 
 ENTRYPOINT ["./lab"]

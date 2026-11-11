@@ -14,7 +14,7 @@ const {default: Dialog} = await import(moduleURL(read('./lab/js/components/RunCo
   .replace("import { DIVIDEND_STOCKS } from '../constants.js';", 'const DIVIDEND_STOCKS = globalThis.runConfigTestDividendStocks;')
   .replace("import { dlgMixin } from './dlgMixin.js';", 'const dlgMixin = globalThis.runConfigTestMixin;')));
 function instance(mode = 'builder', run = async () => true) {
-  Object.assign(state, {taskRunning: false, builderMsg: {text: ''}, scriptMsg: {text: ''},
+  Object.assign(state, {taskRunning: false, builderMsg: {text: ''}, runMsg: {text: ''},
     runCfg: {startYear: 2025, endYear: 2026, sampleMode: 'all', sampleSize: 50, sampleCodes: '',
       holdingOn: true, holdingDays: 1, tpOn: false, takeProfit: 10, slOn: false, stopLoss: 8}});
   const ctx = {...Dialog.mixins[0].data(), ...Dialog.data(), ...Dialog.setup(), focused: 0,
@@ -85,7 +85,7 @@ test('确认期间阻止重复、关闭和 Escape；成功保留参数并关闭�
 
 test('提交失败保留选择并可重试，共享任务占用时不启动', async () => {
   let calls = 0;
-  const ctx = instance('simple', async () => {calls++; state.scriptMsg.text = '服务不可用';});
+  const ctx = instance('simple', async () => {calls++; state.runMsg.text = '服务不可用';});
   ctx.cfg.sampleMode = 'random'; ctx.cfg.sampleSize = 15;
   await ctx.confirm();
   assert.equal(ctx.error, '服务不可用'); assert.equal(ctx.open, true);

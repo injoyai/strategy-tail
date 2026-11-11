@@ -13,7 +13,7 @@
 ### 1.1 冻结 hash
 
 发布候选 hash 由关键文件指纹（相对仓库根路径 + 逐文件 SHA-256）经
-`internal/lab/gates_v2.go` 的 `ReleaseCandidateHash` 计算：按路径字典序排序后逐条
+`internal/lab/gates_v2_test.go` 的 `ReleaseCandidateHash` 计算：按路径字典序排序后逐条
 拼接 `path:sha256` 再 SHA-256。关键文件清单（25 个）与 `release_v2_test.go`
 `releaseKeyFiles` 一致，覆盖 v2 交付核心（`internal/portfolioresearch`、
 `internal/lab` 组合链路、`runner.go`/`server.go` 最小修改、UI、契约文档）。
@@ -26,7 +26,7 @@
 
 ### 1.2 门禁结果表
 
-门禁评估为纯函数（`internal/lab/gates_v2.go`），输入 = 证据集合 + 检查结果
+门禁评估为纯函数（`internal/lab/gates_v2_test.go`），输入 = 证据集合 + 检查结果
 （由 `TestReleaseV2Gates` 真实调用既有测试构造），输出 = 门禁结果表。权威结果
 以测试运行输出为准（`go test -count=1 ./internal/lab/ -run TestReleaseV2Gates -v`）。
 下表为冻结时结果（13 项，六类全覆盖）：
@@ -49,7 +49,7 @@
 
 ### 1.3 限制清单
 
-见 [§3 限制与已接受剩余风险](#3-限制与已接受剩余风险)（与 `internal/lab/gates_v2.go`
+见 [§3 限制与已接受剩余风险](#3-限制与已接受剩余风险)（与 `internal/lab/gates_v2_test.go`
 `ReleaseLimitations` 一致，11 项）。
 
 ### 1.4 建议发布决定
@@ -138,7 +138,7 @@
 ## 3. 限制与已接受剩余风险
 
 以下为 v2 发布时已接受的剩余风险与限制（Task 1-11 审计记录 + Task 12 门禁输入，
-与 `internal/lab/gates_v2.go` `ReleaseLimitations` 一致，11 项）。每一项均为
+与 `internal/lab/gates_v2_test.go` `ReleaseLimitations` 一致，11 项）。每一项均为
 **已记录且已解释**的已知边界，不构成"未解释则阻止发布"的阻塞项；发布条件见
 §1.4。
 

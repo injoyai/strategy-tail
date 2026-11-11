@@ -36,14 +36,13 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `strategies/util/` | MACD、RSI 等策略共用计算 |
 | `lib/extend/` | TDX 协议数据到策略 K 线的转换 |
 | `internal/marketstore/` | MySQL 行情与研究数据的只读查询 |
-| `researchdata/` | 供应商无关的数据目录、PIT 记录、注册路由和只读视图 |
+| `researchdata/` | PIT 记录、MySQL 只读视图与内存测试数据 |
 | `internal/researchrun/` | 多变体回测的数据加载、并发、取消、隔离和覆盖率 |
-| `internal/lab/` | 本地 Web 策略实验室及 Yaegi 脚本执行 |
+| `internal/lab/` | 本地 Web 策略实验室 |
 | `internal/lab/builder/` | 搭建器组件目录、条件树与共用因子条件的校验和构建 |
 | `internal/lab/factorstats/` | IC/HAC、衰减、分组换手与中性化的纯计算 |
-| `internal/lab/script/` | 独立的 Yaegi 加载、编译校验和项目符号表；Lab 保留原调用入口 |
 | `cmd/` | 可执行入口；只应定义具体任务和展示，不再复制公共回测循环 |
-| `config/` | MySQL 连接、成本、仓位、默认年份和基准配置 |
+| `config/` | MySQL 连接、成本和仓位配置 |
 | `docs/` | 使用与开发指南、设计、实施计划和审查记录；从 `docs/README.md` 检索 |
 | `tests/` | 部署等外围测试；Go 测试与被测包放在一起 |
 | `data/` | 选股交易记录与 Lab 持久状态，不进入 Git |
@@ -79,7 +78,6 @@ type Seller interface {
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
 | 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `0.0.0.0:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
-| 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
 
 各命令的参数、配置归属和副作用见[命令说明](cmd/README.md)。原 `diagnoser`、`screen-realtime`、`screen-kline`、`future`、`market-regime` 为固定参数的诊断、演示或专项研究命令，已移除；通用的 `core.Diagnoser`、`core.Screen` 和 `core.ForwardReturnAnalysis` 保留，已有数据与报告不迁移。
@@ -101,13 +99,13 @@ macOS / Linux：
 - `deploy.sh` 在构建前和切换前检查 `/api/status`。回测运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，保留原数据挂载。新容器通过组件接口及 `/api/market-data/status` 的 MySQL 读取检查后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
 - Docker 默认映射宿主机 `80` 到容器 `8765`，本机访问 `http://localhost/`；可用 `PORT=8765 ./deploy.sh` 指定其他宿主机端口。本地 `go run ./cmd/lab` 仍默认使用 8765。
-- `./data`、`./output`、`./strategies/script` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
+- `./data`、`./output` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
 ### Lab 策略搭建与行情状态
 
-打开 Lab 默认进入“回测配置 → 自由搭建”，提供买入条件、卖出信号和独立风控，可手动编辑或加载已保存策略。原“参数回测”、高级脚本和内置模板前端入口已移除；因子组合仍可使用，历史回测报告仍可查看。旧脚本和参数回测 API 保留兼容，脚本校验只编译、不执行初始化。
+打开 Lab 默认进入“回测配置 → 自由搭建”，提供买入条件、卖出信号和独立风控，可手动编辑或加载已保存策略。可以切换到因子组合回测，也可以查看含原策略参数的历史报告。
 
-旧脚本 API 的加载上限为 10 秒（含排队、编译和 `Strategy()`）。执行超时后暂停后续脚本加载，需重启服务恢复，避免无法确认退出的宿主调用不断累积；自由搭建回测不受此限制影响。
+自由搭建与因子组合分别通过 `POST /api/builder/run` 和 `POST /api/strategy/run` 提交。高级脚本、MACD 参数回测和内置模板接口已下线。
 
 组合实验执行期间持有每实验文件锁。启动恢复只将未被执行者持锁的 `running` 记录标记为失败；进程退出后锁由操作系统释放，锁文件保留。升级时应先停止旧版实例：不使用该锁的旧版执行者无法被识别为存活任务。
 
@@ -182,7 +180,7 @@ go vet ./internal/lab/...
 
 ## 配置与数据
 
-`common.LoadBacktestConfig()` 从 `config/config.yaml` 读取成本、仓位、默认年份、基准和蒙特卡洛次数。具体实验可以显式覆盖年份或卖出规则，但必须在入口注释和报告中披露。
+`common.LoadBacktestConfig()` 从 `config/config.yaml` 读取成本和逐股仓位。回测年份和卖出规则由运行请求指定，Lab 账户回测使用上证指数 `sh000001` 作为基准。
 
 公共配置由根包固定从 `RuntimeRoot()/config/config.yaml` 加载，启动目录不会改变配置来源。沿用文件优先、同名环境变量补缺的顺序；Lab 地址仍由 `LAB_ADDR` 控制。配置中已移除无读取方的 `pull.spec`、`screen.goroutines` 和 `backtest.risk.*`：卖出和风控在策略或运行请求中配置。
 
@@ -206,13 +204,12 @@ go vet ./internal/lab/...
 现有应用通过 `common.Initialize()` 或 `common.MustInitialize()` 初始化完整运行时。
 行情和研究数据由项目外维护，日常研究使用已入库的数据。
 
-非 K 线研究数据通过 `researchdata.Provider` 暴露目录和拉取能力，通过
-`researchdata.Store`（或其他 `researchdata.View` 实现）提供时点查询。每条记录必须同时记录：
+非 K 线研究数据由外部维护方写入 MySQL，通过 `researchdata.View` 提供时点查询。记录包含以下字段。
 
 - `EventAt`：财报期末、公告事件或指标所属时间；
 - `AvailableAt`：策略当时最早能够看到该记录的时间；
 - `Key`：跨修订稳定的业务主键；
-- `Source` 与数据集 `Version`：供应商和标准化口径追溯信息。
+- `Source` 与 `Revision` 用于追溯来源和记录修订。
 
 历史查询同时要求 `EventAt <= AsOf` 与 `AvailableAt <= AsOf`；缺少
 `AvailableAt` 的记录会被拒绝，修订数据按查询时点选择当时最新版本，不能用当前快照回填历史。
@@ -238,8 +235,7 @@ go vet ./internal/lab/...
 事件计数      指定时间窗内公告/事件数量，可按属性分类过滤
 ```
 
-新增真实供应商时，应先把供应商字段规范化为稳定 Dataset ID/Field，再构造因子；不要让供应商原始字段名进入策略。`researchdata.Store` 是有界研究和测试实现，全市场长期历史可换成数据库实现，只要保持 `researchdata.View` 契约。
-默认 Lab Runner 使用 `common.ResearchData`，从 MySQL 查询研究记录。测试或有界任务可注入内存 `Hub`。
+外部写入方通过稳定的数据集 ID 和字段名提供研究数据。Lab Runner 从 MySQL 查询记录，测试或有界任务可注入内存 `researchdata.Store`。
 
 ### 历史估值数据
 
@@ -271,7 +267,7 @@ git diff --check
 
 策略回测、因子分析和组合研究共用后台任务锁，同时只运行一个任务。任务进度在右下角展示。
 
-回测进度按当前阶段显示：准备数据 → 加载行情（股票数）→ 模拟交易（交易日数）→ 生成报告。百分比标为“本阶段”，阶段切换重新计数，不代表剩余耗时；准备与报告生成期间显示不定进度，报告保存成功才显示完成。旧逐股回测使用“执行回测”，参数回测仍按“股票×年份”计数。
+回测进度依次显示准备数据、加载行情（股票数）、模拟交易（交易日数）和生成报告。百分比标为“本阶段”，阶段切换重新计数。准备和生成报告期间显示不定进度，保存成功后显示完成。逐股回测使用“执行回测”阶段。
 
 因子分析、组合运行和组合验证也使用相同规则。因子股票处理结束后，继续显示 IC 统计、分组收益、年度结果和报告生成等阶段。组合任务分别显示变换、合成、模拟交易、指标、归因与保存。后台完成后若页面仍在下载报告，任务栏显示“读取结果”，读取成功才显示完成。读取失败可单独重试。
 

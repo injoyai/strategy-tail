@@ -16,8 +16,7 @@ import (
 
 // builder_test.go 搭建器后端测试（设计文档 §8 验收场景）：
 // 目录/工厂一致性、条件树校验（角色/深度/节点数/参数）、组合语义
-//（风控先求值、单规则展平、空 Or 恒 false）、策略库存储、MACD 模板
-// 与 macd_backtest 构造逐字段等价、REST API 契约。
+//（风控先求值、单规则展平、空 Or 恒 false）、策略库存储与 REST API 契约。
 
 // ---- 测试辅助 ----
 
@@ -321,7 +320,9 @@ func TestBuilderStoreCRUD(t *testing.T) {
 	}
 
 	// 复制：新 ID/版本 1/源不变
-	copied, err := st.Copy(created.ID, "副本")
+	copySpec := got.Spec
+	copySpec.Name = "副本"
+	copied, err := st.Create(copySpec)
 	if err != nil {
 		t.Fatalf("复制失败: %v", err)
 	}
@@ -390,77 +391,9 @@ func TestBuilderStoreFailClosed(t *testing.T) {
 	}
 }
 
-// ---- MACD 模板等价 ----
-
-// TestBuilderTemplateMACDEquivalent 模板与 macd_backtest 构造逐字段一致，
-// 且经 JSON round-trip（API 传输形态）后仍等价（验收场景 1）。
-func TestBuilderTemplateMACDEquivalent(t *testing.T) {
-	cfg := defaultMACDConfig()
-	tpl := BuilderTemplates()[0].Spec
-	if err := tpl.Validate("run"); err != nil {
-		t.Fatalf("模板 spec 未通过运行校验: %v", err)
-	}
-
-	gotBuyer, err := tpl.Buyer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := cfg.MACD.buyer(); !reflect.DeepEqual(gotBuyer, want) {
-		t.Fatalf("模板买入树与 MACD buyer() 不等价:\nwant %#v\ngot  %#v", want, gotBuyer)
-	}
-
-	gotSeller, err := tpl.Seller()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := cfg.seller(); !reflect.DeepEqual(gotSeller, want) {
-		t.Fatalf("模板卖出树与 MACD seller() 不等价:\nwant %#v\ngot  %#v", want, gotSeller)
-	}
-
-	// JSON round-trip 后仍等价
-	buf, err := json.Marshal(tpl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rt BuilderSpec
-	if err := json.Unmarshal(buf, &rt); err != nil {
-		t.Fatal(err)
-	}
-	rtBuyer, err := rt.Buyer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(rtBuyer, cfg.MACD.buyer()) {
-		t.Fatalf("round-trip 后买入树不等价: %#v", rtBuyer)
-	}
-	rtSeller, err := rt.Seller()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(rtSeller, cfg.seller()) {
-		t.Fatalf("round-trip 后卖出树不等价: %#v", rtSeller)
-	}
-}
-
-// TestBuilderTemplatesCatalog 模板目录响应自洽。
-func TestBuilderTemplatesCatalog(t *testing.T) {
-	tpls := BuilderTemplates()
-	if len(tpls) == 0 {
-		t.Fatal("内置模板为空")
-	}
-	for _, tpl := range tpls {
-		if tpl.ID == "" || tpl.Name == "" {
-			t.Fatalf("模板缺少 ID/名称: %+v", tpl)
-		}
-		if err := tpl.Spec.Validate("run"); err != nil {
-			t.Fatalf("模板 %s spec 未通过运行校验: %v", tpl.ID, err)
-		}
-	}
-}
-
 // ---- REST API 契约 ----
 
-// TestBuilderAPI 组件目录/模板/策略库/运行入口的 API 契约（验收场景 5/8/11）。
+// TestBuilderAPI 组件目录/策略库/运行入口的 API 契约（验收场景 5/8/11）。
 func TestBuilderAPI(t *testing.T) {
 	t.Chdir(t.TempDir()) // builderDataDir 相对路径落临时目录
 	h := NewServer().Handler()
@@ -476,18 +409,6 @@ func TestBuilderAPI(t *testing.T) {
 	}
 	if len(cat.Components) == 0 || len(cat.Unavailable) == 0 {
 		t.Fatalf("目录响应应含可运行与不可用清单: %d/%d", len(cat.Components), len(cat.Unavailable))
-	}
-
-	// 模板
-	res = doReq(t, h, http.MethodGet, "/api/builder/templates", nil, http.StatusOK)
-	var tplRes struct {
-		Templates []BuilderTemplate `json:"templates"`
-	}
-	if err := json.Unmarshal(res, &tplRes); err != nil {
-		t.Fatal(err)
-	}
-	if len(tplRes.Templates) == 0 {
-		t.Fatal("模板响应为空")
 	}
 
 	// 策略库 CRUD
@@ -524,9 +445,10 @@ func TestBuilderAPI(t *testing.T) {
 	doReq(t, h, http.MethodPut, "/api/builder/strategies/"+id,
 		map[string]any{"spec": spec, "expectedVersion": 1}, http.StatusConflict)
 
-	// 复制
-	doReq(t, h, http.MethodPost, "/api/builder/strategies/"+id+"/copy",
-		map[string]any{"name": "副本"}, http.StatusCreated)
+	// 另存为使用新建接口提交当前草稿。
+	spec.Name = "副本"
+	doReq(t, h, http.MethodPost, "/api/builder/strategies",
+		map[string]any{"spec": spec}, http.StatusCreated)
 	res = doReq(t, h, http.MethodGet, "/api/builder/strategies", nil, http.StatusOK)
 	var list struct {
 		Strategies []BuilderStrategy `json:"strategies"`

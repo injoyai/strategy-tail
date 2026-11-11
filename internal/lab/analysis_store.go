@@ -27,9 +27,8 @@ import (
 //	<root>/<kind>/<analysisId>/report.html   # best-effort
 //	<root>/<kind>/latest.json                # 该 kind 当前指针（原子写）
 //	<root>/latest.json                       # 全局指针（含 kind，晚于 kind 指针写）
-//	<root>/<kind>/report.json|ic.csv|report.html  # 兼容镜像（best-effort）
 //
-// 主报告或 latest 指针失败返回错误；兼容镜像失败只记录日志。所有由 ID 派生的
+// 主报告或 latest 指针失败时返回错误。所有由 ID 派生的
 // 路径在使用前执行根目录约束检查，拒绝穿越。
 
 // analysisIDRe 不可变分析 ID 格式：an_<UTC yyyyMMddTHHmmssSSSZ>_<8 hex>。
@@ -177,8 +176,8 @@ func NewAnalysisStore(root string) *AnalysisStore {
 // Save 按写入顺序发布一份分析报告：
 // 1. 创建 <kind>/<analysisId>/；2. 原子写主 report.json；
 // 3. best-effort ic.csv 与 report.html；4. 原子更新 <kind>/latest.json；
-// 5. 原子更新全局 latest.json；6. best-effort 兼容镜像。
-// 主报告或任一 latest 指针失败返回错误；兼容镜像失败仅记录日志。
+// 5. 原子更新全局 latest.json。
+// 主报告或任一 latest 指针写入失败时返回错误。
 func (s *AnalysisStore) Save(rep *AnalysisReport) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -225,11 +224,6 @@ func (s *AnalysisStore) Save(rep *AnalysisReport) error {
 		return err
 	}
 
-	// best-effort 兼容镜像：旧固定路径与人工读取不立即失效
-	kindDir := filepath.Join(s.root, kind)
-	_ = atomicWrite(filepath.Join(kindDir, "report.json"), buf)
-	_ = atomicWrite(filepath.Join(kindDir, "ic.csv"), renderAnalysisCSV(rep))
-	_ = atomicWrite(filepath.Join(kindDir, "report.html"), renderAnalysisHTML(rep))
 	return nil
 }
 
@@ -349,7 +343,7 @@ func (s *AnalysisStore) readByKindAndID(kind, id string) (*AnalysisReport, error
 
 // List 扫描某 kind 下的历史报告摘要（时间倒序）。
 // 只扫描合法 ID 目录与有效报告；遇到损坏的正式报告返回错误（fail closed），
-// .tmp 临时文件与兼容镜像文件（非目录）被忽略。
+// .tmp 临时文件及非目录文件被忽略。
 func (s *AnalysisStore) List(kind string) ([]AnalysisSummary, error) {
 	if !validKindDir(kind) {
 		return nil, fmt.Errorf("非法因子类型目录: %q", kind)

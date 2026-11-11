@@ -2,9 +2,6 @@ module github.com/injoyai/strategy-tail
 
 go 1.25.4
 
-// Preserve v1.2.20 with the async wait race fix; see third_party/README.md.
-replace github.com/injoyai/base => ./third_party/injoyai-base
-
 // Use the local v2 SDK; MySQL storage adapters live in this application.
 replace github.com/injoyai/tdx/v2 => ../tdx
 
@@ -19,7 +16,6 @@ require (
 	github.com/injoyai/logs v1.0.12
 	github.com/injoyai/tdx/v2 v2.0.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/traefik/yaegi v0.16.1
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/sys v0.46.0
 	xorm.io/xorm v1.3.11
@@ -39,7 +35,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grafov/m3u8 v0.12.1 // indirect
-	github.com/injoyai/base v1.2.23 // indirect
+	github.com/injoyai/base v1.2.24 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.1 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect

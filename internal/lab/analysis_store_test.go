@@ -64,7 +64,7 @@ func TestNewAnalysisID(t *testing.T) {
 }
 
 // TestAnalysisStoreKeepsHistory 同 kind 两次保存均保留，可分别读取；
-// latest 指向第二份；兼容镜像仍写入固定路径。
+// latest 指向第二份，每份报告的文件按 ID 保存。
 func TestAnalysisStoreKeepsHistory(t *testing.T) {
 	dir := t.TempDir()
 	s := NewAnalysisStore(dir)
@@ -102,15 +102,17 @@ func TestAnalysisStoreKeepsHistory(t *testing.T) {
 	if err != nil || global == nil || global.AnalysisID != id2 {
 		t.Fatalf("全局 Latest = %v, %v", global, err)
 	}
-	// 不可变目录与兼容镜像并存
+	// 新报告的产物只写入版本目录。
 	if _, err := os.Stat(filepath.Join(dir, "momentum", id1, "report.json")); err != nil {
 		t.Fatalf("id1 不可变目录缺失: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "momentum", "report.json")); err != nil {
-		t.Fatalf("兼容镜像缺失: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "momentum", "ic.csv")); err != nil {
-		t.Fatalf("兼容 ic.csv 缺失: %v", err)
+	for _, name := range []string{"report.json", "ic.csv", "report.html"} {
+		if _, err := os.Stat(filepath.Join(dir, "momentum", id2, name)); err != nil {
+			t.Fatalf("版本目录缺少 %s: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "momentum", name)); !os.IsNotExist(err) {
+			t.Fatalf("不应向固定路径写入 %s: %v", name, err)
+		}
 	}
 }
 

@@ -112,17 +112,17 @@ export default {
         this.switchTab(1);
         state.focusCondReq = {kind: f.kind, days: f.days};
         if (!window.confirm(`已存在相同因子+天数条件（第 ${dupIdx + 1} 条），是否用候选阈值替换？`)) {
-          state.scriptMsg = {text: '未替换：已聚焦原条件，请自行确认阈值。', ok: true};
+          state.runMsg = {text: '未替换：已聚焦原条件，请自行确认阈值。', ok: true};
           return;
         }
         state.simpleConds[dupIdx] = cond;
-        state.scriptMsg = {text: '候选阈值已替换原条件（尚未回测），请运行回测。', ok: true};
+        state.runMsg = {text: '候选阈值已替换原条件（尚未回测），请运行回测。', ok: true};
         return;
       }
       state.simpleConds.push(cond);
       this.switchTab(1);
       state.focusCondReq = {kind: f.kind, days: f.days};
-      state.scriptMsg = {text: '候选已加入策略条件（尚未回测），填写卖出规则后运行回测。', ok: true};
+      state.runMsg = {text: '候选已加入策略条件（尚未回测），填写卖出规则后运行回测。', ok: true};
     },
   },
   template: `

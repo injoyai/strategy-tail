@@ -51,7 +51,7 @@ func run() error {
 	}
 	defer market.Close()
 
-	cost, position, _, _, _ := common.LoadBacktestConfig()
+	cost, position := common.LoadBacktestConfig()
 	report, err := researchrun.Run(context.Background(), researchrun.Config{
 		Codes: []string{"sh600000"},
 		Years: []int{2025},

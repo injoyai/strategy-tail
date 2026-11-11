@@ -45,6 +45,8 @@ github.com/hpcloud/tail v1.0.0 h1:nfCOvKYfkgYP8hkirhJocXT2+zOD8yUNjXaWfTlyFKI=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/injoyai/bar v0.0.12 h1:NFkm/v5RSoUXPN62JsANWuZ0uZP/+ekI0EK0njDNiAA=
 github.com/injoyai/bar v0.0.12/go.mod h1:fhn3OC7/h9z7wYFiByd3AJ2UTnCR/9fa2MXIMYdxlII=
+github.com/injoyai/base v1.2.24 h1:Cmm2+JCYGPnz45aUlXvKHSzVJrFQkoihQpq1tRe2+ZA=
+github.com/injoyai/base v1.2.24/go.mod h1:NfCQjml3z2pCvQ3J3YcOXtecqXD0xVPKjo4YTsMLhr8=
 github.com/injoyai/conv v1.2.8 h1:TNE3wdJAj2FuOrwnaxKg8MB2HGb6syZnHUMZiBNLFOk=
 github.com/injoyai/conv v1.2.8/go.mod h1:s05l3fQJQ4mT4VX+KIdbvCWQB0YzZHprmUfUu2uxd1k=
 github.com/injoyai/frame v0.0.20 h1:G3IpV2mNNRwR6USuaCvcz5C1OfMwB0SeHXRTGFB2ZGw=
@@ -119,8 +121,6 @@ github.com/tiendc/go-deepcopy v1.7.2 h1:Ut2yYR7W9tWjTQitganoIue4UGxZwCcJy3orjrrI
 github.com/tiendc/go-deepcopy v1.7.2/go.mod h1:4bKjNC2r7boYOkD2IOuZpYjmlDdzjbpTRyCx+goBCJQ=
 github.com/tinylib/msgp v1.5.0 h1:GWnqAE54wmnlFazjq2+vgr736Akg58iiHImh+kPY2pc=
 github.com/tinylib/msgp v1.5.0/go.mod h1:cvjFkb4RiC8qSBOPMGPSzSAx47nAsfhLVTCZZNuHv5o=
-github.com/traefik/yaegi v0.16.1 h1:f1De3DVJqIDKmnasUF6MwmWv1dSEEat0wcpXhD2On3E=
-github.com/traefik/yaegi v0.16.1/go.mod h1:4eVhbPb3LnD2VigQjhYbEJ69vDRFdT2HQNrXx8eEwUY=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 github.com/valyala/fasthttp v1.68.0 h1:v12Nx16iepr8r9ySOwqI+5RBJ/DqTxhOy1HrHoDFnok=

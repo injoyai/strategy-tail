@@ -53,7 +53,7 @@ var releaseKeyFiles = []string{
 	"internal/lab/portfolio_adapter_draft.go",
 	"internal/lab/runner.go",
 	"internal/lab/server.go",
-	"internal/lab/gates_v2.go",
+	"internal/lab/gates_v2_test.go",
 	"internal/lab/web/lab/index.html",
 	"DESIGN.md",
 	"UX-CONTRACT.md",
@@ -162,16 +162,16 @@ func collectMigrationInputs(t *testing.T) []ReleaseCheckInput {
 	ev := "TestCompatV3ReportFixtureLoads / TestCompatCandidateV1FixtureVerifiable / TestAnalysisStoreSavesV3AndV4 / TestValidationStoreGetView（v1 分析/候选/分析 store/v1 验证 store 读回，含 testdata 夹具）"
 	v1 := gateInput("v1_products_readable", ok, ev, "v1 不可变历史不受影响：既有产物与测试全部可读可测")
 
-	// 旧客户端 API 兼容：/api/status、/api/script、候选/策略路由行为不变。
+	// 验证仍在使用的状态、目录与回测 API。
 	ok2 := true
 	if !runGateSubtest(t, "PortfolioLegacyCompat", TestPortfolioLegacyCompat) {
 		ok2 = false
 	}
-	if !runGateSubtest(t, "ServerScriptAPI", TestServerScriptAPI) {
+	if !runGateSubtest(t, "ServerRunLifecycle", TestServerRunLifecycle) {
 		ok2 = false
 	}
-	ev2 := "TestPortfolioLegacyCompat（/api/status、/api/stop、/api/factors）+ TestServerScriptAPI（脚本 API）+ 引用 TestServerRunLifecycle / TestServerStrategyPresets / TestServerStrategyRunValidation / TestServerCandidateCreateObserve / TestLabPageSupportsAnnualGroupChart / TestLabPageGroupsFactorSelectors"
-	api := gateInput("legacy_api_compatible", ok2, ev2, "组合路由为新增，不改变既有 /api/status、/api/run、/api/script、/api/factors 与候选/策略路由行为")
+	ev2 := "TestPortfolioLegacyCompat（/api/status、/api/stop、/api/factors）+ TestServerRunLifecycle（搭建器回测）+ 引用 / TestServerStrategyPresets / TestServerStrategyRunValidation / TestServerCandidateCreateObserve / TestLabPageSupportsAnnualGroupChart / TestLabPageGroupsFactorSelectors"
+	api := gateInput("legacy_api_compatible", ok2, ev2, "状态、因子目录、策略与候选路由通过回归测试")
 
 	return []ReleaseCheckInput{v1, api}
 }

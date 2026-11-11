@@ -1,7 +1,4 @@
 // Tab1Run：回测配置；运行参数由共享弹窗确认。
-// 从 index.html 迁移：setMode/toggleEditor/loadScript/checkScript/saveScript/
-// sampleModeChange/buildConfig/runBacktest/runSimple/loadPresets/renderPresetInfo/
-// ensureDefaultConds/addCond/delCond/renderConds/buildCondCard/buildSpec/focusSimpleCondition。
 // 状态提升：simpleConds/presetId/specName/runCfg/focusCondReq 全部在 store（跨页共享）。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
@@ -19,8 +16,6 @@ export default {
   },
   data() {
     return {
-      script: '',            // 高级模式脚本内容（仅本地，保存/运行才落盘）
-      editorExpanded: false, // 编辑器展开态
       presetInfos: [],       // GET /api/strategy-presets
       inputRefs: {},         // `${idx}:${field}` -> 条件卡输入元素（校验失败聚焦）
     };
@@ -38,7 +33,6 @@ export default {
     sampleCodesVisible() { return state.runCfg.sampleMode === 'codes'; },
   },
   mounted() {
-    if (state.runMode === 'adv') this.loadScript();
     this.loadPresets();
     // 因子目录由 01 页加载；就绪后创建默认条件卡（只一次）
     watch(() => state.factorCatalog, cat => {
@@ -50,28 +44,11 @@ export default {
     });
   },
   methods: {
-    // —— 模式 / 编辑器 ——
-    setMode(m) { state.runMode = m; if (m === 'adv' && !this.script) this.loadScript(); },
-    toggleEditor() { this.editorExpanded = !this.editorExpanded; },
-    async loadScript() {
-      try { this.script = (await Api.getScript()).content; }
-      catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
-    },
-    async checkScript() {
-      try {
-        const d = await Api.checkScript(this.script);
-        state.scriptMsg = {text: d.ok ? '语法检查通过' : d.error, ok: !!d.ok};
-      } catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
-    },
-    async saveScript() {
-      try { await Api.saveScript(this.script); state.scriptMsg = {text: '已保存', ok: true}; }
-      catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
-    },
-
+    setMode(mode) { state.runMode = mode; },
     // —— 预设 ——
     async loadPresets() {
       try { this.presetInfos = await Api.strategyPresets(); }
-      catch (e) { state.scriptMsg = {text: '预设策略加载失败: ' + e.message, ok: false}; }
+      catch (e) { state.runMsg = {text: '预设策略加载失败: ' + e.message, ok: false}; }
     },
 
     // —— 条件卡 ——
@@ -144,20 +121,8 @@ export default {
     // —— 运行配置 / 提交 ——
     requestRun() {
       if (state.taskRunning) return;
-      const mode = state.runMode;
-      if (mode === 'simple' && !this.buildSpec()) return;
-      this.openRunConfig(mode, () => mode === 'simple' ? this.runSimple() : this.runBacktest(mode));
-    },
-    async runBacktest(mode = state.runMode) {
-      state.scriptMsg = {text: '', ok: true};
-      if (mode === 'simple') return this.runSimple();
-      try {
-        await Api.saveScript(this.script); // 运行前先保存
-        const d = await Api.runBacktest({...buildConfig(), account: ACCOUNT_CONFIG});
-        state.scriptMsg = {text: `已提交 ${d.variants} 个变体，运行进度见右下角任务卡。`, ok: true};
-        this.startTask('backtest');
-        return true;
-      } catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
+      if (!this.buildSpec()) return;
+      this.openRunConfig('simple', () => this.runSimple());
     },
     async runSimple() {
       const spec = this.buildSpec();
@@ -167,10 +132,10 @@ export default {
         const n = spec.factorFilters.length;
         const detail = n === 0 ? '仅基准（无因子条件）'
           : n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
-        state.scriptMsg = {text: `已提交 ${d.variants} 个变体（${detail}），运行进度见右下角任务卡。`, ok: true};
+        state.runMsg = {text: `已提交 ${d.variants} 个变体（${detail}），运行进度见右下角任务卡。`, ok: true};
         this.startTask('backtest');
         return true;
-      } catch (e) { state.scriptMsg = {text: e.message, ok: false}; }
+      } catch (e) { state.runMsg = {text: e.message, ok: false}; }
     },
     // 收集并校验 StrategySpec；失败返回 null（错误贴近字段展示并聚焦第一个错误）
     buildSpec() {
@@ -235,7 +200,7 @@ export default {
       if (spec.run.sampleMode === 'codes' && !(spec.run.sampleCodes || []).length) {
         errs.push('指定代码样本为空');
       }
-      if (errs.length) state.scriptMsg = {text: errs.join('\n'), ok: false};
+      if (errs.length) state.runMsg = {text: errs.join('\n'), ok: false};
       if (firstErr) {
         this.$nextTick(() => {
           const el = this.inputRefs[`${state.simpleConds.indexOf(firstErr.c)}:${firstErr.field}`];
@@ -342,7 +307,7 @@ export default {
     <div class="editor-actions" style="margin-top:12px" v-show="state.runMode!=='builder'">
       <button class="primary" @click="requestRun" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">运行回测</button>
     </div>
-    <div class="msg" v-show="state.runMode!=='builder'" :class="state.scriptMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.scriptMsg.text }}</div>
+    <div class="msg" v-show="state.runMode!=='builder'" :class="state.runMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.runMsg.text }}</div>
   </div>
 
 </div>

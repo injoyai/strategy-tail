@@ -1045,7 +1045,7 @@ func (r *Runner) runAnalysis(id string, cfg AnalyzeConfig, stop chan struct{}) (
 }
 
 // analysisHTML 分析报告页模板（ECharts 逐日 IC 折线；%% 为 CSS 转义）。
-// 渲染逻辑在 analysis_store.go（不可变版本目录与兼容镜像共用）。
+// 渲染逻辑在 analysis_store.go。
 const analysisHTML = `<!DOCTYPE html>
 <html>
 <head>

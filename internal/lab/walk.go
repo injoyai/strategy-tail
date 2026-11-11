@@ -16,9 +16,8 @@ type topNReq struct {
 // collectTopN 递归遍历全部变体的买入策略树（CompositeBuyer 展开，与
 // core diagnose 同款），收集 A因子TopN 所需的快照请求。
 //
-// Yaegi 脚本复合字面量可能退化为值类型，故 *A因子TopN 与 A因子TopN
-// 双断言。Factor==nil 或 N<=0 永不触发买入，跳过。同一 key（因子+方向）
-// 的值与排名完全一致，去重后只算一次；保序返回。
+// 同时识别 *A因子TopN 与 A因子TopN。Factor 为空或 N 不为正时跳过。
+// 同一因子和排名方向只计算一次，按首次出现的顺序返回。
 func collectTopN(variants []core.Variant) []topNReq {
 	seen := map[string]bool{}
 	var reqs []topNReq

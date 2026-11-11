@@ -25,7 +25,7 @@ func replayFixture(t *testing.T) (*Report, []*ReplayVariant, map[string]extend.K
 			Price: 10, ExecPrice: 10.01, Quantity: 100, Fee: 1}}}
 	rv := &ReplayVariant{Version: replayVersion, VariantIndex: 0, VariantName: "V0",
 		Dates: []string{day.Date}, Days: []ReplayDay{day}}
-	rep := &Report{Config: defaultMACDConfig(), Source: "macd",
+	rep := &Report{Config: RunConfig{ScriptName: "MACD参数回测"}, Source: "macd",
 		StartedAt: "2025-01-01T10:00:00+08:00", FinishedAt: "2025-01-01T10:00:01+08:00",
 		Variants: []VariantReport{
 			{Name: "V0", Replay: &ReplayMeta{Version: replayVersion, Available: true}},
@@ -191,7 +191,7 @@ func TestReplayAPI(t *testing.T) {
 	doReq(t, h, http.MethodGet, "/api/report/a%2Fb/replay/0", nil, http.StatusBadRequest)
 
 	// 旧报告（无 replay 描述、无回放文件）提示重新回测。
-	legacy := &Report{Config: defaultMACDConfig(), Source: "macd",
+	legacy := &Report{Config: RunConfig{ScriptName: "MACD参数回测"}, Source: "macd",
 		StartedAt: "2025-01-02T10:00:00+08:00", FinishedAt: "2025-01-02T10:00:01+08:00",
 		Variants: []VariantReport{{Name: "Old"}}}
 	legacyDir := filepath.Join("output", "trades", legacy.RunID())

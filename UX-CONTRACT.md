@@ -102,13 +102,11 @@ exploratory、实验 failed/insufficient、验证 failed）。节点是审计关
 - 正式结论（verdict、指标、归因）只从 `/api/portfolio-experiments/{id}/artifacts/report.json`
   与 `/api/portfolio-validations/{id}` 读取并渲染。
 
-## 8. 参数回测与行情状态
-
-来源：用户要求、`cmd/backtest/main.go`、`MACDParameters`。既有组合研究的业务和交互合同仍保留。
+## 8. 回测与行情状态
 
 | Capability | Canonical owner | Source of truth | Allowed variants | Verification |
 |---|---|---|---|---|
-| Form | Vue 表单与公共控件样式 | 后端参数校验、MACDParameters | 数字、代码列表 | API 校验、字段错误与首错焦点 |
+| Form | Vue 表单与公共控件样式 | 后端回测参数校验 | 数字、代码列表 | API 校验、字段错误与首错焦点 |
 | Select/Listbox | 原生 select | 后端样本模式 | 系统下拉 | 键盘、窄屏 |
 | Date | 数字年份 | 上海时区、服务端当前年份 | 年份范围 | 年份范围校验 |
 | Scrollbar | lab.css 全局样式 | 既有文档滚动 | 表格内部滚动 | 桌面与窄屏 |
@@ -121,7 +119,7 @@ exploratory、实验 failed/insufficient、验证 failed）。节点是审计关
 
 因子分析运行后若后台返回初始空闲状态（任务类型已重置），任务栏显示“意外中断”并提示重新运行；不能冒充主动停止或分析完成。同一任务返回空闲状态时保留主动停止语义。
 
-参数条件可独立勾选，未选条件的输入保留并禁用，验证只检查已选条件；运行报告保存并显示勾选状态。旧请求和报告缺少开关时仍按全部条件启用。
+历史参数报告从冻结快照显示原有勾选状态。快照缺少开关字段时按当时的默认值展示全部条件。
 
 ## 9. 自由搭建策略（2026-10-14）
 
