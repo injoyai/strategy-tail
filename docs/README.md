@@ -5,8 +5,8 @@
 ## 使用与开发指南
 
 - [tdx v2 迁移与数据口径](guides/tdx-v2-migration.md)
-- [行情源时间与新旧数据读取](guides/source-time-storage.md)
-- [MySQL 行情存储与分表迁移](guides/mysql-storage.md)
+- [行情源时间与策略口径](guides/source-time-storage.md)
+- [MySQL 数据源](guides/mysql-storage.md)
 
 - [项目目录与代码入口](guides/project-layout.md)
 - [命令入口与配置归属](../cmd/README.md)

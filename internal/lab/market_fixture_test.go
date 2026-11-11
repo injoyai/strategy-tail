@@ -4,7 +4,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/injoyai/strategy-tail/internal/marketstore"
 	"github.com/injoyai/strategy-tail/internal/testmarket"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/tdx/v2/extend/model"
@@ -19,15 +18,17 @@ func fixtureMarket(t *testing.T, dir string) *testmarket.Store {
 	if existing, ok := testMarkets.Load(dir); ok {
 		return existing.(*testmarket.Store)
 	}
-	s := testmarket.Open(t, dir)
+	s := testmarket.New()
+	t.Cleanup(func() { _ = s.Close() })
 	testMarkets.Store(dir, s)
 	t.Cleanup(func() { testMarkets.Delete(dir) })
 	return s
 }
 
-func fixturePull(t *testing.T, dir string) *extend.PullKline {
+func fixturePull(t *testing.T, dir string) *extend.MarketReader {
 	t.Helper()
-	return &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir, Store: fixtureMarket(t, dir)}}
+	store := fixtureMarket(t, dir)
+	return extend.NewMarketReader(store, store.Equity)
 }
 
 func seedTestDays(t *testing.T, dir, name string, bars extend.Klines) {
@@ -36,18 +37,18 @@ func seedTestDays(t *testing.T, dir, name string, bars extend.Klines) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows := make([]*marketstore.DayRecord, 0, len(bars))
+	store := fixtureMarket(t, dir)
+	rows := make([]*model.KlineDay, 0, len(bars))
 	for _, bar := range bars {
 		volume := bar.Volume
 		if code.Market != protocol.MarketIndex && code.Market != protocol.MarketBlock {
 			volume = protocol.ToShares(volume)
 		}
-		rows = append(rows, &marketstore.DayRecord{
-			KlineDay: model.KlineDay{Time: bar.Time.Format("2006-01-02"), Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: volume, Amount: &bar.Amount},
-			Turnover: bar.Turnover, FloatStock: float64(bar.FloatStock), TotalStock: float64(bar.TotalStock),
-		})
+		date := bar.Time.Format("2006-01-02")
+		rows = append(rows, &model.KlineDay{Time: date, Open: bar.Open, High: bar.High, Low: bar.Low, Close: bar.Close, Volume: volume, Amount: &bar.Amount})
+		if bar.FloatStock > 0 || bar.TotalStock > 0 {
+			store.SeedEquity(code.Code, date, bar.FloatStock, bar.TotalStock)
+		}
 	}
-	if err := fixtureMarket(t, dir).SeedDay(code, rows); err != nil {
-		t.Fatal(err)
-	}
+	store.SeedDay(code, rows)
 }

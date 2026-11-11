@@ -9,7 +9,7 @@
 ## 当前架构
 
 ```text
-TDX / MySQL K 线            财务 / 基本面 / 公告 / 其他供应商
+MySQL K 线、代码与股本             MySQL 历史研究数据
         ↓                                  ↓
 lib/extend K 线适配             researchdata PIT 数据契约与视图
         └──────────────────────┬───────────┘
@@ -34,7 +34,8 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `strategies/sell/` | 实现 `core.Seller` 的卖出和风控条件 |
 | `strategies/factor/` | 价量 `core.Factor`、多数据 `core.ContextFactor` 与因子目录 |
 | `strategies/util/` | MACD、RSI 等策略共用计算 |
-| `lib/extend/` | TDX K 线读取与 MySQL 存储适配 |
+| `lib/extend/` | TDX 协议数据到策略 K 线的转换 |
+| `internal/marketstore/` | MySQL 行情与研究数据的只读查询 |
 | `researchdata/` | 供应商无关的数据目录、PIT 记录、注册路由和只读视图 |
 | `internal/researchrun/` | 多变体回测的数据加载、并发、取消、隔离和覆盖率 |
 | `internal/lab/` | 本地 Web 策略实验室及 Yaegi 脚本执行 |
@@ -42,10 +43,10 @@ cmd/* 命令、internal/lab Web 实验室、output/* 报告
 | `internal/lab/factorstats/` | IC/HAC、衰减、分组换手与中性化的纯计算 |
 | `internal/lab/script/` | 独立的 Yaegi 加载、编译校验和项目符号表；Lab 保留原调用入口 |
 | `cmd/` | 可执行入口；只应定义具体任务和展示，不再复制公共回测循环 |
-| `config/` | 数据更新、成本、仓位、默认年份和基准配置 |
+| `config/` | MySQL 连接、成本、仓位、默认年份和基准配置 |
 | `docs/` | 使用与开发指南、设计、实施计划和审查记录；从 `docs/README.md` 检索 |
 | `tests/` | 部署等外围测试；Go 测试与被测包放在一起 |
-| `data/` | 行情迁移源、元数据和 Lab 持久状态，不进入 Git |
+| `data/` | 选股交易记录与 Lab 持久状态，不进入 Git |
 | `output/` | CSV、HTML、PDF 等生成产物，不进入 Git |
 | `bin/` | 本地编译产物，不进入 Git |
 
@@ -77,22 +78,15 @@ type Seller interface {
 
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
-| 压缩本地分钟库 | `TZ=Asia/Shanghai go run ./cmd/kline-compress -dir data/database -workers 4` | 归档工具，仅处理旧 `min-kline/`，可中断后重跑 |
 | 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `0.0.0.0:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
 | 主回测草稿 | `go run ./cmd/backtest` | 作者用于快速调参的工作区，不做顺手重构 |
 | 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
-| 同步历史估值 | `go run ./cmd/valuation-sync -codes sh600519 -start 2020-01-01` | 写入本地估值库；`-all` 显式选择全部股票 |
-| 迁移源时间行情到 MySQL | `go run ./cmd/migrate-kline -dir data/database/source` | 只读源时间 v1/v2 归档；读取 `pull.mysql` 目标库，仅补缺失 |
-| 迁移旧日线到 MySQL | `go run ./cmd/migrate-legacy-day -dir data/database/day-kline` | 旧 Unix 主键库转源时间日线；整数毫换算为元、手换算为股，可重复执行 |
-| 迁移旧分钟线到 MySQL | `go run ./cmd/migrate-legacy-minute -dir data/database/min-kline` | 旧 Kline/KLM 分钟库转源时间分钟线；只读源快照，股票手转股，逐分钟查缺，仅补缺失，可续跑 |
-| 迁移指数分钟线到 MySQL | `go run ./cmd/migrate-index-minute -dir /Volumes/server/pull-index-minute-kline/data/database/kline` | 读取年度目录的 `KlineMinute1`；源文件只读，先做本地快照，保留目标已有记录 |
-| MySQL 按市场分表 | `go run ./cmd/migrate-mysql-market` | 默认只读预览；复制模式保留旧表，`-in-place` 复用原表且要求恢复点，均须暂停写入并校验 |
 
 各命令的参数、配置归属和副作用见[命令说明](cmd/README.md)。原 `diagnoser`、`screen-realtime`、`screen-kline`、`future`、`market-regime` 为固定参数的诊断、演示或专项研究命令，已移除；通用的 `core.Diagnoser`、`core.Screen` 和 `core.ForwardReturnAnalysis` 保留，已有数据与报告不迁移。
 
-回测与实验室“全量/随机”样本只枚举 MySQL 中已存主板日线证券，保留退市代码并排除指数；未找到已有日线股票时直接报错。显式指定代码的行为不变。实时选股使用已有代码目录。
+回测与实验室“全量/随机”样本只枚举 MySQL 中已存主板日线证券，保留退市代码并排除指数。未找到已有日线股票时直接报错。选股使用 MySQL 证券目录和已入库的当日分钟线。
 
-组合研究优先使用 `research.universe` 配置的历史成员文件；缺失或加载失败时退回 MySQL 日线股票池。每次枚举股票池时刷新成员集合，之后的成员检查和质量快照复用该集合；下次枚举可发现新增证券。该池仅覆盖已保存的数据，不保证退市数据完整，也没有逐日成员关系，PIT 仍为 `unverified`，只支持探索级证据。
+组合研究从 MySQL 的 `universe_members` 读取历史成员。缺表或空表时，使用 MySQL 日线覆盖的股票集合，成员历史标记为 `unverified`，只支持探索级证据。
 
 ### Docker 部署策略实验室
 
@@ -104,12 +98,12 @@ macOS / Linux：
 ./deploy.sh
 ```
 
-- `deploy.sh` 在构建前和切换前检查 `/api/status` 与 `/api/data-update/status`；回测或行情更新运行中、状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，原数据挂载保持不变；新容器通过组件接口及 MySQL 存储身份检查后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
+- `deploy.sh` 在构建前和切换前检查 `/api/status`。回测运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，保留原数据挂载。新容器通过组件接口及 `/api/market-data/status` 的 MySQL 读取检查后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
 - Docker 默认映射宿主机 `80` 到容器 `8765`，本机访问 `http://localhost/`；可用 `PORT=8765 ./deploy.sh` 指定其他宿主机端口。本地 `go run ./cmd/lab` 仍默认使用 8765。
 - `./data`、`./output`、`./strategies/script` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
-### Lab 策略搭建与行情更新
+### Lab 策略搭建与行情状态
 
 打开 Lab 默认进入“回测配置 → 自由搭建”，提供买入条件、卖出信号和独立风控，可手动编辑或加载已保存策略。原“参数回测”、高级脚本和内置模板前端入口已移除；因子组合仍可使用，历史回测报告仍可查看。旧脚本和参数回测 API 保留兼容，脚本校验只编译、不执行初始化。
 
@@ -119,9 +113,7 @@ macOS / Linux：
 
 选择年份和股票范围后点击“运行回测”，完成后自动打开“回测结果”；“本次回测规则”显示报告保存的条件树，“交易明细”查看逐笔成交。成本与单票仓位使用 `config/config.yaml`。
 
-左下角“行情”气泡显示 MySQL 中上证指数最新日线的日期，并区分读取中、暂无记录和读取失败。行情与研究数据由外部项目维护。Lab、选股的历史行情和回测都读取已入库的数据，最新指数日期只代表该指数的日线覆盖。实时选股仍直接读取实时报价。
-
-`kline-compress` 对旧分钟库转换前后核对全部记录和顺序，再原子替换单库。旧程序不能读取压缩格式。macOS 宿主机与 Docker Linux 容器的文件锁不互斥，维护共享旧库前应停止相关进程。
+左下角“行情”气泡显示 MySQL 中上证指数最新日线的日期，并区分读取中、暂无记录和读取失败。行情与研究数据由外部项目维护。最新指数日期只代表该指数的日线覆盖。选股的盘中信号取该股票最新入库分钟，更新速度取决于外部项目的写入频率。
 
 ### 自由搭建策略
 
@@ -203,10 +195,8 @@ go vet ./internal/lab/...
 等分析流程只消费指标，不再在循环中覆盖回测报告。
 
 运行时根目录默认从当前目录向上查找最近的 `go.mod`，因此从
-`internal/lab` 等子目录运行测试时，TDX 配置与数据库仍固定解析到项目根目录，
-不会在源码包内生成 `data/`。构建后的程序若从仓库外启动，可显式设置
-`STRATEGY_TAIL_ROOT`；`pull.database` 使用绝对路径时保持不变，可将大型行情库
-放在仓库之外。
+`internal/lab` 等子目录启动时，配置和本地运行状态仍解析到项目根目录。
+从仓库外启动构建后的程序时，可显式设置 `STRATEGY_TAIL_ROOT`。
 
 命令自身的运行文件也遵循同一边界：`cmd/screen` 的交易数据库和本地 Web
 资源按运行时根目录解析，从命令子目录启动不会在源码目录中生成额外的
@@ -214,7 +204,7 @@ go vet ./internal/lab/...
 
 导入根包只读取配置。临时回测通过 `common.OpenResearchMarket()` 打开只读行情库，
 现有应用通过 `common.Initialize()` 或 `common.MustInitialize()` 初始化完整运行时。
-行情和研究数据由项目外维护，日常研究使用已入库的数据。历史维护入口及其副作用见[命令说明](cmd/README.md)。
+行情和研究数据由项目外维护，日常研究使用已入库的数据。
 
 非 K 线研究数据通过 `researchdata.Provider` 暴露目录和拉取能力，通过
 `researchdata.Store`（或其他 `researchdata.View` 实现）提供时点查询。每条记录必须同时记录：
@@ -249,27 +239,11 @@ go vet ./internal/lab/...
 ```
 
 新增真实供应商时，应先把供应商字段规范化为稳定 Dataset ID/Field，再构造因子；不要让供应商原始字段名进入策略。`researchdata.Store` 是有界研究和测试实现，全市场长期历史可换成数据库实现，只要保持 `researchdata.View` 契约。
-默认 Lab Runner 使用 `common.ResearchData`；运行时初始化后它指向本地 SQLite `View`，测试或有界任务仍可注入内存 `Hub`。供应商适配器注册并加载数据后，无需修改 Runner 即可把同一 PIT 视图交给上下文因子。
+默认 Lab Runner 使用 `common.ResearchData`，从 MySQL 查询研究记录。测试或有界任务可注入内存 `Hub`。
 
 ### 历史估值数据
 
-`cmd/valuation-sync` 从东方财富估值分析公开历史接口同步 A 股日频估值，规范化为
-`valuation.daily` 并写入 `research.valuation.database`（默认
-`data/research/valuation.db`）。Lab 启动时只读取本地库，不会隐式联网更新。
-
-```powershell
-# 先用少量股票验证；代码可写 sh600519、600519.SH 或裸 6 位代码
-go run ./cmd/valuation-sync -codes sh600519,sz000001 -start 2020-01-01
-
-# 明确要求后才同步当前本地股票列表，避免误触发全市场长任务
-go run ./cmd/valuation-sync -all -start 2020-01-01 -workers 4
-```
-
-当前注册的历史估值因子包括 `pe_ttm`、`pe_static`、`pb_mrq`、`ps_ttm`、
-`pcf_ocf_ttm` 和 `peg`；同一数据集还保留收盘价、总/流通市值及总/流通股本。
-供应商记录的交易日按当日 15:00 视为可见，因此适用于“收盘信号、下一交易日执行”
-研究。由于公开历史接口不提供原始修订日志，记录会标记
-`pit_status=unverified_revision_history`，严格 PIT 验证不得把它提升为已验证证据。
+`valuation.daily` 来自外部维护方写入的 MySQL `research_records`。注册的估值因子包括 `pe_ttm`、`pe_static`、`pb_mrq`、`ps_ttm`、`pcf_ocf_ttm` 和 `peg`。历史信号只能读取当时可见的记录。表结构与缺数行为见 [MySQL 数据源](docs/guides/mysql-storage.md#研究数据)。
 
 ## 已知边界
 
@@ -277,7 +251,7 @@ go run ./cmd/valuation-sync -all -start 2020-01-01 -workers 4
 - `PositionConfig.MaxPositions` 已配置但当前回测只实际约束 `MaxPerCode`，不要把报告解读为已执行账户级全局仓位上限。
 - `AuditLookAhead()` 是成交价与 K 线一致性检查，不等于完整的严格时点可见性证明。
 - 上下文因子的 PIT 正确性依赖供应商提供可信的 `AvailableAt`；只有当前快照、没有发布日期或修订历史的数据不能用于严格历史 IC/回测。
-- 本地 TDX 数据覆盖和更新时间必须随实验结果披露。
+- MySQL 数据覆盖和最新入库日期必须随实验结果披露。
 
 ## 开发与验证
 
@@ -299,14 +273,14 @@ git diff --check
 
 回测进度按当前阶段显示：准备数据 → 加载行情（股票数）→ 模拟交易（交易日数）→ 生成报告。百分比标为“本阶段”，阶段切换重新计数，不代表剩余耗时；准备与报告生成期间显示不定进度，报告保存成功才显示完成。旧逐股回测使用“执行回测”，参数回测仍按“股票×年份”计数。
 
-因子分析、组合运行、组合验证和行情更新也使用相同规则。因子股票处理结束后，继续显示 IC 统计、分组收益、年度结果和报告生成等真实阶段；组合任务分别显示变换、合成、模拟交易、指标、归因与保存。行情更新分别统计日线和分钟线标的数，估值采集及保存阶段不估算百分比，失败汇总仍使用累计数量。后台完成后若页面仍在下载报告，任务栏显示“读取结果”，读取成功才显示完成；读取失败可重试读取，不重新运行任务。
+因子分析、组合运行和组合验证也使用相同规则。因子股票处理结束后，继续显示 IC 统计、分组收益、年度结果和报告生成等阶段。组合任务分别显示变换、合成、模拟交易、指标、归因与保存。后台完成后若页面仍在下载报告，任务栏显示“读取结果”，读取成功才显示完成。读取失败可单独重试。
 
 盘感练习以题库组织：选择策略和年份先建立固定快照题库，再开始一次训练。训练内“开始下一题”直接复用题库且不重复；“结束本题”保留训练，“结束训练并生成报告”统计本次正式作答。最后一题结束自动生成报告，支持下载与逐题复盘。旧记录在“历史单题 / 重练”中保留，不自动归入训练。详见[题库训练约定](docs/plans/2026-10-19-practice-training.md)。
 
 ### 本地 tdx v2 依赖
 
-当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值；旧 SQLite 文件保留原格式，迁移工具在导入 MySQL 时完成转换。策略均线精度变化及兼容边界见 [v2 迁移说明](docs/guides/tdx-v2-migration.md)。
+当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值。历史策略均线精度变化见 [tdx v2 迁移记录](docs/guides/tdx-v2-migration.md)。
 
 `./deploy.sh` 会将本地 SDK 作为 Docker 命名构建上下文传入；手动构建使用 `docker build --build-context tdx=../tdx -t strategy-lab .`。
 
-运行前在私有 `config/mysql.yaml` 中配置 `pull.mysql`，或通过同名环境变量注入；缺少配置会报错。应用从同一 MySQL 读取行情和股票池，外部项目负责同步。行情表保存源日期或日期时分。旧行情文件供独立的历史迁移命令使用。详见 [MySQL 配置](docs/guides/mysql-storage.md#配置与验证边界) 和 [源时间与数据层约定](docs/guides/source-time-storage.md)。
+运行前在私有 `config/mysql.yaml` 中配置 `pull.mysql`，或通过同名环境变量注入。缺少配置会报错。应用从同一 MySQL 读取行情、股票池及研究数据，外部项目负责同步。详见 [MySQL 配置](docs/guides/mysql-storage.md#连接配置) 和 [源时间与策略口径](docs/guides/source-time-storage.md)。

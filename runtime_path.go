@@ -1,7 +1,6 @@
 package common
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 )
@@ -78,24 +77,4 @@ func findModuleRoot(start string) (string, bool) {
 		}
 		dir = parent
 	}
-}
-
-// withRuntimeRoot 仅在包初始化的单线程阶段切换工作目录，让仍依赖 cwd 的
-// 上游 TDX 构造器从项目 data/config 目录初始化；返回前始终恢复调用方目录。
-func withRuntimeRoot(fn func() error) (err error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	if filepath.Clean(cwd) == runtimeRoot {
-		return fn()
-	}
-	if err := os.Chdir(runtimeRoot); err != nil {
-		return err
-	}
-	defer func() {
-		// fn 失败时恢复目录的错误也不能被吞掉,用 Join 同时保留两侧错误。
-		err = errors.Join(err, os.Chdir(cwd))
-	}()
-	return fn()
 }

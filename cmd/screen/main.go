@@ -7,20 +7,15 @@ import (
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/internal/xorms"
-	"github.com/injoyai/tdx/v2"
 )
 
 func init() {
 	logs.Info("版本:", "v1.4.6")
-	logs.Info("详情:", "修复盘后历史数据没有更新的问题")
+	logs.Info("详情:", "选股基于 MySQL 已入库的行情")
 }
 
 func main() {
 	common.MustInitialize()
-	pool, err := tdx.NewPool(func() (tdx.Client, error) { return tdx.DialDefault() }, 1)
-	logs.PanicErr(err)
-	defer pool.Close()
-	common.Manage.ClientPool = pool
 
 	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
 	logs.PanicErr(err)
@@ -32,7 +27,7 @@ func main() {
 	svc := &ScreenService{
 		DB:           db,
 		LookbackDays: cfg.GetInt("screen.lookback", 180),
-		Interval:     cfg.GetDuration("screen.interval", time.Second*5),
+		Interval:     cfg.GetDuration("screen.interval", time.Minute),
 		Goroutines:   common.DefaultGoroutines,
 		Codes:        common.GetAllCodes(),
 		Strategies:   screenStrategies(ks),

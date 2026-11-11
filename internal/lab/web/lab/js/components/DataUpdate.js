@@ -28,7 +28,7 @@ export default {
     },
     async poll() {
       try {
-        const status = await Api.dataUpdateStatus();
+        const status = await Api.marketDataStatus();
         if (this.disposed) return;
         this.status = status;
         this.error = '';

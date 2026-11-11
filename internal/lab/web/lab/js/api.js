@@ -18,7 +18,7 @@ export const Api = {
   stockInfo: (code, asOf = '') => api('GET', '/api/stock-info/' + encodeURIComponent(code) + (asOf ? '?asOf=' + encodeURIComponent(asOf) : '')),
   macdConfig: () => api('GET', '/api/macd/config'),
   runMACD: cfg => api('POST', '/api/macd/run', cfg),
-  dataUpdateStatus: () => api('GET', '/api/data-update/status'),
+  marketDataStatus: () => api('GET', '/api/market-data/status'),
   // 脚本编辑器 / 回测
   getScript: () => api('GET', '/api/script'),
   checkScript: content => api('POST', '/api/script/check', {content}),

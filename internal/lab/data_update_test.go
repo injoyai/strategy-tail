@@ -19,7 +19,7 @@ func TestMarketDataStatusReadsStoredBenchmarkDate(t *testing.T) {
 	s := NewServer()
 	read := func() marketDataStatus {
 		w := httptest.NewRecorder()
-		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/data-update/status", nil))
+		s.Handler().ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/market-data/status", nil))
 		var status marketDataStatus
 		if err := json.Unmarshal(w.Body.Bytes(), &status); w.Code != http.StatusOK || err != nil {
 			t.Fatalf("status %d, parse error %v", w.Code, err)

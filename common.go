@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
@@ -123,76 +122,53 @@ const (
 	万                 = 1e4
 	亿                 = 1e8
 	DefaultGoroutines = 10
-	DatabaseDir       = extend.DefaultDatabaseDir
 )
 
 var (
-	Pull         *extend.PullKline
+	Pull         *extend.MarketReader
 	Manage       *extend.MarketData
 	ResearchData researchdata.View = researchdata.NewHub()
 	runtimeOnce  sync.Once
 	runtimeErr   error
 
-	// DefaultUniverse 默认只读股票池：优先加载本地成员文件（路径仅来自本地
-	// 配置 research.universe，HTTP 请求不得指定），文件缺失或加载失败时显式
+	// DefaultUniverse 默认只读股票池：优先加载 MySQL 历史成员表，缺失时显式
 	// 降级行情日线股票池——含本地保留的退市代码，但没有逐日成员关系，
 	// PIT 恒为 unverified，只支撑 exploratory 证据等级。
 	DefaultUniverse researchdata.Universe
 )
 
-// UniverseFile 股票池成员文件路径，仅来自本地配置。
-func UniverseFile() string {
-	return ResolveRuntimePath(cfg.GetString("research.universe", "config/universe.csv"))
-}
-
-// newDefaultUniverse 构造默认股票池；宽松模式加载（非法行跳过并计数披露），
-// 失败一律降级行情日线股票池并告警。
-func newDefaultUniverse() researchdata.Universe {
-	path := UniverseFile()
-	u, fallback, err := researchdata.LoadUniverseOrDefault(path, researchdata.FileUniverseConfig{}, false, nil)
-	if err != nil {
-		logs.Warnf("universe 文件加载失败，使用行情日线股票池: path=%s err=%v", path, err)
-		return &localUniverse{}
-	}
-	if fallback {
-		logs.Warnf("universe 文件不存在，使用行情日线股票池（成员历史未验证，仅 exploratory）: %s", path)
-		return &localUniverse{}
-	}
-	return u
-}
-
-// Initialize 显式初始化 TDX 管理器、MySQL 行情读取器与默认股票池。
+// Initialize 加载 MySQL 行情读取器、研究视图与股票池。
 // 它是并发安全且幂等的；导入 common 包本身不再打开或创建数据库。
 func Initialize() error {
 	runtimeOnce.Do(func() {
 		logs.SetFormatter(logs.TimeFormatter)
-		runtimeErr = withRuntimeRoot(func() error {
+		runtimeErr = func() error {
 			dsn, err := MySQLDSN()
 			if err != nil {
 				return err
 			}
-			databaseDir := ResolveRuntimePath(cfg.GetString("pull.database", extend.DefaultDatabaseDir))
-			researchPath := ResolveRuntimePath(cfg.GetString("research.valuation.database", "data/research/valuation.db"))
-			p, err := extend.OpenReadOnlyPullKline(dsn)
+			p, err := extend.OpenMarketReader(dsn)
 			if err != nil {
 				return err
 			}
-			m, err := extend.ReadMarketMetadata(databaseDir)
+			data, err := p.ResearchView()
 			if err != nil {
 				_ = p.Close()
 				return err
 			}
-			data, err := researchdata.OpenSQLiteView(researchPath)
+			universe, err := p.MembershipUniverse()
 			if err != nil {
 				_ = p.Close()
 				return err
 			}
-			p.Config.Equity = m.Gbbq
-			Pull, Manage, ResearchData = p, m, data
+			if universe == nil {
+				logs.Warn("MySQL 未提供历史成员股票池，使用日线证券集合，成员历史未验证")
+				universe = &localUniverse{}
+			}
+			Pull, Manage, ResearchData, DefaultUniverse = p, p.Metadata(), data, universe
 			logs.Infof("行情存储: %s", Pull.StorageIdentity())
-			DefaultUniverse = newDefaultUniverse()
 			return nil
-		})
+		}()
 	})
 	return runtimeErr
 }
@@ -200,11 +176,6 @@ func Initialize() error {
 // MustInitialize 用于命令入口；初始化失败时沿用项目现有的 fail-fast 行为。
 func MustInitialize() {
 	logs.PanicErr(Initialize())
-}
-
-// Update reports the retired synchronization entry point.
-func Update() error {
-	return extend.ErrReadOnlyMarket
 }
 
 // GetNoPriceLimitCodes 返回已存主板日线代码，供历史回测与历史筛选使用。
@@ -216,7 +187,7 @@ func GetNoPriceLimitCodes() []string {
 
 func Get沪深Codes() []string {
 	codes := []string(nil)
-	for _, code := range Manage.Codes.GetStockCodes() {
+	for _, code := range GetAllCodes() {
 		if strings.HasPrefix(code, "sz") || strings.HasPrefix(code, "sh") {
 			codes = append(codes, code)
 		}
@@ -248,7 +219,7 @@ const (
 // 分红数据来自 tdx Gbbq 内存缓存，价格读取仅针对通过分红筛选的候选，全市场扫描开销小。
 func Get红利Codes() []string {
 	now := time.Now()
-	equity := Manage.Gbbq()
+	equity := Manage.Equity
 	if equity == nil {
 		return nil
 	}
@@ -261,7 +232,7 @@ func Get红利Codes() []string {
 	候选s := []候选(nil)
 	for _, code := range Get沪深Codes() {
 		name := Manage.Codes.GetName(code)
-		if strings.Contains(name, "ST") || strings.Contains(name, "退") {
+		if name == "" || strings.Contains(name, "ST") || strings.Contains(name, "退") {
 			continue
 		}
 		events := equity.GetXRXDs(code)
@@ -345,7 +316,12 @@ func 近一年每股分红(events protocol.XRXDs, now time.Time) float64 {
 }
 
 func GetAllCodes() []string {
-	return Manage.Codes.GetStockCodes()
+	if codes := Manage.Codes.GetStockCodes(); len(codes) > 0 {
+		return codes
+	}
+	codes, err := Pull.LocalStockCodes()
+	logs.PanicErr(err)
+	return codes
 }
 
 func GetIndexCodes() []string {

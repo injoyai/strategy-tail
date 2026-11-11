@@ -7,8 +7,8 @@
 | 用途 | 入口与口径 |
 | --- | --- |
 | 读取项目行情 | 根包 `common.OpenResearchMarket()` 复用 `pull.mysql`。返回的读取器提供 `DayKlines(code, start, end)`、`MinKlines(code, start, end)`、`LocalStockCodes()`、`StorageIdentity()` 和 `Close()`。打开连接及查询只访问 MySQL 已有表。见[入口源码](../../research_market.go)和[读取器](../../lib/extend/market_reader.go)。 |
-| 日期、分钟和证券范围 | 日线日期闭区间，零值端点为无界。分钟线按 `start` 到 `end` 所在年份整年读取，非整年实验在调用方按东八区日期和时间再切分。代码带市场前缀，例如 `sh600000`、`sh000300`。股本字段取自已入库日线。`LocalStockCodes()` 是有日线的库存代码集合，包含库中保留的退市股票，成员资格历史需另查。 |
-| 历史股票池与非行情字段 | 本地成员文件可通过 `researchdata.LoadUniverseFile(common.UniverseFile(), cfg, strict)` 加载，核对 `Universe.Snapshot()` 及按日期的 `Codes`。已有 Lab 的 `researchdata.View` 可用 `Latest`、`Range` 按 `AsOf` 查询本地研究数据。`OpenSQLiteStore` 会初始化库，Lab 使用 `OpenSQLiteView` 打开已有文件。见[股票池契约](../../researchdata/universe.go)和[研究数据契约](../../researchdata/contract.go)。 |
+| 日期、分钟和证券范围 | 日线日期闭区间，零值端点为无界。`MinKlines` 读取端点所在年份的全年分钟线。`MinuteKlines` 按东八区时分查询指定区间。代码带市场前缀，例如 `sh600000`、`sh000300`。股本按交易日取自 `gbbq`。`LocalStockCodes()` 枚举有日线的库存代码，包含库中保留的退市股票。 |
+| 历史股票池与非行情字段 | `market.MembershipUniverse()` 读取 MySQL 历史成员，核对 `Universe.Snapshot()` 和按日期的 `Codes`。`market.ResearchView()` 提供 `Latest`、`Range` 按 `AsOf` 查询 MySQL 研究数据。所需字段见 [MySQL 数据源](mysql-storage.md#研究数据)。 |
 | 逐标的或多方案回测 | 将策略声明为 `researchrun.Variant`，把读取器方法接到 `researchrun.Config`，调用 `Run` 并检查 `Coverage`。取数或运行自定义模型可用 `ForEachCodeData` 或 `ForEachCodeYearData`，回调由多个 worker 并发执行。见[执行器](../../internal/researchrun/runner.go)。 |
 | 账户回测 | 已有 Lab 可用 `POST /api/builder/run` 或 `POST /api/strategy/run` 运行可表达的策略，请求带 `account` 资金参数。通过 `GET /api/status` 确认成功后，从 `GET /api/report/latest` 获取报告，核对 ID 是本次新增且配置相符，再用 `GET /api/report/{id}` 定位。可用 `GET /api/kline/{code}?from=YYYY-MM-DD&to=YYYY-MM-DD` 检查日线。见[回测路由](../../internal/lab/server.go)和[账户参数](../../internal/lab/account_backtest.go)。 |
 

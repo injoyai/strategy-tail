@@ -29,10 +29,8 @@ fi
 
 check_idle() {
     if [ "${old_running}" = true ]; then
-        for endpoint in status data-update/status; do
-            docker exec "${CONTAINER}" wget -qO- "http://127.0.0.1:8765/api/${endpoint}" |
-                python3 -c 'import json,sys; state=json.load(sys.stdin).get("state"); sys.exit(0 if state in ("idle","done","error") else "任务或行情更新正在运行，或状态未知，请完成任务后重试部署")'
-        done
+        docker exec "${CONTAINER}" wget -qO- 'http://127.0.0.1:8765/api/status' |
+            python3 -c 'import json,sys; state=json.load(sys.stdin).get("state"); sys.exit(0 if state in ("idle","done","error") else "任务正在运行或状态未知，请完成任务后重试部署")'
     fi
 }
 
@@ -86,8 +84,8 @@ docker run -d \
 
 for _ in $(seq 1 30); do
     if docker exec "${CONTAINER}" wget -qO- 'http://127.0.0.1:8765/api/builder/components' >/dev/null 2>&1 &&
-       docker exec "${CONTAINER}" wget -qO- 'http://127.0.0.1:8765/api/data-update/status' |
-           python3 -c 'import json,sys; status=json.load(sys.stdin); sys.exit(0 if status.get("storage", "").startswith("mysql://") and not (status.get("lastSuccessError") or status.get("readError")) else 1)' >/dev/null 2>&1; then
+       docker exec "${CONTAINER}" wget -qO- 'http://127.0.0.1:8765/api/market-data/status' |
+           python3 -c 'import json,sys; status=json.load(sys.stdin); sys.exit(0 if status.get("storage", "").startswith("mysql://") and not status.get("readError") else 1)' >/dev/null 2>&1; then
         echo "部署完成: http://127.0.0.1:${HOST_PORT}"
         if [ "${old_exists}" -eq 1 ]; then
             echo "已保留旧容器: ${BACKUP}（停止新容器后可恢复）"

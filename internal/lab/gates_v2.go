@@ -274,13 +274,12 @@ func ReleaseCandidateHash(files []KeyFileHash) string {
 // 门禁输入；发布文档 §限制 与此一致）。门禁评估不修改任何产物或状态。
 var ReleaseLimitations = []string{
 	"涨跌停/停牌未建模：runner 按股票池成员判定可交易性，不读涨跌停/停牌状态（执行层 DayMarket 已具备 LimitUp/LimitDown/Tradable 能力，数据接入未落地）",
-	"市值/行业数据依赖：行业上限启用需要行业映射（数据源未接入，选中股票缺行业 fail closed）；市值中性化/市值因子依赖本地估值库，v2 尚未接入",
+	"市值/行业数据依赖：行业上限启用需要行业映射（数据源未接入，选中股票缺行业 fail closed）；市值中性化/市值因子依赖历史估值，v2 尚未接入",
 	"市场阶段/滚动窗口稳定性、行业/市值集中度门禁、单因子组合增量比较未落地（Task 6/9/10 记录；门禁阈值可配置但这些统计未接入验证报告）",
 	"基准未接入：Benchmark.Available=false；缺基准不阻止绝对收益报告，但 IR 门禁缺基准/对齐不足时 fail（无法判定超额，语义文档化）",
 	"归因限制：v2 归因是统计分解（收益来源的算术/复利分解），不是因果证明，也不是完整风险模型归因；净值口径与算术累计存在复利交叉项/成交时点/整手偏离残差（显式披露，不静默抹平）",
 	"target.go：无任何单票/行业上限配置时，可交易性剔除后释放权重不再分配（capSolve 仅在至少一个上限启用时水填充），随后 StepTarget 权重和校验失败 → 结构化 insufficient（fail closed 不静默放宽）；该实现与设计 §8.2 注释在无上限场景不一致，已测锁定（Minor 观察项）",
 	"portfolio_runner FinishedAt 用 time.Now：report.json 的 startedAt/finishedAt 是运行时刻信息（确定性字段外差异）；CSV 产物、指标、归因、净值逐位一致（TestAuditE2EDeterminismAndRestart 锁定）",
-	"cmd/valuation-sync：-codes 分支未显式初始化运行时（上游遗留失败，需差分归因；-all 分支已显式 common.Initialize()）",
 	"模型列表筛选/排序为当前页内（GET /api/factor-models 无分页参数，前端本地分页并写 URL page）；无模型归档/恢复 HTTP 路由；无 v1 验证列表路由（证据区聚合已有模型的 validatedFactors）",
 	"滚动 IC 训练窗 = 视图日期最后 windowYears×250 天（交易日近似），非自然年窗口；训练窗内数据不足时按冻结 fallback（等权/现金）不临时择优",
 	"性能无预设阈值：20 因子 × 300 股票 × 750 交易日 ≈ 2.9s / 峰值内存 1215MB（HeapAlloc 采样）/ 产物 ≈2.77MB（report.json + 四类 CSV 估算），仅记录绝对值，机器相关（Task 11 基准，本机实测为准）",

@@ -1,32 +1,16 @@
 # 公共运行配置；相对路径以 RuntimeRoot() 为基准（可用 STRATEGY_TAIL_ROOT 指定）。
-# Lab 监听地址使用 LAB_ADDR，自动更新设置保存于 data/lab/data-update.json。
+# Lab 监听地址使用 LAB_ADDR。
 
-# 行情存储与显式更新（cmd/update、Lab 手动更新及启用后的自动更新共用）。
+# 外部项目维护行情和研究数据。本应用只查询 MySQL。
 pull:
-  # 相对路径会按项目根目录解析；也可填写绝对路径把大型行情库放到仓库外。
-  database: "./data/database"
-
-  # 行情必须使用 MySQL。真实连接保存在未提交的 config/mysql.yaml（同名键），
-  # 或通过 env "pull.mysql=..." 注入；环境值优先。没有配置时启动失败，不回落本地行情。
+  # 私有 config/mysql.yaml 或环境变量 pull.mysql 提供连接配置。
   mysql: ""
-
-  types:
-    - day
-    - minute
-
-  goroutines: 10                 # 更新并发数；不控制回测或选股并发
-
-# 研究数据
-research:
-  valuation:
-    # 历史估值及每日TDX主板PE、股息率快照的本地持久库。
-    database: "./data/research/valuation.db"
 
 # 实时筛选服务（仅 cmd/screen 使用；Lab 不读取本节）。
 screen:
   port: 9090
   lookback: 60                   # 历史买点回看交易日数
-  interval: 5s                  # 实时筛选刷新间隔
+  interval: 1m                  # 已入库分钟行情刷新间隔
 
   html:
     local: true                 # 优先读取 cmd/screen/web，文件缺失时使用嵌入资源

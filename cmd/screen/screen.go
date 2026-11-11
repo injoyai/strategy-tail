@@ -4,25 +4,23 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/injoyai/strategy-tail/internal/update"
-	"github.com/robfig/cron/v3"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	_ "github.com/glebarez/go-sqlite"
 	"github.com/injoyai/bar"
 	"github.com/injoyai/frame/fbr" // Web框架
 	"github.com/injoyai/goutil/times"
 	"github.com/injoyai/logs" // 日志库
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core" // 选股核心模块
+	"github.com/injoyai/strategy-tail/internal/update"
 	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
 	"github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/v2" // 通达信SDK
 	"github.com/injoyai/tdx/v2/protocol"
+	"github.com/robfig/cron/v3"
 
 	"xorm.io/xorm"
 )
@@ -55,54 +53,41 @@ type ScreenService struct {
 }
 
 // update 更新实时数据
-func (this *ScreenService) updateRealtime(first bool) error {
+func (this *ScreenService) updateRealtime() error {
 	realKlines, err := this.getRealtimeKlines()
 	if err != nil {
 		return err
 	}
 
-	this.mu.Lock()
-	this.lastPrices = realKlines
-	this.mu.Unlock()
-
-	if !common.IsTradingTime() && !first {
-		return nil
-	}
-
-	realtimeKlinesMap := map[string]extend.Klines{}
-	// historyDayKlines 由写侧在锁内原地更新,读侧必须持读锁遍历,避免并发读写 map 竞态。
+	realtimeKlinesMap := make(map[string]extend.Klines, len(this.Codes))
+	// Read a stable historical cache, then publish the new snapshot together.
 	this.mu.RLock()
 	for _, code := range this.Codes {
-		ks := extend.Klines{}
-		for _, v := range this.historyDayKlines[code] {
-			ks = append(ks, v)
-		}
-
-		if len(ks) < 1 {
+		ks := append(extend.Klines(nil), this.historyDayKlines[code]...)
+		if len(ks) == 0 {
 			continue
 		}
-
 		last := ks[len(ks)-1]
-
-		realKline := realKlines[code]
-		if realKline != nil {
-			switch {
-			case realKline.Time.Format(time.DateOnly) > last.Time.Format(time.DateOnly):
-				ks = append(ks, &extend.Kline{
-					Unix:       realKline.Time.Unix(),
-					Kline:      realKline,
-					FloatStock: last.FloatStock,
-					TotalStock: last.TotalStock,
-				})
-			case realKline.Time.Format(time.DateOnly) == last.Time.Format(time.DateOnly):
-				ks[len(ks)-1].Kline = realKline
+		intraday := realKlines[code]
+		if intraday == nil || intraday.Time.Format(time.DateOnly) <= last.Time.Format(time.DateOnly) {
+			realKlines[code] = last.Kline
+			realtimeKlinesMap[code] = ks
+			continue
+		}
+		intraday.Last = last.Close
+		bar := &extend.Kline{Unix: intraday.Time.Unix(), Kline: intraday}
+		if equity := common.Pull.EquityAt(code, intraday.Time); equity != nil {
+			bar.FloatStock, bar.TotalStock = equity.Float, equity.Total
+			if equity.Float > 0 {
+				bar.Turnover = equity.Turnover(protocol.ToShares(intraday.Volume))
 			}
 		}
-		realtimeKlinesMap[code] = ks
+		realtimeKlinesMap[code] = append(ks, bar)
 	}
 	this.mu.RUnlock()
 
 	this.mu.Lock()
+	this.lastPrices = realKlines
 	this.realtimeDayKlines = realtimeKlinesMap
 	this.mu.Unlock()
 
@@ -286,7 +271,7 @@ func (this *ScreenService) Run() error {
 		if first || trading {
 
 			//更新实时数据
-			err := this.updateRealtime(first)
+			err := this.updateRealtime()
 			logs.PrintErr(err)
 
 			//计算实时卖点
@@ -305,7 +290,7 @@ func (this *ScreenService) Run() error {
 
 // realtimeShells 计算实时卖点
 func (this *ScreenService) realtimeShells() error {
-	todayDate := time.Now().Format(time.DateOnly)
+	todayDate := time.Now().In(protocol.Location()).Format(time.DateOnly)
 
 	//从本地加载历史成交
 	trades, err := this.loadingTrades()
@@ -355,7 +340,7 @@ func (this *ScreenService) realtimeShells() error {
 // realtimeBuys 实时计算的买点
 func (this *ScreenService) realtimeBuys() {
 	items := []*Trade(nil)
-	today := time.Now().Format(time.DateOnly)
+	today := time.Now().In(protocol.Location()).Format(time.DateOnly)
 	for _, code := range this.Codes {
 		this.mu.RLock()
 		ks := this.realtimeDayKlines[code]
@@ -706,7 +691,7 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 			}
 
 			now := time.Now().In(protocol.Location())
-			mks, err := common.Pull.MinKlines(code, now.AddDate(0, 0, -days-3), now)
+			mks, err := common.Pull.MinuteKlines(code, now.AddDate(0, 0, -days-3), now)
 
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)
@@ -767,42 +752,7 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 	return ts, errors.Join(failures...)
 }
 
-// getRealtimeQuotes - 批量获取实时行情
-// 通达信 API 每次最多支持 80 个代码，需分批拉取
+// getRealtimeKlines uses the latest stored minute of each symbol's current session.
 func (this *ScreenService) getRealtimeKlines() (map[string]*protocol.Kline, error) {
-	codes := this.Codes
-	quoteKline := make(map[string]*protocol.Kline, len(codes))
-	batchSize := 80
-
-	b := bar.New(
-		bar.WithTotal(int64(len(codes))),
-		bar.WithPrefix("[实时行情]"),
-		bar.WithFlush(),
-	)
-	defer b.Close()
-
-	for i := 0; i < len(codes); i += batchSize {
-		end := i + batchSize
-		if end > len(codes) {
-			end = len(codes)
-		}
-		if err := common.Manage.Do(func(c tdx.Client) error {
-			quotes, err := c.GetQuote(codes[i:end]...)
-			if err != nil {
-				return err
-			}
-			for _, q := range quotes {
-				if q.Standard == nil {
-					return fmt.Errorf("非标准行情无法用于当前选股模型: %s", q.Instrument.String())
-				}
-				quoteKline[q.Instrument.Exchange.String()+q.Instrument.Code] = q.Standard.Kline
-			}
-			return nil
-		}); err != nil {
-			logs.Errf("[行情] 批量获取失败(%d-%d): %v", i, end, err)
-		}
-		b.Add(int64(end - i)).Flush()
-	}
-
-	return quoteKline, nil
+	return common.Pull.StockSessionBars(this.Codes, time.Now())
 }

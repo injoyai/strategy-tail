@@ -1,5 +1,7 @@
 # tdx v2 本地迁移
 
+本文记录最初升级 tdx v2 时的状态和回测对照。当前运行数据源见 [MySQL 数据源](mysql-storage.md)。
+
 本仓库已从 `github.com/injoyai/tdx v0.0.87` 迁到 `github.com/injoyai/tdx/v2`。迁移包括客户端、价格类型、策略和旧数据读取；尚未接入 MySQL，也没有部署到运行中的服务。
 
 ## 开发与构建

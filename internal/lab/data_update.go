@@ -8,7 +8,6 @@ import (
 )
 
 type marketDataStatus struct {
-	State         string `json:"state"`
 	Storage       string `json:"storage,omitempty"`
 	BenchmarkDate string `json:"benchmarkDate,omitempty"`
 	ReadError     string `json:"readError,omitempty"`
@@ -34,9 +33,8 @@ func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// handleDataUpdateStatus keeps the existing status URL for deployed clients.
-func (s *Server) handleDataUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	status := marketDataStatus{State: "idle"}
+func (s *Server) handleMarketDataStatus(w http.ResponseWriter, r *http.Request) {
+	status := marketDataStatus{}
 	if common.Pull != nil {
 		status.Storage = common.Pull.StorageIdentity()
 		date, err := common.Pull.LatestDayDate("sh000001")

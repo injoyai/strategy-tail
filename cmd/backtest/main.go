@@ -13,8 +13,6 @@ import (
 func main() {
 	common.MustInitialize()
 
-	common.Update()
-
 	codes := common.GetNoPriceLimitCodes()
 
 	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())

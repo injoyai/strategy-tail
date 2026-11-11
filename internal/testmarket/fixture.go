@@ -1,76 +1,112 @@
-// Package testmarket provides fixture storage for tests without a MySQL server.
-// Application binaries do not import this package.
+// Package testmarket provides in-memory bar fixtures for application tests.
 package testmarket
 
 import (
-	"path/filepath"
+	"errors"
+	"slices"
 	"sync"
-	"testing"
+	"time"
 
-	"github.com/injoyai/strategy-tail/internal/marketstore"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/storage/sqlite"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 type Store struct {
-	*sqlite.PullStore
 	mu     sync.RWMutex
-	extras map[model.Code]map[string]marketstore.DayRecord
+	days   map[model.Code][]*model.KlineDay
+	equity map[string]map[string]protocol.Equity
+	closed bool
 }
 
-func Open(t testing.TB, dir string) *Store {
-	t.Helper()
-	s, err := sqlite.NewPull(filepath.Join(dir, "fixture-bars"), 4)
-	if err != nil {
-		t.Fatal(err)
+func New() *Store {
+	return &Store{
+		days:   make(map[model.Code][]*model.KlineDay),
+		equity: make(map[string]map[string]protocol.Equity),
 	}
-	t.Cleanup(func() { _ = s.Close() })
-	return &Store{PullStore: s, extras: make(map[model.Code]map[string]marketstore.DayRecord)}
 }
 
-func (s *Store) SeedDay(code model.Code, rows []*marketstore.DayRecord) error {
-	raw := make([]*model.KlineDay, 0, len(rows))
-	extras := make(map[string]marketstore.DayRecord, len(rows))
-	for _, row := range rows {
-		raw = append(raw, &row.KlineDay)
-		extras[row.Time] = *row
-	}
-	if err := s.SaveDay(code, "", raw); err != nil {
-		return err
-	}
-	code.Name = ""
+func (s *Store) Identity() string { return "fixture" }
+
+func (s *Store) Close() error {
 	s.mu.Lock()
-	s.extras[code] = extras
-	s.mu.Unlock()
+	defer s.mu.Unlock()
+	s.closed = true
 	return nil
 }
 
-func (s *Store) QueryDayRecords(code model.Code, start, end string) ([]*marketstore.DayRecord, error) {
-	bars, err := s.QueryDay(code, start, end)
-	if err != nil {
-		return nil, err
+func (s *Store) SeedDay(code model.Code, bars []*model.KlineDay) {
+	code.Name = ""
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rows := slices.Clone(bars)
+	slices.SortFunc(rows, func(a, b *model.KlineDay) int {
+		if a.Time < b.Time {
+			return -1
+		}
+		if a.Time > b.Time {
+			return 1
+		}
+		return 0
+	})
+	s.days[code] = rows
+}
+
+func (s *Store) SeedEquity(code, date string, floatStock, totalStock int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.equity[code] == nil {
+		s.equity[code] = make(map[string]protocol.Equity)
 	}
+	s.equity[code][date] = protocol.Equity{Float: floatStock, Total: totalStock}
+}
+
+func (s *Store) Equity(code string, at time.Time) *protocol.Equity {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	record, ok := s.equity[code][at.Format(time.DateOnly)]
+	if !ok {
+		return nil
+	}
+	return &record
+}
+
+func (s *Store) QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error) {
 	code.Name = ""
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*marketstore.DayRecord, 0, len(bars))
-	for _, bar := range bars {
-		record := s.extras[code][bar.Time]
-		record.KlineDay = *bar
-		out = append(out, &record)
+	if s.closed {
+		return nil, errors.New("fixture closed")
+	}
+	var out []*model.KlineDay
+	for _, row := range s.days[code] {
+		if (start == "" || row.Time >= start) && (end == "" || row.Time <= end) {
+			copy := *row
+			out = append(out, &copy)
+		}
 	}
 	return out, nil
+}
+
+func (s *Store) QueryMinute(model.Code, string, string) ([]*model.KlineMinute, error) {
+	return nil, nil
 }
 
 func (s *Store) DayCodes(market protocol.Market) ([]model.Code, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []model.Code
-	for code, rows := range s.extras {
+	for code, rows := range s.days {
 		if code.Market == market && len(rows) != 0 {
 			out = append(out, code)
 		}
 	}
 	return out, nil
+}
+
+func (s *Store) LastDayTime(code model.Code) (string, error) {
+	rows, err := s.QueryDay(code, "", "")
+	if err != nil || len(rows) == 0 {
+		return "", err
+	}
+	return rows[len(rows)-1].Time, nil
 }

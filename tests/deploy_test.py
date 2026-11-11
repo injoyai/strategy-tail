@@ -22,8 +22,8 @@ elif args[0]=='exec':
   count=int((root/'checks').read_text()) if (root/'checks').exists() else 0
   (root/'checks').write_text(str(count+1))
   print(json.dumps({'state':'running' if scenario=='busy' or (scenario=='busy-after-build' and count==1) else 'idle'}))
- elif args[-1].endswith('/api/data-update/status'):
-  print(json.dumps({'state':'running' if scenario=='update-busy' else 'idle', 'storage':'sqlite-test' if scenario=='wrong-storage' else 'mysql://test/market', 'lastSuccessError':'database unavailable' if scenario=='mysql-unavailable' else ''}))
+ elif args[-1].endswith('/api/market-data/status'):
+  print(json.dumps({'storage':'other-store' if scenario=='wrong-storage' else 'mysql://test/market', 'readError':'database unavailable' if scenario=='mysql-unavailable' else ''}))
  elif scenario=='health-fail': sys.exit(1)
 elif args[0]=='run' and scenario=='run-fail': sys.exit(1)
 elif args[0]=='rename' and scenario=='rename-fail': sys.exit(1)
@@ -82,7 +82,7 @@ class DeployTest(unittest.TestCase):
             return result.returncode, calls
 
     def test_busy_or_build_failure_keeps_old_container(self):
-        for case in ('busy', 'update-busy', 'busy-after-build', 'build-fail'):
+        for case in ('busy', 'busy-after-build', 'build-fail'):
             with self.subTest(case=case):
                 code, calls = self.scenario(case)
                 self.assertNotEqual(code, 0)

@@ -24,7 +24,7 @@ import (
 // 脚本读写、check 报错、run→status→report 生命周期。
 //
 // 数据隔离：chdir 到临时目录（ScriptPath 与 output/ 均为相对路径），
-// 并将 common.Pull 临时替换为指向伪造日K sqlite 的实例（MinKlines 无文件返回空，
+// 并将 common.Pull 临时替换为内存行情（MinKlines 无数据返回空，
 // 引擎 Do() 自动回退日线卖出判定），全程不依赖网络。
 
 //go:embed script/testdata/strategy.go
@@ -107,7 +107,7 @@ func TestServerRunLifecycle(t *testing.T) {
 	t.Chdir(dir)
 
 	// 伪造数据源：sh600000 从 2024-06 起约 250 个交易日恒价上行（每日 +5%，不触涨停过滤）
-	// 直接字面量构造 PullKline（DayKlines/MinKlines 仅依赖 Config.Dir，不建 update.db 连接）
+	// 注入内存行情读取器
 	old := common.Pull
 	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
@@ -510,7 +510,7 @@ func TestServerStopSameOrigin(t *testing.T) {
 	}
 }
 
-// writeFakeDayDB 写入伪造日K sqlite（与 updateDayKline 相同的表结构）。
+// writeFakeDayDB 为内存行情填充日线。
 // 每天开10收10.5（+5%，不触发涨停过滤），恒价保证买入条件每日为真。
 func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 	t.Helper()

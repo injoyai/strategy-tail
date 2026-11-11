@@ -150,7 +150,7 @@ func (s *Server) wirePracticeStores() {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/macd/config", s.handleMACDConfig)
 	s.mux.HandleFunc("POST /api/macd/run", s.handleMACDRun)
-	s.mux.HandleFunc("GET /api/data-update/status", s.handleDataUpdateStatus)
+	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
 	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
 	s.mux.HandleFunc("PUT /api/script", withSameOrigin(s.handlePutScript))
 	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)

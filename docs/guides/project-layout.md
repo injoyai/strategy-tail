@@ -14,9 +14,10 @@ strategy-tail/
 │   ├── factor/                # 因子计算、目录与工厂
 │   ├── util/                  # 策略共用计算
 │   └── script/                # 兼容脚本及 Lab 保存路径
-├── researchdata/              # PIT 数据契约、视图、存储与供应商
-├── lib/extend/                # TDX 行情与本地 SQLite 适配
+├── researchdata/              # PIT 数据契约与研究视图
+├── lib/extend/                # TDX 协议数据到策略 K 线的转换
 ├── internal/
+│   ├── marketstore/           # 外部 MySQL 数据源的只读查询
 │   ├── lab/                   # Web 实验室与任务编排
 │   │   ├── builder/           # 搭建器目录、规则校验与条件构建
 │   │   ├── factorstats/       # 因子统计与中性化纯计算
@@ -36,7 +37,7 @@ strategy-tail/
 └── bin/                       # 编译产物
 ```
 
-根包的 [common.go](../../common.go) 负责公共装配，[config.go](../../config.go) 负责统一配置加载与回测配置读取，[runtime_path.go](../../runtime_path.go) 负责运行时根目录，[local_codes.go](../../local_codes.go) 负责枚举本地行情代码。当前保留的五个命令及启动方式见[命令说明](../../cmd/README.md)。
+根包的 [common.go](../../common.go) 负责公共装配，[config.go](../../config.go) 负责统一配置加载与回测配置读取，[runtime_path.go](../../runtime_path.go) 负责运行时根目录，[local_codes.go](../../local_codes.go) 负责枚举 MySQL 库存行情代码。启动方式见[命令说明](../../cmd/README.md)。
 
 ## Lab 模块入口
 
@@ -59,7 +60,7 @@ strategy-tail/
 | 组合模型、实验执行与接口 | [factor_model.go](../../internal/lab/factor_model.go)、[portfolio_experiment_store.go](../../internal/lab/portfolio_experiment_store.go)、[portfolio_runner.go](../../internal/lab/portfolio_runner.go)、[portfolio_handlers.go](../../internal/lab/portfolio_handlers.go) |
 | 组合计算与交易会计 | [portfolioresearch/](../../internal/portfolioresearch/) |
 | 兼容脚本执行与符号注册 | [script/interp.go](../../internal/lab/script/interp.go)、[script/symbols.go](../../internal/lab/script/symbols.go)；[原入口转发](../../internal/lab/interp.go) |
-| 行情更新与调度 | [data_update.go](../../internal/lab/data_update.go) |
+| MySQL 行情状态 | [data_update.go](../../internal/lab/data_update.go) |
 | 前端页面、组件和样式 | [index.html](../../internal/lab/web/lab/index.html)、[app.js](../../internal/lab/web/lab/js/app.js)、[lab.css](../../internal/lab/web/lab/css/lab.css) |
 
 脚本加载、超时、初始化安全和 Yaegi 绑定测试放在子包；HTTP 生命周期测试留在父包。两者通过编译期嵌入共用 [strategy.go](../../internal/lab/script/testdata/strategy.go) 夹具，不依赖测试时工作目录。运行 `go test ./internal/lab/...` 覆盖两层测试。
@@ -70,9 +71,9 @@ strategy-tail/
 
 ## 任务生命周期与回归边界
 
-回测、因子分析、组合实验、组合验证和行情更新通过 `task.go` 统一初始化和收尾；各功能只执行自身工作、发布自身结果。调用方取得任务互斥锁后，初始化本次配置、计数、阶段、错误和停止令牌，后台回调结束或 panic 后统一释放互斥锁。新任务不清空已完成的回测或分析报告；组合和更新任务的 `/api/status` 不再携带上一项回测的 `config`。
+回测、因子分析、组合实验和组合验证通过 `task.go` 统一初始化和收尾。各功能只执行自身工作、发布自身结果。调用方取得任务互斥锁后，初始化本次配置、计数、阶段、错误和停止令牌，后台回调结束或 panic 后统一释放互斥锁。新任务不清空已完成的回测或分析报告。组合任务的 `/api/status` 不再携带上一项回测的 `config`。
 
-停止策略保留原语义：回测和因子分析主动停止后为 `idle`；组合任务为 `done`，精确终态从对应持久记录读取；行情更新按数据库事务完成，不能用 `/api/stop` 中断。停止请求先固定当前任务令牌及其任务类型，后续任务使用独立令牌。行情更新回调 panic 转为失败状态并持久化，在存储可用时可重启读取或手动重试。
+回测和因子分析主动停止后为 `idle`。组合任务为 `done`，精确终态从对应持久记录读取。停止请求先固定当前任务令牌及其任务类型，后续任务使用独立令牌。
 
 [模块依赖检查](../../internal/lab/module_boundary_test.go)约束七个独立模块的生产代码导入方向：`factorstats`、`portfolioresearch` 只依赖标准库；`builder`、`script` 不反向依赖 Lab；`factor`、`rule`、`researchrun` 不依赖应用编排。新增跨层依赖会使测试失败，需要先评估职责归属，不能仅为通过检查扩充允许列表。`builder` 暂时保留已有的根包数据注入依赖。
 

@@ -12,8 +12,7 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// writeDayDBCloses 按收盘价序列写伪造日K sqlite（表结构同 server_test.go
-// writeFakeDayDB；区别：每日收盘可指定，构造有方向的因子序列）。
+// writeDayDBCloses 用指定的日线收盘价构造因子序列。
 func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base time.Time) {
 	t.Helper()
 	rows := make([]*extend.Kline, 0, len(closes))

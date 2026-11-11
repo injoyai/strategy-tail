@@ -9,6 +9,26 @@ func tuDate(y int, m time.Month, d int) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, time.Local)
 }
 
+func TestHistoricalMembershipIncludesEntireDelistingDate(t *testing.T) {
+	loc := time.FixedZone("Asia/Shanghai", 8*60*60)
+	listed := time.Date(2020, 1, 2, 0, 0, 0, 0, loc)
+	delisted := time.Date(2024, 3, 8, 0, 0, 0, 0, loc)
+	u, err := NewMembershipUniverse([]MembershipRecord{{Code: "sh600000", ListedAt: listed, DelistedAt: delisted, AvailableAt: listed}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	close := delisted.Add(15 * time.Hour)
+	if got, err := u.Contains("sh600000", close); err != nil || !got {
+		t.Fatalf("member on delisting date: %v, %v", got, err)
+	}
+	if got, err := u.Contains("sh600000", close.AddDate(0, 0, 1)); err != nil || got {
+		t.Fatalf("member on the day after delisting: %v, %v", got, err)
+	}
+	if got, err := u.CodesBetween(close, close); err != nil || len(got) != 1 || got[0] != "sh600000" {
+		t.Fatalf("members in delisting interval: %v, %v", got, err)
+	}
+}
+
 func TestStaticUniverseMembership(t *testing.T) {
 	calls := 0
 	u := NewStaticUniverse(StaticUniverseConfig{

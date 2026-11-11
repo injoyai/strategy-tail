@@ -9,7 +9,6 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -18,7 +17,6 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 	t.Cleanup(func() { Pull, Manage, runtimeRoot = oldPull, oldManage, oldRoot })
 	Manage = nil // 历史股票池不应需要 TDX 当前在市列表。
 	runtimeRoot = t.TempDir()
-	root := t.TempDir()
 	store := &universeFixtureStore{}
 	setCodes := func(names ...string) {
 		store.codes = nil
@@ -27,12 +25,12 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 		}
 	}
 	setCodes("sh600000", "sz000003", "sz300001", "sh000001")
-	Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: root, Store: store}}
+	Pull = extend.NewMarketReader(store, nil)
 	want := []string{"sh600000", "sz000003"}
 	if got := GetNoPriceLimitCodes(); !slices.Equal(got, want) {
 		t.Fatalf("本地主板代码 = %v, want %v", got, want)
 	}
-	u := newDefaultUniverse()
+	u := &localUniverse{}
 	codes, err := u.CodesBetween(time.Time{}, time.Now())
 	if err != nil || !slices.Equal(codes, append(want, "sz300001")) {
 		t.Fatalf("本地默认股票池 = %v, %v", codes, err)
@@ -86,7 +84,7 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 }
 
 type universeFixtureStore struct {
-	storage.BarStore
+	extend.MarketSource
 	codes []model.Code
 	err   error
 }

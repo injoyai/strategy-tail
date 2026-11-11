@@ -16,7 +16,6 @@ import (
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/extend/model"
-	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -79,9 +78,8 @@ func TestDiagnoseChartIncludesHistoryBeforeStrategyCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	common.Manage = &extend.MarketData{Codes: catalog}
-	dir := t.TempDir()
-	store := testmarket.Open(t, dir)
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir, Store: store}}
+	store := testmarket.New()
+	common.Pull = extend.NewMarketReader(store, store.Equity)
 	t.Cleanup(func() { common.Pull, common.Manage = oldPull, oldManage })
 	base := time.Date(2020, 1, 1, 15, 0, 0, 0, protocol.Location())
 	ks := extend.Klines{}
@@ -92,9 +90,7 @@ func TestDiagnoseChartIncludesHistoryBeforeStrategyCache(t *testing.T) {
 		ks = append(ks, &extend.Kline{Unix: day.Unix(), Kline: &protocol.Kline{
 			Time: day, Open: 10, Close: 10, High: 11, Low: 9}})
 	}
-	if err := store.SaveDay(model.Code{Market: protocol.MarketAStock, Code: "sh600000"}, "", rows); err != nil {
-		t.Fatal(err)
-	}
+	store.SeedDay(model.Code{Market: protocol.MarketAStock, Code: "sh600000"}, rows)
 	// 缓存中的末日价格包含尚未落库的实时变化。
 	live := *ks[399].Kline
 	live.Close = 12
@@ -154,7 +150,7 @@ func TestHistoryLoadFailureKeepsOldTrades(t *testing.T) {
 }
 
 type failingHistorySource struct {
-	storage.BarStore
+	extend.MarketSource
 	err error
 }
 
@@ -166,7 +162,7 @@ func TestHistoryMinuteFailureKeepsOldTrades(t *testing.T) {
 	failure := errors.New("test minute read failure")
 	oldManage, oldPull := common.Manage, common.Pull
 	common.Manage = &extend.MarketData{}
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Store: failingHistorySource{err: failure}}}
+	common.Pull = extend.NewMarketReader(failingHistorySource{err: failure}, nil)
 	t.Cleanup(func() { common.Manage, common.Pull = oldManage, oldPull })
 	s := &ScreenService{DB: testTradeDB(t), Codes: []string{"sh600000"}, Goroutines: 1,
 		Strategies: []Strategy{{Key: "always", Buyer: buy.A全部{}}},

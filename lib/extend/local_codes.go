@@ -4,27 +4,13 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // LocalStockCodes 枚举行情库中有日线的股票，保留退市代码。
-func (p *PullKline) LocalStockCodes() ([]string, error) {
-	if p.klineSource() == nil {
-		return nil, ErrMarketStoreRequired
-	}
-	store, ok := p.klineSource().(dayCodeSource)
-	if !ok {
-		return nil, fmt.Errorf("行情存储不支持股票枚举: %s", p.StorageIdentity())
-	}
-	return localStockCodes(store, p.StorageIdentity())
-}
-
-type dayCodeSource interface {
-	DayCodes(protocol.Market) ([]model.Code, error)
-}
-
-func localStockCodes(store dayCodeSource, identity string) ([]string, error) {
+func (r *MarketReader) LocalStockCodes() ([]string, error) {
+	store := r.source
+	identity := r.StorageIdentity()
 	stored, err := store.DayCodes(protocol.MarketAStock)
 	if err != nil {
 		return nil, fmt.Errorf("读取行情股票代码: %w", err)

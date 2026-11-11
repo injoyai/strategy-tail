@@ -24,8 +24,7 @@ func initConfig() {
 	cfg.Init(cfg.WithFile(ResolveRuntimePath(filepath.Join("config", "config.yaml"))), cfg.WithEnv())
 }
 
-// MySQLDSN 是所有运行入口和迁移命令共用的行情连接配置。
-// 显式环境值优先，包括空值；缺少配置时禁止悄悄写回本地行情库。
+// MySQLDSN 是所有运行入口共用的只读数据源配置。显式环境值优先，包括空值。
 func MySQLDSN() (string, error) {
 	value, explicit := os.LookupEnv("pull.mysql")
 	if !explicit {
