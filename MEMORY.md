@@ -203,3 +203,15 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - 交易明细使用本地 Tabulator；`trade-table.js` 独占宿主 DOM、以 `markRaw` 隔离 Vue，不启用双向 reactiveData。表格虚拟滚动只限制渲染数量，不得再次截断报告交易；其他页签保留原表格。
 - XLSX 按需读取已保存报告，不在导出层重算统计、不落盘、不改变历史报告。Excelize 流式写入保留数值精度，长参数快照必须分段，超出工作表上限必须报错而非截断。
 - Playwright 测试服务固定独立端口并以临时 cwd 隔离存储；不得复用正在运行的 Lab 或启动行情调度。npm 仅为开发测试依赖，生产前端仍通过 Go embed 发布。
+
+## 源时间K线 MySQL 存储（2026-11-04）
+- SDK `tdx/extend/pull/mysql.go` 新增 `MySQLStore`（满足 `pull.Store` 与 `update.Store`）：`kline_day`、`kline_minute_YYYY`、`minute_coverage`、`minute_empty_scan`、`update_marks`；`market` 列存 `protocol.Market.String()`，主键 `(market, code, time)`（覆盖/扫描/标记用业务键）。
+- DSN 由 `NewMySQLStore` 收敛：`parseTime=false`（源时间按文本透传）、`charset=utf8mb4`，`timeout/readTimeout` 仅在调用方未显式指定时默认 5s/30s（迁移等长事务可传 5 分钟），清除 `interpolateParams`，不使用 `compress`（驱动未实现会 panic）。`Identity()` 仅含 `mysql://host/db`，不含账号密码。
+- 写入语义与 SQLite 一致：单事务内先删 `time>=from` 再批量插入（1000 行/批、满批复用 Prepared）；分钟分表按年惰性创建，DDL 隐式提交必须在事务外执行。
+- 应用接线：`pull.mysql` 非空时 `NewPullKline` 创建 `MySQLStore` 注入 `Config.Store`，连接失败即启动失败（不回落 SQLite）；为空仍用 `data/database/source` 下的 SQLite。MySQL 契约测试由 `PULL_MYSQL_DSN` 控制，未设置时跳过。
+- 实机基准（192.168.1.105 / MySQL 8.0.46）：单代码全年 58,560 根写入 0.87s（约 6.7 万行/秒），读取 59ms，与裸 SQL 基准一致。
+- 迁移工具（2026-11-04）：SDK `SQLiteStore.MigrateTo(ctx, dst, opt)` 枚举 `source/{market}/day|min` 布局，按代码/年份流式复制并同步 `MinuteCoverage`；目标端同代码/年份已有更晚数据时跳过（Skipped），不迁移空扫描缓存，失败后停止派发剩余批次。入口 `cmd/migrate-kline`，默认源 `<pull.database>/source`、目标 `pull.mysql`，可重复执行。
+- 旧日线迁移（2026-11-04）：`cmd/migrate-legacy-day` + `lib/extend/legacy_day_source.go` 把旧 `day-kline/*.db`（Unix 主键）转成源时间日线。INT 列价格/成交额 ÷1000 转元，`Volume`（手）×100 转股，换手率/股本原样；日期取 `Unix` 的东八区钟面日期，同日多行保留最后一条（与旧读取合并一致）；目标末根更晚时跳过。实测 3210 库（sh 1711/sz 1499）→ `kline_day` 13,203,061 行，8 并发耗时 95s，`cn/stock` 13,189,005 + `cn/index` 14,056；抽样 `sh600000` 6419 行 `1999-11-10..2026-11-03` 末根收盘 10.09，`sh000001` 8755 行、`sz000001` 8483 行。
+- MySQL 并发写入死锁（2026-11-04）：并发迁移不同代码时，空范围 `DELETE ... time>=?` 的间隙锁与相邻代码的插入意向锁成环（Error 1213），首批 8 并发仅完成 9 个代码。修复：`mysqlDeleteTail` 先做不加锁的 `SELECT 1 ... LIMIT 1`，无匹配行直接跳过 DELETE；`mysqlRunTx` 对 1213/1205 最多重试 3 次（50/100ms 退避）。全量 3210 库复跑 0 失败，`pull` 包测试通过。
+- 旧分钟线迁移（2026-11-04）：`cmd/migrate-legacy-minute` + `lib/extend/legacy_minute_source.go` 读取旧 `min-kline/{code}/{code}-{year}.db`（`Kline` 表或 KLM1/KLM2 压缩块）。时间按东八区取 `YYYY-MM-DD HH:MM`，股票 `Volume`（手）×100 转股、指数保持原值，同分钟重复保留最后一条，负价格/非有限值丢弃；整库丢弃比例 >20% 判定历史压缩损坏，跳过且不写目标库。实测 27,124 文件 / 15.29 亿行，4 并发写入 1,528,456,176 行、耗时 6h42m（首轮 870,799,054 行后断连，续跑 657,657,122 行），`sh600000` 2024 年 58,322 行，`2024-01-02` 分钟成交量合计 22,066,700 股（与旧日线 220,667 手一致）。4 个无效文件为 `sh000001`/`sh000300` 的 2025–2026 指数库（2026-10-19 压缩时损坏），目标库无指数分钟数据。
+- 长事务断连（2026-11-04）：大批量写入数亿行后远程 MySQL 刷盘变慢，默认 `readTimeout=30s` 导致 4 条连接同时 `i/o timeout`（`invalid connection`），事务回滚但已提交文件完整。修复：`mysqlRetryable` 增加 `mysql.ErrInvalidConn`/`driver.ErrBadConn`（连接中断时事务已回滚，重放安全）；迁移工具 `-read-timeout` 默认 5 分钟。续跑判据改为「目标端首根与末根都存在」才跳过，避免对已完成部分删除重插。
