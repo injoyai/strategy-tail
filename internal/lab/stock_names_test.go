@@ -2,35 +2,38 @@ package lab
 
 import (
 	"encoding/json"
-	"github.com/injoyai/tdx/v2/extend/manage"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/tdx/v2/extend/codes"
+	"github.com/injoyai/strategy-tail/lib/extend"
+	"github.com/injoyai/tdx/v2/extend/metadata"
+	"github.com/injoyai/tdx/v2/extend/model"
 )
 
 func TestStockNamesAPI(t *testing.T) {
 	previous := common.Manage
 	t.Cleanup(func() { common.Manage = previous })
-	catalog := codes.NewBase()
-	catalog.Update([]*codes.CodeModel{
+	catalog, err := metadata.NewCodes([]*model.CodeModel{
 		{Exchange: "sh", Code: "600000", Name: "浦发银行"},
 		{Exchange: "sz", Code: "000001", Name: "平安银行"},
 		{Exchange: "sh", Code: "000001", Name: "上证指数"},
 		{Exchange: "sh", Code: "600001"},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	s := &Server{mux: http.NewServeMux()}
 	s.registerRoutes()
 	for _, tc := range []struct {
 		name   string
-		manage *manage.Manage
+		manage *extend.MarketData
 		want   map[string]string
 	}{
 		{"未初始化", nil, map[string]string{}},
-		{"目录未就绪", &manage.Manage{}, map[string]string{}},
-		{"按完整代码区分股票和指数", &manage.Manage{Codes: catalog}, map[string]string{"sh600000": "浦发银行", "sz000001": "平安银行", "sh000001": "上证指数"}},
+		{"目录未就绪", &extend.MarketData{}, map[string]string{}},
+		{"按完整代码区分股票和指数", &extend.MarketData{Codes: catalog}, map[string]string{"sh600000": "浦发银行", "sz000001": "平安银行", "sh000001": "上证指数"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			common.Manage = tc.manage

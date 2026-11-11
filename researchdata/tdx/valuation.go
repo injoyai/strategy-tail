@@ -2,6 +2,7 @@
 package tdx
 
 import (
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"math"
@@ -32,7 +33,7 @@ func Sync(pool upstream.ClientPool, store *researchdata.SQLiteStore) (int, int, 
 		return 0, 0, fmt.Errorf("TDX估值更新器尚未初始化")
 	}
 	var stats []*protocol.TdxStat
-	err := pool.Do(func(c upstream.Client) error {
+	err := pool.DoContext(context.Background(), func(c upstream.Client) error {
 		var err error
 		stats, err = c.GetTdxStat()
 		return err

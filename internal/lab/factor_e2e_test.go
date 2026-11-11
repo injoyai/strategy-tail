@@ -12,7 +12,6 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 // topNScript TopN 买入脚本：动量(2) 降序第 1 名，每日只买横截面最强一票。
@@ -37,7 +36,7 @@ func TestServerTopNRun(t *testing.T) {
 	t.Chdir(dir)
 
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 
 	// 2024 年 8 根垫底（his 非空）+ 2025 年 8 根：
@@ -131,7 +130,7 @@ func TestServerStrategyRunLifecycle(t *testing.T) {
 	t.Chdir(dir)
 
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writePresetDayDB(t, dir, "sh600000", 600, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
 

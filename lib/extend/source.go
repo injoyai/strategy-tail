@@ -3,47 +3,21 @@ package extend
 import (
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
-	"os"
-	"path/filepath"
 	"sort"
 	"time"
 
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/strategy-tail/internal/marketstore"
+	"github.com/injoyai/tdx/v2/extend/metadata"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	_ "github.com/injoyai/tdx/v2/extend/pull/market"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// SourceDir is separate from legacy Unix-key databases; SDK writes only source strings.
-const SourceDir = "source"
-
-func (p *PullKline) openSourceStore(create bool) (pull.Store, func() error, error) {
-	if p.Config.Store != nil {
-		return p.Config.Store, nil, nil
-	}
-	dir := filepath.Join(p.Config.Dir, SourceDir)
-	if !create {
-		if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
-			return nil, nil, nil
-		} else if err != nil {
-			return nil, nil, err
-		}
-		if _, err := os.Stat(filepath.Join(dir, ".time-format")); err != nil {
-			return nil, nil, fmt.Errorf("源时间目录格式标记不可读: %w", err)
-		}
-	}
-	s, err := pull.NewSQLiteStore(dir, 4)
-	if err != nil {
-		return nil, nil, err
-	}
-	return s, s.Close, nil
-}
-
 // The application owns progress, retry reporting and valuation; the SDK owns fetch/merge/storage.
-func fetchSource(s *pull.Service, m *manage.Manage, code, kind string) error {
+func fetchSource(s *pull.Service, m *MarketData, code, kind string) error {
 	c, err := pull.ParseCode(code)
 	if err != nil {
 		return err
@@ -66,10 +40,7 @@ func fetchSource(s *pull.Service, m *manage.Manage, code, kind string) error {
 }
 
 func (p *PullKline) sourceUpdateKey() string {
-	identity := filepath.Join(p.Config.Dir, SourceDir)
-	if p.Config.Store != nil {
-		identity = p.Config.Store.Identity()
-	}
+	identity := p.StorageIdentity()
 	codes := append([]string(nil), p.Config.Codes...)
 	sort.Strings(codes)
 	kinds := append([]string(nil), p.Types...)
@@ -78,8 +49,19 @@ func (p *PullKline) sourceUpdateKey() string {
 	return fmt.Sprintf("source:%x", sha256.Sum256(b))
 }
 
+// StorageIdentity 不含凭据，供更新状态与运行日志确认实际行情目标。
+func (p *PullKline) StorageIdentity() string {
+	if p.reader != nil {
+		return p.reader.Identity()
+	}
+	if p.Config.Store != nil {
+		return p.Config.Store.Identity()
+	}
+	return ""
+}
+
 // Source date labels become A-share execution timestamps only at this strategy boundary.
-func standardSourceCode(code string) (pull.Code, error) {
+func standardSourceCode(code string) (model.Code, error) {
 	c, err := pull.ParseCode(code)
 	if err != nil {
 		return c, err
@@ -91,7 +73,12 @@ func standardSourceCode(code string) (pull.Code, error) {
 	return c, nil
 }
 
-func sourceVolume(v int64) (int64, error) {
+func sourceVolume(code model.Code, v int64) (int64, error) {
+	// The standard index decoder already uses the same units as the SDK's
+	// stored index volume. Stock bars use shares in storage and lots here.
+	if v >= 0 && (code.Market == protocol.MarketIndex || code.Market == protocol.MarketBlock) {
+		return v, nil
+	}
 	if v < 0 || v%protocol.SharesPerLot != 0 {
 		return 0, fmt.Errorf("成交量 %d 股无法无损转换为整数手", v)
 	}
@@ -106,78 +93,77 @@ func sourceStock(v float64) (int64, error) {
 }
 
 func (p *PullKline) dayKlines(code string, start, end time.Time) (Klines, error) {
+	return readDayKlines(p.klineSource(), p.Config.Equity, code, start, end)
+}
+
+func readDayKlines(store marketKlineSource, getEquity func() *metadata.Gbbq, code string, start, end time.Time) (Klines, error) {
 	c, err := standardSourceCode(code)
 	if err != nil {
 		return nil, err
 	}
-	old, err := p.legacyDayKlines(c.Code, start, end)
-	if err != nil {
-		return nil, err
-	}
-	store, closeStore, err := p.openSourceStore(false)
-	if err != nil {
-		return nil, err
-	}
 	if store == nil {
-		return filterSourceDays(old, start, end), nil
-	}
-	if closeStore != nil {
-		defer closeStore()
+		return nil, ErrMarketStoreRequired
 	}
 	endDate := ""
 	if !end.IsZero() {
 		endDate = end.Format(time.DateOnly)
 	}
-	rows, err := store.QueryDay(c, "", endDate)
+
+	var records []*marketstore.DayRecord
+	if extra, ok := store.(interface {
+		QueryDayRecords(model.Code, string, string) ([]*marketstore.DayRecord, error)
+	}); ok {
+		records, err = extra.QueryDayRecords(c, "", endDate)
+	} else {
+		var rows []*model.KlineDay
+		rows, err = store.QueryDay(c, "", endDate)
+		for _, r := range rows {
+			records = append(records, &marketstore.DayRecord{KlineDay: *r})
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
-		return filterSourceDays(old, start, end), nil
+	var equity *metadata.Gbbq
+	if getEquity != nil {
+		equity = getEquity()
 	}
-	byDate := map[string]*Kline{}
-	for _, k := range old {
-		byDate[k.Time.In(protocol.Location()).Format(time.DateOnly)] = k
-	}
-	newer := map[string]bool{}
-	for _, r := range rows {
-		at, e := time.ParseInLocation(time.DateOnly, r.Time, protocol.Location())
-		if e != nil {
-			return nil, e
-		}
-		at = at.Add(15 * time.Hour) // Existing standard-market strategies execute daily signals at close.
-		if previous := byDate[r.Time]; previous != nil {
-			at = previous.Time
-		}
-		volume, e := sourceVolume(r.Volume)
-		if e != nil {
-			return nil, e
-		}
-		floating, e := sourceStock(r.FloatStock)
-		if e != nil {
-			return nil, e
-		}
-		total, e := sourceStock(r.TotalStock)
-		if e != nil {
-			return nil, e
-		}
-		byDate[r.Time] = &Kline{Unix: at.Unix(), Kline: &protocol.Kline{Time: at, Open: r.Open, High: r.High, Low: r.Low, Close: r.Close, Volume: volume, Amount: r.Amount}, Turnover: r.Turnover, FloatStock: floating, TotalStock: total}
-		newer[r.Time] = true
-	}
-	dates := make([]string, 0, len(byDate))
-	for date := range byDate {
-		dates = append(dates, date)
-	}
-	sort.Strings(dates)
-	out := make(Klines, 0, len(dates))
+	out := make(Klines, 0, len(records))
 	var last float64
-	for _, date := range dates {
-		k := byDate[date]
-		if newer[date] {
-			k.Last = last
+	for _, r := range records {
+		at, err := time.ParseInLocation(time.DateOnly, r.Time, protocol.Location())
+		if err != nil {
+			return nil, err
 		}
-		last = k.Close
-		out = append(out, k)
+		at = at.Add(15 * time.Hour)
+		volume, err := sourceVolume(c, r.Volume)
+		if err != nil {
+			return nil, err
+		}
+		floating, err := sourceStock(r.FloatStock)
+		if err != nil {
+			return nil, err
+		}
+		total, err := sourceStock(r.TotalStock)
+		if err != nil {
+			return nil, err
+		}
+		if equity != nil && c.Market == protocol.MarketAStock && (floating == 0 || total == 0) {
+			if v := equity.GetEquity(c.Code, at); v != nil {
+				if floating == 0 {
+					floating = v.Float
+				}
+				if total == 0 {
+					total = v.Total
+				}
+			}
+		}
+		turnover := r.Turnover
+		if turnover == 0 && floating > 0 {
+			turnover = float64(r.Volume) / float64(floating) * 100
+		}
+		out = append(out, &Kline{Unix: at.Unix(), Kline: &protocol.Kline{Time: at, Last: last, Open: r.Open, High: r.High, Low: r.Low, Close: r.Close, Volume: volume, Amount: amountValue(r.Amount)}, Turnover: turnover, FloatStock: floating, TotalStock: total})
+		last = r.Close
 	}
 	return filterSourceDays(out, start, end), nil
 }
@@ -203,53 +189,62 @@ func filterSourceDays(rows Klines, start, end time.Time) Klines {
 }
 
 func (p *PullKline) MinKlines(code string, start, end time.Time) (protocol.Klines, error) {
+	return readMinKlines(p.klineSource(), code, start, end)
+}
+
+func readMinKlines(store marketKlineSource, code string, start, end time.Time) (protocol.Klines, error) {
 	c, err := standardSourceCode(code)
 	if err != nil {
 		return nil, err
 	}
-	old, err := p.legacyMinKlines(c.Code, start, end)
-	if err != nil {
-		return nil, err
-	}
-	store, closeStore, err := p.openSourceStore(false)
-	if err != nil {
-		return nil, err
-	}
 	if store == nil {
-		return old, nil
+		return nil, ErrMarketStoreRequired
 	}
-	if closeStore != nil {
-		defer closeStore()
-	}
-	// Preserve the existing API's whole-year minute loading, including boundary duplicates.
+	// Preserve the strategy API's whole-year minute loading.
 	rows, err := store.QueryMinute(c, fmt.Sprintf("%04d-01-01 00:00", start.Year()), fmt.Sprintf("%04d-12-31 23:59", end.Year()))
 	if err != nil {
 		return nil, err
 	}
-	if len(rows) == 0 {
-		return old, nil
-	}
-	refreshed := map[string]*protocol.Kline{}
+	out := make(protocol.Klines, 0, len(rows))
 	for _, r := range rows {
-		at, e := time.ParseInLocation(protocol.TimeLayout, r.Time, protocol.Location())
-		if e != nil {
-			return nil, e
+		at, err := time.ParseInLocation(protocol.TimeLayout, r.Time, protocol.Location())
+		if err != nil {
+			return nil, err
 		}
-		volume, e := sourceVolume(r.Volume)
-		if e != nil {
-			return nil, e
+		volume, err := sourceVolume(c, r.Volume)
+		if err != nil {
+			return nil, err
 		}
-		refreshed[r.Time] = &protocol.Kline{Time: at, Open: r.Open, High: r.High, Low: r.Low, Close: r.Close, Volume: volume, Amount: r.Amount}
+		out = append(out, &protocol.Kline{Time: at, Open: r.Open, High: r.High, Low: r.Low, Close: r.Close, Volume: volume, Amount: amountValue(r.Amount)})
 	}
-	out := make(protocol.Klines, 0, len(old)+len(rows))
-	for _, r := range old {
-		if _, ok := refreshed[r.Time.In(protocol.Location()).Format(protocol.TimeLayout)]; !ok {
-			out = append(out, r)
-		}
-	}
-	for _, r := range rows {
-		out = append(out, refreshed[r.Time])
-	}
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Time.Before(out[j].Time) })
 	return out, nil
+}
+
+func amountValue(amount *float64) float64 {
+	if amount == nil {
+		return 0
+	}
+	return *amount
+}
+
+func (p *PullKline) klineSource() marketKlineSource {
+	if p.reader != nil {
+		return p.reader
+	}
+	return p.Config.Store
+}
+
+// LatestDayDate returns the last stored session date without downloading history.
+func (p *PullKline) LatestDayDate(code string) (string, error) {
+	c, err := standardSourceCode(code)
+	if err != nil {
+		return "", err
+	}
+	if p.reader != nil {
+		return p.reader.LastDayTime(c)
+	}
+	if p.Config.Store == nil {
+		return "", ErrMarketStoreRequired
+	}
+	return p.Config.Store.LastDayTime(c)
 }

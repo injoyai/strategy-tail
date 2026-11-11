@@ -305,7 +305,7 @@ func TestAccountBuilderAPIReport(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	base := time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local)
 	writeFakeDayDB(t, dir, "sh600000", 3, base)

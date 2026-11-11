@@ -26,7 +26,7 @@ import (
 func TestMACDReportExportsOriginalNetCosts(t *testing.T) {
 	t.Chdir(t.TempDir())
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: t.TempDir()}}
+	common.Pull = fixturePull(t, t.TempDir())
 	t.Cleanup(func() { common.Pull = old })
 	trade := core.Trade{Code: "sh600000", BuyTime: time.Date(2025, 1, 2, 15, 0, 0, 0, time.Local), SellTime: time.Date(2025, 1, 3, 15, 0, 0, 0, time.Local), BuyPrice: 10, SellPrice: 11, BuyCost: 1005, SellIncome: 1090, Quantity: 100}
 	cfg := defaultMACDConfig()

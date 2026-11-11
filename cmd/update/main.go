@@ -1,11 +1,13 @@
 package main
 
 import (
-	"github.com/injoyai/logs"
-	common "github.com/injoyai/strategy-tail"
+	"fmt"
+	"os"
+
+	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 func main() {
-	common.MustInitialize()
-	logs.PanicErr(common.Update())
+	fmt.Fprintln(os.Stderr, extend.ErrReadOnlyMarket)
+	os.Exit(1)
 }

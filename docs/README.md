@@ -6,11 +6,12 @@
 
 - [tdx v2 迁移与数据口径](guides/tdx-v2-migration.md)
 - [行情源时间与新旧数据读取](guides/source-time-storage.md)
+- [MySQL 行情存储与分表迁移](guides/mysql-storage.md)
 
 - [项目目录与代码入口](guides/project-layout.md)
 - [命令入口与配置归属](../cmd/README.md)
 - [因子研究与回测搭建：概念与关系](guides/research-and-backtest-concepts.md)
-- [临时策略回测](guides/ad-hoc-backtest.md)
+- [临时策略回测与只读数据接口](guides/ad-hoc-backtest.md)
 - [因子开发与接入规范](guides/factor-development.md)
 - [中期动量低波动：可保存的多因子策略基线](guides/momentum-low-volatility.md)
 - [v2 多因子组合研究发布文档](guides/v2-multifactor-portfolio.md)（2026-09-19 冻结快照，保留当时的 hash、门禁结果和限制）

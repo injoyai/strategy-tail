@@ -13,7 +13,6 @@ import (
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
 
@@ -21,7 +20,7 @@ func setupAnalysisData(t *testing.T, dir string) {
 	t.Helper()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 }
 

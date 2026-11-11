@@ -15,7 +15,6 @@ export const state = reactive({
   // —— 02 策略与运行 ——
   runMode: 'builder',    // builder | simple
   macdCfg: null,
-  dataUpdating: false,
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
     endYear: 2026,

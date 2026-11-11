@@ -120,12 +120,11 @@ const App = {
     },
 
     // ============ 批量任务卡 ============
-    // 更新、回测与研究共用唯一任务栏；总量未就绪时保持不定进度。
+    // 回测与研究共用唯一任务栏；总量未就绪时保持不定进度。
     renderTaskProgress(s) {
       const st = s.state || 'idle';
       if (st === 'idle') { state.taskDock = null; return; }
       const taskName = TASK_LABEL[s.task] || '批量任务';
-      const isUpdate = s.task === 'data_update';
       const p = taskProgress(s, state.stockNames);
       const connectionError = st === 'connection-error';
       const determinate = !connectionError && (st === 'done' || p.percent != null);
@@ -138,7 +137,6 @@ const App = {
         'connection-error': s.resultReadError ? '结果读取失败' : '进度读取中断',
       }[st] || taskName;
       let detail = st === 'done' ? '结果已就绪' : p.counts || (st === 'running' ? `正在${p.label}…` : p.label);
-      if (isUpdate && p.total > 0) detail += ` · 失败 ${Number(s.failed) || 0}`;
       if (connectionError) detail = s.resultReadError ? '结果尚未载入' : '无法确认当前阶段与进度';
       if (st === 'interrupted') detail = '未取得本次任务结果';
       const current = connectionError ? s.resultReadError ? '后台任务已完成，请重试读取结果' : '任务可能仍在后台运行'
@@ -148,12 +146,11 @@ const App = {
         state: connectionError || st === 'interrupted' ? 'error' : st,
         task: s.task,
         title,
-        percent: isUpdate && s.skipped ? '无需更新'
-          : st === 'done' ? '100%'
+        percent: st === 'done' ? '100%'
           : connectionError ? '状态未知'
           : determinate ? `本阶段 ${p.percent}%`
           : st === 'error' ? '失败' : st === 'stopped' ? '已停止' : '进行中',
-        value: determinate ? (st === 'done' && !s.skipped ? 100 : p.percent) : st === 'running' ? null : 0,
+        value: determinate ? (st === 'done' ? 100 : p.percent) : st === 'running' ? null : 0,
         indeterminate: !determinate && st === 'running',
         detail,
         current,
@@ -204,11 +201,11 @@ const App = {
         const visibleStatus = s.state === 'idle' && runtime.prevRunning
           ? {...s, state: interrupted ? 'interrupted' : 'stopped', task: runtime.lastTask}
           : s;
-        const readingResults = s.state === 'done' && s.task !== 'data_update';
+        const readingResults = s.state === 'done';
         this.renderTaskProgress(readingResults
           ? {...s, state: 'running', phase: 'reading_results', done: -1, total: -1, progress: -1, currentCode: ''}
           : visibleStatus);
-        state.taskRunning = running || state.dataUpdating || readingResults;
+        state.taskRunning = running || readingResults;
         if (running && !runtime.pollTimer) runtime.pollTimer = setInterval(() => this.pollStatusOnce(), 2000);
         if (s.state === 'done') {
           clearInterval(runtime.pollTimer); runtime.pollTimer = null;
@@ -216,8 +213,6 @@ const App = {
             state.currentAnalysis = await Api.latestAnalysis();
             state.factorMsg = {text: '分析完成', ok: true};
             this.switchTab(4);
-          } else if (s.task === 'data_update') {
-            // 更新结果由数据组件显示，不读取回测报告或切换页面。
           } else if (s.task === 'portfolio' || s.task === 'portfolio_validation') {
             // 组合任务完成：终态以持久 Store 为准，刷新 06 页对应详情（不自动切页）。
             if (s.runId && this.$refs.tab6) await this.$refs.tab6.pfOnTaskDone(s.runId, s.task);
@@ -242,7 +237,7 @@ const App = {
             }
           }
           this.renderTaskProgress(s);
-          state.taskRunning = !!state.dataUpdating;
+          state.taskRunning = false;
         } else if (s.state === 'idle' && runtime.prevRunning && runtime.lastTask === 'analysis') {
           state.factorMsg = {text: interrupted ? '后台任务状态已重置，本次分析意外中断，请重新运行' : '任务已停止', ok: false};
           clearInterval(runtime.pollTimer); runtime.pollTimer = null;
@@ -256,7 +251,7 @@ const App = {
       } catch (e) {
         clearInterval(runtime.pollTimer); runtime.pollTimer = null;
         const resultReadError = state.status?.state === 'done';
-        state.taskRunning = (!resultReadError && runtime.prevRunning) || state.dataUpdating;
+        state.taskRunning = (!resultReadError && runtime.prevRunning);
         this.renderTaskProgress({
           state: 'connection-error', task: runtime.lastTask, progress: 0,
           resultReadError,
@@ -281,7 +276,7 @@ const App = {
   </nav>
 </header>
 
-<main :class="{'practice-page': state.activeTab === 7 && !state.taskDock, 'has-task-dock': state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)}">
+<main :class="{'practice-page': state.activeTab === 7 && !state.taskDock, 'has-task-dock': state.taskDock}">
   <div v-if="sectionTabs.length > 1" class="tabs section-tabs" role="tablist" :aria-label="activeGroup.title" @keydown="onTabsKeydown">
     <button v-for="t in sectionTabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
       :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
@@ -290,7 +285,7 @@ const App = {
     </button>
   </div>
   <data-update />
-  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">
@@ -312,11 +307,11 @@ const App = {
       </div>
       <div class="status-actions">
         <button type="button" class="secondary" v-if="state.taskDock && state.taskDock.connectionError" @click="pollStatus()">重试读取</button>
-        <button type="button" class="danger" v-if="state.taskDock && state.taskDock.running && !state.taskDock.readingResults && state.taskDock.task !== 'data_update'" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
+        <button type="button" class="danger" v-if="state.taskDock && state.taskDock.running && !state.taskDock.readingResults" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
         <button type="button" class="secondary" v-if="state.taskDock && !state.taskDock.running" @click="dismissTaskDock()">关闭</button>
       </div>
     </div>
-    <details class="ui-help error-details" v-if="state.taskDock && state.taskDock.error && (state.taskDock.task !== 'data_update' || state.taskDock.connectionError)">
+    <details class="ui-help error-details" v-if="state.taskDock && state.taskDock.error">
       <summary>错误详情</summary>
       <div class="msg">{{ state.taskDock.error }}</div>
     </details>

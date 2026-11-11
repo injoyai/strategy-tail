@@ -10,7 +10,6 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 func factorNode(ft FactorFilterSpec) *BuilderNode {
@@ -137,7 +136,7 @@ func TestBuilderFactorRunKeepsFrozenSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writeFakeDayDB(t, dir, "sh600000", 12, time.Date(2025, 1, 2, 0, 0, 0, 0, time.Local))
 	ft := FactorFilterSpec{Kind: "momentum", Days: 2, FactorVersion: 1, Operator: "gte", Min: fptr(0)}

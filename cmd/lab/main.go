@@ -5,7 +5,6 @@ package main
 // 默认监听 0.0.0.0，可通过 LAB_ADDR 覆盖。
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -41,9 +40,6 @@ func main() {
 	go openBrowser(url)
 
 	server := lab.NewServer()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go server.RunDataUpdateScheduler(ctx)
 	srv := &http.Server{
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

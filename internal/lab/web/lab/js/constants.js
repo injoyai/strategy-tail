@@ -20,7 +20,7 @@ export const NAV_GROUPS = [
   {id: 'practice', title: '盘感练习', tabs: [7]},
 ];
 
-export const TASK_LABEL = {backtest: '策略回测', data_update: '数据更新', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证', practice_prepare: '盘感练习出题'};
+export const TASK_LABEL = {backtest: '策略回测', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证', practice_prepare: '盘感练习出题'};
 
 // 人工研究样本，不表示实时股息率排名或历史指数成员。
 export const DIVIDEND_STOCKS = [

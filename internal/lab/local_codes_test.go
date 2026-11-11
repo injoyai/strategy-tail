@@ -1,30 +1,22 @@
 package lab
 
 import (
-	"os"
-	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
-func TestResolveCodesUsesLocalDayFiles(t *testing.T) {
+func TestResolveCodesUsesStoredDayCodes(t *testing.T) {
 	oldPull, oldManage := common.Pull, common.Manage
 	t.Cleanup(func() { common.Pull, common.Manage = oldPull, oldManage })
 	common.Manage = nil
 	root := t.TempDir()
-	dir := filepath.Join(root, extend.DirDay)
-	if err := os.Mkdir(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
+	common.Pull = fixturePull(t, root)
 	for _, code := range []string{"sh600000", "sz000003", "sz300001", "sh000001"} {
-		if err := os.WriteFile(filepath.Join(dir, code+".db"), nil, 0644); err != nil {
-			t.Fatal(err)
-		}
+		writeFakeDayDB(t, root, code, 1, time.Now())
 	}
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: root}}
 	r := &Runner{}
 	want := []string{"sh600000", "sz000003"}
 	got, err := r.resolveCodes(RunConfig{SampleMode: "all"}, nil)

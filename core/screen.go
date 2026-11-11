@@ -52,12 +52,13 @@ func (this Screen) Run(at ...time.Time) ([]*Buy, error) {
 			}
 			today := dks[len(dks)-1]
 			if this.Buyer.Buy(code, dks) {
+				rise, _ := today.RisePercent()
 				mu.Lock()
 				result = append(result, &Buy{
 					Code:  code,
 					Time:  today.Time,
 					Price: today.Close,
-					Rise:  today.RiseRate(),
+					Rise:  rise,
 				})
 				mu.Unlock()
 			}
@@ -75,11 +76,12 @@ func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
 		if len(ks) > i {
 			if b.Buy(code, ks[:len(ks)-i]) {
 				k := ks[len(ks)-i-1]
+				rise, _ := k.RisePercent()
 				ls = append(ls, &Buy{
 					Code:  code,
 					Time:  k.Time,
 					Price: k.Close,
-					Rise:  k.RiseRate(),
+					Rise:  rise,
 				})
 			}
 		}

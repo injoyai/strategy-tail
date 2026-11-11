@@ -198,7 +198,7 @@ func (s A缩量滞涨) Sell(code string, dks extend.Klines, b core.Buy) bool {
 			continue
 		}
 		// 滞涨（涨幅极小）
-		if dks[i].RiseRate() <= maxRise {
+		if rise, ok := dks[i].RisePercent(); ok && rise <= maxRise {
 			count++
 		}
 	}

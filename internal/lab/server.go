@@ -59,9 +59,8 @@ const ScriptPath = "strategies/script/matrix.go"
 
 // Server lab 服务。
 type Server struct {
-	runner      *Runner
-	mux         *http.ServeMux
-	dataUpdater *DataUpdater
+	runner *Runner
+	mux    *http.ServeMux
 	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
@@ -91,7 +90,6 @@ func NewServer() *Server {
 		builderStore:   NewBuilderStore(builderDataDir),
 		practiceStore:  NewPracticeStore(practiceDataDir),
 	}
-	s.dataUpdater = newDataUpdater(s.runner, common.ResolveRuntimePath(filepath.Join("data", "lab", "data-update.json")), updateData)
 	s.wirePortfolioStores()
 	// 恢复重启前中断的练习准备（标为 failed，可重练出题）。
 	if err := s.practiceStore.RecoverInterrupted(); err != nil {
@@ -125,7 +123,6 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		builderStore:   NewBuilderStore(builderDataDir),                              // 搭建器测试按需覆盖
 		practiceStore:  NewPracticeStore(filepath.Join(candidates.root, "practice")), // 练习测试按需覆盖
 	}
-	s.dataUpdater = newDataUpdater(s.runner, filepath.Join(candidates.root, "data-update.json"), updateData)
 	s.wirePortfolioStores()
 	s.wirePracticeStores()
 	s.registerRoutes()
@@ -149,13 +146,11 @@ func (s *Server) wirePracticeStores() {
 // 写端点同源校验约定：非 GET 请求默认经 withSameOrigin 防 CSRF；仅豁免
 // /api/script/check（无副作用的纯校验，供外部工具调用；该豁免是否保留另行
 // 评估）。以下端点已在 handler 内嵌校验、不重复包装：macd/run、
-// data-update/config、data-update/run、report/{id} DELETE 与 builder 四个写端点。
+// report/{id} DELETE 与 builder 四个写端点。
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/macd/config", s.handleMACDConfig)
 	s.mux.HandleFunc("POST /api/macd/run", s.handleMACDRun)
 	s.mux.HandleFunc("GET /api/data-update/status", s.handleDataUpdateStatus)
-	s.mux.HandleFunc("PUT /api/data-update/config", s.handleDataUpdateConfig)
-	s.mux.HandleFunc("POST /api/data-update/run", s.handleDataUpdateRun)
 	s.mux.HandleFunc("GET /api/script", s.handleGetScript)
 	s.mux.HandleFunc("PUT /api/script", withSameOrigin(s.handlePutScript))
 	s.mux.HandleFunc("POST /api/script/check", s.handleCheckScript)
@@ -366,25 +361,7 @@ func scriptName() string {
 
 // handleStatus 进度查询。
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
-	status := s.runner.Status()
-	if status["task"] == "data_update" {
-		update := s.dataUpdater.Status()
-		status["phase"] = update.Stage
-		status["failed"] = update.Failed
-		status["skipped"] = update.Skipped
-		status["message"] = update.Message
-		status["unit"] = "symbols"
-		status["currentCode"] = update.Code
-		status["done"], status["total"], status["progress"] = -1, -1, -1
-		if update.StageTotal > 0 {
-			status["done"], status["total"] = update.StageDone, update.StageTotal
-			status["progress"] = float64(update.StageDone) / float64(update.StageTotal) * 100
-		}
-		if update.State == "done" {
-			status["progress"] = 100.0
-		}
-	}
-	writeJSON(w, status)
+	writeJSON(w, s.runner.Status())
 }
 
 // handleStop 停止任务。

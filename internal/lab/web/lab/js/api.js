@@ -19,8 +19,6 @@ export const Api = {
   macdConfig: () => api('GET', '/api/macd/config'),
   runMACD: cfg => api('POST', '/api/macd/run', cfg),
   dataUpdateStatus: () => api('GET', '/api/data-update/status'),
-  updateData: () => api('POST', '/api/data-update/run', {}),
-  configureDataUpdate: cfg => api('PUT', '/api/data-update/config', cfg),
   // 脚本编辑器 / 回测
   getScript: () => api('GET', '/api/script'),
   checkScript: content => api('POST', '/api/script/check', {content}),

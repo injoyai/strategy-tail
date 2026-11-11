@@ -4,21 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	_ "github.com/glebarez/go-sqlite"
 	"github.com/injoyai/bar"
 	"github.com/injoyai/conv"
 	"github.com/injoyai/logs"
+	"github.com/injoyai/strategy-tail/internal/marketstore"
+	"github.com/injoyai/strategy-tail/internal/update"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/extend/pull"
-	"github.com/injoyai/tdx/v2/lib/update"
-	"github.com/injoyai/tdx/v2/lib/xorms"
-	"github.com/injoyai/tdx/v2/protocol"
+	"github.com/injoyai/tdx/v2/extend/storage"
 	"github.com/robfig/cron/v3"
 )
 
@@ -35,6 +33,10 @@ const (
 
 // ErrNotEnoughKline K线数据不足,无法按指定序号取值
 var ErrNotEnoughKline = errors.New("k线数据不足")
+
+var ErrReadOnlyMarket = errors.New("行情由外部项目更新，本项目仅提供读取")
+
+var ErrMarketStoreRequired = errors.New("行情存储未配置，请配置 MySQL")
 
 // 主板前缀 默认仅拉取沪深主板股票（与 common.go 中 Market沪深主板.Prefixes 保持一致）。
 // 北交所/科创板/创业板/ETF 数据已清理，不再拉取，避免定时任务重新下载。
@@ -54,13 +56,15 @@ func hasAnyPrefix(code string, prefixes []string) bool {
 }
 
 type PullKlineConfig struct {
-	Store             pull.Store // Optional source-time storage; owned by the caller.
-	Codes             []string   //操作代码
-	Types             []string   //更新类型
-	Dir               string     //数据位置
-	Goroutines        int        //协程数量
-	StartAt           time.Time  //数据开始时间
-	ValuationDatabase string     // 非空时，每个收盘批次额外采集沪深主板估值快照。
+	Store             storage.BarStore      // Optional source-time storage; owned by the caller.
+	SourceDSN         string                // Required when Store is not injected.
+	Codes             []string              //操作代码
+	Types             []string              //更新类型
+	Dir               string                // Directory for the application update lock.
+	Goroutines        int                   //协程数量
+	StartAt           time.Time             //数据开始时间
+	Equity            func() *metadata.Gbbq // Optional point-in-time equity lookup for strategy reads.
+	ValuationDatabase string                // 非空时，每个收盘批次额外采集沪深主板估值快照。
 }
 
 func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
@@ -70,22 +74,31 @@ func NewPullKline(cfg PullKlineConfig) (*PullKline, error) {
 	if len(cfg.Dir) == 0 {
 		cfg.Dir = filepath.Join(DefaultDatabaseDir)
 	}
-
-	db, err := xorms.NewSQLite(filepath.Join(cfg.Dir, "update.db"))
+	var owned *marketstore.MySQLStore
+	if cfg.Store == nil {
+		dsn := strings.TrimSpace(cfg.SourceDSN)
+		if dsn == "" {
+			return nil, ErrMarketStoreRequired
+		}
+		store, err := marketstore.NewMySQLStore(dsn)
+		if err != nil {
+			return nil, fmt.Errorf("连接源行情 MySQL 失败: %w", err)
+		}
+		cfg.Store, owned = store, store
+	}
+	updated, err := update.NewWithStore(cfg.Store, updateCloseHour, updateCloseMinute)
 	if err != nil {
+		if owned != nil {
+			_ = owned.Close()
+		}
 		return nil, err
 	}
-
-	// A complete update after the configured 15:30 cutoff satisfies today's batch.
-	updated, err := update.New(db, updateCloseHour, updateCloseMinute)
-	if err != nil {
-		return nil, err
-	}
-
+	cfg.SourceDSN = "" // The open store owns the connection settings.
 	return &PullKline{
 		Config:  cfg,
 		Updated: updated,
 		Types:   cfg.Types,
+		owned:   owned,
 	}, nil
 }
 
@@ -93,9 +106,33 @@ type PullKline struct {
 	Config  PullKlineConfig
 	Updated *update.Tracker
 	Types   []string
+	owned   *marketstore.MySQLStore
+	reader  *marketstore.MySQLReader
 }
 
-func (this *PullKline) Run(m *manage.Manage, spec string) error {
+// OpenReadOnlyPullKline opens the configured database without a writable store.
+func OpenReadOnlyPullKline(dsn string) (*PullKline, error) {
+	reader, err := marketstore.OpenMySQLReader(dsn)
+	if err != nil {
+		return nil, err
+	}
+	return &PullKline{reader: reader}, nil
+}
+
+func (this *PullKline) Close() error {
+	if this.reader != nil {
+		return this.reader.Close()
+	}
+	if this.owned == nil {
+		return nil
+	}
+	return this.owned.Close()
+}
+
+func (this *PullKline) Run(m *MarketData, spec string) error {
+	if this.reader != nil {
+		return ErrReadOnlyMarket
+	}
 	this.Update(m, true)
 	cr := cron.New(cron.WithSeconds())
 	_, err := cr.AddFunc(spec, func() { this.Update(m) })
@@ -117,18 +154,21 @@ type UpdateProgress struct {
 	StageTotal int    `json:"stageTotal"`
 }
 
-func (this *PullKline) Update(m *manage.Manage, must ...bool) error {
+func (this *PullKline) Update(m *MarketData, must ...bool) error {
 	return this.UpdateWithProgress(m, len(must) > 0 && must[0], nil)
 }
 
 // manual bypasses the trading-day check, but keeps the existing freshness check.
-func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report func(UpdateProgress)) error {
+func (this *PullKline) UpdateWithProgress(m *MarketData, manual bool, report func(UpdateProgress)) error {
+	if this.reader != nil {
+		return ErrReadOnlyMarket
+	}
 	release, err := lockUpdates(this.Config.Dir)
 	if err != nil {
 		return err
 	}
 	defer release()
-	if m == nil || this.Updated == nil {
+	if m == nil || this.Updated == nil || this.Config.Store == nil {
 		return fmt.Errorf("行情更新器尚未初始化")
 	}
 	progress := UpdateProgress{Stage: "checking"}
@@ -139,11 +179,15 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 	}
 	emit()
 	if !manual {
-		if m.Workday == nil {
-			return fmt.Errorf("交易日信息尚未就绪")
+		trading, known, err := m.CheckTradingDay(time.Now())
+		if err != nil {
+			return fmt.Errorf("刷新交易日信息: %w", err)
 		}
-		if !m.Workday.TodayIs() {
+		if !trading {
 			progress.Skipped, progress.Message = true, "今天不是交易日，本次自动更新已跳过"
+			if !known {
+				progress.Message = "通达信日历尚未确认今天为交易日，本次自动更新已跳过，可手动重试"
+			}
 			emit()
 			return nil
 		}
@@ -192,20 +236,13 @@ func (this *PullKline) UpdateWithProgress(m *manage.Manage, manual bool, report 
 	if this.Config.ValuationDatabase != "" {
 		progress.Total++
 	}
-	store, closeStore, storeErr := this.openSourceStore(true)
-	if closeStore != nil {
-		defer closeStore()
+	start := ""
+	if !this.Config.StartAt.IsZero() {
+		start = this.Config.StartAt.Format("20060102")
 	}
-	var service *pull.Service
-	if storeErr == nil {
-		start := ""
-		if !this.Config.StartAt.IsZero() {
-			start = this.Config.StartAt.Format("20060102")
-		}
-		service, storeErr = pull.New(&pull.Config{Store: store, Codes: codes, Manage: m, StartAt: start, Day: seen[Day], Minute: seen[Minute]})
-		if service != nil {
-			defer service.Close()
-		}
+	service, storeErr := pull.New(&pull.Config{Store: this.Config.Store, Codes: codes, Pool: m.ClientPool, StartAt: start, Day: seen[Day], Minute: seen[Minute]})
+	if service != nil {
+		defer service.Close()
 	}
 	var updateErrors []error
 	for _, kind := range types {
@@ -274,91 +311,6 @@ func (this *PullKline) DayKline(code string, n ...int) (*Kline, error) {
 	}
 
 	return ks[len(ks)+_n], nil
-}
-
-func (this *PullKline) legacyDayKlines(code string, start, end time.Time) (Klines, error) {
-	filename := filepath.Join(this.Config.Dir, DirDay, code+".db")
-
-	if !exists(filename) {
-		return Klines{}, nil
-	}
-
-	db, err := xorms.NewSQLite(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer db.Close()
-
-	data := Klines{}
-	query := db.Asc("Unix")
-	var floor time.Time
-	if !start.IsZero() {
-		floor, _ = time.ParseInLocation(time.DateOnly, start.Format(time.DateOnly), protocol.Location())
-		query = query.Where("Unix >= ?", floor.Unix())
-	}
-	if !end.IsZero() {
-		limit, _ := time.ParseInLocation(time.DateOnly, end.Format(time.DateOnly), protocol.Location())
-		query = query.Where("Unix < ?", limit.AddDate(0, 0, 1).Unix())
-	}
-	err = query.Find(&data)
-	if err == nil && !floor.IsZero() {
-		var previous Klines
-		err = db.Where("Unix < ?", floor.Unix()).Desc("Unix").Limit(1).Find(&previous)
-		data = append(previous, data...)
-	}
-	if err == nil {
-		err = normalizeLegacyDays(db.DB().DB, data)
-		for _, k := range data {
-			k.Time = k.Time.In(protocol.Location())
-		}
-	}
-	return data, err
-}
-
-func (this *PullKline) legacyMinKlines(code string, start, end time.Time) (protocol.Klines, error) {
-	years := []int(nil)
-	for i := start.Year(); i <= end.Year(); i++ {
-		years = append(years, i)
-	}
-	ks := protocol.Klines{}
-	mu := sync.Mutex{}
-	var firstErr error
-	wg := sync.WaitGroup{}
-	for _, year := range years {
-		wg.Add(1)
-		go func(code string, year int) {
-			defer wg.Done()
-			filename := filepath.Join(this.Config.Dir, DirMinute, code, code+"-"+strconv.Itoa(year)+".db")
-			if !exists(filename) {
-				return
-			}
-			ls, err := readMinuteFile(filename)
-			if err != nil {
-				mu.Lock()
-				if firstErr == nil {
-					firstErr = fmt.Errorf("读取分钟库 %s: %w", filename, err)
-				}
-				mu.Unlock()
-				return
-			}
-			res := protocol.Klines{}
-			for _, l := range ls {
-				if l.Time.Year() != year {
-					continue
-				}
-				res = append(res, l)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			ks = append(ks, res...)
-		}(code, year)
-	}
-	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	ks.Sort()
-	return ks, nil
 }
 
 // Unlike bar.GoRetry, this retains the terminal error and reports each job once.

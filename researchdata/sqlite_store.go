@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,6 +42,34 @@ func OpenSQLiteStore(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+// OpenSQLiteView reads an existing database. A missing file leaves the caller
+// with an empty view so that strategies without research fields can still run.
+func OpenSQLiteView(path string) (View, error) {
+	if path == "" {
+		return nil, errors.New("researchdata: sqlite path is empty")
+	}
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return NewHub(), nil
+	} else if err != nil {
+		return nil, err
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	uri := url.URL{Scheme: "file", Path: filepath.ToSlash(absolute), RawQuery: "mode=ro"}
+	db, err := sql.Open("sqlite", uri.String())
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return &SQLiteStore{db: db}, nil
 }
 
 func (s *SQLiteStore) init() error {

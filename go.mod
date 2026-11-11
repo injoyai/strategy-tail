@@ -5,11 +5,12 @@ go 1.25.4
 // Preserve v1.2.20 with the async wait race fix; see third_party/README.md.
 replace github.com/injoyai/base => ./third_party/injoyai-base
 
-// Local v2 source is authoritative until the matching SDK changes are released.
+// Use the local v2 SDK; MySQL storage adapters live in this application.
 replace github.com/injoyai/tdx/v2 => ../tdx
 
 require (
 	github.com/glebarez/go-sqlite v1.22.0
+	github.com/go-sql-driver/mysql v1.8.1
 	github.com/injoyai/bar v0.0.12
 	github.com/injoyai/conv v1.2.8
 	github.com/injoyai/frame v0.0.20
@@ -31,7 +32,6 @@ require (
 	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/gofiber/fiber/v3 v3.0.0-beta.4 // indirect
 	github.com/gofiber/schema v1.6.0 // indirect

@@ -99,30 +99,16 @@ button.danger:active{transform:translateY(0)}
 .data-update-bubble:active{background:var(--surface-soft)}
 .data-update-badge{color:var(--ink2);font-size:11px;font-variant-numeric:tabular-nums}
 .data-update-dot{width:6px;height:6px;flex:none;border-radius:50%;background:var(--muted)}
-.data-update-bubble[data-fresh=true]{border-color:var(--ok)}
 .data-update-bubble[data-fresh=false]{border-color:var(--warn)}
-.data-update-bubble[data-fresh=true] .data-update-dot{background:var(--ok)}
 .data-update-bubble[data-fresh=false] .data-update-dot{background:var(--warn)}
-.data-update-bubble[data-fresh=true] .data-update-badge{color:var(--ok)}
 .data-update-bubble[data-fresh=false] .data-update-badge{color:var(--warn)}
 .data-update{position:fixed;inset:auto auto 70px 22px;margin:0;width:min(380px,calc(100% - 44px));max-height:calc(100dvh - 92px);overflow:auto;padding:16px 18px;color:var(--ink);background:var(--bg2);border:1px solid var(--rule2);border-radius:14px;box-shadow:var(--shadow);overflow-wrap:anywhere}
 .data-update-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
 .data-update-close{border:0;background:none;color:var(--muted);font-size:18px;cursor:pointer;border-radius:7px;width:30px;height:30px}
 .data-update-close:hover{color:var(--ink);background:var(--surface-soft)}
-.data-update-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px}
-.data-update-toolbar button{min-width:96px;min-height:32px;padding:5px 12px;font-size:12px}
 .data-update-time time{color:var(--ink2);font-variant-numeric:tabular-nums}
-.data-update-progress{margin-top:8px}
-.data-update-progress progress{margin-bottom:4px}
-.data-update-options{display:flex;align-items:flex-start;flex-wrap:wrap;gap:0 18px;margin-top:6px}
-.data-update-options>details{margin-top:0}
-.data-update-options>details[open]{flex-basis:100%}
-.data-update-settings summary{font-size:12px;color:var(--ink2);cursor:pointer;padding:5px 0}
-.data-update-config{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:12px}
-.data-update-config input[type=time]{background:var(--surface);color:var(--ink);border:1px solid var(--rule2);border-radius:var(--control-radius);padding:7px}
 .checkbox-label{display:flex;align-items:center;gap:6px;cursor:pointer}
-.data-update-config button:disabled{cursor:not-allowed;opacity:.5;transform:none}
-@media(max-width:560px){.data-update-bubble{left:12px;bottom:max(12px,env(safe-area-inset-bottom))}.data-update{left:12px;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 48px);width:calc(100% - 24px);max-height:calc(100dvh - 84px - env(safe-area-inset-bottom))}.data-update-config .hint{width:100%}}
+@media(max-width:560px){.data-update-bubble{left:12px;bottom:max(12px,env(safe-area-inset-bottom))}.data-update{left:12px;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 48px);width:calc(100% - 24px);max-height:calc(100dvh - 84px - env(safe-area-inset-bottom))}}
 /* 任务坞：固定右下角浮层，出现/消失不挤占内容流（所有 Tab 共用） */
 .statusbar{position:fixed;right:22px;bottom:22px;z-index:var(--z-float);width:min(430px,calc(100vw - 44px));padding:13px 16px 12px;background:linear-gradient(150deg,rgba(15,25,41,.94),rgba(9,15,27,.97));border:1px solid rgba(76,141,255,.32);border-radius:14px;overflow:hidden;box-shadow:0 26px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(16px) saturate(140%)}
 @media(max-width:640px){.statusbar{bottom:70px}main.has-task-dock{padding-bottom:240px}}

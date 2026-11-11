@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/injoyai/conv/cfg"
@@ -48,5 +49,61 @@ func TestConfigUsesRuntimeRoot(t *testing.T) {
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("config from %s: %v\n%s", dir, err, output)
 		}
+	}
+}
+
+func TestMySQLConfigPrecedence(t *testing.T) {
+	if want := os.Getenv("STRATEGY_TAIL_MYSQL_CONFIG_TEST"); want != "" {
+		got, err := MySQLDSN()
+		if want == "missing" {
+			if err == nil {
+				t.Fatal("missing MySQL configuration silently accepted")
+			}
+		} else if err != nil || got != want {
+			t.Fatalf("MySQL config precedence failed; got error=%v", err)
+		}
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, private, env, want string
+		explicit                 bool
+	}{
+		{"private file", "private-test", "", "private-test", false},
+		{"environment overrides empty public file", "", "env-test", "env-test", true},
+		{"environment overrides private file", "private-test", "env-test", "env-test", true},
+		{"explicit empty environment", "private-test", "", "missing", true},
+		{"missing", "", "", "missing", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(root, "config"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "config/config.yaml"), []byte("pull:\n  mysql: \"\"\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if tc.private != "" {
+				if err := os.WriteFile(filepath.Join(root, "config/mysql.yaml"), []byte("pull:\n  mysql: "+tc.private+"\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd := exec.Command(executable, "-test.run=^TestMySQLConfigPrecedence$")
+			for _, value := range os.Environ() {
+				if !strings.HasPrefix(value, "pull.mysql=") {
+					cmd.Env = append(cmd.Env, value)
+				}
+			}
+			cmd.Env = append(cmd.Env, "STRATEGY_TAIL_ROOT="+root, "STRATEGY_TAIL_MYSQL_CONFIG_TEST="+tc.want)
+			if tc.explicit {
+				cmd.Env = append(cmd.Env, "pull.mysql="+tc.env)
+			}
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("config subprocess failed: %v\n%s", err, output)
+			}
+		})
 	}
 }

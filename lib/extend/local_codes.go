@@ -1,58 +1,45 @@
 package extend
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// LocalStockCodes 从日线库文件名枚举股票，保留已退市但仍有本地数据的代码。
+// LocalStockCodes 枚举行情库中有日线的股票，保留退市代码。
 func (p *PullKline) LocalStockCodes() ([]string, error) {
-	dir := filepath.Join(p.Config.Dir, DirDay)
-	dirs := []string{dir, filepath.Join(p.Config.Dir, SourceDir, protocol.MarketAStock.String(), "day")}
+	if p.klineSource() == nil {
+		return nil, ErrMarketStoreRequired
+	}
+	store, ok := p.klineSource().(dayCodeSource)
+	if !ok {
+		return nil, fmt.Errorf("行情存储不支持股票枚举: %s", p.StorageIdentity())
+	}
+	return localStockCodes(store, p.StorageIdentity())
+}
+
+type dayCodeSource interface {
+	DayCodes(protocol.Market) ([]model.Code, error)
+}
+
+func localStockCodes(store dayCodeSource, identity string) ([]string, error) {
+	stored, err := store.DayCodes(protocol.MarketAStock)
+	if err != nil {
+		return nil, fmt.Errorf("读取行情股票代码: %w", err)
+	}
 	seen := map[string]bool{}
 	var codes []string
-	found := false
-	var missing error
-	for _, name := range dirs {
-		entries, err := os.ReadDir(name)
-		if errors.Is(err, os.ErrNotExist) {
-			missing = err
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("读取本地股票代码 %s: %w", name, err)
-		}
-		found = true
-		for _, entry := range entries {
-			if !entry.Type().IsRegular() || !strings.HasSuffix(entry.Name(), ".db") {
-				continue
-			}
-			code := strings.TrimSuffix(entry.Name(), ".db")
-			if !protocol.IsStock(code) {
-				continue
-			}
-			if _, err := strconv.ParseUint(code[2:], 10, 32); err != nil {
-				continue
-			}
-			if !seen[code] {
-				codes = append(codes, code)
-				seen[code] = true
-			}
+	for _, item := range stored {
+		if protocol.IsStock(item.Code) && !seen[item.Code] {
+			codes = append(codes, item.Code)
+			seen[item.Code] = true
 		}
 	}
-	if !found {
-		return nil, fmt.Errorf("读取本地股票代码: %w", missing)
+	if len(codes) == 0 {
+		return nil, fmt.Errorf("行情存储没有股票日线: %s", identity)
 	}
 	sort.Strings(codes)
-	if len(codes) == 0 {
-		return nil, fmt.Errorf("本地日线库没有股票数据: %s", dir)
-	}
 	return codes, nil
 }

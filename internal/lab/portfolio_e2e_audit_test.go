@@ -29,7 +29,6 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/internal/portfolioresearch"
-	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 )
 
@@ -574,7 +573,7 @@ func newAuditE2EFixture(t *testing.T) *auditE2EFixture {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writeAuditE2EData(t, dir)
 

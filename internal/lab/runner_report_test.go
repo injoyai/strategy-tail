@@ -15,7 +15,6 @@ import (
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -242,7 +241,7 @@ func TestRunnerAdvancedReportSourceScript(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writeFakeDayDB(t, dir, "sh600000", 250, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
 
@@ -290,7 +289,7 @@ func TestRunnerSimpleReportComparison(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writePresetDayDB(t, dir, "sh600000", 600, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
 
@@ -472,14 +471,6 @@ func waitRunnerDone(t *testing.T, r *Runner) {
 // 涨跌幅极小（不触涨停过滤），FloatStock 保证流通市值 ≥ 20 亿。
 func writePresetDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Sync2(new(extend.Kline)); err != nil {
-		t.Fatal(err)
-	}
 	rows := make([]*extend.Kline, 0, days)
 	for i := 0; i < days; i++ {
 		tm := base.AddDate(0, 0, i)
@@ -508,9 +499,7 @@ func writePresetDayDB(t *testing.T, dir, code string, days int, base time.Time) 
 			TotalStock: 3_000_000_000,
 		})
 	}
-	if _, err := db.Insert(rows); err != nil {
-		t.Fatal(err)
-	}
+	seedTestDays(t, dir, code, rows)
 }
 
 // waitRunnerDone 轮询至任务完成；出错即失败。

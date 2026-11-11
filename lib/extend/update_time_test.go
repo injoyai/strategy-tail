@@ -1,70 +1,30 @@
 package extend
 
 import (
-	"bytes"
-	"github.com/injoyai/tdx/v2/lib/update"
-	"os"
-	"path/filepath"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/extend/storage"
 )
 
+type markerStore struct {
+	storage.BarStore
+	timestamp int64
+	found     bool
+	err       error
+}
+
+func (s markerStore) LoadUpdate(key string) (int64, bool, error) { return s.timestamp, s.found, s.err }
+
 func TestLastSuccessfulUpdate(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "行情 #数据")
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	last, err := pull.LastSuccessfulUpdate()
-	if err != nil || !last.IsZero() {
-		t.Fatalf("missing database: %v, %v", last, err)
-	}
-	filename := filepath.Join(dir, "update.db")
-	if _, err := os.Stat(filename); !os.IsNotExist(err) {
-		t.Fatal("status read created a database")
-	}
-	db, err := xorms.NewSQLite(filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	if err := db.Sync2(new(update.Record)); err != nil {
-		t.Fatal(err)
-	}
-	for _, timestamp := range []int64{-1, 0, time.Date(2026, 10, 12, 16, 0, 0, 0, time.FixedZone("CST", 8*3600)).Unix()} {
-		if _, err := db.Exec(`DELETE FROM "update"`); err != nil {
-			t.Fatal(err)
+	p := &PullKline{Config: PullKlineConfig{Store: markerStore{}}}
+	cause := errors.New("store unavailable")
+	for _, s := range []markerStore{{}, {timestamp: -1, found: true}, {timestamp: time.Now().Unix(), found: true}, {err: cause}} {
+		p.Config.Store = s
+		at, err := p.LastSuccessfulUpdate()
+		if !errors.Is(err, s.err) || (s.timestamp <= 0 && !at.IsZero()) || (s.timestamp > 0 && at.Unix() != s.timestamp) {
+			t.Fatalf("marker=%+v at=%v err=%v", s, at, err)
 		}
-		if _, err := db.Insert(&update.Record{Key: "pull", Time: timestamp}); err != nil {
-			t.Fatal(err)
-		}
-		last, err := pull.LastSuccessfulUpdate()
-		if err != nil || (timestamp <= 0 && !last.IsZero()) || (timestamp > 0 && last.Unix() != timestamp) {
-			t.Fatalf("timestamp=%d last=%v err=%v", timestamp, last, err)
-		}
-	}
-	if _, err := db.Exec(`DELETE FROM "update"`); err != nil {
-		t.Fatal(err)
-	}
-	last, err = pull.LastSuccessfulUpdate()
-	if err != nil || !last.IsZero() {
-		t.Fatalf("missing marker: %v, %v", last, err)
-	}
-	db.Close()
-	before, err := os.ReadFile(filename)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pull.LastSuccessfulUpdate(); err != nil {
-		t.Fatal(err)
-	}
-	after, err := os.ReadFile(filename)
-	if err != nil || !bytes.Equal(before, after) {
-		t.Fatal("status read changed the database")
-	}
-	if err := os.WriteFile(filename, []byte("invalid database"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pull.LastSuccessfulUpdate(); err == nil {
-		t.Fatal("unreadable marker reported as no success record")
 	}
 }

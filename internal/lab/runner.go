@@ -543,7 +543,7 @@ func (r *Runner) recoverStalePortfolioRunning(store *PortfolioExperimentStore) {
 func (r *Runner) Stop() {
 	// 先取得本次停止令牌；后续即使任务切换，也只能关闭这一令牌。
 	ctl := r.control.Load()
-	if ctl == nil || ctl.task == "data_update" {
+	if ctl == nil {
 		return // 数据更新按数据库事务完成，避免留下半批更新状态。
 	}
 	if r.running.Load() {

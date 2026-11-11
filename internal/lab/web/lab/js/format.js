@@ -12,7 +12,7 @@ export function taskProgress(s = {}, names) {
   const total = Number(s.total ?? s.totalCodes) || 0;
   const done = Math.max(0, Math.min(total, Number(s.done ?? s.doneCodes) || 0));
   const phase = s.phase || s.stage || (total > 0
-    ? s.task === 'analysis' ? 'observations' : s.task === 'data_update' ? 'updating' : 'backtesting'
+    ? s.task === 'analysis' ? 'observations' : 'backtesting'
     : s.task === 'portfolio' || s.task === 'portfolio_validation' ? 'queued' : 'preparing');
   const label = {
     preparing: '准备数据', loading: '加载行情', simulating: '模拟交易', backtesting: '执行回测',
@@ -24,7 +24,7 @@ export function taskProgress(s = {}, names) {
     prepare: '准备出题', scan: '扫描股票', save: '保存练习',
   }[phase] || '处理任务';
   const unit = s.unit || (phase === 'simulating' || phase === 'execute' ? 'trading_days'
-    : phase === 'yearly' ? 'years' : s.task === 'data_update' ? 'symbols'
+    : phase === 'yearly' ? 'years'
     : s.config?.macd && phase === 'backtesting' ? 'stock_years' : 'stocks');
   const unitLabel = {stocks: '只股票', symbols: '个标的', trading_days: '个交易日', years: '个年份', stock_years: '股票×年份', snapshots: '个快照'}[unit] || '项';
   const currentLabel = unit === 'trading_days' && !String(s.currentCode || '').startsWith('窗口') ? '当前日期'

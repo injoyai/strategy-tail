@@ -1,27 +1,25 @@
 package extend
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/injoyai/strategy-tail/internal/testmarket"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/extend/manage"
+	"github.com/injoyai/tdx/v2/extend/metadata"
+	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func saveSourceMinutes(p *PullKline, code string, year int, bars protocol.Klines) error {
-	store, closeStore, err := p.openSourceStore(true)
-	if err != nil {
-		return err
-	}
-	if closeStore != nil {
-		defer closeStore()
-	}
+	store := p.Config.Store
 	s, err := pull.New(&pull.Config{Store: store, Codes: []string{code}, Minute: true})
 	if err != nil {
 		return err
@@ -31,7 +29,7 @@ func saveSourceMinutes(p *PullKline, code string, year int, bars protocol.Klines
 	if err != nil {
 		return err
 	}
-	rows := make([]*pull.KlineMinute, 0, len(bars))
+	rows := make([]*model.KlineMinute, 0, len(bars))
 	from := ""
 	for _, b := range bars {
 		if b.Time.Second() != 0 || b.Time.Nanosecond() != 0 {
@@ -41,18 +39,14 @@ func saveSourceMinutes(p *PullKline, code string, year int, bars protocol.Klines
 		if from == "" || value < from {
 			from = value
 		}
-		rows = append(rows, &pull.KlineMinute{Time: value, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume * 100, Amount: b.Amount})
+		rows = append(rows, &model.KlineMinute{Time: value, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume * 100, Amount: &b.Amount})
 	}
 	return s.SaveMinute(c, year, from, rows)
 }
 
 func TestSourceStoragePreservesMarketClockWithoutTimezone(t *testing.T) {
-	p := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
-	store, closeStore, err := p.openSourceStore(true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer closeStore()
+	p := fixturePull(t, PullKlineConfig{})
+	store := p.Config.Store
 	s, err := pull.New(&pull.Config{Store: store, Codes: []string{"sh600000", "US.AAPL", "HK00700"}, Minute: true})
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +57,7 @@ func TestSourceStoragePreservesMarketClockWithoutTimezone(t *testing.T) {
 		if e != nil {
 			t.Fatal(e)
 		}
-		rows := []*pull.KlineMinute{{Time: "2026-11-03 09:30", Close: 12.345678, Volume: 100}}
+		rows := []*model.KlineMinute{{Time: "2026-11-03 09:30", Close: 12.345678, Volume: 100}}
 		if e = s.SaveMinute(c, 2026, rows[0].Time, rows); e != nil {
 			t.Fatal(e)
 		}
@@ -79,17 +73,21 @@ func TestSourceStoragePreservesMarketClockWithoutTimezone(t *testing.T) {
 }
 
 func TestSourceDailyAdapterUsesDatesAndPreviousClose(t *testing.T) {
-	p := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
-	store, closeStore, e := p.openSourceStore(true)
-	if e != nil {
-		t.Fatal(e)
+	p := fixturePull(t, PullKlineConfig{})
+	equity, err := metadata.NewGbbq([]*model.Gbbq{
+		{Code: "sh600000", Category: 5, Time: time.Date(2026, 1, 5, 15, 0, 0, 0, protocol.Location()), C3: 1000, C4: 2000},
+		{Code: "sh600000", Category: 5, Time: time.Date(2026, 1, 6, 15, 0, 0, 0, protocol.Location()), C3: 9999, C4: 9999},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	defer closeStore()
+	p.Config.Equity = func() *metadata.Gbbq { return equity }
+	store := p.Config.Store
 	c, e := pull.ParseCode("sh600000")
 	if e != nil {
 		t.Fatal(e)
 	}
-	if e = store.SaveDay(c, "2026-01-02", []*pull.KlineDay{{Time: "2026-01-02", Close: 10, Volume: 100}, {Time: "2026-01-05", Close: 11, Volume: 200, FloatStock: 1000, TotalStock: 2000}}); e != nil {
+	if e = store.SaveDay(c, "2026-01-02", []*model.KlineDay{{Time: "2026-01-02", Close: 10, Volume: 100}, {Time: "2026-01-05", Close: 11, Volume: 200}}); e != nil {
 		t.Fatal(e)
 	}
 	for _, zone := range []*time.Location{time.UTC, time.FixedZone("west", -5*3600), protocol.Location()} {
@@ -100,25 +98,24 @@ func TestSourceDailyAdapterUsesDatesAndPreviousClose(t *testing.T) {
 	}
 }
 
-func TestSourceReadsDoNotCreateStorage(t *testing.T) {
+func TestMissingStoreDoesNotOpenArchivedSQLite(t *testing.T) {
 	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "update.db"), []byte("archived"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewPullKline(PullKlineConfig{Dir: dir}); !errors.Is(err, ErrMarketStoreRequired) {
+		t.Fatalf("expected missing MySQL configuration: %v", err)
+	}
 	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	if _, e := p.DayKlinesAll("sh600000"); e != nil {
-		t.Fatal(e)
+	if _, err := p.DayKlinesAll("sh600000"); !errors.Is(err, ErrMarketStoreRequired) {
+		t.Fatal(err)
 	}
-	entries, e := os.ReadDir(dir)
-	if e != nil || len(entries) != 0 {
-		t.Fatal("query created storage", entries, e)
+	if _, err := p.LastSuccessfulUpdate(); !errors.Is(err, ErrMarketStoreRequired) {
+		t.Fatal(err)
 	}
-	if e = os.Mkdir(filepath.Join(dir, SourceDir), 0755); e != nil {
-		t.Fatal(e)
-	}
-	if _, e = p.DayKlinesAll("sh600000"); e == nil {
-		t.Fatal("unmarked source directory was silently initialized")
-	}
-	entries, e = os.ReadDir(filepath.Join(dir, SourceDir))
-	if e != nil || len(entries) != 0 {
-		t.Fatal(entries, e)
+	raw, err := os.ReadFile(filepath.Join(dir, "update.db"))
+	if err != nil || string(raw) != "archived" {
+		t.Fatal("archived marker changed", err)
 	}
 }
 
@@ -137,29 +134,23 @@ type sourcePool struct {
 	client *sourceClient
 }
 
-func (p sourcePool) Do(f func(tdx.Client) error) error { return f(p.client) }
+func (p sourcePool) DoContext(_ context.Context, f func(tdx.Client) error) error { return f(p.client) }
 
 func TestSourceUpdateUsesSDKAndIsolatesOldCompletionMarker(t *testing.T) {
-	p, e := NewPullKline(PullKlineConfig{Dir: t.TempDir(), Codes: []string{"sh000001"}, Types: []string{Day}})
-	if e != nil {
-		t.Fatal(e)
-	}
+	p := fixturePull(t, PullKlineConfig{Codes: []string{"sh000001"}, Types: []string{Day}})
+	var e error
 	if e = p.Updated.Mark("pull"); e != nil {
 		t.Fatal(e)
 	} // Legacy completion cannot suppress the new dataset.
 	client := &sourceClient{}
-	m := &manage.Manage{ClientPool: sourcePool{client: client}}
+	m := &MarketData{ClientPool: sourcePool{client: client}}
 	if e = p.UpdateWithProgress(m, true, nil); e != nil {
 		t.Fatal(e)
 	}
 	if client.calls != 1 {
 		t.Fatal(client.calls)
 	}
-	store, closeStore, e := p.openSourceStore(false)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer closeStore()
+	store := p.Config.Store
 	code, e := pull.ParseCode("sh000001")
 	if e != nil {
 		t.Fatal(e)
@@ -171,7 +162,7 @@ func TestSourceUpdateUsesSDKAndIsolatesOldCompletionMarker(t *testing.T) {
 	if e = p.UpdateWithProgress(m, true, nil); e != nil || client.calls != 1 {
 		t.Fatal("fresh dataset downloaded again", client.calls, e)
 	}
-	db, e := sql.Open("sqlite", code.DayFile(filepath.Join(p.Config.Dir, SourceDir)))
+	db, e := sql.Open("sqlite", store.(*testmarket.Store).DayFile(code))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -194,51 +185,14 @@ func TestSourceUpdateUsesSDKAndIsolatesOldCompletionMarker(t *testing.T) {
 		}
 		count++
 	}
-	if e = columns.Err(); e != nil || count != 10 {
+	if e = columns.Err(); e != nil || count != 7 {
 		t.Fatal(count, e)
 	}
 }
 
-func TestSourceLocalUniverseIncludesNewFiles(t *testing.T) {
-	p := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
-	store, closeStore, e := p.openSourceStore(true)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer closeStore()
-	code, e := pull.ParseCode("sh600000")
-	if e != nil {
-		t.Fatal(e)
-	}
-	if e = store.SaveDay(code, "2026-11-03", []*pull.KlineDay{{Time: "2026-11-03", Close: 10}}); e != nil {
-		t.Fatal(e)
-	}
-	got, e := p.LocalStockCodes()
-	if e != nil || len(got) != 1 || got[0] != "sh600000" {
-		t.Fatal(got, e)
-	}
-	dir := filepath.Join(p.Config.Dir, DirDay)
-	if e = os.MkdirAll(dir, 0755); e != nil {
-		t.Fatal(e)
-	}
-	for _, name := range []string{"sh600000.db", "sz000001.db"} {
-		if e = os.WriteFile(filepath.Join(dir, name), nil, 0644); e != nil {
-			t.Fatal(e)
-		}
-	}
-	got, e = p.LocalStockCodes()
-	if e != nil || len(got) != 2 || got[0] != "sh600000" || got[1] != "sz000001" {
-		t.Fatal(got, e)
-	}
-}
-
 func TestSourceSDKRejectsTimezoneAndInvalidDate(t *testing.T) {
-	p := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
-	store, closeStore, e := p.openSourceStore(true)
-	if e != nil {
-		t.Fatal(e)
-	}
-	defer closeStore()
+	p := fixturePull(t, PullKlineConfig{})
+	store := p.Config.Store
 	s, e := pull.New(&pull.Config{Store: store, Codes: []string{"US.AAPL"}, Minute: true})
 	if e != nil {
 		t.Fatal(e)
@@ -249,7 +203,7 @@ func TestSourceSDKRejectsTimezoneAndInvalidDate(t *testing.T) {
 		t.Fatal(e)
 	}
 	for _, value := range []string{"2026-11-03T09:30:00+08:00", "2026-11-03 09:30+08:00", "2026-02-30 09:30"} {
-		if e = s.SaveMinute(code, 2026, "", []*pull.KlineMinute{{Time: value, Close: 10}}); e == nil {
+		if e = s.SaveMinute(code, 2026, "", []*model.KlineMinute{{Time: value, Close: 10}}); e == nil {
 			t.Fatal("invalid source accepted", value)
 		}
 	}
@@ -257,4 +211,17 @@ func TestSourceSDKRejectsTimezoneAndInvalidDate(t *testing.T) {
 	if e != nil || len(rows) != 0 {
 		t.Fatal(rows, e)
 	}
+}
+
+func fixturePull(t *testing.T, cfg PullKlineConfig) *PullKline {
+	t.Helper()
+	if cfg.Dir == "" {
+		cfg.Dir = t.TempDir()
+	}
+	cfg.Store = testmarket.Open(t, cfg.Dir)
+	p, err := NewPullKline(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
 }

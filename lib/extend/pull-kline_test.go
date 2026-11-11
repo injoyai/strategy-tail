@@ -3,25 +3,22 @@ package extend
 import (
 	"context"
 	"encoding/binary"
-	"github.com/injoyai/tdx/v2/extend/manage"
-	"github.com/injoyai/tdx/v2/lib/update"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
-
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/injoyai/ios"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/tdx/v2/extend/model"
+	sdkpull "github.com/injoyai/tdx/v2/extend/pull"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func emptyKlineManager(t *testing.T) *manage.Manage {
+func emptyKlineManager(t *testing.T) *MarketData {
 	t.Helper()
 	conn, server := net.Pipe()
 	ready := make(chan tdx.Client, 1)
@@ -71,7 +68,7 @@ func emptyKlineManager(t *testing.T) *manage.Manage {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { pool.Close() })
-	return &manage.Manage{ClientPool: pool}
+	return &MarketData{ClientPool: pool}
 }
 
 func TestEmptyKlineUpdatesCompleteAndPreserveData(t *testing.T) {
@@ -83,42 +80,21 @@ func TestEmptyKlineUpdatesCompleteAndPreserveData(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
 			const code = "sz001381"
-			at := time.Date(time.Now().Year(), 1, 2, 15, 0, 0, 0, time.Local)
+			at := time.Date(time.Now().Year(), 1, 2, 15, 0, 0, 0, protocol.Location())
 			bar := &protocol.Kline{Time: at, Close: 12.345}
+			pull := fixturePull(t, PullKlineConfig{Dir: dir, Codes: []string{code}, Types: []string{Day, Minute}})
 			if existing {
-				dayDB, err := xorms.NewSQLite(filepath.Join(dir, DirDay, code+".db"))
+				c, err := sdkpull.ParseCode(code)
 				if err != nil {
 					t.Fatal(err)
 				}
-				defer dayDB.Close()
-				if err := dayDB.Sync2(new(Kline)); err != nil {
+				if err := pull.Config.Store.SaveDay(c, "", []*model.KlineDay{{Time: at.Format(time.DateOnly), Close: bar.Close}}); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := dayDB.Insert(&Kline{Unix: at.Unix(), Kline: bar}); err != nil {
-					t.Fatal(err)
-				}
-				minuteDB, err := xorms.NewSQLite(filepath.Join(dir, DirMinute, code, code+"-"+at.Format("2006")+".db"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer minuteDB.Close()
-				if err := minuteDB.Sync2(new(protocol.Kline)); err != nil {
-					t.Fatal(err)
-				}
-				if _, err := minuteDB.Insert(bar); err != nil {
+				if err := saveSourceMinutes(pull, code, at.Year(), protocol.Klines{bar}); err != nil {
 					t.Fatal(err)
 				}
 			}
-			db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer db.Close()
-			updated, err := update.New(db, updateCloseHour, updateCloseMinute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			pull := &PullKline{Config: PullKlineConfig{Dir: dir, Codes: []string{code}, Goroutines: 1}, Types: []string{Day, Minute}, Updated: updated}
 			var progress UpdateProgress
 			if err := pull.UpdateWithProgress(emptyKlineManager(t), true, func(p UpdateProgress) { progress = p }); err != nil {
 				t.Fatal(err)
@@ -126,9 +102,8 @@ func TestEmptyKlineUpdatesCompleteAndPreserveData(t *testing.T) {
 			if progress.Done != 2 || progress.Total != 2 || progress.Failed != 0 || progress.Skipped {
 				t.Fatalf("empty data reported as failure: %+v", progress)
 			}
-			var marker update.Record
-			if found, err := db.Where("`Key`=?", "pull").Get(&marker); err != nil || !found || marker.Time == 0 {
-				t.Fatalf("completed batch marker: %+v, found=%v err=%v", marker, found, err)
+			if ts, found, err := pull.Config.Store.LoadUpdate("pull"); err != nil || !found || ts == 0 {
+				t.Fatalf("completed batch marker: %d, found=%v err=%v", ts, found, err)
 			}
 			days, err := pull.DayKlinesAll(code)
 			if err != nil {
@@ -172,26 +147,17 @@ func TestKlineUpdatesReturnDataDirectoryError(t *testing.T) {
 	}
 }
 
-// SDK 源时间覆盖最新边界，查询合并旧分钟库且不重复、不丢更早数据。
+// SDK 源时间覆盖最新边界，不重复也不丢更早数据。
 func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
 	dir := t.TempDir()
 	const code = "sz001381"
 	year := time.Now().Year()
 	last := time.Date(year, 1, 2, 10, 0, 0, 0, time.Local)
 
-	db, err := xorms.NewSQLite(filepath.Join(dir, DirMinute, code, code+"-"+strconv.Itoa(year)+".db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Sync2(new(protocol.Kline)); err != nil {
-		t.Fatal(err)
-	}
-	// 预置 last 前一分钟与 last 两条已有数据。
-	if _, err := db.Insert(&protocol.Kline{Time: last.Add(-time.Minute), Close: 0.099}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Insert(&protocol.Kline{Time: last, Close: 0.1}); err != nil {
+	pull := fixturePull(t, PullKlineConfig{Dir: dir})
+	if err := saveSourceMinutes(pull, code, year, protocol.Klines{
+		{Time: last.Add(-time.Minute), Close: 0.099}, {Time: last, Close: 0.1},
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -200,7 +166,6 @@ func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
 		{Time: last, Close: 0.11},
 		{Time: last.Add(time.Minute), Close: 0.111},
 	}
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir}}
 	if err := saveSourceMinutes(pull, code, year, ks); err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +186,7 @@ func TestUpdateMinuteKlineYearRefreshesBoundaryBar(t *testing.T) {
 
 // 验证K线数据不足时 DayKline 返回哨兵错误,而非静默返回 nil。
 func TestDayKlineNotEnoughError(t *testing.T) {
-	pull := &PullKline{Config: PullKlineConfig{Dir: t.TempDir()}}
+	pull := fixturePull(t, PullKlineConfig{})
 	if _, err := pull.DayKline("sz001381", 0); err != ErrNotEnoughKline {
 		t.Fatalf("err = %v, want ErrNotEnoughKline", err)
 	}

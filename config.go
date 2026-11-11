@@ -1,15 +1,40 @@
 package common
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/strategy-tail/core"
 )
 
 func init() {
-	// cfg 默认按启动目录读文件；统一到数据使用的根目录，保留文件优先于环境变量的顺序。
+	initConfig()
+}
+
+func initConfig() {
+	// 私有连接文件不进入 Git 或镜像；其他配置保留公共文件优先的原有约定。
+	private := ResolveRuntimePath(filepath.Join("config", "mysql.yaml"))
+	if _, err := os.Stat(private); err == nil {
+		cfg.Init(cfg.WithFile(private), cfg.WithFile(ResolveRuntimePath(filepath.Join("config", "config.yaml"))), cfg.WithEnv())
+		return
+	}
 	cfg.Init(cfg.WithFile(ResolveRuntimePath(filepath.Join("config", "config.yaml"))), cfg.WithEnv())
+}
+
+// MySQLDSN 是所有运行入口和迁移命令共用的行情连接配置。
+// 显式环境值优先，包括空值；缺少配置时禁止悄悄写回本地行情库。
+func MySQLDSN() (string, error) {
+	value, explicit := os.LookupEnv("pull.mysql")
+	if !explicit {
+		value = cfg.GetString("pull.mysql", "")
+	}
+	if value = strings.TrimSpace(value); value != "" {
+		return value, nil
+	}
+	return "", fmt.Errorf("未配置行情 MySQL：请设置 pull.mysql 或 config/mysql.yaml 中的 pull.mysql")
 }
 
 // LoadBacktestConfig 读取回测公共配置；未配置项使用以下默认值。

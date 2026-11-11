@@ -1,9 +1,8 @@
 package extend
 
 import (
+	"context"
 	"errors"
-	"github.com/injoyai/tdx/v2/extend/manage"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -16,18 +15,11 @@ type unavailableValuationPool struct {
 }
 
 func TestKlineFailureStillProcessesValuation(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, SourceDir), []byte("existing data"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	pull, err := NewPullKline(PullKlineConfig{Dir: dir, Codes: []string{"sh600519"}, Types: []string{Day}, ValuationDatabase: filepath.Join(t.TempDir(), "valuation.db")})
-	if err != nil {
-		t.Fatal(err)
-	}
+	pull := fixturePull(t, PullKlineConfig{Codes: []string{"sh600519"}, Types: []string{Day}, ValuationDatabase: filepath.Join(t.TempDir(), "valuation.db")})
 	pool := &unavailableValuationPool{}
 	var last UpdateProgress
-	err = pull.UpdateWithProgress(&manage.Manage{ClientPool: pool}, true, func(p UpdateProgress) { last = p })
-	if err == nil || last.Done != 2 || last.Total != 2 || last.Failed != 2 || pool.calls != 1 {
+	err := pull.UpdateWithProgress(&MarketData{ClientPool: pool}, true, func(p UpdateProgress) { last = p })
+	if err == nil || last.Done != 2 || last.Total != 2 || last.Failed != 2 || pool.calls != tdx.DefaultRetry+1 {
 		t.Fatalf("progress=%+v calls=%d err=%v", last, pool.calls, err)
 	}
 	if fresh, err := pull.Updated.IsUpdated("pull"); err != nil || fresh {
@@ -35,16 +27,14 @@ func TestKlineFailureStillProcessesValuation(t *testing.T) {
 	}
 }
 
-func (p *unavailableValuationPool) Do(func(tdx.Client) error) error {
+func (p *unavailableValuationPool) DoContext(context.Context, func(tdx.Client) error) error {
 	p.calls++
 	return errors.New("snapshot unavailable")
 }
 
 func TestFreshKlinesDoNotSkipMissingValuationAndAllowRetry(t *testing.T) {
-	pull, err := NewPullKline(PullKlineConfig{Dir: t.TempDir(), ValuationDatabase: filepath.Join(t.TempDir(), "valuation.db"), Types: []string{Day}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	pull := fixturePull(t, PullKlineConfig{ValuationDatabase: filepath.Join(t.TempDir(), "valuation.db"), Types: []string{Day}})
+	var err error
 	if _, err = pull.Updated.IsUpdated("pull"); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +42,7 @@ func TestFreshKlinesDoNotSkipMissingValuationAndAllowRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 	pool := &unavailableValuationPool{}
-	m := &manage.Manage{ClientPool: pool}
+	m := &MarketData{ClientPool: pool}
 	for attempt := 1; attempt <= 2; attempt++ {
 		var last UpdateProgress
 		err = pull.UpdateWithProgress(m, true, func(p UpdateProgress) { last = p })

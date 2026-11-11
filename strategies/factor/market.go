@@ -59,7 +59,7 @@ func (A流通市值) Value(code string, dks extend.Klines) float64 {
 	return dks[len(dks)-1].FloatValue() / 1e8
 }
 
-// 单日涨幅 使用行情 RiseRate 的百分数口径，与 N日动量的原始比例不同。
+// 单日涨幅 使用策略层的百分数口径，与 N日动量的原始比例不同。
 type A单日涨幅 struct{}
 
 func (A单日涨幅) Name() string { return "单日涨幅(%)" }
@@ -67,7 +67,11 @@ func (A单日涨幅) Value(code string, dks extend.Klines) float64 {
 	if len(dks) == 0 {
 		return math.NaN()
 	}
-	return dks[len(dks)-1].RiseRate()
+	rate, ok := dks[len(dks)-1].RisePercent()
+	if !ok {
+		return math.NaN()
+	}
+	return rate
 }
 
 // 实体振幅占比 是 |Close-Open|/(High-Low)，与以开盘价为分母的“实体幅度”不同。

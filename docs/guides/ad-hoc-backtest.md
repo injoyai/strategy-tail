@@ -1,28 +1,92 @@
-# 临时策略回测
+# 临时策略回测与只读数据接口
 
 ## 选择入口
 
-行情和研究数据在项目外维护。临时回测读取项目配置指向的存量数据，缺数时报告缺口，按有证据的范围运行。使用已有 Lab 时，先确认它指向同一数据集且自动更新已关闭。项目规则见 [§6.9](../../PROJECT_RULES.md#69-项目数据只读与临时回测)。
+行情和研究数据在项目外维护。临时回测读取项目配置指向的存量数据，缺数时报告缺口，按有证据的范围运行。使用已有 Lab 时，先确认它指向同一数据集。项目规则见 [§6.9](../../PROJECT_RULES.md#69-项目数据只读与临时回测)。
 
 | 用途 | 入口与口径 |
 | --- | --- |
+| 读取项目行情 | 根包 `common.OpenResearchMarket()` 复用 `pull.mysql`。返回的读取器提供 `DayKlines(code, start, end)`、`MinKlines(code, start, end)`、`LocalStockCodes()`、`StorageIdentity()` 和 `Close()`。打开连接及查询只访问 MySQL 已有表。见[入口源码](../../research_market.go)和[读取器](../../lib/extend/market_reader.go)。 |
 | 日期、分钟和证券范围 | 日线日期闭区间，零值端点为无界。分钟线按 `start` 到 `end` 所在年份整年读取，非整年实验在调用方按东八区日期和时间再切分。代码带市场前缀，例如 `sh600000`、`sh000300`。股本字段取自已入库日线。`LocalStockCodes()` 是有日线的库存代码集合，包含库中保留的退市股票，成员资格历史需另查。 |
-| 历史股票池与非行情字段 | 本地成员文件可通过 `researchdata.LoadUniverseFile(common.UniverseFile(), cfg, strict)` 加载，核对 `Universe.Snapshot()` 及按日期的 `Codes`。已有 Lab 的 `researchdata.View` 可用 `Latest`、`Range` 按 `AsOf` 查询本地研究数据。`OpenSQLiteStore` 会初始化库，直接读取时使用已有视图。见[股票池契约](../../researchdata/universe.go)和[研究数据契约](../../researchdata/contract.go)。 |
-| 逐标的或多方案回测 | 将策略声明为 `researchrun.Variant`，把项目的只读行情读取函数接到 `researchrun.Config`，调用 `Run` 并检查 `Coverage`。取数或运行自定义模型可用 `ForEachCodeData` 或 `ForEachCodeYearData`，回调由多个 worker 并发执行。见[执行器](../../internal/researchrun/runner.go)。 |
+| 历史股票池与非行情字段 | 本地成员文件可通过 `researchdata.LoadUniverseFile(common.UniverseFile(), cfg, strict)` 加载，核对 `Universe.Snapshot()` 及按日期的 `Codes`。已有 Lab 的 `researchdata.View` 可用 `Latest`、`Range` 按 `AsOf` 查询本地研究数据。`OpenSQLiteStore` 会初始化库，Lab 使用 `OpenSQLiteView` 打开已有文件。见[股票池契约](../../researchdata/universe.go)和[研究数据契约](../../researchdata/contract.go)。 |
+| 逐标的或多方案回测 | 将策略声明为 `researchrun.Variant`，把读取器方法接到 `researchrun.Config`，调用 `Run` 并检查 `Coverage`。取数或运行自定义模型可用 `ForEachCodeData` 或 `ForEachCodeYearData`，回调由多个 worker 并发执行。见[执行器](../../internal/researchrun/runner.go)。 |
 | 账户回测 | 已有 Lab 可用 `POST /api/builder/run` 或 `POST /api/strategy/run` 运行可表达的策略，请求带 `account` 资金参数。通过 `GET /api/status` 确认成功后，从 `GET /api/report/latest` 获取报告，核对 ID 是本次新增且配置相符，再用 `GET /api/report/{id}` 定位。可用 `GET /api/kline/{code}?from=YYYY-MM-DD&to=YYYY-MM-DD` 检查日线。见[回测路由](../../internal/lab/server.go)和[账户参数](../../internal/lab/account_backtest.go)。 |
 
 `researchrun.Run` 的多年份输入按整只标的统计覆盖，任一年加载失败会排除该标的，各年分别计算持仓。`DailyClose` 只用日线。`Intraday` 加载分钟线供卖出，买入仍用日线收盘；现有引擎在某天缺有效分钟线时会用日线判断卖出。要求严格分钟执行时，先用日线交易日期核对有效分钟覆盖，按策略要求排除或明确标记不完整的样本。
 
-## 建立临时目录
+## 最小 Go 示例
 
-在仓库根目录为一次性代码、日志、探针和中间数据建立独立目录。
+在仓库根目录建立独立工作目录，将示例保存为 `$scratch/main.go`。日志、数据探针和缓存也可放在同一目录。
 
 ```sh
 mkdir -p .tmp/backtest
 scratch=$(mktemp -d "$PWD/.tmp/backtest/ma-check.XXXXXX")
 ```
 
-将 Go 入口保存为 `$scratch/main.go` 后，从仓库根目录运行 `TZ=Asia/Shanghai go run "$scratch/main.go"`。
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	common "github.com/injoyai/strategy-tail"
+	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/researchrun"
+	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
+)
+
+func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
+	market, err := common.OpenResearchMarket()
+	if err != nil {
+		return err
+	}
+	defer market.Close()
+
+	cost, position, _, _, _ := common.LoadBacktestConfig()
+	report, err := researchrun.Run(context.Background(), researchrun.Config{
+		Codes: []string{"sh600000"},
+		Years: []int{2025},
+		Variants: []researchrun.Variant{{
+			Name:   "收盘高于昨收买入，连续三日跌破20日线卖出",
+			Buyer:  buy.A收盘大于昨收{},
+			Seller: sell.A收盘跌破均线{Period: 20, Days: 3},
+		}},
+		Cost:         cost,
+		Position:     position,
+		DataMode:     researchrun.DailyClose,
+		GetDayKlines: market.DayKlines,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("数据覆盖 %+v\n", report.Coverage)
+	if report.Coverage.Completed == 0 {
+		return fmt.Errorf("无可用行情样本")
+	}
+	for _, result := range report.Results {
+		closed := make([]core.Trade, 0, len(result.Trades))
+		for _, trade := range result.Trades {
+			if !trade.Virtual {
+				closed = append(closed, trade)
+			}
+		}
+		fmt.Printf("%s %+v，期末未平仓 %d 笔\n", result.Variant.Name,
+			core.Stats(closed), len(result.Trades)-len(closed))
+	}
+	return nil
+}
+```
+
+从仓库根目录运行 `TZ=Asia/Shanghai go run "$scratch/main.go"`。分钟卖出同时指定 `DataMode: researchrun.Intraday` 和 `GetMinKlines: market.MinKlines`。正式实验按下述格式落盘。
 
 ## 交付格式
 

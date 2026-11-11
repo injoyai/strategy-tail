@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -85,7 +85,7 @@ func TestV2MinuteRejectsNonFinitePrice(t *testing.T) {
 	}
 }
 
-func TestV2LegacyRawMinuteSourceOverlay(t *testing.T) {
+func TestV2LegacyRawMinuteConversion(t *testing.T) {
 	dir := t.TempDir()
 	const code = "sh600000"
 	db, e := xorms.NewSQLite(filepath.Join(dir, DirMinute, code, code+"-2026.db"))
@@ -101,16 +101,8 @@ func TestV2LegacyRawMinuteSourceOverlay(t *testing.T) {
 	if _, e = db.Insert(&protocol.Kline{Time: at, Close: 12345, Amount: 1234567}); e != nil {
 		t.Fatal(e)
 	}
-	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	got, e := p.MinKlines(code, at, at.Add(time.Hour))
+	got, e := readMinuteFile(filepath.Join(dir, DirMinute, code, code+"-2026.db"))
 	if e != nil || len(got) != 1 || got[0].Close != 12.345 || got[0].Amount != 1234.567 {
-		t.Fatal(got, e)
-	}
-	if e = saveSourceMinutes(p, code, 2026, protocol.Klines{{Time: at, Close: 1.001, Amount: 2345.678}}); e != nil {
-		t.Fatal(e)
-	}
-	got, e = p.MinKlines(code, at, at.Add(time.Hour))
-	if e != nil || len(got) != 1 || got[0].Close != 1.001 || got[0].Amount != 2345.678 {
 		t.Fatal(got, e)
 	}
 	var storageType string

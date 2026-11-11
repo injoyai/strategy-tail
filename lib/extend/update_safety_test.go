@@ -3,8 +3,6 @@ package extend
 import (
 	"errors"
 	"fmt"
-	"github.com/injoyai/tdx/v2/extend/manage"
-	"github.com/injoyai/tdx/v2/lib/update"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,8 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/injoyai/strategy-tail/internal/update"
+	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/tdx/v2"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 )
 
 func TestUpdateLockExcludesOtherProcesses(t *testing.T) {
@@ -68,26 +67,14 @@ func TestUpdateJobsReportOnceAfterRetriesAndReturnFailures(t *testing.T) {
 }
 
 func TestUpdateFreshnessSkipsRepeatedDownloads(t *testing.T) {
-	dir := t.TempDir()
-	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	updated, err := update.New(db, 15, 31)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := updated.IsUpdated("pull"); err != nil {
-		t.Fatal(err)
-	}
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir}, Types: []string{Day}, Updated: updated}
+	pull := fixturePull(t, PullKlineConfig{Types: []string{Day}})
+	updated := pull.Updated
 	if err := updated.Mark(pull.sourceUpdateKey()); err != nil {
 		t.Fatal(err)
 	}
 	var last UpdateProgress
 	// An empty manager cannot download. A fresh batch must return before network work.
-	if err := pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) { last = p }); err != nil {
+	if err := pull.UpdateWithProgress(&MarketData{}, true, func(p UpdateProgress) { last = p }); err != nil {
 		t.Fatal(err)
 	}
 	if !last.Skipped || last.Total != 0 {
@@ -140,26 +127,12 @@ func TestUpdateFreshnessUsesCompleteBatchAfterClose(t *testing.T) {
 }
 
 func TestUpdateFailureStillProcessesRemainingCodesAndTypes(t *testing.T) {
-	dir := t.TempDir()
-	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	updated, err := update.New(db, updateCloseHour, updateCloseMinute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, kind := range []string{SourceDir} {
-		if err := os.WriteFile(filepath.Join(dir, kind), []byte("existing data"), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir, Codes: []string{"sh600000", "sz000001"}, Goroutines: 1}, Types: []string{Day, Minute}, Updated: updated}
+	pull := fixturePull(t, PullKlineConfig{Codes: []string{"sh600000", "sz000001"}, Goroutines: 1, Types: []string{Day, Minute}})
+	updated := pull.Updated
 	jobs := map[string]int{}
 	var last UpdateProgress
 	var phases []UpdateProgress
-	err = pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) {
+	err := pull.UpdateWithProgress(&MarketData{}, true, func(p UpdateProgress) {
 		phases = append(phases, p)
 		if p.Done > last.Done {
 			jobs[p.Stage+":"+p.Code]++
@@ -211,24 +184,10 @@ func TestUpdateFailedCodeDoesNotPreventLaterSuccess(t *testing.T) {
 }
 
 func TestFailedCodeDoesNotMarkWholeBatchUpdated(t *testing.T) {
-	dir := t.TempDir()
-	db, err := xorms.NewSQLite(filepath.Join(dir, "update.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	updated, err := update.New(db, 15, 31)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// A regular file prevents opening the stock database, before any network call.
-	blocked := filepath.Join(dir, SourceDir)
-	if err := os.WriteFile(blocked, []byte("existing data"), 0644); err != nil {
-		t.Fatal(err)
-	}
-	pull := &PullKline{Config: PullKlineConfig{Dir: dir, Codes: []string{"sh600000"}, Goroutines: 1}, Types: []string{Day}, Updated: updated}
+	pull := fixturePull(t, PullKlineConfig{Codes: []string{"sh600000"}, Goroutines: 1, Types: []string{Day}})
+	updated := pull.Updated
 	var progress UpdateProgress
-	if err := pull.UpdateWithProgress(&manage.Manage{}, true, func(p UpdateProgress) { progress = p }); err == nil {
+	if err := pull.UpdateWithProgress(&MarketData{}, true, func(p UpdateProgress) { progress = p }); err == nil {
 		t.Fatal("failed stock was silently accepted")
 	}
 	if progress.Done != 1 || progress.Failed != 1 {
@@ -236,9 +195,5 @@ func TestFailedCodeDoesNotMarkWholeBatchUpdated(t *testing.T) {
 	}
 	if fresh, err := updated.IsUpdated("pull"); err != nil || fresh {
 		t.Fatalf("failed batch marked fresh: %v %v", fresh, err)
-	}
-	b, err := os.ReadFile(blocked)
-	if err != nil || string(b) != "existing data" {
-		t.Fatal("existing data overwritten")
 	}
 }

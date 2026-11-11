@@ -1,7 +1,6 @@
 package extend
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
 	"os"
@@ -11,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -50,9 +49,7 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 		{Time: at.AddDate(0, 0, 1), Close: 0.333},
 	}
 	legacyMinuteFixture(t, path, ks)
-	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	start, end := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local), time.Date(year, 12, 31, 23, 59, 0, 0, time.Local)
-	want, err := p.MinKlines(code, start, end)
+	want, err := readMinuteFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,11 +65,10 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	oracle := protocol.Klines{}
 	for _, k := range original {
 		k.Time = k.Time.In(protocol.Location())
-		if k.Time.Year() == year {
-			oracle = append(oracle, k)
-		}
+		oracle = append(oracle, k)
 	}
 	oracle.Sort()
+	want.Sort()
 	if !reflect.DeepEqual(want, oracle) {
 		t.Fatal("legacy reader differs from original xorm reader")
 	}
@@ -83,10 +79,11 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	if !result.Changed || result.Records != len(ks) {
 		t.Fatalf("result: %+v", result)
 	}
-	got, err := p.MinKlines(code, start, end)
+	got, err := readMinuteFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got.Sort()
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("bars changed:\nwant=%+v\ngot=%+v", want, got)
 	}
@@ -94,47 +91,7 @@ func TestMinuteCompressionRoundTripAndResume(t *testing.T) {
 	if err != nil || result.Changed {
 		t.Fatalf("resume=%+v err=%v", result, err)
 	}
-	legacyBytes, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Refresh the final bar and append another day through the SDK source store.
-	last := ks[4].Time
-	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last, Close: 0.444}, {Time: last.Add(time.Minute), Close: 0.445}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err = p.MinKlines(code, start, end)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != len(want)+1 || got[len(got)-2].Close != 0.444 || got[len(got)-1].Close != 0.445 {
-		t.Fatalf("update changed boundary: %+v", got)
-	}
-	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last.Add(time.Minute), Close: 0.445}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
-		t.Fatalf("repeat update changed bars: %v", err)
-	}
-	err = saveSourceMinutes(p, code, year, protocol.Klines{{Time: last.Add(time.Minute + time.Nanosecond), Close: 0.999}})
-	if err == nil {
-		t.Fatal("fractional update accepted")
-	}
-	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
-		t.Fatalf("failed transaction changed records: %v", err)
-	}
-	if err = saveSourceMinutes(p, code, year, nil); err != nil {
-		t.Fatal(err)
-	}
-	if again, err := p.MinKlines(code, start, end); err != nil || !reflect.DeepEqual(got, again) {
-		t.Fatalf("empty response changed compressed data: %v", err)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil || !bytes.Equal(legacyBytes, after) {
-		t.Fatal("source updates rewrote legacy compressed file", err)
-	}
+
 }
 
 func TestMinuteCompressionRefusesUnexpectedSchemaAndPrecision(t *testing.T) {
@@ -189,8 +146,7 @@ func TestMinuteCompressedReadFailsOnCorruption(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
-	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
-	if _, err = p.MinKlines(code, time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local), time.Date(2024, 12, 31, 0, 0, 0, 0, time.Local)); err == nil {
+	if _, err = readMinuteFile(path); err == nil {
 		t.Fatal("corruption silently ignored")
 	}
 }
@@ -208,7 +164,6 @@ func TestMinuteReadersDuringAtomicCompression(t *testing.T) {
 	for _, k := range bars {
 		k.Time = k.Time.In(protocol.Location())
 	}
-	p := &PullKline{Config: PullKlineConfig{Dir: dir}}
 	var wg sync.WaitGroup
 	results := make(chan error, 3)
 	for i := 0; i < 3; i++ {
@@ -216,7 +171,7 @@ func TestMinuteReadersDuringAtomicCompression(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 30; j++ {
-				got, err := p.MinKlines(code, at, at)
+				got, err := readMinuteFile(path)
 				if err != nil {
 					results <- err
 					return

@@ -17,7 +17,6 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	sb "github.com/injoyai/strategy-tail/strategies/buy"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -110,7 +109,7 @@ func TestServerRunLifecycle(t *testing.T) {
 	// 伪造数据源：sh600000 从 2024-06 起约 250 个交易日恒价上行（每日 +5%，不触涨停过滤）
 	// 直接字面量构造 PullKline（DayKlines/MinKlines 仅依赖 Config.Dir，不建 update.db 连接）
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	writeFakeDayDB(t, dir, "sh600000", 250, time.Date(2024, 6, 1, 0, 0, 0, 0, time.Local))
 
@@ -264,7 +263,7 @@ func TestServerAnalyzeYearRange(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 
 	now := time.Now().Year()
@@ -515,14 +514,6 @@ func TestServerStopSameOrigin(t *testing.T) {
 // 每天开10收10.5（+5%，不触发涨停过滤），恒价保证买入条件每日为真。
 func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Sync2(new(extend.Kline)); err != nil {
-		t.Fatal(err)
-	}
 	rows := make([]*extend.Kline, 0, days)
 	for i := 0; i < days; i++ {
 		tm := base.AddDate(0, 0, i)
@@ -538,9 +529,7 @@ func writeFakeDayDB(t *testing.T, dir, code string, days int, base time.Time) {
 			},
 		})
 	}
-	if _, err := db.Insert(rows); err != nil {
-		t.Fatal(err)
-	}
+	seedTestDays(t, dir, code, rows)
 }
 
 // doReq httptest 请求辅助：断言状态码，返回响应体。

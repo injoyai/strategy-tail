@@ -5,6 +5,11 @@
 pull:
   # 相对路径会按项目根目录解析；也可填写绝对路径把大型行情库放到仓库外。
   database: "./data/database"
+
+  # 行情必须使用 MySQL。真实连接保存在未提交的 config/mysql.yaml（同名键），
+  # 或通过 env "pull.mysql=..." 注入；环境值优先。没有配置时启动失败，不回落本地行情。
+  mysql: ""
+
   types:
     - day
     - minute

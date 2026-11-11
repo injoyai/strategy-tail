@@ -3,18 +3,16 @@ package lab
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/injoyai/strategy-tail/internal/researchrun"
-	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
 func TestTaskSwitchDoesNotLeakPreviousRun(t *testing.T) {
-	for _, task := range []string{"data_update", taskPortfolioExperiment, taskPortfolioValidation} {
+	for _, task := range []string{taskPortfolioExperiment, taskPortfolioValidation} {
 		t.Run(task, func(t *testing.T) {
 			r := NewRunner()
 			cfg := RunConfig{StartYear: 2025, EndYear: 2025, SampleMode: "codes", SampleCodes: []string{"sh600000"}}
@@ -29,23 +27,12 @@ func TestTaskSwitchDoesNotLeakPreviousRun(t *testing.T) {
 			r.lastReport.Store(report)
 			r.lastAnalysis.Store(analysis)
 			gate := make(chan struct{})
-			if task == "data_update" {
-				u := newDataUpdater(r, filepath.Join(t.TempDir(), "settings.json"), func(bool, func(extend.UpdateProgress)) error {
-					<-gate
-					return nil
-				})
-				if err := u.Start(true); err != nil {
-					t.Fatal(err)
-				}
-				t.Cleanup(func() { close(gate); waitDataUpdate(t, u) })
-			} else {
-				r.mu.Lock()
-				r.startPortfolioGoroutine("current-run", task, func(chan struct{}) error {
-					<-gate
-					return nil
-				})
-				t.Cleanup(func() { close(gate); waitPortfolioDone(t, r) })
-			}
+			r.mu.Lock()
+			r.startPortfolioGoroutine("current-run", task, func(chan struct{}) error {
+				<-gate
+				return nil
+			})
+			t.Cleanup(func() { close(gate); waitPortfolioDone(t, r) })
 			st := r.Status()
 			if st["task"] != task || st["state"] != "running" || st["config"] != nil || st["doneCodes"] != int64(0) || st["totalCodes"] != int64(0) {
 				t.Fatalf("previous task leaked into %s: %+v", task, st)
@@ -59,13 +46,8 @@ func TestTaskSwitchDoesNotLeakPreviousRun(t *testing.T) {
 			r.Stop()
 			select {
 			case <-r.control.Load().stop:
-				if task == "data_update" {
-					t.Fatal("Stop cancelled a database update")
-				}
 			default:
-				if task != "data_update" {
-					t.Fatal("Stop did not reach the current portfolio task")
-				}
+				t.Fatal("Stop did not reach the current portfolio task")
 			}
 		})
 	}
@@ -140,33 +122,5 @@ func TestTaskLifecycleReleasesLockAndKeepsStopLocal(t *testing.T) {
 				t.Fatalf("next task inherited a terminal state: %+v", st)
 			}
 		})
-	}
-}
-
-func TestDataUpdatePanicPersistsFailureAndAllowsRetry(t *testing.T) {
-	r := NewRunner()
-	filename := filepath.Join(t.TempDir(), "settings.json")
-	u := newDataUpdater(r, filename, func(bool, func(extend.UpdateProgress)) error {
-		panic("update failure")
-	})
-	if err := u.Start(true); err != nil {
-		t.Fatal(err)
-	}
-	failed := waitDataUpdate(t, u)
-	if failed.State != "error" || failed.FinishedAt == "" || failed.LastSuccess != "" || !strings.Contains(failed.Error, "update failure") {
-		t.Fatalf("panic left an unfinished update: %+v", failed)
-	}
-	if st := r.Status(); st["state"] != "error" || !strings.Contains(st["error"].(string), "update failure") {
-		t.Fatalf("runner lost update failure: %+v", st)
-	}
-	reloaded := newDataUpdater(r, filename, func(bool, func(extend.UpdateProgress)) error { return nil })
-	if saved := reloaded.Status(); saved.State != "error" || saved.Error != failed.Error {
-		t.Fatalf("update failure was not persisted: %+v", saved)
-	}
-	if err := reloaded.Start(true); err != nil {
-		t.Fatal(err)
-	}
-	if retried := waitDataUpdate(t, reloaded); retried.State != "done" || retried.LastSuccess == "" || retried.Error != "" {
-		t.Fatalf("retry retained old failure: %+v", retried)
 	}
 }

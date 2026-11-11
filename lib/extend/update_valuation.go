@@ -2,13 +2,12 @@ package extend
 
 import (
 	"fmt"
-	"github.com/injoyai/tdx/v2/extend/manage"
 
 	"github.com/injoyai/strategy-tail/researchdata"
 	tdxdata "github.com/injoyai/strategy-tail/researchdata/tdx"
 )
 
-func (this *PullKline) updateValuation(m *manage.Manage, progress UpdateProgress, report func(UpdateProgress)) (UpdateProgress, error) {
+func (this *PullKline) updateValuation(m *MarketData, progress UpdateProgress, report func(UpdateProgress)) (UpdateProgress, error) {
 	if this.Config.ValuationDatabase == "" {
 		return progress, nil
 	}

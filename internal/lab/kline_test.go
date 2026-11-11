@@ -8,14 +8,13 @@ import (
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/util"
 )
 
 func TestKlineIndicatorsUseHistoryBeforeDisplayWindow(t *testing.T) {
 	dir := t.TempDir()
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)
 	writeDayDBCloses(t, dir, "sh600000", []float64{10, 11, 9, 12, 13, 11}, base)

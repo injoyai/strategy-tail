@@ -62,20 +62,14 @@ test('因子入口只打开运行配置，切换模式后确认仍运行因子�
   } finally {state.runMode = previous; state.taskRunning = false;}
 });
 
-test('行情失败详情归气泡所有，通用任务保留错误入口', () => {
+test('通用任务保留折叠的错误入口', () => {
   const ctx = {...App.data(), ...App.methods};
   for (const [key, fn] of Object.entries(App.computed)) Object.defineProperty(ctx, key, {get: () => fn.call(ctx)});
   const render = () => compile(App.template)(ctx, []);
-  for (const task of ['data_update', 'backtest']) {
-    App.methods.renderTaskProgress.call(ctx, {task, state: 'error', doneCodes: 2, totalCodes: 4, progress: 50, error: 'download failed'});
-    assert.equal(state.taskDock.state, 'error');
-    const details = elements(render(), 'details');
-    assert.equal(details.length, task === 'data_update' ? 0 : 1);
-    assert.ok(details.every(v => !v.props.open));
-  }
-  App.methods.renderTaskProgress.call(ctx, {task: 'data_update', state: 'connection-error', error: '状态未知'});
-  assert.equal(elements(render(), 'details').length, 1);
-  assert.equal(state.taskDock.connectionError, true);
+  App.methods.renderTaskProgress.call(ctx, {task: 'backtest', state: 'error', error: '读取报告失败'});
+  const details = elements(render(), 'details');
+  assert.equal(details.length, 1);
+  assert.ok(!details[0].props.open);
 });
 
 test('旧参数报告保留开关和百分比口径', () => {

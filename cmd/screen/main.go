@@ -6,7 +6,8 @@ import (
 	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/tdx/v2/lib/xorms"
+	"github.com/injoyai/strategy-tail/internal/xorms"
+	"github.com/injoyai/tdx/v2"
 )
 
 func init() {
@@ -16,6 +17,10 @@ func init() {
 
 func main() {
 	common.MustInitialize()
+	pool, err := tdx.NewPool(func() (tdx.Client, error) { return tdx.DialDefault() }, 1)
+	logs.PanicErr(err)
+	defer pool.Close()
+	common.Manage.ClientPool = pool
 
 	ks, err := common.Pull.DayKlines("sh000001", time.Time{}, time.Now())
 	logs.PanicErr(err)

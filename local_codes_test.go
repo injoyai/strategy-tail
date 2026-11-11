@@ -1,14 +1,16 @@
 package common
 
 import (
-	"os"
-	"path/filepath"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
+	"github.com/injoyai/tdx/v2/extend/model"
+	"github.com/injoyai/tdx/v2/extend/storage"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 func TestLocalMarketAndUniverse(t *testing.T) {
@@ -17,16 +19,15 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 	Manage = nil // 历史股票池不应需要 TDX 当前在市列表。
 	runtimeRoot = t.TempDir()
 	root := t.TempDir()
-	dir := filepath.Join(root, extend.DirDay)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatal(err)
-	}
-	for _, code := range []string{"sh600000", "sz000003", "sz300001", "sh000001"} {
-		if err := os.WriteFile(filepath.Join(dir, code+".db"), nil, 0644); err != nil {
-			t.Fatal(err)
+	store := &universeFixtureStore{}
+	setCodes := func(names ...string) {
+		store.codes = nil
+		for _, name := range names {
+			store.codes = append(store.codes, model.Code{Code: name})
 		}
 	}
-	Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: root}}
+	setCodes("sh600000", "sz000003", "sz300001", "sh000001")
+	Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: root, Store: store}}
 	want := []string{"sh600000", "sz000003"}
 	if got := GetNoPriceLimitCodes(); !slices.Equal(got, want) {
 		t.Fatalf("本地主板代码 = %v, want %v", got, want)
@@ -47,10 +48,7 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 		t.Fatalf("本地池快照错误: %+v", snap)
 	}
 	// 成员检查和质量快照复用本轮枚举，即使目录暂时不可读也不重新扫描。
-	moved := dir + ".snapshot"
-	if err := os.Rename(dir, moved); err != nil {
-		t.Fatal(err)
-	}
+	store.err = errors.New("catalog unavailable")
 	for i := 0; i < 100; i++ {
 		if ok, err := u.Contains("sz000003", time.Now()); err != nil || !ok {
 			t.Fatalf("成员检查应复用股票池: %v, %v", ok, err)
@@ -65,13 +63,9 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 	if _, err := u.Codes(time.Now()); err == nil {
 		t.Fatal("新一轮枚举仍须传递目录读取错误")
 	}
-	if err := os.Rename(moved, dir); err != nil {
-		t.Fatal(err)
-	}
-	// 股票池保持惰性读取，新库不需要重启后才生效。
-	if err := os.WriteFile(filepath.Join(dir, "sh600001.db"), nil, 0644); err != nil {
-		t.Fatal(err)
-	}
+	store.err = nil
+	// 新一轮枚举仍读取行情库中新出现的股票。
+	setCodes("sh600000", "sz000003", "sz300001", "sh000001", "sh600001")
 	if codes, err := u.Codes(time.Now()); err != nil || len(codes) != 4 {
 		t.Fatalf("没有读取新增本地库: %v, %v", codes, err)
 	}
@@ -90,3 +84,12 @@ func TestLocalMarketAndUniverse(t *testing.T) {
 		t.Fatalf("未初始化股票池的快照大小应为 0: %+v", got)
 	}
 }
+
+type universeFixtureStore struct {
+	storage.BarStore
+	codes []model.Code
+	err   error
+}
+
+func (s *universeFixtureStore) Identity() string                               { return "test-market" }
+func (s *universeFixtureStore) DayCodes(protocol.Market) ([]model.Code, error) { return s.codes, s.err }

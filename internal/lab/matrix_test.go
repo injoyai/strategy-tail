@@ -3,14 +3,12 @@ package lab
 import (
 	"context"
 	"math"
-	"path/filepath"
 	"testing"
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/lib/extend"
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
@@ -18,14 +16,6 @@ import (
 // writeFakeDayDB；区别：每日收盘可指定，构造有方向的因子序列）。
 func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base time.Time) {
 	t.Helper()
-	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Sync2(new(extend.Kline)); err != nil {
-		t.Fatal(err)
-	}
 	rows := make([]*extend.Kline, 0, len(closes))
 	for i, c := range closes {
 		tm := base.AddDate(0, 0, i)
@@ -37,9 +27,7 @@ func writeDayDBCloses(t *testing.T, dir, code string, closes []float64, base tim
 			},
 		})
 	}
-	if _, err := db.Insert(rows); err != nil {
-		t.Fatal(err)
-	}
+	seedTestDays(t, dir, code, rows)
 }
 
 // writeDayDBOHLC 同 writeDayDBCloses，但开盘价可独立指定（High/Low 取二者
@@ -48,14 +36,6 @@ func writeDayDBOHLC(t *testing.T, dir, code string, opens, closes []float64, bas
 	t.Helper()
 	if len(opens) != len(closes) {
 		t.Fatalf("opens/closes 长度不一致: %d/%d", len(opens), len(closes))
-	}
-	db, err := xorms.NewSQLite(filepath.Join(dir, extend.DirDay, code+".db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := db.Sync2(new(extend.Kline)); err != nil {
-		t.Fatal(err)
 	}
 	rows := make([]*extend.Kline, 0, len(closes))
 	for i := range closes {
@@ -69,9 +49,7 @@ func writeDayDBOHLC(t *testing.T, dir, code string, opens, closes []float64, bas
 			},
 		})
 	}
-	if _, err := db.Insert(rows); err != nil {
-		t.Fatal(err)
-	}
+	seedTestDays(t, dir, code, rows)
 }
 
 // fnFac 闭包因子：动量 = 末收盘/前第 2 根收盘 − 1，不足 3 根返回 NaN。
@@ -93,7 +71,7 @@ func TestFillCrossSection(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	old := common.Pull
-	common.Pull = &extend.PullKline{Config: extend.PullKlineConfig{Dir: dir}}
+	common.Pull = fixturePull(t, dir)
 	t.Cleanup(func() { common.Pull = old })
 
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)

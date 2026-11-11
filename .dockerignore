@@ -13,3 +13,4 @@ docs
 *.db
 *.pdf
 .trae-html-share-packages
+config/mysql.yaml

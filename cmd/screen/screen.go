@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/injoyai/tdx/v2/lib/update"
+	"github.com/injoyai/strategy-tail/internal/update"
 	"github.com/robfig/cron/v3"
 	"sort"
 	"strings"
@@ -17,11 +17,11 @@ import (
 	"github.com/injoyai/goutil/times"
 	"github.com/injoyai/logs" // 日志库
 	common "github.com/injoyai/strategy-tail"
-	"github.com/injoyai/strategy-tail/core"       // 选股核心模块
+	"github.com/injoyai/strategy-tail/core" // 选股核心模块
+	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/strategy-tail/lib/extend" // 通达信扩展功能
 	"github.com/injoyai/strategy-tail/strategies/buy"
 	"github.com/injoyai/tdx/v2" // 通达信SDK
-	"github.com/injoyai/tdx/v2/lib/xorms"
 	"github.com/injoyai/tdx/v2/protocol"
 
 	"xorm.io/xorm"
@@ -245,12 +245,7 @@ func (this *ScreenService) init() error {
 }
 
 func (this *ScreenService) _update() {
-	//更新最新数据到本地数据库
-	if err := common.Update(); err != nil {
-		logs.Err(err)
-		return
-	}
-	//加载本地日线数据到缓存
+	// 从行情库重载日线缓存。
 	if err := this.getHistoryDayKlines(); err != nil {
 		logs.Err(err)
 		return
@@ -286,8 +281,9 @@ func (this *ScreenService) Run() error {
 
 	for range time.NewTicker(this.Interval).C {
 
-		//判断是否是交易日和交易时间
-		if first || (common.Manage.Workday.TodayIs() && common.IsTradingTime()) {
+		now := time.Now().In(protocol.Location())
+		trading := now.Weekday() != time.Saturday && now.Weekday() != time.Sunday && common.IsTradingTime()
+		if first || trading {
 
 			//更新实时数据
 			err := this.updateRealtime(first)
@@ -374,12 +370,13 @@ func (this *ScreenService) realtimeBuys() {
 		}
 		for _, s := range this.Strategies {
 			if s.Buyer.Buy(code, ks) {
+				rise, _ := last.RisePercent()
 				t := &Trade{
 					Code:     code,
 					Name:     common.Manage.Codes.GetName(code),
 					BuyTime:  last.Time.Format(time.DateTime),
 					BuyPrice: last.Close,
-					BuyRise:  last.RiseRate(),
+					BuyRise:  rise,
 					Strategy: s.Key,
 					Tags:     s.checkTags(code, ks),
 				}
@@ -668,7 +665,7 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 	if len(this.Codes) == 0 {
 		return nil, fmt.Errorf("历史重算股票样本为空")
 	}
-	if common.Manage == nil {
+	if common.Manage == nil || common.Pull == nil {
 		return nil, fmt.Errorf("行情运行时尚未初始化")
 	}
 	b := bar.NewCoroutine(
@@ -708,21 +705,8 @@ func (this *ScreenService) getHistoryTrade(days int) ([]*Trade, error) {
 				return
 			}
 
-			//实时获取历史分钟数据
-			var mks protocol.Klines
-			err := common.Manage.Do(func(c tdx.Client) error {
-				resp, err := extend.FetchStandardMinute(c, code, func(k *protocol.Kline) bool {
-					return k.Time.Before(time.Now().AddDate(0, 0, -days-3))
-				}, false)
-				if err != nil {
-					return err
-				}
-				mks = resp
-				return nil
-			})
-
-			//本地获取历史分钟数据
-			//mks, err := common.Pull.MinKlines(code, time.Now().AddDate(0, 0, -days*2), time.Now())
+			now := time.Now().In(protocol.Location())
+			mks, err := common.Pull.MinKlines(code, now.AddDate(0, 0, -days-3), now)
 
 			if err != nil {
 				b.Logf("[错误][%s] %v", code, err)

@@ -31,7 +31,7 @@ test('因子统计、组合指标与保存阶段均清除上一阶段的满格�
 
 test('后台完成后继续显示读取结果，失败可重读且不宣称任务还在运行', async () => {
   const ctx = {...App.methods, switchTab() {}};
-  runtime.prevRunning = true; runtime.lastTask = 'analysis'; state.dataUpdating = false;
+  runtime.prevRunning = true; runtime.lastTask = 'analysis';
   Api.status = async () => ({task: 'analysis', state: 'done', phase: 'reporting', done: -1, total: -1, progress: 100});
   let resolve;
   Api.latestAnalysis = () => new Promise(r => {resolve = r;});
@@ -144,7 +144,6 @@ test('分析完成、主动停止和服务重启使用不同结果状态', async
       runtime.prevRunning = true;
       runtime.lastTask = 'analysis';
       state.currentAnalysis = null;
-      state.dataUpdating = false;
       Api.status = async () => status;
       await ctx.pollStatusOnce();
       assert.equal(state.taskDock.title, title);
