@@ -5,6 +5,7 @@
 .uploads
 data
 output
+.tmp
 bin
 node_modules
 docs

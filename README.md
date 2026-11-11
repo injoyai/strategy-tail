@@ -179,6 +179,8 @@ go vet ./internal/lab/...
 
 ## 多变体研究执行
 
+临时策略验证使用项目已配置的只读行情、独立临时目录和统一报告格式。调用示例见[临时策略回测指南](docs/guides/ad-hoc-backtest.md)。
+
 新增矩阵实验应将策略差异声明为 `researchrun.Variant`，然后调用 `researchrun.Run()`；调用方继续负责结果排序、业务文案和具体报告。
 
 `internal/lab` 使用该执行层。旧逐股回测按年度分别调用，保持“单年缺数只排除该代码当年”的历史样本口径。
