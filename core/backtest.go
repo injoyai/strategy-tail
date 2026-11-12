@@ -206,8 +206,8 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		m[key] = append(m[key], mk)
 	}
 
-	// 一次性缓冲和前缀切片避免逐日 O(n) 复制。每日改用私有快照，
-	// 保留原版历史快照口径，但不把分钟级覆写泄漏到调用方的行情。
+	// 一次性缓冲和前缀切片避免逐日 O(n) 复制。盘中使用私有快照，
+	// 完成当日检查后恢复原始日线，避免分钟快照进入后续交易日的历史。
 	full := make(extend.Klines, 0, len(his)+len(dks))
 	full = append(full, his...)
 	full = append(full, dks...)
@@ -272,6 +272,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 			}
 		}
 		currentBuys = remaining
+		full[len(his)+i] = dks[i]
 	}
 
 	// ---- 3. 期末未平仓：按原始末日日线生成虚拟成交 ----

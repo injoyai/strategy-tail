@@ -71,7 +71,7 @@ type Seller interface {
 
 策略通过 `buy.And`、`buy.Or`、`buy.Not` 和 `sell.Or` 组合。止盈、止损、持有期和追踪止损属于 `Seller`，不应硬编码进回测引擎。
 
-`core.Backtest.Do()` 为兼容历史行为，会在分钟级卖出检查中覆写当日 K 线指针。多组合或重复运行同一份数据时，不要直接调用 `Do()` 并共享输入；使用 `internal/researchrun.Run()`，由它统一完成深拷贝隔离。
+`core.Backtest.Do()` 在分钟级卖出检查中使用内部快照，后续交易日的历史使用原始日线，不修改调用方的行情数据。多组合研究可使用 `internal/researchrun.Run()`，由执行层统一加载、隔离数据并统计覆盖。
 
 ## 推荐入口
 

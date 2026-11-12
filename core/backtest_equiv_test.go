@@ -4,9 +4,9 @@ package core_test
 // Do 重构等价性差分测试
 // ============================================================================
 // core.Backtest.Do 由"逐日 joinKlines 复制"改为"一次性 full 缓冲 + 前缀切片"。
-// 本测试将改动前的原版实现完整复制为 DoLegacy，在同一份随机数据（深拷贝隔离，
-// 因参考实现会原地改写 today.Kline）上分别运行新旧两版，逐笔比对交易结果，
-// 参考实现仅校正已复现的 T+1 与期末估值缺陷；其余成交与历史快照口径保持逐笔一致。
+// 本测试将逐日复制切片的实现保留为 DoLegacy，在隔离的同一份随机数据上
+// 分别运行两版，逐笔比对交易结果。
+// 参考实现校正了 T+1、期末估值与分钟快照污染历史日线的缺陷。
 
 import (
 	"fmt"
@@ -23,12 +23,12 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-// DoLegacy 保留原版逐日 joinKlines 算法，仅校正 T+1 和 Virtual 末日日线估值。
+// DoLegacy 保留原版逐日 joinKlines 算法，并隔离盘中快照。
 func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks protocol.Klines) []core.Trade {
 
 	cost := this.Cost
 	pos := this.Position
-	// 参考算法会改写输入，先保存原始末日日线，避免估值期望也被分钟快照污染。
+	// 保存原始末日日线用于期末估值。
 	var lastDaily protocol.Kline
 	if len(dks) > 0 {
 		lastDaily = *dks[len(dks)-1].Kline
@@ -55,7 +55,8 @@ func DoLegacy(this core.Backtest, code string, his, dks extend.Klines, mks proto
 
 	for i := 0; i < len(dks); i++ {
 
-		today := dks[i]
+		todayCopy := *dks[i]
+		today := &todayCopy
 		tradingDay := core.DayOf(today.Time)
 		_his := joinKlines(his, dks[:i]...)
 		ls := joinKlines(_his, today)

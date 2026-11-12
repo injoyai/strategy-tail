@@ -142,3 +142,55 @@ func TestDoVirtualUsesFinalDailyClose(t *testing.T) {
 		}
 	}
 }
+
+type historyObservingBuyer struct {
+	thirdDay time.Time
+	seen     *float64
+}
+
+func (b historyObservingBuyer) Name() string { return "history observer" }
+func (b historyObservingBuyer) Buy(_ string, bars extend.Klines) bool {
+	if core.DayOf(bars[len(bars)-1].Time).Equal(core.DayOf(b.thirdDay)) {
+		*b.seen = bars[len(bars)-2].Close
+	}
+	return true
+}
+
+type historyObservingSeller struct {
+	thirdDay time.Time
+	seen     *float64
+	sell     bool
+}
+
+func (s historyObservingSeller) Name() string { return "history observer" }
+func (s historyObservingSeller) Sell(_ string, bars extend.Klines, _ core.Buy) bool {
+	if core.DayOf(bars[len(bars)-1].Time).Equal(core.DayOf(s.thirdDay)) {
+		*s.seen = bars[len(bars)-2].Close
+	}
+	return s.sell
+}
+
+func TestDoPreservesDailyHistoryAfterMinuteEvaluation(t *testing.T) {
+	for _, sellPosition := range []bool{false, true} {
+		t.Run(fmt.Sprintf("sell=%v", sellPosition), func(t *testing.T) {
+			first := time.Date(2025, 1, 6, 15, 0, 0, 0, time.Local)
+			bars := extend.Klines{
+				testKline(first, 10, 10, 10, 10),
+				testKline(first.AddDate(0, 0, 1), 11, 11, 11, 11),
+				testKline(first.AddDate(0, 0, 2), 12, 12, 12, 12),
+			}
+			minuteTime := core.DayOf(bars[1].Time).Add(10 * time.Hour)
+			minutes := protocol.Klines{{Time: minuteTime, Open: 9, High: 9, Low: 9, Close: 9}}
+			var buyerPrevious, sellerPrevious float64
+			bt := core.Backtest{
+				Buyer:    historyObservingBuyer{bars[2].Time, &buyerPrevious},
+				Seller:   historyObservingSeller{bars[2].Time, &sellerPrevious, sellPosition},
+				Position: core.PositionConfig{SharesPerLot: 100},
+			}
+			bt.Do("test", nil, bars, minutes)
+			if buyerPrevious != 11 || sellerPrevious != 11 {
+				t.Fatalf("third-day history must retain previous daily close 11: buyer=%v seller=%v", buyerPrevious, sellerPrevious)
+			}
+		})
+	}
+}
