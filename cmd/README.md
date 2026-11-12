@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | `go run ./cmd/lab` | 策略搭建、回测、因子与组合研究。`LAB_ADDR` 默认 `0.0.0.0:8765` | 保存策略、练习状态与报告 |
 | `go run ./cmd/screen` | 读取 MySQL 最新分钟线并筛选买卖点，使用 `screen.*` 配置，HTTP 默认 9090 | 买卖点保存到 `data/database/trade.db` |
+| `go run ./cmd/backtest-report -dir <报告目录>` | 读取已导出的回测 CSV，为目录内的 `report.md` 生成图表 | 发布 Markdown 和本地 SVG |
 
 日常策略实验可用 Lab 或[临时回测与只读数据接口](../docs/guides/ad-hoc-backtest.md)。Screen 的策略、HTTP API 和服务逻辑分别在 `strategies.go`、`api.go` 和 `screen.go`，静态资源在 `web/`。
 

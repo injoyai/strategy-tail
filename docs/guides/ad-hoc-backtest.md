@@ -94,12 +94,34 @@ func run() error {
 
 | 文件 | 内容 |
 | --- | --- |
-| `report.md` | 必须提供。依次写明结论、策略规则与参数、数据与覆盖、成交与成本、对照结果、限制及复现。缺数无法完成时记录已确认的覆盖和阻塞点。 |
+| `report.md` | 用公共接口发布，图表嵌入正文。写明结论、策略规则与参数、数据与覆盖、成交与成本、对照结果、限制及复现。缺数无法完成时记录已确认的覆盖和阻塞点。 |
+| `backtest-chart-*.svg` | 公共接口生成的图表，与报告一同交付。 |
 | `summary.csv` | 有可比较结果时提供，表头为 `variant,period,metric,value,unit`。`period` 用日期范围或 `overall`，数值用纯数字，单位另列。不可计算的值留空并在报告说明。 |
-| `trades.csv` | 有逐笔成交时导出或链接现有明细。至少可核对策略、标的、买卖时间、成交价、数量、成本、净盈亏和期末估值标记。 |
-| `equity.csv` | 有账户模拟时导出或链接现有逐日净值。至少可核对策略、交易日、现金、持仓市值和总权益。 |
+| `trades.csv` | 有逐笔成交时导出。出图读取 `variant,virtual,net_return_pct` 和 `sell_time`（也接受 `sell_or_mark_time`），有 `code` 时显示在图上的成交点提示中。明细还应提供买卖价格、数量、成本和净盈亏。 |
+| `equity.csv` | 有账户模拟时导出。出图读取 `variant,date,equity` 和可选的 `benchmark_equity`。明细还应提供现金和持仓市值，权益和基准权益单位为元。 |
 
 - 数据部分列明数据集和截止日、请求与实际起止日期、标的或股票池、频率、价格及复权口径、预热、覆盖和失败。分钟实验另列覆盖的交易日及缺失天数。估值和分红使用当时已可得的历史记录，记录缺失或修订可验证性。日志和产物省略 DSN、账号和密码。
 - 成交部分写明信号时间、成交时间和价格、T+1、滑点、费用、期末持仓以及适用的资金与持仓约束。基准采用项目内同区间数据并标明价格收益或含分红收益。比较组统一使用相同样本与成本口径，例外单独说明。
 - `metric` 使用稳定字段名。逐笔结果至少提供 `closed_trades`（笔）、`win_rate`（%）、`avg_trade_return`（%）、`profit_factor`（倍）和 `open_trades`（笔）。账户结果提供 `initial_capital`（元）、`ending_equity`（元）、`net_return`（%）、`max_drawdown`（%）和 `benchmark_return`（%）。回撤填正数幅度。盈亏比为无穷时 CSV 留空，报告说明原因。只有可比较的账户净值才计算账户收益与回撤。
 - 复现部分记录代码版本、运行命令和完整参数，并用规则表达式或伪代码保留自定义信号与成交逻辑。最终回复给出实测区间、覆盖、核心结果及报告路径。
+
+### 公共报告接口
+
+先写出适用的 CSV，再调用 [backtestreport.Write](../../backtestreport/report.go)。`date` 用 `YYYY-MM-DD`，成交时刻用 `YYYY-MM-DD HH:MM[:SS]` 或 RFC 3339，图表统一显示东八区时间。`virtual` 用 `true` 或 `false`，`net_return_pct` 填百分数，例如 `2.5` 表示 `2.5%`。
+
+```go
+import "github.com/injoyai/strategy-tail/backtestreport"
+
+// outputDir 中已保存本次运行的 CSV，markdown 是报告正文。
+err := backtestreport.Write(outputDir, markdown)
+```
+
+有 `equity.csv` 时生成账户权益图，包含可用的基准权益。有 `trades.csv` 时按实际平仓时间绘制每笔净收益率，期末估值通过 `virtual` 标记。需要展示日线或分钟信号、阈值和买卖点时，可向 `Write` 追加 `backtestreport.Chart`，用 `Series.Points` 传入各条实际序列，用 `Scatter` 标记成交点。
+
+Python 或 Shell 脚本可调用同一个发布入口。
+
+```sh
+go run ./cmd/backtest-report -dir "$output_dir" -markdown "$scratch/report-draft.md"
+```
+
+省略 `-markdown` 时使用目录内已有的 `report.md`。重复发布会更新报告中的图表区段。SVG 与 Markdown 保存在同一目录，可直接打开，查看时无需外部图表服务。只有文字或数据不足时，图表区会说明本次可用数据的情况。
