@@ -344,7 +344,7 @@ type Trade struct {
 2. **先确认覆盖，再运行策略。** 核对标的、区间、周期、预热历史及基准，涉及分钟执行、估值或分红时检查相应历史数据。读取失败和缺数按标的、时间、频率披露。有足够样本时在可验证范围内完成并标明范围，核心条件无法验证时记录缺口及其对结论的影响。历史信号只读取当时可获得的数据。
 3. **使用只读入口和现有回测执行层。** 临时 Go 程序用 `common.OpenResearchMarket()` 获取 `DayKlines`、`MinKlines`、`LocalStockCodes`，用 `researchrun.Run` 做逐标的策略比较，交易统计复用 `core.Stats`。已有 Lab 能表达的账户回测可走其现有回测接口。需要项目入口未覆盖的成交模型时，把本次模拟逻辑放在临时脚本，复用项目数据和指标并披露模型假设。完整调用方式见[临时策略回测指南](docs/guides/ad-hoc-backtest.md)。
 4. **一次性代码放在 `.tmp/backtest/<run-id>/`。** 临时 Go、Python、SQL、二进制、快照和中间数据均写入本次专用目录。从仓库根目录显式运行脚本，便于访问仓库的 `internal` 包。禁止在 `cmd/`、正式策略包或现有测试中追加实验草稿。临时目录由 Git 和 Docker 构建上下文排除，按任务目录清理。
-5. **交付放在 `output/backtest/<主题>/<run-id>/`。** 用 `backtestreport.Write` 或 `cmd/backtest-report` 发布 `report.md`，按可用的权益、成交和信号数据嵌入图表。有有效可比较结果时提供 `summary.csv`，成交和账户曲线按适用性附上或链接原始产物。报告记录策略及参数、请求与实测范围、数据覆盖、成交与费用假设、基准、结果和复现方式。独立逐笔结果使用逐笔口径，账户收益与回撤基于真实模拟的资金和持仓约束。字段和交付模板见[临时策略回测指南](docs/guides/ad-hoc-backtest.md#交付格式)。
+5. **交付放在 `output/backtest/<主题>/<run-id>/`。** 用 `backtestreport.Write` 或 `cmd/backtest-report` 发布 `report.html`，按可用的权益、成交和信号数据嵌入交互图表。有有效可比较结果时提供 `summary.csv`，成交和账户曲线按适用性附上或链接原始产物。报告记录策略及参数、请求与实测范围、数据覆盖、成交与费用假设、基准、结果和复现方式。独立逐笔结果使用逐笔口径，账户收益与回撤基于真实模拟的资金和持仓约束。字段和交付模板见[临时策略回测指南](docs/guides/ad-hoc-backtest.md#交付格式)。
 
 ***
 

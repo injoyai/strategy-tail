@@ -15,10 +15,24 @@ import (
 
 var sourceTime = time.FixedZone("UTC+8", 8*60*60)
 
-func equityChart(path string) (Chart, error) {
-	chart := Chart{Title: "账户权益", Unit: "元"}
-	groups, benchmarks := make(map[string][]Point), make(map[string][]Point)
-	var names []string
+type csvChart struct {
+	Chart
+	periods []string
+}
+
+func (c *csvChart) add(series Series, period string) {
+	c.Series = append(c.Series, series)
+	c.periods = append(c.periods, period)
+}
+
+type csvGroup struct {
+	name, period string
+}
+
+func equityChart(path string) (csvChart, error) {
+	chart := csvChart{Chart: Chart{Title: "账户权益", Unit: "元"}}
+	groups, benchmarks := make(map[csvGroup][]Point), make(map[csvGroup][]Point)
+	var ordered []csvGroup
 	err := readCSV(path, []string{"variant", "date", "equity"}, func(row csvRow) error {
 		name, at, err := row.seriesTime("date")
 		if err != nil {
@@ -28,47 +42,50 @@ func equityChart(path string) (Chart, error) {
 		if err != nil {
 			return err
 		}
-		if _, exists := groups[name]; !exists {
-			names = append(names, name)
+		group := csvGroup{name, row.get("period")}
+		if _, exists := groups[group]; !exists {
+			ordered = append(ordered, group)
 		}
-		groups[name] = append(groups[name], Point{Time: at, Value: value})
+		groups[group] = append(groups[group], Point{Time: at, Value: value})
 		if row.get("benchmark_equity") != "" {
 			value, err := row.number("benchmark_equity")
 			if err != nil {
 				return err
 			}
-			benchmarks[name] = append(benchmarks[name], Point{Time: at, Value: value})
+			benchmarks[group] = append(benchmarks[group], Point{Time: at, Value: value})
 		}
 		return nil
 	})
 	if err != nil {
-		return Chart{}, err
+		return csvChart{}, err
 	}
-	for _, name := range names {
-		chart.Series = append(chart.Series, Series{Name: name, Points: groups[name]})
+	var variantsPerPeriod = make(map[string]int)
+	for _, group := range ordered {
+		chart.add(Series{Name: group.name, Points: groups[group]}, group.period)
+		variantsPerPeriod[group.period]++
 	}
-	for _, name := range names {
-		points := benchmarks[name]
+	for _, group := range ordered {
+		points := benchmarks[group]
 		if len(points) == 0 {
 			continue
 		}
-		partial := len(points) != len(groups[name])
+		partial := len(points) != len(groups[group])
 		label := "基准"
 		if partial {
 			label += "（可用日期）"
 		}
-		if len(names) > 1 {
-			label += " · " + name
+		if variantsPerPeriod[group.period] > 1 {
+			label += " · " + group.name
 		}
-		chart.Series = append(chart.Series, Series{Name: label, Points: points, Scatter: partial})
+		chart.add(Series{Name: label, Points: points, Scatter: partial}, group.period)
 	}
 	return chart, nil
 }
 
-func tradeChart(path string) (Chart, error) {
-	chart := Chart{Title: "逐笔平仓净收益率", Unit: "%", ZeroBaseline: true}
-	groups := make(map[string][]Point)
-	var names []string
+func tradeChart(path string) (csvChart, error) {
+	chart := csvChart{Chart: Chart{Title: "逐笔平仓净收益率", Unit: "%", ZeroBaseline: true}}
+	groups := make(map[csvGroup][]Point)
+	var ordered []csvGroup
 	err := readCSV(path, []string{"variant", "virtual", "net_return_pct"}, func(row csvRow) error {
 		virtual, err := strconv.ParseBool(row.get("virtual"))
 		if err != nil {
@@ -89,14 +106,15 @@ func tradeChart(path string) (Chart, error) {
 		if err != nil {
 			return err
 		}
-		if _, exists := groups[name]; !exists {
-			names = append(names, name)
+		group := csvGroup{name, row.get("period")}
+		if _, exists := groups[group]; !exists {
+			ordered = append(ordered, group)
 		}
-		groups[name] = append(groups[name], Point{Time: at, Value: value, Label: row.get("code")})
+		groups[group] = append(groups[group], Point{Time: at, Value: value, Label: row.get("code")})
 		return nil
 	})
-	for _, name := range names {
-		chart.Series = append(chart.Series, Series{Name: name, Points: groups[name], Scatter: true})
+	for _, group := range ordered {
+		chart.add(Series{Name: group.name, Points: groups[group], Scatter: true}, group.period)
 	}
 	return chart, err
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func main() {
-	dir := flag.String("dir", "", "回测输出目录")
+	dir := flag.String("dir", "", "回测输出目录，生成 report.html")
 	markdown := flag.String("markdown", "", "报告正文路径，默认读取输出目录中的 report.md")
 	flag.Parse()
 	if *dir == "" {

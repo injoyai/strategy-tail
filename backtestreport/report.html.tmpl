@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>{{.CSS}}</style>
+</head>
+<body>
+<main class="report">
+  <header class="report-header">
+    <h1>{{.Heading}}</h1>
+    <div class="intro">{{.Intro}}</div>
+  </header>
+  <section aria-labelledby="chart-heading" class="charts">
+    <h2 id="chart-heading">回测图表</h2>
+    {{if or .Charts .Legacy}}
+    {{range $index, $chart := .Charts}}
+    <section class="chart" aria-labelledby="chart-title-{{$index}}">
+      <header class="chart-header">
+        <div>
+          <h3 id="chart-title-{{$index}}">{{.Title}}</h3>
+          <p class="time-window"></p>
+        </div>
+        <div class="chart-actions" hidden>
+          <label class="period" hidden>回测区间 <select></select></label>
+          <button type="button" data-action="out" aria-label="缩小时间区间">缩小</button>
+          <button type="button" data-action="in" aria-label="放大时间区间">放大</button>
+          <button type="button" data-action="reset">显示全程</button>
+        </div>
+      </header>
+      <div class="chart-plot">
+        <canvas tabindex="0" aria-label="{{.Title}}。用左右方向键查看观测值，用加减键缩放。" aria-describedby="chart-help-{{$index}}"></canvas>
+        <span class="chart-cursor" aria-hidden="true" hidden></span>
+        <span class="chart-selection" aria-hidden="true" hidden></span>
+        <div class="chart-tooltip" aria-hidden="true" hidden></div>
+      </div>
+      <div class="chart-controls" hidden>
+        <label class="pan" hidden>移动区间 <input type="range" min="0" max="1000" value="0"></label>
+        <div class="chart-legend" role="group" aria-label="显示数据序列"></div>
+        <p class="chart-help" id="chart-help-{{$index}}">悬停或轻点查看数值。拖动图面选择时间区间。</p>
+      </div>
+      <p class="chart-status" role="status"></p>
+      <noscript><p class="empty">启用 JavaScript 后可查看交互图表。</p></noscript>
+      <script type="application/json">{{.Data}}</script>
+    </section>
+    {{end}}
+    {{if .Legacy}}<div class="legacy-charts">{{.Legacy}}</div>{{end}}
+    {{else}}
+    <p class="empty">本次报告没有可绘制的权益、平仓成交或信号数据。</p>
+    {{end}}
+  </section>
+  {{if .Body}}<article class="report-body">{{.Body}}</article>{{end}}
+</main>
+{{if .Charts}}<script>{{.JS}}</script>{{end}}
+</body>
+</html>

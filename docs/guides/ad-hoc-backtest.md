@@ -94,8 +94,7 @@ func run() error {
 
 | 文件 | 内容 |
 | --- | --- |
-| `report.md` | 用公共接口发布，图表嵌入正文。写明结论、策略规则与参数、数据与覆盖、成交与成本、对照结果、限制及复现。缺数无法完成时记录已确认的覆盖和阻塞点。 |
-| `backtest-chart-*.svg` | 公共接口生成的图表，与报告一同交付。 |
+| `report.html` | 用公共接口发布，浏览器可离线查看图表。写明结论、策略规则与参数、数据与覆盖、成交与成本、对照结果、限制及复现。缺数无法完成时记录已确认的覆盖和阻塞点。 |
 | `summary.csv` | 有可比较结果时提供，表头为 `variant,period,metric,value,unit`。`period` 用日期范围或 `overall`，数值用纯数字，单位另列。不可计算的值留空并在报告说明。 |
 | `trades.csv` | 有逐笔成交时导出。出图读取 `variant,virtual,net_return_pct` 和 `sell_time`（也接受 `sell_or_mark_time`），有 `code` 时显示在图上的成交点提示中。明细还应提供买卖价格、数量、成本和净盈亏。 |
 | `equity.csv` | 有账户模拟时导出。出图读取 `variant,date,equity` 和可选的 `benchmark_equity`。明细还应提供现金和持仓市值，权益和基准权益单位为元。 |
@@ -116,7 +115,7 @@ import "github.com/injoyai/strategy-tail/backtestreport"
 err := backtestreport.Write(outputDir, markdown)
 ```
 
-有 `equity.csv` 时生成账户权益图，包含可用的基准权益。有 `trades.csv` 时按实际平仓时间绘制每笔净收益率，期末估值通过 `virtual` 标记。需要展示日线或分钟信号、阈值和买卖点时，可向 `Write` 追加 `backtestreport.Chart`，用 `Series.Points` 传入各条实际序列，用 `Scatter` 标记成交点。
+有 `equity.csv` 时生成账户权益图，包含可用的基准权益。CSV 包含多个 `period` 时可按回测区间切换，图例可开关各序列，拖选区间或用按钮缩放，悬停、轻点或使用左右方向键可读取原始观测值。有 `trades.csv` 时按实际平仓时间绘制每笔净收益率，期末估值通过 `virtual` 标记。需要展示日线或分钟信号、阈值和买卖点时，可向 `Write` 追加 `backtestreport.Chart`，用 `Series.Points` 传入各条实际序列，用 `Scatter` 标记成交点。
 
 Python 或 Shell 脚本可调用同一个发布入口。
 
@@ -124,4 +123,4 @@ Python 或 Shell 脚本可调用同一个发布入口。
 go run ./cmd/backtest-report -dir "$output_dir" -markdown "$scratch/report-draft.md"
 ```
 
-省略 `-markdown` 时使用目录内已有的 `report.md`。重复发布会更新报告中的图表区段。SVG 与 Markdown 保存在同一目录，可直接打开，查看时无需外部图表服务。只有文字或数据不足时，图表区会说明本次可用数据的情况。
+省略 `-markdown` 时读取目录内已有的 `report.md`。正文支持标题、段落、粗体、斜体、链接、图片、列表、表格和围栏代码块。发布会生成或更新 `report.html`，内嵌图表数据、样式和脚本，源 Markdown 与 CSV 继续保留。正文里的相对链接仍按报告目录打开 CSV 等文件。旧 Markdown 中的图表会优先由原始数据重建，缺少原始序列的旧图继续引用相邻 SVG。只有文字或数据不足时，图表区会说明本次可用数据的情况。
