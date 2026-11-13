@@ -78,7 +78,6 @@ type Seller interface {
 | 目的 | 命令 | 说明 |
 | --- | --- | --- |
 | 浏览器策略实验 | `go run ./cmd/lab` | 默认监听 `0.0.0.0:8765`，端口占用时自动选择空闲端口；也可用 Docker 部署（见下） |
-| 实时筛选服务 | `go run ./cmd/screen` | 使用 `config/config.yaml` 中的服务配置 |
 
 各命令的参数、配置归属和副作用见[命令说明](cmd/README.md)。原 `diagnoser`、`screen-realtime`、`screen-kline`、`future`、`market-regime` 为固定参数的诊断、演示或专项研究命令，已移除；通用的 `core.Diagnoser`、`core.Screen` 和 `core.ForwardReturnAnalysis` 保留，已有数据与报告不迁移。
 
@@ -201,10 +200,6 @@ go vet ./internal/lab/...
 等分析流程只消费指标，不再在循环中覆盖回测报告。
 
 运行时根目录默认从当前目录向上查找最近的 `go.mod`。从仓库外启动构建后的程序时，可显式设置 `STRATEGY_TAIL_ROOT`。Lab 从项目根目录启动，策略库和选股配置等文件保存在当前工作目录的 `data/lab/`。
-
-命令自身的运行文件也遵循同一边界：`cmd/screen` 的交易数据库和本地 Web
-资源按运行时根目录解析，从命令子目录启动不会在源码目录中生成额外的
-`data/` 或 `output/`。
 
 导入根包只读取配置。临时回测通过 `common.OpenResearchMarket()` 打开只读行情库，
 现有应用通过 `common.Initialize()` 或 `common.MustInitialize()` 初始化完整运行时。

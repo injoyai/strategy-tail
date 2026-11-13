@@ -6,14 +6,10 @@ pull:
   # 私有 config/mysql.yaml 或环境变量 pull.mysql 提供连接配置。
   mysql: ""
 
-# 选股服务。Lab 与独立 Screen 共用 lookback 和 interval。
+# Lab 选股策略。
 screen:
-  port: 9090
   lookback: 60                   # 历史买点回看交易日数
   interval: 1m                  # 已入库分钟行情刷新间隔
-
-  html:
-    local: true                 # 优先读取 cmd/screen/web，文件缺失时使用嵌入资源
 
 # 回测公共配置（命令可覆盖；Lab 的年份、卖出条件及账户资金由运行请求指定）。
 backtest:

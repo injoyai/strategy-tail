@@ -29,37 +29,6 @@ elif args[0]=='run' and scenario=='run-fail': sys.exit(1)
 elif args[0]=='rename' and scenario=='rename-fail': sys.exit(1)
 '''
 
-class ScreenPushTest(unittest.TestCase):
-    def test_uses_project_root_from_another_directory(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            stub = '''#!/usr/bin/env python3
-import json, os, sys
-from pathlib import Path
-with Path(os.environ['SCREEN_PUSH_TEST_LOG']).open('a') as log:
-    log.write(json.dumps([Path(sys.argv[0]).name, os.getcwd(), sys.argv[1:]]) + '\\n')
-'''
-            for name in ('go', 'docker', 'sleep'):
-                (root / name).write_text(stub)
-                (root / name).chmod(0o755)
-            log = root / 'calls'
-            env = dict(os.environ, PATH=directory + os.pathsep + os.environ['PATH'],
-                       SCREEN_PUSH_TEST_LOG=str(log))
-            result = subprocess.run(['sh', str(ROOT / 'cmd/screen/dockerpush.sh')],
-                                    cwd=directory, env=env, capture_output=True,
-                                    text=True, timeout=10)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            calls = [json.loads(line) for line in log.read_text().splitlines()]
-            self.assertTrue(all(call[1] == str(ROOT) for call in calls))
-            build = next(call[2] for call in calls if call[0] == 'go')
-            self.assertEqual(build[-3:], ['-o', './bin/screen-stock', './cmd/screen'])
-            image = next(call[2] for call in calls
-                         if call[0] == 'docker' and call[2][0] == 'build')
-            self.assertEqual(image[-3:], ['-f', './cmd/screen/Dockerfile', '.'])
-            self.assertTrue((ROOT / 'config/config.yaml').is_file())
-            self.assertTrue((ROOT / 'cmd/screen/Dockerfile.dockerignore').is_file())
-
-
 class DeployTest(unittest.TestCase):
     def scenario(self, case, bind=None, port=None):
         with tempfile.TemporaryDirectory() as directory:

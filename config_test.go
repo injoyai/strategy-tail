@@ -12,8 +12,8 @@ import (
 
 func TestConfigUsesRuntimeRoot(t *testing.T) {
 	if os.Getenv("STRATEGY_TAIL_CONFIG_TEST") == "1" {
-		if got := cfg.GetInt("screen.port"); got != 9191 {
-			t.Fatalf("screen.port = %d, want root config value 9191", got)
+		if got := cfg.GetInt("screen.lookback"); got != 90 {
+			t.Fatalf("screen.lookback = %d, want root config value 90", got)
 		}
 		cost, pos := LoadBacktestConfig()
 		if cost.CommissionRate != 0.002 || pos.MaxPerCode != 3 {
@@ -26,26 +26,26 @@ func TestConfigUsesRuntimeRoot(t *testing.T) {
 	}
 
 	root := t.TempDir()
-	for _, dir := range []string{"config", "cmd/screen/config"} {
+	for _, dir := range []string{"config", "cmd/lab/config"} {
 		if err := os.MkdirAll(filepath.Join(root, dir), 0755); err != nil {
 			t.Fatal(err)
 		}
 	}
-	config := "screen:\n  port: 9191\nbacktest:\n  cost:\n    commission_rate: 0.002\n  position:\n    max_per_code: 3\n"
+	config := "screen:\n  lookback: 90\nbacktest:\n  cost:\n    commission_rate: 0.002\n  position:\n    max_per_code: 3\n"
 	if err := os.WriteFile(filepath.Join(root, "config/config.yaml"), []byte(config), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "cmd/screen/config/config.yaml"), []byte("screen:\n  port: 8080\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "cmd/lab/config/config.yaml"), []byte("screen:\n  lookback: 30\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, dir := range []string{root, filepath.Join(root, "cmd/screen")} {
+	for _, dir := range []string{root, filepath.Join(root, "cmd/lab")} {
 		cmd := exec.Command(executable, "-test.run=^TestConfigUsesRuntimeRoot$")
 		cmd.Dir = dir
-		cmd.Env = append(os.Environ(), "STRATEGY_TAIL_ROOT="+root, "STRATEGY_TAIL_CONFIG_TEST=1", "screen.port=7070")
+		cmd.Env = append(os.Environ(), "STRATEGY_TAIL_ROOT="+root, "STRATEGY_TAIL_CONFIG_TEST=1", "screen.lookback=7")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("config from %s: %v\n%s", dir, err, output)
 		}

@@ -14,11 +14,9 @@
 | [core/stats.go](core/stats.go) | `TradeStats` |
 | [core/cost.go](core/cost.go) | `Cost` |
 | [core/backtest.go](core/backtest.go) | `PositionConfig`、`Backtest` |
-| [cmd/screen/model.go](cmd/screen/model.go) | `Strategy`、`BuyItem`、`BuyResponse`、`Trade`、`SellResponse`、`sellSignal`、`HistoryResponse`、`ChartKline`、`DiagnoseResponse`、`DiagnoseTrade` |
-| [cmd/screen/screen.go](cmd/screen/screen.go) | `ScreenService` |
 
 * **修改前必须先描述拟变更内容及理由，等待用户确认后再执行；**
-* **此约束适用于 `core/` 和 `cmd/screen/` 目录下所有类型的定义文件；**
+* **此约束适用于 `core/` 目录下所有类型的定义文件；**
 * **新增字段时需同步更新所有序列化/反序列化逻辑（如 JSON marshal/unmarshal、xorm tag），确保前后兼容。**
 
 ***
@@ -170,7 +168,7 @@ ProfitFactor = Σ盈利单收益率 / |Σ亏损单收益率|
 | 位置                                             | 说明                     |
 | ---------------------------------------------- | ---------------------- |
 | [core/analyze.go](core/analyze.go) `Analyze()` | 回测年度汇总，已调用 `Stats`     |
-| `cmd/screen/index.html` 历史面板 JS                | 前端按相同公式计算，新增字段时保持口径    |
+| [Lab 选股历史接口](internal/lab/screen_history.go) | 交易统计调用 `core.Stats` |
 | 任何后端新增的统计接口                                    | 必须调用 `core.Stats`，禁止重写 |
 
 新增交易后处理逻辑时，**先查** **`core.Stats`** **是否已覆盖你的需求**，不够再扩展 `TradeStats`，禁止在调用点重写。
