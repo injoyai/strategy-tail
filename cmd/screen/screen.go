@@ -248,23 +248,20 @@ func (this *ScreenService) _update() {
 	}
 }
 
-func (this *ScreenService) Run() error {
-
-	err := this.init()
-	if err != nil {
-		return err
-	}
-
-	//增量更新历史交易
-	this._update()
+func (this *ScreenService) run() {
+	// 日线只为当日策略预热。历史成交沿用启动时读取的账本。
+	logs.PrintErr(this.getHistoryDayKlines())
 
 	cr := cron.New(cron.WithSeconds())
 	cr.AddFunc("0 32 15 * * *", this._update)
 	cr.Start()
+	defer cr.Stop()
 
 	first := true
+	tick := time.NewTicker(this.Interval)
+	defer tick.Stop()
 
-	for range time.NewTicker(this.Interval).C {
+	for range tick.C {
 
 		now := time.Now().In(protocol.Location())
 		trading := now.Weekday() != time.Saturday && now.Weekday() != time.Sunday && common.IsTradingTime()
@@ -274,9 +271,9 @@ func (this *ScreenService) Run() error {
 			err := this.updateRealtime()
 			logs.PrintErr(err)
 
-			//计算实时卖点
-			err = this.realtimeShells()
-			logs.PrintErr(err)
+			if trading && err == nil {
+				logs.PrintErr(this.realtimeShells(now))
+			}
 
 			//开始计算实时买点
 			this.realtimeBuys()
@@ -284,13 +281,20 @@ func (this *ScreenService) Run() error {
 			first = false
 		}
 	}
+}
 
-	return nil
+func (this *ScreenService) restoreTrades() error {
+	if err := this.init(); err != nil {
+		return err
+	}
+	_, err := this.loadingTrades()
+	return err
 }
 
 // realtimeShells 计算实时卖点
-func (this *ScreenService) realtimeShells() error {
-	todayDate := time.Now().In(protocol.Location()).Format(time.DateOnly)
+func (this *ScreenService) realtimeShells(at time.Time) error {
+	today := core.DayOf(at.In(protocol.Location()))
+	todayDate := today.Format(time.DateOnly)
 
 	//从本地加载历史成交
 	trades, err := this.loadingTrades()
@@ -318,7 +322,7 @@ func (this *ScreenService) realtimeShells() error {
 		//实时计算卖点(按买入时命中的策略选择卖出条件)
 		for _, s := range this.Strategies {
 			if s.Key == t.Strategy {
-				if s := core.GetSell(s.Seller, ks, b, nil); s != nil {
+				if s := core.GetSellSince(s.Seller, ks, b, today, nil); s != nil {
 					t.Sell(s)
 					sells = append(sells, t)
 					//更新到数据库

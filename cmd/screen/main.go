@@ -33,10 +33,9 @@ func main() {
 		Strategies:   screenStrategies(ks),
 	}
 
-	go func() {
-		logs.Info("开始运行主程序...")
-		logs.PrintErr(svc.Run())
-	}()
+	logs.PanicErr(svc.restoreTrades())
+	logs.Info("开始运行主程序...")
+	go svc.run()
 
 	port := cfg.GetInt("screen.port", 9090)
 	useLocal := cfg.GetBool("screen.html.local")

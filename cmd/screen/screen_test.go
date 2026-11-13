@@ -14,6 +14,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/xorms"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/strategies/buy"
+	"github.com/injoyai/strategy-tail/strategies/sell"
 	"github.com/injoyai/tdx/v2/extend/metadata"
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
@@ -146,6 +147,61 @@ func TestHistoryLoadFailureKeepsOldTrades(t *testing.T) {
 	rows, err := s.loadingTrades()
 	if err != nil || len(rows) != 1 || rows[0].ID != old.ID {
 		t.Fatalf("行情失败后旧交易发生变化: %v, %v", rows, err)
+	}
+}
+
+func TestRestoreTradesUsesStoredFillsWithoutMarketData(t *testing.T) {
+	oldPull := common.Pull
+	common.Pull = nil
+	t.Cleanup(func() { common.Pull = oldPull })
+	s := &ScreenService{DB: testTradeDB(t), Codes: []string{"sh600000"}}
+	trade := &Trade{Code: "sh600000", BuyTime: "2026-11-11 15:00:00", BuyPrice: 10,
+		Sold: true, SellTime: "2026-11-12 09:35:00", SellPrice: 11}
+	if _, err := s.DB.Insert(trade); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.restoreTrades(); err != nil {
+		t.Fatal(err)
+	}
+	_, _, trades := s.snapshot()
+	if len(trades) != 1 || trades[0].ID != trade.ID || !trades[0].Sold ||
+		trades[0].BuyPrice != trade.BuyPrice || trades[0].SellTime != trade.SellTime || trades[0].SellPrice != trade.SellPrice {
+		t.Fatalf("restored trades: %+v", trades)
+	}
+	if marked, err := s.update.IsUpdated("history"); err != nil || marked {
+		t.Fatalf("restoring trades marked history updated: %v, %v", marked, err)
+	}
+}
+
+func TestRealtimeSellsOnlyCheckCurrentSession(t *testing.T) {
+	today := time.Date(2026, 11, 13, 10, 0, 0, 0, protocol.Location())
+	buyDay := time.Date(2026, 11, 11, 15, 0, 0, 0, protocol.Location())
+	yesterday := buyDay.AddDate(0, 0, 1)
+	code := "sh600000"
+	bars := extend.Klines{
+		&extend.Kline{Kline: &protocol.Kline{Time: buyDay, Close: 10}},
+		&extend.Kline{Kline: &protocol.Kline{Time: yesterday, Close: 11}},
+	}
+	s := &ScreenService{DB: testTradeDB(t),
+		Strategies:        []Strategy{{Key: "holding", Seller: sell.A持仓N天{Days: 1}}},
+		realtimeDayKlines: map[string]extend.Klines{code: bars}}
+	if _, err := s.DB.Insert(&Trade{Code: code, Strategy: "holding", BuyTime: buyDay.Format(time.DateTime), BuyPrice: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.realtimeShells(today); err != nil {
+		t.Fatal(err)
+	}
+	_, _, trades := s.snapshot()
+	if len(trades) != 1 || trades[0].Sold {
+		t.Fatalf("stale snapshot produced a historical sell: %+v", trades)
+	}
+	s.realtimeDayKlines[code] = append(bars, &extend.Kline{Kline: &protocol.Kline{Time: today, Close: 12}})
+	if err := s.realtimeShells(today); err != nil {
+		t.Fatal(err)
+	}
+	_, _, trades = s.snapshot()
+	if len(trades) != 1 || !trades[0].Sold || trades[0].SellTime != today.Format(time.DateTime) || trades[0].SellPrice != 12 {
+		t.Fatalf("current-session sell not saved: %+v", trades)
 	}
 }
 

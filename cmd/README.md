@@ -10,4 +10,6 @@
 
 Lab 的「选股策略」复用独立 Screen 的四套买入规则和标签，使用自身的选股配置。独立 Screen 仍提供买卖点监控、交易历史及诊断。日常策略实验可用 Lab 或[临时回测与只读数据接口](../docs/guides/ad-hoc-backtest.md)。Screen 的策略、HTTP API 和服务逻辑分别在 `strategies.go`、`api.go` 和 `screen.go`，静态资源在 `web/`。
 
+独立 Screen 启动时读取本地成交并预热日线缓存。历史成交更新由盘后定时任务触发，盘中卖点只检查当天。
+
 `cmd/screen/dockerpush.sh` 使用项目根目录作为构建上下文，并推送到脚本配置的镜像仓库。运行镜像时通过环境变量或私有配置挂载提供 `pull.mysql`。
