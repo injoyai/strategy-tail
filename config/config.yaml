@@ -6,7 +6,7 @@ pull:
   # 私有 config/mysql.yaml 或环境变量 pull.mysql 提供连接配置。
   mysql: ""
 
-# 实时筛选服务（仅 cmd/screen 使用；Lab 不读取本节）。
+# 选股服务。Lab 与独立 Screen 共用 lookback 和 interval。
 screen:
   port: 9090
   lookback: 60                   # 历史买点回看交易日数

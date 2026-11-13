@@ -14,6 +14,7 @@ import (
 	"time"
 
 	common "github.com/injoyai/strategy-tail"
+	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/internal/screener"
 	"github.com/injoyai/strategy-tail/lib/extend"
@@ -21,10 +22,12 @@ import (
 )
 
 type screenStrategy struct {
-	ID      string               `json:"id"`
-	Name    string               `json:"name"`
-	Enabled bool                 `json:"enabled"`
-	Buy     *builder.BuilderNode `json:"buy,omitempty"`
+	ID         string                 `json:"id"`
+	Name       string                 `json:"name"`
+	Enabled    bool                   `json:"enabled"`
+	Buy        *builder.BuilderNode   `json:"buy,omitempty"`
+	SellSignal *builder.BuilderNode   `json:"sellSignal,omitempty"`
+	Risks      []*builder.BuilderNode `json:"risks,omitempty"`
 }
 
 type screenConfig struct {
@@ -33,10 +36,18 @@ type screenConfig struct {
 }
 
 type screenState struct {
-	Config  screenConfig     `json:"config"`
-	Running bool             `json:"running"`
-	Error   string           `json:"error,omitempty"`
-	Result  *screener.Result `json:"result,omitempty"`
+	Config    screenConfig        `json:"config"`
+	Running   bool                `json:"running"`
+	Preview   *screenScanProgress `json:"preview,omitempty"`
+	Error     string              `json:"error,omitempty"`
+	LiveError string              `json:"liveError,omitempty"`
+	Result    *screener.Result    `json:"result,omitempty"`
+}
+
+type screenScanProgress struct {
+	Done        int    `json:"done"`
+	Total       int    `json:"total"`
+	CurrentCode string `json:"currentCode"`
 }
 
 type screenService struct {
@@ -46,13 +57,20 @@ type screenService struct {
 	now     func() time.Time
 	scanner screener.Scanner
 	running bool
+	preview *screenScanProgress
 	version int
 	result  *screener.Result
 	lastErr string
+
+	historyRunning bool
+	lookback       int
+	legacyPath     string
+	liveMinutes    screenMinutes
+	liveError      string
 }
 
 func newScreenService(path string) *screenService {
-	return &screenService{path: path, market: labScreenMarket{}, now: time.Now}
+	return &screenService{path: path, market: labScreenMarket{}, now: time.Now, lookback: 60}
 }
 
 func (s *screenService) load() (screenConfig, error) {
@@ -99,7 +117,7 @@ func compileScreen(config screenConfig) (map[string]bool, []screener.Rule, error
 		}
 		seenNames[name] = true
 		if preset, ok := presets[strategy.ID]; ok {
-			if strategy.Name != preset.Name || strategy.Buy != nil {
+			if strategy.Name != preset.Name || strategy.Buy != nil || strategy.SellSignal != nil || len(strategy.Risks) != 0 {
 				return nil, nil, fmt.Errorf("内置策略仅可调整启用状态：%s", preset.Name)
 			}
 			if strategy.Enabled {
@@ -110,19 +128,30 @@ func compileScreen(config screenConfig) (map[string]bool, []screener.Rule, error
 		if !builderStrategyIDRe.MatchString(strategy.ID) {
 			return nil, nil, fmt.Errorf("自定义选股策略 ID 无效")
 		}
-		spec := builder.BuilderSpec{Version: builder.SpecVersion, Name: name, Buy: strategy.Buy, HoldToEnd: true}
+		spec := builder.BuilderSpec{Version: builder.SpecVersion, Name: name, Buy: strategy.Buy, SellSignal: strategy.SellSignal, Risks: strategy.Risks, HoldToEnd: true}
 		if err := spec.Validate("run"); err != nil {
 			return nil, nil, fmt.Errorf("%s：%w", name, err)
 		}
-		if err := validateScreenLookback(strategy.Buy); err != nil {
-			return nil, nil, fmt.Errorf("%s：%w", name, err)
+		for _, node := range []*builder.BuilderNode{strategy.Buy, strategy.SellSignal} {
+			if node != nil {
+				if err := validateScreenLookback(node); err != nil {
+					return nil, nil, fmt.Errorf("%s：%w", name, err)
+				}
+			}
 		}
 		buyer, err := spec.Buyer()
 		if err != nil {
 			return nil, nil, fmt.Errorf("%s：%w", name, err)
 		}
+		var seller core.Seller
+		if spec.SellSignal != nil || len(spec.Risks) > 0 {
+			seller, err = spec.Seller()
+			if err != nil {
+				return nil, nil, fmt.Errorf("%s：%w", name, err)
+			}
+		}
 		if strategy.Enabled {
-			custom = append(custom, screener.Rule{ID: strategy.ID, Buyer: buyer})
+			custom = append(custom, screener.Rule{ID: strategy.ID, Name: name, Buyer: buyer, Seller: seller})
 		}
 	}
 	for id := range presets {
@@ -148,7 +177,7 @@ func validateScreenLookback(node *builder.BuilderNode) error {
 }
 
 func (s *screenService) state(config screenConfig) screenState {
-	state := screenState{Config: config, Running: s.running}
+	state := screenState{Config: config, Running: s.running, Preview: s.preview, LiveError: s.liveError}
 	if s.version == config.Version {
 		state.Result, state.Error = s.result, s.lastErr
 	}
@@ -167,7 +196,12 @@ func (s *screenService) start(config screenConfig) {
 	s.running = true
 	s.version = config.Version
 	s.lastErr = ""
-	go s.run(config)
+	s.preview = &screenScanProgress{}
+	go s.run(context.Background(), config, func(done, total int, code string) {
+		s.mu.Lock()
+		s.preview = &screenScanProgress{Done: done, Total: total, CurrentCode: code}
+		s.mu.Unlock()
+	})
 }
 
 func hasEnabledScreenStrategy(config screenConfig) bool {
@@ -179,43 +213,52 @@ func hasEnabledScreenStrategy(config screenConfig) bool {
 	return false
 }
 
-func (s *screenService) run(config screenConfig) {
+func (s *screenService) run(ctx context.Context, config screenConfig, progress screener.ScanProgress) error {
 	presets, custom, err := compileScreen(config)
 	var result screener.Result
 	if err == nil {
-		result, err = s.scanner.Scan(s.market, s.now(), presets, custom, common.DefaultGoroutines)
+		result, err = s.scanner.ScanWithProgress(ctx, s.market, s.now(), presets, custom, common.DefaultGoroutines, progress)
 	}
-	if err != nil {
+	if err != nil && ctx.Err() == nil {
 		log.Printf("[screen] 选股失败: %v", err)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.running = false
+	s.preview = nil
 	current, loadErr := s.load()
 	if loadErr != nil {
 		log.Printf("[screen] 读取策略配置失败: %v", loadErr)
-		return
+		return errors.New("无法读取选股配置")
 	}
 	if current.Version != config.Version {
 		s.result = nil
 		s.start(current)
-		return
+		return errors.New("选股策略配置已变化")
+	}
+	if ctx.Err() != nil {
+		return errStopped
 	}
 	if err != nil {
 		s.lastErr = "选股失败，请检查行情或策略配置后重试。"
-		return
+		return errors.New(s.lastErr)
 	}
 	s.result = &result
+	return nil
 }
 
 // RunScreen scans enabled strategies at startup, during trading, and once
 // the current session's official day bars have been published.
-func (s *Server) RunScreen(ctx context.Context, interval time.Duration) {
+func (s *Server) RunScreen(ctx context.Context, interval time.Duration, lookback int) {
 	if interval <= 0 {
 		interval = time.Minute
 	}
 	screen := s.screen
+	screen.mu.Lock()
+	screen.lookback = min(max(1, lookback), 240)
+	screen.mu.Unlock()
+	go screen.runLive(ctx, interval)
 	tick := time.NewTicker(interval)
 	defer tick.Stop()
 	screen.startSaved(false)
@@ -355,15 +398,33 @@ func (s *Server) handleScreenRun(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "正在选股，请等待当前扫描完成")
 		return
 	}
-	screen.start(config)
-	if !screen.running {
+	if !hasEnabledScreenStrategy(config) {
 		writeErr(w, http.StatusBadRequest, "请先启用至少一套选股策略")
 		return
 	}
+	if !s.runner.mu.TryLock() {
+		writeErr(w, http.StatusConflict, "已有批量任务在运行")
+		return
+	}
+	screen.running, screen.version, screen.lastErr = true, config.Version, ""
+	const task = "screen_scan"
+	ctl := s.runner.beginTask(taskStart{kind: task, phase: "preparing"})
+	s.runner.launchTask(ctl, "idle", func(stop chan struct{}) error {
+		ctx, cancel := screenTaskContext(stop)
+		defer cancel()
+		return screen.run(ctx, config, s.runner.screenProgress(task))
+	})
 	writeJSON(w, screen.state(config))
 }
 
 type labScreenMarket struct{}
+
+func (labScreenMarket) MinuteKlines(code string, start, end time.Time) (protocol.Klines, error) {
+	if common.Pull == nil {
+		return nil, errors.New("行情运行时尚未初始化")
+	}
+	return common.Pull.MinuteKlines(code, start, end)
+}
 
 func (labScreenMarket) Codes() ([]string, error) {
 	if common.Pull == nil || common.Manage == nil {
@@ -376,14 +437,23 @@ func (labScreenMarket) Codes() ([]string, error) {
 }
 
 func (labScreenMarket) Name(code string) string {
+	if common.Manage == nil {
+		return ""
+	}
 	return common.Manage.Codes.GetName(code)
 }
 
 func (labScreenMarket) LatestDayDate(code string) (string, error) {
+	if common.Pull == nil {
+		return "", errors.New("行情运行时尚未初始化")
+	}
 	return common.Pull.LatestDayDate(code)
 }
 
 func (labScreenMarket) DayKlines(code string, start, end time.Time) (extend.Klines, error) {
+	if common.Pull == nil {
+		return nil, errors.New("行情运行时尚未初始化")
+	}
 	return common.Pull.DayKlines(code, start, end)
 }
 

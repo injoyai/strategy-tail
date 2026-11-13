@@ -28,7 +28,8 @@ export function taskProgress(s = {}, names) {
     : s.config?.macd && phase === 'backtesting' ? 'stock_years' : 'stocks');
   const unitLabel = {stocks: '只股票', symbols: '个标的', trading_days: '个交易日', years: '个年份', stock_years: '股票×年份', snapshots: '个快照'}[unit] || '项';
   const currentLabel = unit === 'trading_days' && !String(s.currentCode || '').startsWith('窗口') ? '当前日期'
-    : unit === 'stocks' && /^(sh|sz|bj)\d+$/.test(s.currentCode || '') ? '当前股票' : '当前';
+    : unit === 'stocks' && /^(sh|sz|bj)\d+$/.test(s.currentCode || '')
+      ? (s.task === 'screen_scan' || s.task === 'screen_history' ? '已处理' : '当前股票') : '当前';
   return {phase, label, done, total, percent: total > 0 ? Math.round(done / total * 100) : null,
     counts: total > 0 ? `${done}/${total} ${unitLabel}` : '',
     current: s.currentCode ? `${currentLabel} ${stockLabel(s.currentCode, names)}` : ''};

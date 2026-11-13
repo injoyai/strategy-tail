@@ -52,6 +52,7 @@ export const state = reactive({
 
   // —— 批量任务卡（状态条；polling.js 写入，根组件渲染） ——
   taskDock: null,
+  screenPreview: null,
 
   // —— 03 组合对比 / 04 交易明细（共享报告） ——
   currentReport: null,

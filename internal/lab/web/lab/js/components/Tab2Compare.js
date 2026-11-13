@@ -223,20 +223,22 @@ export default {
     </div>
     <div class="cmp-contrib">
       <h4>{{ accountMode ? '条件对照（各变体按相同资金规则独立回测）' : '条件贡献（单条件 = 基准 + 单独追加该条件）' }}</h4>
-      <table>
-        <thead><tr><th>#</th><th>条件</th><th>交易数</th><th>{{ accountMode ? '成交数比' : '信号保留率' }}</th><th>胜率%</th><th>平均%</th><th>盈亏比</th></tr></thead>
-        <tbody>
-          <tr v-for="(f, i) in (cmp.factorVariants || [])" :key="i">
-            <td>{{ i + 1 }}</td>
-            <td>{{ factorLabel(f) }}</td>
-            <td>{{ f.trades }}</td>
-            <td>{{ f.retentionRate == null ? '-' : (f.retentionRate * 100).toFixed(2) + '%' }}</td>
-            <td :class="statCls(byName[f.variant], 'winRate', 50)">{{ statFmt(byName[f.variant], 'winRate', 2) }}</td>
-            <td :class="statCls(byName[f.variant], 'avgProfit', 0)">{{ statFmt(byName[f.variant], 'avgProfit', 2) }}</td>
-            <td>{{ statPF(byName[f.variant]) }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="detail-wrap" tabindex="0" role="region" aria-label="条件对照表格">
+        <table>
+          <thead><tr><th>#</th><th>条件</th><th>交易数</th><th>{{ accountMode ? '成交数比' : '信号保留率' }}</th><th>胜率%</th><th>平均%</th><th>盈亏比</th></tr></thead>
+          <tbody>
+            <tr v-for="(f, i) in (cmp.factorVariants || [])" :key="i">
+              <td>{{ i + 1 }}</td>
+              <td>{{ factorLabel(f) }}</td>
+              <td>{{ f.trades }}</td>
+              <td>{{ f.retentionRate == null ? '-' : (f.retentionRate * 100).toFixed(2) + '%' }}</td>
+              <td :class="statCls(byName[f.variant], 'winRate', 50)">{{ statFmt(byName[f.variant], 'winRate', 2) }}</td>
+              <td :class="statCls(byName[f.variant], 'avgProfit', 0)">{{ statFmt(byName[f.variant], 'avgProfit', 2) }}</td>
+              <td>{{ statPF(byName[f.variant]) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
   <div v-if="coverageText" class="coverage">{{ coverageText }}</div>
@@ -290,7 +292,7 @@ export default {
     </table>
   </div>
 
-  <div class="charts2">
+  <div v-show="vs.length" class="charts2">
     <div ref="trendChart" class="chart-block" role="img" :aria-label="accountMode ? '账户累计收益率与上证指数对比，期末数值见上方表格' : '逐笔收益率累计，非资金曲线'"></div>
     <div ref="winChart" class="chart-block"></div>
   </div>

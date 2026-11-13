@@ -99,7 +99,7 @@ function navigationContext() {
   return ctx;
 }
 
-test('左侧主入口覆盖全部页面，二级页签仅展示当前工作区', () => {
+test('左侧各组页签始终在自己的主入口下，只选中当前页', () => {
   const ctx = navigationContext();
   assert.deepEqual(ctx.groups.map(g => g.title), ['策略回测', '因子研究', '盘感练习', '选股策略']);
   assert.deepEqual(ctx.groups.flatMap(g => g.tabs), constants.TABS.map(t => t.n));
@@ -111,8 +111,13 @@ test('左侧主入口覆盖全部页面，二级页签仅展示当前工作区',
       const [nav] = elements(tree, 'nav');
       assert.equal(elements(nav, 'button').filter(b => b.props.id?.startsWith('nav-')).length, 4);
       assert.equal(elements(nav, 'button').filter(b => b.props['aria-current'] === 'location').length, 1);
-      const secondary = elements(tree, 'button').filter(b => b.props?.role === 'tab');
-      assert.deepEqual(secondary.map(b => Number(b.props['data-tab'])), group.tabs.length > 1 ? group.tabs : []);
+      for (const [i, section] of elements(nav, 'div').filter(v => v.props?.class === 'workspace-group').entries()) {
+        const owner = ctx.groups[i];
+        const tabs = elements(section, 'button').filter(b => b.props?.['data-tab']);
+        assert.deepEqual(tabs.map(b => Number(b.props['data-tab'])), owner.tabs.length > 1 ? owner.tabs : []);
+        assert.ok(tabs.every(b => b.props.role === (owner === group ? 'tab' : null)));
+      }
+      const secondary = elements(nav, 'button').filter(b => b.props?.role === 'tab');
       assert.equal(secondary.filter(b => b.props['aria-selected'] === 'true').length, group.tabs.length > 1 ? 1 : 0);
       const panels = elements(tree, 'div').filter(v => v.props?.id === 'tab7');
       assert.equal(panels[0].props.role, 'region');
@@ -121,7 +126,7 @@ test('左侧主入口覆盖全部页面，二级页签仅展示当前工作区',
   } finally {state.activeTab = previous;}
 });
 
-test('跨工作区返回上次页面，旧链接和组内键盘切换保持可用', () => {
+test('因子研究入口直达因子分析，回测恢复上次页面，组内键盘切换保持可用', () => {
   const previous = {activeTab: state.activeTab, location: globalThis.location, history: globalThis.history, document: globalThis.document};
   let url, focused;
   globalThis.location = {pathname: '/', search: ''};
@@ -139,8 +144,9 @@ test('跨工作区返回上次页面，旧链接和组内键盘切换保持可�
     ctx.switchGroup(ctx.groups[0]);
     assert.equal(state.activeTab, 3);
     ctx.switchGroup(ctx.groups[1]);
-    assert.equal(state.activeTab, 5);
-    const key = k => ctx.onTabsKeydown({key: k, preventDefault() {}});
+    assert.equal(state.activeTab, 4);
+    assert.equal(url, '?tab=factor');
+    const key = k => ctx.onTabsKeydown({key: k, target: {dataset: {tab: String(state.activeTab)}}, preventDefault() {}}, ctx.groups[1]);
     key('End'); assert.equal(state.activeTab, 6); assert.equal(focused, 'tabbtn6');
     key('ArrowRight'); assert.equal(state.activeTab, 4); assert.equal(focused, 'tabbtn4');
     key('ArrowLeft'); assert.equal(state.activeTab, 6);

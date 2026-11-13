@@ -8,7 +8,7 @@ export const TABS = [
   {n: 1, title: '回测配置'},
   {n: 2, title: '回测结果'},
   {n: 3, title: '交易明细'},
-  {n: 4, title: '因子研究'},
+  {n: 4, title: '因子研究', navTitle: '因子分析'},
   {n: 5, title: '候选因子'},
   {n: 6, title: '组合研究'},
   {n: 7, title: '盘感练习'},
@@ -17,12 +17,12 @@ export const TABS = [
 
 export const NAV_GROUPS = [
   {id: 'backtest', title: '策略回测', tabs: [1, 2, 3]},
-  {id: 'factor', title: '因子研究', tabs: [4, 5, 6]},
+  {id: 'factor', title: '因子研究', tabs: [4, 5, 6], home: 4},
   {id: 'practice', title: '盘感练习', tabs: [7]},
   {id: 'screen', title: '选股策略', tabs: [8]},
 ];
 
-export const TASK_LABEL = {backtest: '策略回测', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证', practice_prepare: '盘感练习出题'};
+export const TASK_LABEL = {backtest: '策略回测', analysis: '因子分析', portfolio: '组合运行', portfolio_validation: '组合验证', practice_prepare: '盘感练习出题', screen_history: '历史选股回算', screen_scan: '选股扫描'};
 
 // 人工研究样本，不表示实时股息率排名或历史指数成员。
 export const DIVIDEND_STOCKS = [

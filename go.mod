@@ -6,6 +6,7 @@ go 1.25.4
 replace github.com/injoyai/tdx/v2 => ../tdx
 
 require (
+	github.com/fasthttp/websocket v1.5.12
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/injoyai/bar v0.0.12
@@ -25,7 +26,6 @@ require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect

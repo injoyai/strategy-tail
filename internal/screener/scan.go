@@ -1,6 +1,7 @@
 package screener
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -26,7 +27,9 @@ type Market interface {
 
 type Rule struct {
 	ID      string
+	Name    string
 	Buyer   core.Buyer
+	Seller  core.Seller
 	Tags    map[string]core.Buyer
 	Builtin bool
 }
@@ -69,7 +72,14 @@ const customHistoryBars = 1200
 // BenchmarkCode identifies the session calendar proxy and legacy trend index.
 const BenchmarkCode = "sh000001"
 
+// ScanProgress publishes the number of symbols processed, including skipped symbols.
+type ScanProgress func(done, total int, code string)
+
 func (s *Scanner) Scan(m Market, at time.Time, enabledPresets map[string]bool, custom []Rule, workers int) (Result, error) {
+	return s.ScanWithProgress(context.Background(), m, at, enabledPresets, custom, workers, nil)
+}
+
+func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, enabledPresets map[string]bool, custom []Rule, workers int, progress ScanProgress) (Result, error) {
 	at = at.In(protocol.Location())
 	date := at.Format(time.DateOnly)
 	result := Result{AsOf: at.Format(time.DateTime), Matches: []Match{}}
@@ -99,23 +109,10 @@ func (s *Scanner) Scan(m Market, at time.Time, enabledPresets map[string]bool, c
 		return result, fmt.Errorf("读取当日分钟行情: %w", err)
 	}
 
-	var index extend.Klines
-	if enabledPresets[IndexPreset] && (daily || len(minutes) > 0) {
-		index, err = m.DayKlines(BenchmarkCode, at.AddDate(0, -3, 0), dayEnd(at, daily))
-		if err != nil {
-			return result, fmt.Errorf("读取上证指数日线: %w", err)
-		}
-		if len(index) == 0 {
-			return result, errors.New("上证指数日线为空，无法运行 MACD精选2")
-		}
+	rules, err := buildRules(m, at, dayEnd(at, daily), enabledPresets, custom, daily || len(minutes) > 0)
+	if err != nil {
+		return result, err
 	}
-	rules := make([]Rule, 0, len(enabledPresets)+len(custom))
-	for _, preset := range Presets(index) {
-		if enabledPresets[preset.Key] {
-			rules = append(rules, Rule{ID: preset.Key, Buyer: preset.Buyer, Tags: preset.Tags, Builtin: true})
-		}
-	}
-	rules = append(rules, custom...)
 
 	legacyStart := at.AddDate(-1, -6, 0)
 	legacyStartDate := legacyStart.Format(time.DateOnly)
@@ -129,40 +126,32 @@ func (s *Scanner) Scan(m Market, at time.Time, enabledPresets map[string]bool, c
 	}
 
 	rows := make([]symbolResult, len(codes))
-	jobs := make(chan int)
-	var wg sync.WaitGroup
-	for range min(max(1, workers), len(codes)) {
-		wg.Go(func() {
-			for i := range jobs {
-				code := codes[i]
-				if minutes[code] == nil && !daily {
-					continue
-				}
-				bars, cached := s.days[code]
-				if !cached {
-					bars, rows[i].err = m.DayKlines(code, start, dayEnd(at, daily))
-					if rows[i].err != nil {
-						continue
-					}
-					if len(bars) > limit {
-						bars = slices.Clone(bars[len(bars)-limit:])
-					}
-					rows[i].history = bars
-				}
-				ks, intraday := sessionKlines(m, code, date, bars, minutes[code])
-				if len(ks) == 0 {
-					continue
-				}
-				rows[i].evaluated = true
-				rows[i].match = evaluate(code, ks, legacyStartDate, intraday, rules)
+	scan := func(i int) {
+		code := codes[i]
+		if minutes[code] == nil && !daily {
+			return
+		}
+		bars, cached := s.days[code]
+		if !cached {
+			bars, rows[i].err = m.DayKlines(code, start, dayEnd(at, daily))
+			if rows[i].err != nil {
+				return
 			}
-		})
+			if len(bars) > limit {
+				bars = slices.Clone(bars[len(bars)-limit:])
+			}
+			rows[i].history = bars
+		}
+		ks, intraday := sessionKlines(m, code, date, bars, minutes[code])
+		if len(ks) == 0 {
+			return
+		}
+		rows[i].evaluated = true
+		rows[i].match = evaluate(code, ks, legacyStartDate, intraday, rules)
 	}
-	for i := range codes {
-		jobs <- i
+	if err := processSymbols(ctx, codes, workers, progress, scan); err != nil {
+		return result, err
 	}
-	close(jobs)
-	wg.Wait()
 
 	var firstError error
 	for i, row := range rows {
@@ -191,6 +180,34 @@ func (s *Scanner) Scan(m Market, at time.Time, enabledPresets map[string]bool, c
 		return result, firstError
 	}
 	return result, nil
+}
+
+// BuildRules loads the index data needed by enabled preset rules.
+func BuildRules(m Market, start, end time.Time, enabledPresets map[string]bool, custom []Rule) ([]Rule, error) {
+	return buildRules(m, start, end, enabledPresets, custom, true)
+}
+
+func buildRules(m Market, start, end time.Time, enabledPresets map[string]bool, custom []Rule, loadIndex bool) ([]Rule, error) {
+	var index extend.Klines
+	if enabledPresets[IndexPreset] && loadIndex {
+		var err error
+		index, err = m.DayKlines(BenchmarkCode, start.AddDate(0, -3, 0), end)
+		if err != nil {
+			return nil, fmt.Errorf("读取上证指数日线: %w", err)
+		}
+		if len(index) == 0 {
+			return nil, errors.New("上证指数日线为空，无法运行 MACD精选2")
+		}
+	}
+	rules := make([]Rule, 0, len(enabledPresets)+len(custom))
+	for _, preset := range Presets(index) {
+		if enabledPresets[preset.Key] {
+			rules = append(rules, Rule{ID: preset.Key, Name: preset.Name, Buyer: preset.Buyer, Seller: preset.Seller, Tags: preset.Tags, Builtin: true})
+		}
+	}
+	rules = append(rules, custom...)
+
+	return rules, nil
 }
 
 type symbolResult struct {
@@ -255,14 +272,7 @@ func evaluate(code string, ks extend.Klines, legacyStartDate string, intraday bo
 		if !rule.Buyer.Buy(code, input) {
 			continue
 		}
-		hit := Hit{ID: rule.ID}
-		for label, tag := range rule.Tags {
-			if tag.Buy(code, input) {
-				hit.Tags = append(hit.Tags, label)
-			}
-		}
-		sort.Strings(hit.Tags)
-		hits = append(hits, hit)
+		hits = append(hits, Hit{ID: rule.ID, Tags: rule.tags(code, input)})
 	}
 	if len(hits) == 0 {
 		return nil
@@ -272,4 +282,72 @@ func evaluate(code string, ks extend.Klines, legacyStartDate string, intraday bo
 		rise = 0
 	}
 	return &Match{Code: code, Time: last.Time.Format(time.DateTime), Price: last.Close, Rise: rise, Hits: hits}
+}
+
+func (r Rule) tags(code string, ks extend.Klines) []string {
+	var tags []string
+	for label, tag := range r.Tags {
+		if tag.Buy(code, ks) {
+			tags = append(tags, label)
+		}
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+func (r Rule) Input(ks extend.Klines) extend.Klines {
+	limit := customHistoryBars
+	if r.Builtin {
+		limit = legacyHistoryBars
+	}
+	if len(ks) > 0 && ks[len(ks)-1].Time.Hour() < 15 {
+		limit++
+	}
+	return ks[max(0, len(ks)-limit):]
+}
+
+// WithSessionBar adds the latest stored minute aggregation to completed daily bars.
+func WithSessionBar(m Market, code string, at time.Time, bars extend.Klines, minute *protocol.Kline) extend.Klines {
+	if combined, appended := sessionKlines(m, code, at.In(protocol.Location()).Format(time.DateOnly), bars, minute); appended {
+		return combined
+	}
+	return bars
+}
+
+// processSymbols serializes completion callbacks while allowing independent work.
+func processSymbols(ctx context.Context, codes []string, workers int, progress ScanProgress, work func(int)) error {
+	if progress != nil {
+		progress(0, len(codes), "")
+	}
+	jobs := make(chan int)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	done := 0
+	for range min(max(1, workers), len(codes)) {
+		wg.Go(func() {
+			for i := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				work(i)
+				if progress != nil {
+					mu.Lock()
+					done++
+					progress(done, len(codes), codes[i])
+					mu.Unlock()
+				}
+			}
+		})
+	}
+send:
+	for i := range codes {
+		select {
+		case <-ctx.Done():
+			break send
+		case jobs <- i:
+		}
+	}
+	close(jobs)
+	wg.Wait()
+	return ctx.Err()
 }

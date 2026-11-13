@@ -125,7 +125,7 @@ export default {
       try {
         await this.$nextTick();
         if (request !== this.klineRequest) return;
-        if (window.matchMedia('(max-width: 900px)').matches) {
+        if (window.matchMedia('(width < 1280px)').matches) {
           this.$refs.klinePanel?.scrollIntoView({block: 'start', behavior: 'auto'});
           this.$refs.klinePanel?.focus({preventScroll: true});
         }
@@ -161,7 +161,7 @@ export default {
     },
   },
   template: `
-<div class="trades-layout">
+<div class="trades-layout" :class="{'has-trade': klineTrade}">
  <div class="card trades-list">
   <div class="filters">
     <select v-model="fVariant" aria-label="变体筛选">
@@ -186,8 +186,8 @@ export default {
   <div ref="tradeTable" class="trade-table" aria-label="交易明细"></div>
  </div>
   <section ref="klinePanel" id="tradeKlinePanel" class="card trade-kline-panel" tabindex="-1" aria-labelledby="tradeKlineTitle" :aria-busy="klineLoading">
-    <h3 id="tradeKlineTitle">{{ klineTrade ? stockLabel(klineTrade.code, state.stockNames) + ' · 交易日K与买卖点' : '交易日K与买卖点' }}</h3>
-    <p v-if="!klineTrade" class="empty trade-kline-placeholder">选择一笔交易，查看日K、成交量、MACD 与买卖点</p>
+    <h3 v-if="klineTrade" id="tradeKlineTitle">{{ stockLabel(klineTrade.code, state.stockNames) }} · 交易日K与买卖点</h3>
+    <p v-else id="tradeKlineTitle" class="hint">选择一笔交易，查看日K、成交量、MACD 与买卖点</p>
     <template v-if="klineTrade">
       <StockInfo :code="klineTrade.code" :history-date="klineTrade.buyTime.slice(0,10)" history-label="买入日" />
       <p class="hint">买入：{{ klineTrade.buyTime }} · {{ klineTrade.buyPrice.toFixed(2) }} 元（B）；{{ klineTrade.virtual === true ? '期末估值' : '卖出' }}：{{ klineTrade.sellTime }} · {{ klineTrade.sellPrice.toFixed(2) }} 元（{{ klineTrade.virtual === true ? '估' : 'S' }}）</p>

@@ -116,17 +116,28 @@ func TestScreenConfigAndScan(t *testing.T) {
 		t.Fatalf("cross-origin save status = %d", w.Code)
 	}
 	saved := request("PUT", "/api/screen", config, http.StatusOK)
-	if !saved.Running || saved.Config.Version != 2 || saved.Config.Strategies[4].ID == "" {
+	if !saved.Running || saved.Preview == nil || saved.Config.Version != 2 || saved.Config.Strategies[4].ID == "" {
 		t.Fatalf("saved config = %+v", saved)
 	}
 	request("PUT", "/api/screen", config, http.StatusConflict)
 	finished := waitForScreen(t, s.screen)
+	if finished.Preview != nil {
+		t.Fatalf("finished scan still has preview progress: %+v", finished.Preview)
+	}
 	result := finished.Result
 	if result == nil || result.Universe != 3 || result.Evaluated != 1 || result.Failed != 1 || result.NoSessionBars != 1 {
 		t.Fatalf("unexpected coverage: %+v", result)
 	}
 	if len(result.Matches) != 1 {
 		t.Fatalf("want one combined row, got %+v", result.Matches)
+	}
+	if run := request("POST", "/api/screen/run", nil, http.StatusOK); !run.Running || run.Preview != nil {
+		t.Fatalf("manual scan state = %+v", run)
+	}
+	status := waitStatus(t, handler)
+	if status["state"] != "done" || status["task"] != "screen_scan" || status["phase"] != "scan" ||
+		status["done"] != float64(3) || status["total"] != float64(3) {
+		t.Fatalf("manual scan progress = %v", status)
 	}
 	row := result.Matches[0]
 	if row.Code != "sh600000" || row.Price != 11 || len(row.Hits) != 2 ||

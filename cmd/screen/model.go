@@ -89,7 +89,7 @@ func (this *Trade) Sell(s *core.Sell) *Trade {
 }
 
 func (this *Trade) ToBuy() (core.Buy, error) {
-	t, err := time.Parse(time.DateTime, this.BuyTime)
+	t, err := time.ParseInLocation(time.DateTime, this.BuyTime, protocol.Location())
 	return core.Buy{
 		Code:  this.Code,
 		Time:  t,
@@ -98,7 +98,7 @@ func (this *Trade) ToBuy() (core.Buy, error) {
 }
 
 func (this *Trade) ToSell() (*core.Sell, error) {
-	t, err := time.Parse(time.DateTime, this.BuyTime)
+	t, err := time.ParseInLocation(time.DateTime, this.BuyTime, protocol.Location())
 	return &core.Sell{
 		Code:  this.Code,
 		Time:  t,

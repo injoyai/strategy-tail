@@ -84,6 +84,7 @@ func NewServer() *Server {
 		builderStore:   NewBuilderStore(builderDataDir),
 		practiceStore:  NewPracticeStore(practiceDataDir),
 	}
+	s.screen.legacyPath = common.ResolveRuntimePath(filepath.Join("data", "database", "trade.db"))
 	s.wirePortfolioStores()
 	// 恢复重启前中断的练习准备（标为 failed，可重练出题）。
 	if err := s.practiceStore.RecoverInterrupted(); err != nil {
@@ -143,6 +144,10 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/screen", s.handleScreenState)
+	s.mux.HandleFunc("GET /api/screen/history", s.handleScreenHistory)
+	s.mux.HandleFunc("GET /api/screen/events", s.handleScreenEvents)
+	s.mux.HandleFunc("POST /api/screen/history", withSameOrigin(s.handleScreenHistoryRun))
+	s.mux.HandleFunc("GET /api/screen/diagnose/{code}", s.handleScreenDiagnose)
 	s.mux.HandleFunc("PUT /api/screen", withSameOrigin(s.handleScreenSave))
 	s.mux.HandleFunc("POST /api/screen/run", withSameOrigin(s.handleScreenRun))
 	s.mux.HandleFunc("POST /api/stop", withSameOrigin(s.handleStop))

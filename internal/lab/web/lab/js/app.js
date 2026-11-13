@@ -2,7 +2,7 @@
 // 从 index.html 迁移：switchTab/键盘导航/renderTaskProgress/showPendingTask/pollStatus/
 // pollStatusOnce/stopBatchTask/dismissTaskDock/initMotion。
 // 任务状态放入 store.taskDock（响应式），状态条模板渲染；done 分流钩子：
-// analysis→01 载入最新分析；portfolio→06 pfOnTaskDone；其余→03 载入最新报告。
+// 各工作区按任务类型载入自己的结果。
 import { createApp, watch } from './vendor/vue.esm-browser.prod.js';
 import { state, runtime } from './store.js';
 import { Api } from './api.js';
@@ -32,7 +32,7 @@ const App = {
     Tab7Practice, Tab8Screen, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
-    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false};
+    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false, sellEvents: [], sellCursor: 0, sellSocket: null, sellReconnect: null};
   },
   computed: {
     activeGroup() {
@@ -41,8 +41,13 @@ const App = {
     pageTitle() {
       return this.tabs.find(t => t.n === state.activeTab).title;
     },
-    sectionTabs() {
-      return this.tabs.filter(t => this.activeGroup.tabs.includes(t.n));
+    taskDock() {
+      if (state.taskDock?.running || state.taskDock?.state === 'error') return state.taskDock;
+      if (state.activeTab === 8 && state.screenPreview) {
+        return this.taskDockFor({...state.screenPreview, state: 'running', task: 'screen_scan',
+          phase: state.screenPreview.total ? 'scan' : 'preparing', unit: 'stocks', background: true});
+      }
+      return state.taskDock;
     },
   },
   provide() {
@@ -66,15 +71,42 @@ const App = {
     // 刷新只触发一次轮询；任务运行中由 pollStatusOnce 续上轮询
     this.pollStatusOnce();
     // 任务卡首次出现时做揭示动画
-    watch(() => state.taskDock, (v, old) => {
+    watch(() => this.taskDock, (v, old) => {
       if (v && !old) this.$nextTick(() => animateStatus(this.$refs.statusbar));
     });
     initMotion();
+    try { this.sellCursor = Number(sessionStorage.getItem('lab-screen-sell-cursor')) || 0; } catch {}
+    this.connectScreenEvents();
     // Tab 状态从 URL 恢复；无参数时进入自由搭建，不自动运行任务。
     const initial = TAB_NUM[new URLSearchParams(location.search).get('tab')];
     if (initial) this.switchTab(initial);
   },
+  beforeUnmount() {
+    clearTimeout(this.sellReconnect);
+    if (this.sellSocket) {
+      this.sellSocket.onclose = null;
+      this.sellSocket.close();
+    }
+  },
   methods: {
+    connectScreenEvents() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(protocol + '//' + location.host + '/api/screen/events?after=' + this.sellCursor);
+      this.sellSocket = socket;
+      socket.onmessage = message => {
+        let event;
+        try { event = JSON.parse(message.data); } catch { return; }
+        if (event.type !== 'sell' || event.id <= this.sellCursor) return;
+        this.sellCursor = event.id;
+        try { sessionStorage.setItem('lab-screen-sell-cursor', String(event.id)); } catch {}
+        this.sellEvents = [event, ...this.sellEvents];
+      };
+      socket.onclose = () => { this.sellReconnect = setTimeout(() => this.connectScreenEvents(), 3000); };
+    },
+    openScreenSale(event) {
+      this.switchTab(8);
+      this.$nextTick(() => this.$refs.screen?.openSale(event.signal));
+    },
     setTaskRef(name, el) {
       this.$refs[name] = el;
     },
@@ -82,8 +114,11 @@ const App = {
     setPanelRef(el, n) {
       if (el) this.$refs['panel' + n] = el; else delete this.$refs['panel' + n];
     },
+    groupTarget(group) {
+      return group.home ?? this.groupTabs[group.id];
+    },
     switchGroup(group) {
-      this.switchTab(this.groupTabs[group.id]);
+      this.switchTab(this.groupTarget(group));
       if (group.tabs.length === 1) this.closeNav();
     },
     switchSection(n) {
@@ -125,9 +160,10 @@ const App = {
       }
       this.$nextTick(() => animatePanel(this.$refs['panel' + n]));
     },
-    onTabsKeydown(e) {
-      const tabs = this.sectionTabs;
-      const i = tabs.findIndex(t => t.n === state.activeTab);
+    onTabsKeydown(e, group) {
+      const tabs = group.tabs;
+      const i = tabs.indexOf(Number(e.target.dataset.tab));
+      if (i === -1) return;
       let target = null;
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') target = tabs[(i + 1) % tabs.length];
       else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') target = tabs[(i - 1 + tabs.length) % tabs.length];
@@ -135,8 +171,8 @@ const App = {
       else if (e.key === 'End') target = tabs[tabs.length - 1];
       if (target) {
         e.preventDefault();
-        this.switchTab(target.n);
-        document.getElementById('tabbtn' + target.n)?.focus();
+        this.switchTab(target);
+        document.getElementById('tabbtn' + target)?.focus();
       }
     },
 
@@ -144,7 +180,10 @@ const App = {
     // 回测与研究共用唯一任务栏；总量未就绪时保持不定进度。
     renderTaskProgress(s) {
       const st = s.state || 'idle';
-      if (st === 'idle') { state.taskDock = null; return; }
+      state.taskDock = st === 'idle' ? null : this.taskDockFor(s);
+    },
+    taskDockFor(s) {
+      const st = s.state;
       const taskName = TASK_LABEL[s.task] || '批量任务';
       const p = taskProgress(s, state.stockNames);
       const connectionError = st === 'connection-error';
@@ -163,7 +202,7 @@ const App = {
       const current = connectionError ? s.resultReadError ? '后台任务已完成，请重试读取结果' : '任务可能仍在后台运行'
         : st === 'stopped' ? '已保留当前表单配置'
         : st === 'done' ? '' : p.current;
-      state.taskDock = {
+      return {
         state: connectionError || st === 'interrupted' ? 'error' : st,
         task: s.task,
         title,
@@ -177,6 +216,7 @@ const App = {
         current,
         error: s.error || '',
         running: st === 'running',
+        background: s.background,
         readingResults: p.phase === 'reading_results',
         connectionError,
       };
@@ -237,6 +277,8 @@ const App = {
           } else if (s.task === 'portfolio' || s.task === 'portfolio_validation') {
             // 组合任务完成：终态以持久 Store 为准，刷新 06 页对应详情（不自动切页）。
             if (s.runId && this.$refs.tab6) await this.$refs.tab6.pfOnTaskDone(s.runId, s.task);
+          } else if (s.task === 'screen_history' || s.task === 'screen_scan') {
+            if (this.$refs.screen) await this.$refs.screen.onTaskDone(s.task);
           } else if (s.task === 'practice_prepare') {
             // 盘感出题完成：07 页轮询通常先发现；此处作为任务条先行的加速钩子。
             if (s.runId && this.$refs.tab7) await this.$refs.tab7.practiceOnTaskDone(s.runId);
@@ -292,14 +334,17 @@ const App = {
     <nav class="workspace-nav" aria-label="主导航">
       <div v-for="g in groups" :key="g.id" class="workspace-group">
         <button class="workspace-link" :id="'nav-' + g.id" type="button"
-          :aria-current="activeGroup.id === g.id ? 'location' : null" :aria-controls="'tab' + groupTabs[g.id]"
+          :aria-current="activeGroup.id === g.id ? 'location' : null" :aria-controls="'tab' + groupTarget(g)"
           @click="switchGroup(g)">{{ g.title }}</button>
-        <div v-if="activeGroup.id === g.id && sectionTabs.length > 1" class="workspace-subnav" role="tablist"
-          :aria-label="g.title" aria-orientation="vertical" @keydown="onTabsKeydown">
-          <button v-for="t in sectionTabs" :key="t.n" class="workspace-link" type="button" role="tab"
+        <div v-if="g.tabs.length > 1" class="workspace-subnav" :role="activeGroup.id === g.id ? 'tablist' : 'group'"
+          :aria-label="g.title" :aria-orientation="activeGroup.id === g.id ? 'vertical' : null"
+          @keydown="activeGroup.id === g.id && onTabsKeydown($event, g)">
+          <button v-for="t in tabs.filter(t => g.tabs.includes(t.n))" :key="t.n" class="workspace-link" type="button"
+            :role="activeGroup.id === g.id ? 'tab' : null"
             :id="'tabbtn' + t.n" :data-tab="t.n" :aria-controls="'tab' + t.n"
-            :aria-selected="String(state.activeTab === t.n)" :tabindex="state.activeTab === t.n ? 0 : -1"
-            @click="switchSection(t.n)">{{ t.title }}</button>
+            :aria-selected="activeGroup.id === g.id ? String(state.activeTab === t.n) : null"
+            :tabindex="activeGroup.id === g.id && state.activeTab !== t.n ? -1 : 0"
+            @click="switchSection(t.n)">{{ t.navTitle || t.title }}</button>
         </div>
       </div>
     </nav>
@@ -310,37 +355,49 @@ const App = {
         :aria-expanded="String(navOpen)" @click="toggleNav">菜单</button>
       <h1>{{ pageTitle }}</h1>
     </header>
-<main :class="{'practice-page': state.activeTab === 7 && !state.taskDock, 'has-task-dock': state.taskDock}">
+<main :class="{'practice-page': state.activeTab === 7 && !taskDock, 'has-task-dock': taskDock}">
   <data-update />
-  <section class="statusbar" ref="statusbar" v-show="!!state.taskDock" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
+  <section v-if="sellEvents.length" class="screen-sale-notices card" aria-label="卖点提醒">
+    <div class="screen-result-head">
+      <strong role="status" aria-live="polite">{{ sellEvents.length }} 条卖点提醒</strong>
+      <button type="button" class="secondary" @click="sellEvents = []">清除提醒</button>
+    </div>
+    <ul>
+      <li v-for="event in sellEvents" :key="event.id">
+        <span>{{ event.signal.name || event.signal.code }} · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元</span>
+        <button type="button" class="secondary" @click="openScreenSale(event)">查看K线</button>
+      </li>
+    </ul>
+  </section>
+  <section class="statusbar" ref="statusbar" v-show="!!taskDock" :data-state="taskDock ? taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">
       <div class="status-title-wrap">
         <span class="status-dot" aria-hidden="true"></span>
-        <span id="statusState">{{ state.taskDock ? state.taskDock.title : '' }}</span>
+        <span id="statusState">{{ taskDock?.title || '' }}</span>
       </div>
-      <span id="statusPercent" class="status-percent">{{ state.taskDock ? state.taskDock.percent : '' }}</span>
+      <span id="statusPercent" class="status-percent">{{ taskDock?.percent || '' }}</span>
     </div>
     <div class="progress-outer">
-      <progress class="progress-inner" :class="{indeterminate: state.taskDock && state.taskDock.indeterminate}"
-        :max="100" :value="state.taskDock ? state.taskDock.value : 0"
-        :aria-label="state.taskDock ? state.taskDock.title + '进度' : '批量任务进度'"
-        :aria-valuetext="state.taskDock ? state.taskDock.detail + '，' + state.taskDock.percent : ''">{{ state.taskDock ? state.taskDock.percent : '' }}</progress>
+      <progress class="progress-inner" :class="{indeterminate: taskDock?.indeterminate}"
+        :max="100" :value="taskDock ? taskDock.value : 0"
+        :aria-label="taskDock ? taskDock.title + '进度' : '批量任务进度'"
+        :aria-valuetext="taskDock ? taskDock.detail + '，' + taskDock.percent : ''">{{ taskDock?.percent || '' }}</progress>
     </div>
     <div class="status-foot">
       <div class="status-meta">
-        <span id="statusDetail" class="status-detail">{{ state.taskDock ? state.taskDock.detail : '' }}</span>
-        <span id="statusCurrent" class="status-current">{{ state.taskDock ? state.taskDock.current : '' }}</span>
+        <span id="statusDetail" class="status-detail">{{ taskDock?.detail || '' }}</span>
+        <span id="statusCurrent" class="status-current">{{ taskDock?.current || '' }}</span>
       </div>
       <div class="status-actions">
-        <button type="button" class="secondary" v-if="state.taskDock && state.taskDock.connectionError" @click="pollStatus()">重试读取</button>
-        <button type="button" class="danger" v-if="state.taskDock && state.taskDock.running && !state.taskDock.readingResults" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
-        <button type="button" class="secondary" v-if="state.taskDock && !state.taskDock.running" @click="dismissTaskDock()">关闭</button>
+        <button type="button" class="secondary" v-if="taskDock?.connectionError" @click="pollStatus()">重试读取</button>
+        <button type="button" class="danger" v-if="taskDock?.running && !taskDock.readingResults && !taskDock.background" @click="stopBatchTask" :disabled="state.stopBusy" :aria-busy="String(state.stopBusy)">停止任务</button>
+        <button type="button" class="secondary" v-if="taskDock && !taskDock.running" @click="dismissTaskDock()">关闭</button>
       </div>
     </div>
-    <details class="ui-help error-details" v-if="state.taskDock && state.taskDock.error">
+    <details class="ui-help error-details" v-if="taskDock?.error">
       <summary>错误详情</summary>
-      <div class="msg">{{ state.taskDock.error }}</div>
+      <div class="msg">{{ taskDock.error }}</div>
     </details>
   </section>
 
@@ -354,7 +411,7 @@ const App = {
     <tab5-candidates v-if="t.n === 5" />
     <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />
     <tab7-practice :ref="el => setTaskRef('tab7', el)" v-if="t.n === 7" />
-    <tab8-screen v-if="t.n === 8" :active="state.activeTab === 8" />
+    <tab8-screen v-if="t.n === 8" :ref="el => setTaskRef('screen', el)" :active="state.activeTab === 8" :sale-revision="sellCursor" />
   </div>
 </main>
   </div>

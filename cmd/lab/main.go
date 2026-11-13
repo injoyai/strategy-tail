@@ -42,7 +42,7 @@ func main() {
 	go openBrowser(url)
 
 	server := lab.NewServer()
-	go server.RunScreen(context.Background(), cfg.GetDuration("screen.interval", time.Minute))
+	go server.RunScreen(context.Background(), cfg.GetDuration("screen.interval", time.Minute), cfg.GetInt("screen.lookback", 60))
 	srv := &http.Server{
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

@@ -89,34 +89,65 @@ func GetBuys(b Buyer, code string, ks extend.Klines, days int) []*Buy {
 	return ls
 }
 
+// GetSell finds the first eligible sell signal on a later trading day.
+// Minute snapshots use the preceding close and never replace the caller's daily bars.
 func GetSell(s Seller, ks extend.Klines, buy Buy, minKs map[string]protocol.Klines) *Sell {
+	return GetSellSince(s, ks, buy, time.Time{}, minKs)
+}
 
-	for i := range ks {
-		k := ks[i]
-		if k.Time.After(buy.Time) {
-
-			mks := minKs[k.Time.Format(time.DateOnly)]
-			if len(mks) == 0 {
-				mks = protocol.Klines{k.Kline}
-			}
-
-			his := ks[:i]
-
-			for ii := range mks {
-				minuteKlines := mks[:ii+1]
-				lastMinuteKline := mks[ii]
-				k.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
-
-				if s.Sell(buy.Code, append(his, k), buy) {
-					return &Sell{
-						Code:  buy.Code,
-						Time:  k.Time,
-						Price: k.Close,
-					}
-				}
-			}
-
+// GetSellSince restricts sell evaluation to bars on or after since.
+func GetSellSince(s Seller, ks extend.Klines, buy Buy, since time.Time, minKs map[string]protocol.Klines) *Sell {
+	if s == nil {
+		return nil
+	}
+	buyDate := DayOf(buy.Time.In(protocol.Location()))
+	input := append(extend.Klines(nil), ks...)
+	for i, day := range ks {
+		if day.Time.Before(since) || !DayOf(day.Time.In(protocol.Location())).After(buyDate) {
+			continue
 		}
+		minutes := minKs[day.Time.Format(time.DateOnly)]
+		if len(minutes) == 0 {
+			if s.Sell(buy.Code, input[:i+1], buy) {
+				return &Sell{Code: buy.Code, Time: day.Time, Price: day.Close}
+			}
+			continue
+		}
+
+		snapshot := *day
+		var aggregate protocol.Kline
+		snapshot.Kline = &aggregate
+		input[i] = &snapshot
+		started := false
+		for _, minute := range minutes {
+			if minute.Close <= 0 {
+				continue
+			}
+			if !started {
+				aggregate = *minute
+				aggregate.Last = day.Last
+				started = true
+			} else {
+				if aggregate.Open == 0 {
+					aggregate.Open = minute.Open
+				}
+				aggregate.Time, aggregate.Close = minute.Time, minute.Close
+				aggregate.High, aggregate.Low = max(aggregate.High, minute.High), min(aggregate.Low, minute.Low)
+				aggregate.Volume += minute.Volume
+				aggregate.Amount += minute.Amount
+				aggregate.Order += minute.Order
+				aggregate.UpCount, aggregate.DownCount = minute.UpCount, minute.DownCount
+			}
+			snapshot.Unix = minute.Time.Unix()
+			if snapshot.FloatStock > 0 {
+				equity := protocol.Equity{Float: snapshot.FloatStock}
+				snapshot.Turnover = equity.Turnover(protocol.ToShares(aggregate.Volume))
+			}
+			if s.Sell(buy.Code, input[:i+1], buy) {
+				return &Sell{Code: buy.Code, Time: aggregate.Time, Price: aggregate.Close}
+			}
+		}
+		input[i] = day
 	}
 	return nil
 }
