@@ -5,12 +5,14 @@ package main
 // 默认监听 0.0.0.0，可通过 LAB_ADDR 覆盖。
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/injoyai/conv/cfg"
 	"github.com/injoyai/logs"
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/internal/lab"
@@ -40,6 +42,7 @@ func main() {
 	go openBrowser(url)
 
 	server := lab.NewServer()
+	go server.RunScreen(context.Background(), cfg.GetDuration("screen.interval", time.Minute))
 	srv := &http.Server{
 		Handler:           server.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

@@ -16,6 +16,9 @@ export async function api(method, url, body) {
 export const Api = {
   stockNames: () => api('GET', '/api/stock-names'),
   stockInfo: (code, asOf = '') => api('GET', '/api/stock-info/' + encodeURIComponent(code) + (asOf ? '?asOf=' + encodeURIComponent(asOf) : '')),
+  screen: () => api('GET', '/api/screen'),
+  saveScreen: config => api('PUT', '/api/screen', config),
+  runScreen: () => api('POST', '/api/screen/run'),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
   runStrategy: spec => api('POST', '/api/strategy/run', spec),
   stop: () => api('POST', '/api/stop'),

@@ -80,7 +80,7 @@ function nodeError(node, role) {
   return '';
 }
 
-function treeErrors(node, role) {
+export function treeErrors(node, role) {
   if (!node) return [];
   const error = nodeError(node, role);
   if (error) return [error];

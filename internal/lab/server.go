@@ -53,6 +53,7 @@ import (
 type Server struct {
 	runner *Runner
 	mux    *http.ServeMux
+	screen *screenService
 	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
@@ -77,6 +78,7 @@ func NewServer() *Server {
 	s := &Server{
 		runner:         NewRunner(),
 		mux:            http.NewServeMux(),
+		screen:         newScreenService(filepath.Join("data", "lab", "screen.json")),
 		analysisStore:  NewAnalysisStore(filepath.Join("output", "factor")),
 		candidateStore: NewCandidateStore(candidateDataDir),
 		builderStore:   NewBuilderStore(builderDataDir),
@@ -110,6 +112,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 	s := &Server{
 		runner:         runner,
 		mux:            http.NewServeMux(),
+		screen:         newScreenService(filepath.Join(candidates.root, "screen.json")),
 		analysisStore:  analyses,
 		candidateStore: candidates,
 		builderStore:   NewBuilderStore(builderDataDir),                              // 搭建器测试按需覆盖
@@ -139,6 +142,9 @@ func (s *Server) wirePracticeStores() {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
+	s.mux.HandleFunc("GET /api/screen", s.handleScreenState)
+	s.mux.HandleFunc("PUT /api/screen", withSameOrigin(s.handleScreenSave))
+	s.mux.HandleFunc("POST /api/screen/run", withSameOrigin(s.handleScreenRun))
 	s.mux.HandleFunc("POST /api/stop", withSameOrigin(s.handleStop))
 	s.mux.HandleFunc("GET /api/report/latest", s.handleLatestReport)
 	s.mux.HandleFunc("GET /api/reports", s.handleReports)

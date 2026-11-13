@@ -7,7 +7,7 @@
 - [tdx v2 迁移与数据口径](guides/tdx-v2-migration.md)
 - [行情源时间与策略口径](guides/source-time-storage.md)
 - [MySQL 数据源](guides/mysql-storage.md)
-
+- [选股策略](guides/stock-screening.md)
 - [项目目录与代码入口](guides/project-layout.md)
 - [命令入口与配置归属](../cmd/README.md)
 - [因子研究与回测搭建：概念与关系](guides/research-and-backtest-concepts.md)

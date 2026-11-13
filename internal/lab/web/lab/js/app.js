@@ -1,4 +1,4 @@
-// 根组件：masthead / Tabs（WAI-ARIA + URL）/ 批量任务状态条 / 7 个功能面板 + 顶层对话框。
+// 根组件：侧栏 / Tabs（WAI-ARIA + URL）/ 批量任务状态条 / 功能面板 + 顶层对话框。
 // 从 index.html 迁移：switchTab/键盘导航/renderTaskProgress/showPendingTask/pollStatus/
 // pollStatusOnce/stopBatchTask/dismissTaskDock/initMotion。
 // 任务状态放入 store.taskDock（响应式），状态条模板渲染；done 分流钩子：
@@ -18,6 +18,7 @@ import Tab4Factor from './components/Tab4Factor.js';
 import Tab5Candidates from './components/Tab5Candidates.js';
 import Tab6Portfolio from './components/Tab6Portfolio.js';
 import Tab7Practice from './components/Tab7Training.js';
+import Tab8Screen from './components/Tab8Screen.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
 import CandidateEditDlg from './components/CandidateEditDlg.js';
 import CandidateEvidenceDlg from './components/CandidateEvidenceDlg.js';
@@ -28,14 +29,17 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
+    Tab7Practice, Tab8Screen, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
-    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7}};
+    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false};
   },
   computed: {
     activeGroup() {
       return this.groups.find(g => g.tabs.includes(state.activeTab));
+    },
+    pageTitle() {
+      return this.tabs.find(t => t.n === state.activeTab).title;
     },
     sectionTabs() {
       return this.tabs.filter(t => this.activeGroup.tabs.includes(t.n));
@@ -80,6 +84,23 @@ const App = {
     },
     switchGroup(group) {
       this.switchTab(this.groupTabs[group.id]);
+      if (group.tabs.length === 1) this.closeNav();
+    },
+    switchSection(n) {
+      this.switchTab(n);
+      this.closeNav();
+    },
+    toggleNav() {
+      if (this.navOpen) this.closeNav();
+      else {
+        this.navOpen = true;
+        this.$nextTick(() => this.$refs.sidebar?.querySelector('[aria-current]')?.focus());
+      }
+    },
+    closeNav() {
+      if (!this.navOpen) return;
+      this.navOpen = false;
+      this.$refs.navToggle?.focus();
     },
     switchTab(n) {
       const group = NAV_GROUPS.find(g => g.tabs.includes(n));
@@ -108,8 +129,8 @@ const App = {
       const tabs = this.sectionTabs;
       const i = tabs.findIndex(t => t.n === state.activeTab);
       let target = null;
-      if (e.key === 'ArrowRight') target = tabs[(i + 1) % tabs.length];
-      else if (e.key === 'ArrowLeft') target = tabs[(i - 1 + tabs.length) % tabs.length];
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') target = tabs[(i + 1) % tabs.length];
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') target = tabs[(i - 1 + tabs.length) % tabs.length];
       else if (e.key === 'Home') target = tabs[0];
       else if (e.key === 'End') target = tabs[tabs.length - 1];
       if (target) {
@@ -260,28 +281,36 @@ const App = {
     },
   },
   template: `
-<header class="masthead">
-  <div class="brand-mark" aria-hidden="true">
-    <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
-  </div>
-  <div class="brand-copy">
-    <h1>策略实验室</h1>
-  </div>
-  <nav class="tabs primary-tabs" aria-label="主导航">
-    <button v-for="g in groups" :key="g.id" :id="'nav-' + g.id" type="button"
-      :aria-current="activeGroup.id === g.id ? 'location' : null" :aria-controls="'tab' + groupTabs[g.id]"
-      @click="switchGroup(g)"><span class="tab-title">{{ g.title }}</span></button>
-  </nav>
-</header>
-
+<div class="app-shell" @keydown.esc="closeNav">
+  <aside id="lab-sidebar" ref="sidebar" class="lab-sidebar" :class="{'is-open': navOpen}">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
+      </div>
+      <span class="brand-copy">策略实验室</span>
+    </div>
+    <nav class="workspace-nav" aria-label="主导航">
+      <div v-for="g in groups" :key="g.id" class="workspace-group">
+        <button class="workspace-link" :id="'nav-' + g.id" type="button"
+          :aria-current="activeGroup.id === g.id ? 'location' : null" :aria-controls="'tab' + groupTabs[g.id]"
+          @click="switchGroup(g)">{{ g.title }}</button>
+        <div v-if="activeGroup.id === g.id && sectionTabs.length > 1" class="workspace-subnav" role="tablist"
+          :aria-label="g.title" aria-orientation="vertical" @keydown="onTabsKeydown">
+          <button v-for="t in sectionTabs" :key="t.n" class="workspace-link" type="button" role="tab"
+            :id="'tabbtn' + t.n" :data-tab="t.n" :aria-controls="'tab' + t.n"
+            :aria-selected="String(state.activeTab === t.n)" :tabindex="state.activeTab === t.n ? 0 : -1"
+            @click="switchSection(t.n)">{{ t.title }}</button>
+        </div>
+      </div>
+    </nav>
+  </aside>
+  <div class="workspace-body">
+    <header class="masthead">
+      <button ref="navToggle" class="secondary workspace-toggle" type="button" aria-controls="lab-sidebar"
+        :aria-expanded="String(navOpen)" @click="toggleNav">菜单</button>
+      <h1>{{ pageTitle }}</h1>
+    </header>
 <main :class="{'practice-page': state.activeTab === 7 && !state.taskDock, 'has-task-dock': state.taskDock}">
-  <div v-if="sectionTabs.length > 1" class="tabs section-tabs" role="tablist" :aria-label="activeGroup.title" @keydown="onTabsKeydown">
-    <button v-for="t in sectionTabs" :key="t.n" type="button" role="tab" :id="'tabbtn' + t.n" :data-tab="t.n"
-      :aria-controls="'tab' + t.n" :aria-selected="String(state.activeTab === t.n)"
-      :tabindex="state.activeTab === t.n ? 0 : -1" @click="switchTab(t.n)">
-      <span class="tab-title">{{ t.title }}</span>
-    </button>
-  </div>
   <data-update />
   <section class="statusbar" ref="statusbar" v-show="!!state.taskDock" :data-state="state.taskDock ? state.taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
@@ -316,7 +345,8 @@ const App = {
   </section>
 
   <div v-for="t in tabs" :key="t.n" class="tab-panel" :id="'tab' + t.n" :ref="el => setPanelRef(el, t.n)"
-    :role="t.n === 7 ? 'region' : 'tabpanel'" :aria-labelledby="t.n === 7 ? 'nav-practice' : 'tabbtn' + t.n" tabindex="0" v-show="state.activeTab === t.n">
+    :role="t.n >= 7 ? 'region' : 'tabpanel'" :aria-labelledby="t.n === 7 ? 'nav-practice' : t.n === 8 ? 'nav-screen' : 'tabbtn' + t.n"
+    tabindex="0" v-show="state.activeTab === t.n">
     <tab1-run v-if="t.n === 1" />
     <tab2-compare v-if="t.n === 2" />
     <tab3-trades v-if="t.n === 3" />
@@ -324,8 +354,11 @@ const App = {
     <tab5-candidates v-if="t.n === 5" />
     <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />
     <tab7-practice :ref="el => setTaskRef('tab7', el)" v-if="t.n === 7" />
+    <tab8-screen v-if="t.n === 8" :active="state.activeTab === 8" />
   </div>
 </main>
+  </div>
+</div>
 
 <candidate-save-dlg ref="candSave" />
 <candidate-edit-dlg ref="candEdit" />

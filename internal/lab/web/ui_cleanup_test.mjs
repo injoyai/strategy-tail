@@ -99,9 +99,9 @@ function navigationContext() {
   return ctx;
 }
 
-test('三个主入口覆盖全部页面，二级页签仅展示当前工作区', () => {
+test('左侧主入口覆盖全部页面，二级页签仅展示当前工作区', () => {
   const ctx = navigationContext();
-  assert.deepEqual(ctx.groups.map(g => g.title), ['策略回测', '因子研究', '盘感练习']);
+  assert.deepEqual(ctx.groups.map(g => g.title), ['策略回测', '因子研究', '盘感练习', '选股策略']);
   assert.deepEqual(ctx.groups.flatMap(g => g.tabs), constants.TABS.map(t => t.n));
   const previous = state.activeTab;
   try {
@@ -109,7 +109,7 @@ test('三个主入口覆盖全部页面，二级页签仅展示当前工作区',
       state.activeTab = group.tabs[0];
       const tree = compile(App.template)(ctx, []);
       const [nav] = elements(tree, 'nav');
-      assert.equal(elements(nav, 'button').length, 3);
+      assert.equal(elements(nav, 'button').filter(b => b.props.id?.startsWith('nav-')).length, 4);
       assert.equal(elements(nav, 'button').filter(b => b.props['aria-current'] === 'location').length, 1);
       const secondary = elements(tree, 'button').filter(b => b.props?.role === 'tab');
       assert.deepEqual(secondary.map(b => Number(b.props['data-tab'])), group.tabs.length > 1 ? group.tabs : []);

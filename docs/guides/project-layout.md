@@ -21,7 +21,8 @@ strategy-tail/
 │   │   ├── builder/           # 搭建器目录、规则校验与条件构建
 │   │   └── factorstats/       # 因子统计与中性化纯计算
 │   ├── portfolioresearch/     # 组合研究算法
-│   └── researchrun/           # 研究数据加载与执行
+│   ├── researchrun/           # 研究数据加载与执行
+│   └── screener/              # 内置选股规则、只读行情扫描与命中合并
 ├── docs/
 │   ├── README.md             # 文档导航
 │   ├── guides/               # 使用与开发指南
@@ -55,6 +56,7 @@ strategy-tail/
 | 候选、研究协议与验证 | [factor_candidate.go](../../internal/lab/factor_candidate.go)、[research_protocol.go](../../internal/lab/research_protocol.go)、[factor_validation.go](../../internal/lab/factor_validation.go) |
 | 组合模型、实验执行与接口 | [factor_model.go](../../internal/lab/factor_model.go)、[portfolio_experiment_store.go](../../internal/lab/portfolio_experiment_store.go)、[portfolio_runner.go](../../internal/lab/portfolio_runner.go)、[portfolio_handlers.go](../../internal/lab/portfolio_handlers.go) |
 | 组合计算与交易会计 | [portfolioresearch/](../../internal/portfolioresearch/) |
+| 选股配置与执行 | [screen_server.go](../../internal/lab/screen_server.go)、[screener/](../../internal/screener/) |
 | MySQL 行情状态 | [data_update.go](../../internal/lab/data_update.go) |
 | 前端页面、组件和样式 | [index.html](../../internal/lab/web/lab/index.html)、[app.js](../../internal/lab/web/lab/js/app.js)、[lab.css](../../internal/lab/web/lab/css/lab.css) |
 
