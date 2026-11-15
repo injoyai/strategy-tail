@@ -68,8 +68,9 @@ type dashboardRankings struct {
 
 type dashboardStockSummary struct {
 	dashboardBreadth
-	Exchanges []dashboardExchange `json:"exchanges"`
-	Rankings  dashboardRankings   `json:"rankings"`
+	ChangeDistribution [8]int              `json:"changeDistribution"`
+	Exchanges          []dashboardExchange `json:"exchanges"`
+	Rankings           dashboardRankings   `json:"rankings"`
 }
 
 type marketDashboard struct {
@@ -238,6 +239,9 @@ func summarizeDashboardStocks(rows []marketstore.DashboardStockDay) dashboardSto
 			summary.Rankings.Amount = append(summary.Rankings.Amount, quote)
 		}
 		if quote.Change != nil {
+			if *quote.Change != 0 {
+				summary.ChangeDistribution[dashboardChangeBucket(*quote.Change)]++
+			}
 			switch {
 			case *quote.Change > 0:
 				summary.Rankings.Up = append(summary.Rankings.Up, quote)
@@ -252,6 +256,27 @@ func summarizeDashboardStocks(rows []marketstore.DashboardStockDay) dashboardSto
 	summary.Rankings.Up = topDashboardStocks(summary.Rankings.Up, func(a, b dashboardStockQuote) int { return cmp.Compare(*b.Change, *a.Change) })
 	summary.Rankings.Down = topDashboardStocks(summary.Rankings.Down, func(a, b dashboardStockQuote) int { return cmp.Compare(*a.Change, *b.Change) })
 	return summary
+}
+
+// dashboardChangeBucket orders nonzero changes from largest losses to largest gains.
+func dashboardChangeBucket(change float64) int {
+	// Round away arithmetic noise at the 1%, 3%, and 5% cutoffs.
+	magnitude := math.Round(math.Abs(change)*1e9) / 1e9
+	var bucket int
+	switch {
+	case magnitude < 1:
+		bucket = 4
+	case magnitude < 3:
+		bucket = 5
+	case magnitude <= 5:
+		bucket = 6
+	default:
+		bucket = 7
+	}
+	if change < 0 {
+		return 7 - bucket
+	}
+	return bucket
 }
 
 func (b *dashboardBreadth) add(quote dashboardStockQuote) {

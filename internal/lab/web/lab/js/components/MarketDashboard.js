@@ -4,14 +4,15 @@ import { state } from '../store.js';
 
 const exchangeNames = {sh: '沪市', sz: '深市', bj: '北交所'};
 const breadthFields = [
-  {key: 'up', label: '上涨'},
-  {key: 'flat', label: '平盘'},
   {key: 'down', label: '下跌'},
-  {key: 'unclassified', label: '缺少可比价格'},
+  {key: 'flat', label: '平盘'},
+  {key: 'up', label: '上涨'},
 ];
+const distributionLabels = ['<−5%', '−5%～−3%', '−3%～−1%', '−1%～0%', '0%～1%', '1%～3%', '3%～5%', '>5%'];
 
 const integer = new Intl.NumberFormat('zh-CN');
 const decimal = new Intl.NumberFormat('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const percent = new Intl.NumberFormat('zh-CN', {style: 'percent', maximumFractionDigits: 1, minimumFractionDigits: 1});
 const marketClock = new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', hourCycle: 'h23',
   hour: '2-digit', minute: '2-digit', second: '2-digit'});
 
@@ -24,6 +25,22 @@ export default {
   computed: {
     stocks() {
       return this.snapshot?.stocks;
+    },
+    comparableCount() {
+      const {up = 0, flat = 0, down = 0} = this.stocks ?? {};
+      return up + flat + down;
+    },
+    upRate() {
+      return this.comparableCount ? percent.format(this.stocks.up / this.comparableCount) : '—';
+    },
+    distribution() {
+      const counts = this.stocks?.changeDistribution;
+      if (!this.comparableCount || counts?.length !== distributionLabels.length) return [];
+      const maxCount = Math.max(1, ...counts);
+      return distributionLabels.map((label, index) => ({
+        label, count: counts[index], height: 100 * counts[index] / maxCount + '%',
+        side: index < 4 ? 'down' : 'up',
+      }));
     },
     rankedStocks() {
       return this.stocks?.rankings[this.ranking].slice(0, this.limit) ?? [];
@@ -146,6 +163,54 @@ export default {
       </div>
     </section>
 
+    <div class="market-breadth-panels">
+      <section class="card market-movers" aria-labelledby="market-movers-title">
+        <h2 id="market-movers-title">个股涨 / 平 / 跌</h2>
+        <template v-if="comparableCount">
+          <div class="market-mover-counts">
+            <strong class="pos"><span class="market-sr-only">上涨 </span>{{ count(stocks.up) }}</strong>
+            <span aria-hidden="true">/</span>
+            <strong><span class="market-sr-only">平盘 </span>{{ count(stocks.flat) }}</strong>
+            <span aria-hidden="true">/</span>
+            <strong class="neg"><span class="market-sr-only">下跌 </span>{{ count(stocks.down) }}</strong>
+          </div>
+          <p class="hint market-up-rate">上涨率 <strong>{{ upRate }}</strong></p>
+        </template>
+        <p v-else class="empty">{{ loading ? '正在读取涨跌数据' : '暂无可比较的个股行情' }}</p>
+      </section>
+
+      <section class="card market-distribution-panel" aria-labelledby="market-distribution-title">
+        <div class="market-distribution-heading">
+          <h2 id="market-distribution-title">涨跌分布 / 广度</h2>
+          <span v-if="comparableCount" class="hint">可比较 {{ count(comparableCount) }} 只</span>
+        </div>
+        <ul v-if="distribution.length" class="market-distribution" role="list" aria-label="各涨跌幅区间股票数">
+          <li v-for="bucket in distribution" :key="bucket.label">
+            <span class="market-bucket-label">{{ bucket.label }}</span>
+            <div class="market-bucket-plot">
+              <div class="market-bucket-bar" :style="{height: bucket.height}" :data-side="bucket.side"
+                :data-empty="bucket.count === 0">
+                <span>{{ count(bucket.count) }}<span class="market-sr-only"> 只</span></span>
+              </div>
+            </div>
+          </li>
+        </ul>
+        <p v-else class="empty">{{ loading ? '正在读取分布数据' : '暂无涨跌分布数据' }}</p>
+        <template v-if="comparableCount">
+          <div class="market-breadth-bar" aria-hidden="true">
+            <span v-for="item in breadthFields" :key="item.key" :data-side="item.key" :style="{flexGrow: stocks[item.key]}"></span>
+          </div>
+          <dl class="market-breadth-legend">
+            <div v-for="item in breadthFields" :key="item.key">
+              <dt>{{ item.label }}</dt>
+              <dd :data-side="item.key">{{ count(stocks[item.key]) }}</dd>
+            </div>
+          </dl>
+        </template>
+        <p v-if="stocks?.unclassified" class="hint market-breadth-missing">缺少可比价格 {{ count(stocks.unclassified) }} 只</p>
+      </section>
+    </div>
+
     <div class="market-panels">
       <section class="card market-breadth-panel" aria-labelledby="market-breadth-title">
         <h2 id="market-breadth-title">沪深北成交概况</h2>
@@ -153,15 +218,6 @@ export default {
           <dl class="market-totals">
             <div><dt>成交额</dt><dd>{{ amount(stocks.amount) }} <small v-if="stocks.withAmount">亿元</small></dd></div>
             <div><dt>有成交股票</dt><dd>{{ count(stocks.total) }} <small>只</small></dd></div>
-          </dl>
-          <div class="market-breadth-bar" aria-hidden="true">
-            <span v-for="item in breadthFields" :key="item.key" :data-side="item.key" :style="{flexGrow: stocks[item.key]}"></span>
-          </div>
-          <dl class="market-breadth-legend">
-            <div v-for="item in breadthFields" :key="item.key">
-              <dt :class="direction(item.key === 'up' ? 1 : item.key === 'down' ? -1 : 0)">{{ item.label }}</dt>
-              <dd>{{ count(stocks[item.key]) }}</dd>
-            </div>
           </dl>
           <div class="detail-wrap market-table-wrap" role="region" aria-label="分市场成交概况" tabindex="0">
             <table aria-label="沪深北各市场成交额和涨跌家数">

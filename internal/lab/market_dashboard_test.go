@@ -2,6 +2,7 @@ package lab
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/injoyai/strategy-tail/internal/marketstore"
@@ -20,6 +21,9 @@ func TestMarketDashboardStockSummary(t *testing.T) {
 	if got.Total != 5 || got.Up != 2 || got.Flat != 1 || got.Down != 1 || got.Unclassified != 1 {
 		t.Fatalf("unexpected breadth: %+v", got.dashboardBreadth)
 	}
+	if want := []int{1, 0, 0, 0, 0, 0, 0, 2}; !slices.Equal(got.ChangeDistribution[:], want) {
+		t.Fatalf("unexpected distribution: %v, want %v", got.ChangeDistribution, want)
+	}
 	if got.Amount != 900 || got.WithAmount != 4 || got.Exchanges[0].Total != 2 || got.Exchanges[1].Amount != 500 || got.Exchanges[2].Amount != 100 {
 		t.Fatalf("unexpected amount or exchange coverage: %+v", got)
 	}
@@ -34,6 +38,22 @@ func TestMarketDashboardStockSummary(t *testing.T) {
 	}
 }
 
+func TestMarketDashboardChangeDistributionBoundaries(t *testing.T) {
+	// Decimal prices exercise the rounding noise around exact cutoffs.
+	closes := []float64{9.49, 9.50, 9.70, 9.71, 9.90, 9.91, 10, 10.09, 10.10, 10.29, 10.30, 10.50, 10.51}
+	rows := make([]marketstore.DashboardStockDay, 0, len(closes))
+	for _, close := range closes {
+		rows = append(rows, marketstore.DashboardStockDay{Code: "sh600001", Close: close, Previous: 10})
+	}
+	got := summarizeDashboardStocks(rows)
+	if want := []int{1, 2, 2, 1, 1, 2, 2, 1}; !slices.Equal(got.ChangeDistribution[:], want) {
+		t.Fatalf("unexpected distribution: %v, want %v", got.ChangeDistribution, want)
+	}
+	if got.Up != 6 || got.Flat != 1 || got.Down != 6 {
+		t.Fatalf("unexpected breadth: %+v", got.dashboardBreadth)
+	}
+}
+
 func TestMarketDashboardRankingsAreBoundedAndKeepFullMarketTotals(t *testing.T) {
 	rows := make([]marketstore.DashboardStockDay, 51)
 	for i := range rows {
@@ -42,6 +62,9 @@ func TestMarketDashboardRankingsAreBoundedAndKeepFullMarketTotals(t *testing.T) 
 	got := summarizeDashboardStocks(rows)
 	if got.Total != len(rows) || got.Amount != 1326 || len(got.Rankings.Amount) != 50 || got.Rankings.Amount[0].Amount != 51 || len(got.Rankings.Up) != 50 {
 		t.Fatalf("unexpected ranking bounds or totals: %+v", got)
+	}
+	if got.ChangeDistribution[7] != len(rows) {
+		t.Fatalf("distribution should include stocks beyond the ranking limit: %v", got.ChangeDistribution)
 	}
 }
 

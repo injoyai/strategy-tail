@@ -12,6 +12,7 @@ const snapshot = {
   ],
   stocks: {
     total: 28, up: 8, down: 16, flat: 2, unclassified: 2, amount: 325e8, withAmount: 25,
+    changeDistribution: [1, 2, 8, 5, 3, 3, 1, 1],
     exchanges: [{exchange: 'sh', total: 28, amount: 325e8, up: 8, down: 16}],
     rankings: {amount: top, up: top.slice(0, 8), down: top.slice(9).reverse()},
   },
@@ -32,6 +33,18 @@ test('数据看板从菜单进入，支持改变榜单和名次，窄屏表格�
   await expect(page.getByText('3,998.48')).toBeVisible();
   await expect(page.getByRole('region', {name: '主要指数'}).getByText('暂无日线', {exact: true})).toBeVisible();
   await expect(page.getByText('成交额缺失 3 只', {exact: false})).toBeVisible();
+  const movers = page.getByRole('region', {name: '个股涨 / 平 / 跌'});
+  await expect(movers).toContainText(/上涨 8\s*\/\s*平盘 2\s*\/\s*下跌 16/);
+  await expect(movers).toContainText('上涨率 30.8%');
+  const distribution = page.getByRole('region', {name: '涨跌分布 / 广度'});
+  await expect(distribution).toContainText('可比较 26 只');
+  await expect(distribution).toContainText('缺少可比价格 2 只');
+  const buckets = distribution.getByRole('listitem');
+  await expect(buckets).toHaveCount(8);
+  await expect(buckets.nth(2)).toHaveText(/^−3%～−1%\s*8 只$/);
+  await expect(buckets.nth(4)).toHaveText(/^0%～1%\s*3 只$/);
+  const barHeight = async index => (await buckets.nth(index).locator('.market-bucket-bar').boundingBox()).height;
+  expect(await barHeight(2)).toBeGreaterThan(await barHeight(4));
   const table = page.getByRole('table', {name: '当前个股排行'});
   await expect(table.locator('tbody tr')).toHaveCount(10);
   await expect(table.getByRole('rowheader', {name: 'sh600501 测试股票'})).toBeVisible();
@@ -55,6 +68,8 @@ test('数据看板从菜单进入，支持改变榜单和名次，窄屏表格�
   await page.getByRole('button', {name: '数据看板'}).press('Enter');
   await expect(page.getByRole('button', {name: '菜单', exact: true})).toBeFocused();
   await expect(page.getByLabel('榜单类型')).toBeVisible();
+  await expect(distribution).toBeVisible();
+  expect((await buckets.nth(4).boundingBox()).y).toBeGreaterThan((await buckets.nth(0).boundingBox()).y);
   const scroller = page.getByRole('region', {name: '个股排行表格'});
   expect(await scroller.evaluate(el => el.scrollWidth > el.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -79,15 +94,18 @@ test('数据看板加载、空日线、刷新失败和重试状态', async ({pag
   });
   await page.goto('/?tab=market-dashboard');
   await expect(page.getByText('正在读取行情…')).toBeVisible();
+  await expect(page.getByText('正在读取分布数据')).toBeVisible();
   await expect(page.getByRole('button', {name: '刷新行情'})).toBeDisabled();
   release();
   await expect(page.getByText('3,998.48')).toBeVisible();
   await page.getByRole('button', {name: '刷新行情'}).click();
   await expect(page.getByRole('alert')).toContainText('仍显示上次读取的行情');
   await expect(page.getByText('3,998.48')).toBeVisible();
+  await expect(page.getByText('上涨率 30.8%')).toBeVisible();
   await page.getByRole('button', {name: '重试读取'}).click();
   await expect(page.getByText('行情库暂无上证指数交易日记录。')).toBeVisible();
   await expect(page.getByText('暂无当日有效成交记录')).toBeVisible();
+  await expect(page.getByText('暂无涨跌分布数据')).toBeVisible();
   await expect(page.getByText('当前榜单暂无数据')).toBeVisible();
 });
 
