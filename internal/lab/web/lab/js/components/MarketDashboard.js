@@ -12,12 +12,14 @@ const breadthFields = [
 
 const integer = new Intl.NumberFormat('zh-CN');
 const decimal = new Intl.NumberFormat('zh-CN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const marketClock = new Intl.DateTimeFormat('zh-CN', {timeZone: 'Asia/Shanghai', hourCycle: 'h23',
+  hour: '2-digit', minute: '2-digit', second: '2-digit'});
 
 export default {
   name: 'MarketDashboard',
   props: {active: Boolean},
   data() {
-    return {snapshot: null, request: null, loading: false, error: '', ranking: 'amount', limit: 10, breadthFields};
+    return {snapshot: null, request: null, timer: null, loading: false, error: '', ranking: 'amount', limit: 10, breadthFields};
   },
   computed: {
     stocks() {
@@ -26,46 +28,74 @@ export default {
     rankedStocks() {
       return this.stocks?.rankings[this.ranking].slice(0, this.limit) ?? [];
     },
+    intraday() {
+      return this.snapshot?.source === 'tdx';
+    },
+    marketLabel() {
+      if (!this.intraday) return 'A 股日线';
+      return this.snapshot.phase === 'trading' && !this.snapshot.notice && !this.error ? 'A 股实时行情' : 'A 股盘中快照';
+    },
   },
   watch: {
     active: {
       immediate: true,
       handler(active) {
         if (active) this.load();
-        else this.cancelLoad();
+        else this.stopUpdates();
       },
     },
   },
+  mounted() {
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+  },
   beforeUnmount() {
-    this.cancelLoad();
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.stopUpdates();
   },
   methods: {
-    cancelLoad() {
+    onVisibilityChange() {
+      if (document.hidden) this.stopUpdates();
+      else if (this.active) this.load();
+    },
+    stopUpdates() {
+      clearTimeout(this.timer);
+      this.timer = null;
       this.request?.abort();
       this.request = null;
       this.loading = false;
     },
     async load() {
-      if (this.loading) return;
+      if (!this.active || document.hidden || this.loading) return;
+      clearTimeout(this.timer);
+      this.timer = null;
       const request = new AbortController();
       this.request = request;
       this.loading = true;
-      this.error = '';
+      let delay = 0;
       try {
         const snapshot = await Api.marketDashboard(request.signal);
-        if (this.request === request) this.snapshot = snapshot;
+        if (this.request === request) {
+          this.snapshot = snapshot;
+          this.error = '';
+          delay = snapshot.refreshAfterMs;
+        }
       } catch (err) {
-        if (this.request === request) this.error = err.message || '日线行情读取失败，请重试';
+        if (this.request === request) {
+          this.error = err.message || '行情读取失败，请重试';
+          delay = this.snapshot?.phase === 'trading' || !this.snapshot ? 15000 : this.snapshot.refreshAfterMs;
+        }
       } finally {
         if (this.request === request) {
           this.request = null;
           this.loading = false;
+          if (delay > 0) this.timer = setTimeout(this.load, delay);
         }
       }
     },
     exchangeName(code) { return exchangeNames[code]; },
     stockName(code) { return stockLabel(code, state.stockNames); },
     count(value) { return integer.format(value); },
+    captured(value) { return marketClock.format(new Date(value)); },
     price(value) { return value == null ? '—' : decimal.format(value); },
     amount(value) { return value > 0 ? decimal.format(value / 1e8) : '—'; },
     change(value) {
@@ -75,24 +105,29 @@ export default {
     direction(value) { return value > 0 ? 'pos' : value < 0 ? 'neg' : ''; },
   },
   template: `
-<section class="market-dashboard" aria-label="A 股日线行情">
+<section class="market-dashboard" aria-label="A 股行情">
   <div class="market-toolbar">
     <div class="market-session">
-      <strong>A 股日线</strong>
+      <strong>{{ marketLabel }}</strong>
       <time v-if="snapshot?.date" :datetime="snapshot.date">{{ snapshot.date }}</time>
-      <span class="market-source">MySQL 行情库</span>
+      <span class="market-source">{{ intraday ? '通达信' : 'MySQL 行情库' }}</span>
+      <span v-if="intraday && snapshot.capturedAt" class="market-source">
+        采集于 <time :datetime="snapshot.capturedAt">{{ captured(snapshot.capturedAt) }}</time>
+      </span>
+      <span v-if="intraday && snapshot.phase === 'break'" class="market-source">午间休市</span>
     </div>
     <button type="button" class="secondary" :disabled="loading" @click="load">{{ error ? '重试读取' : '刷新行情' }}</button>
   </div>
   <div class="market-feedback">
-    <p v-if="loading" class="hint" role="status">正在读取日线行情…</p>
+    <p v-if="loading && !snapshot" class="hint" role="status">正在读取行情…</p>
     <p v-else-if="error" class="msg err" role="alert">
-      {{ error }}<span v-if="snapshot">。下方仍显示上次读取的日线。</span>
+      {{ error }}<span v-if="snapshot">。下方仍显示上次读取的行情。</span>
     </p>
+    <p v-else-if="snapshot?.notice" class="hint" role="status">{{ snapshot.notice }}</p>
     <p v-else-if="snapshot && !snapshot.date" class="hint" role="status">行情库暂无上证指数交易日记录。</p>
   </div>
 
-  <div class="market-content" :aria-busy="String(loading)">
+  <div class="market-content" :aria-busy="String(loading && !snapshot)">
     <section class="card market-index-panel" aria-labelledby="market-index-title">
       <h2 id="market-index-title">主要指数</h2>
       <div class="market-index-grid">
@@ -104,10 +139,10 @@ export default {
           </div>
           <p v-if="!index.date || index.date !== snapshot.date" class="hint market-index-date">
             <time v-if="index.date" :datetime="index.date">{{ index.date }}</time>
-            <span v-else>暂无日线</span>
+            <span v-else>{{ intraday ? '暂无实时报价' : '暂无日线' }}</span>
           </p>
         </div>
-        <div v-if="!snapshot" class="empty market-index-empty">{{ loading ? '正在读取指数收盘数据' : '暂无指数收盘数据' }}</div>
+        <div v-if="!snapshot" class="empty market-index-empty">{{ loading ? '正在读取指数行情' : '暂无指数行情' }}</div>
       </div>
     </section>
 
@@ -141,6 +176,9 @@ export default {
               </tbody>
             </table>
           </div>
+          <p class="hint" v-if="intraday && snapshot.stockQuotes < snapshot.stockUniverse">
+            收到 {{ count(snapshot.stockQuotes) }} / {{ count(snapshot.stockUniverse) }} 只股票报价，成交概况和榜单按已收到的有效数据统计。
+          </p>
           <p class="hint" v-if="stocks.withAmount < stocks.total">成交额缺失 {{ count(stocks.total - stocks.withAmount) }} 只，合计及榜单按有效金额统计。</p>
         </template>
         <p v-else class="empty">{{ loading ? '正在读取成交概况' : '暂无当日有效成交记录' }}</p>
@@ -172,7 +210,7 @@ export default {
           <table aria-label="当前个股排行">
             <thead>
               <tr>
-                <th scope="col">排名</th><th scope="col">股票</th><th scope="col">收盘（元）</th>
+                <th scope="col">排名</th><th scope="col">股票</th><th scope="col">{{ intraday ? '最新价（元）' : '收盘（元）' }}</th>
                 <th scope="col" :aria-sort="ranking === 'up' ? 'descending' : ranking === 'down' ? 'ascending' : undefined">涨跌幅</th>
                 <th scope="col" :aria-sort="ranking === 'amount' ? 'descending' : undefined">成交额（亿元）</th>
               </tr>
@@ -190,7 +228,7 @@ export default {
         </div>
         <p v-else class="empty">{{ loading ? '正在读取个股排行' : '当前榜单暂无数据' }}</p>
         <p v-if="stocks?.total" class="hint">
-          {{ count(rankedStocks.length) }} 只 · 个股涨跌幅按未复权收盘价计算<span v-if="snapshot.previousDate">，对比 {{ snapshot.previousDate }}</span>。
+          {{ count(rankedStocks.length) }} 只 · {{ intraday ? '涨跌幅按实时行情的昨收计算' : '个股涨跌幅按未复权收盘价计算' }}<span v-if="snapshot.previousDate">，对比 {{ snapshot.previousDate }}</span>。
         </p>
       </section>
     </div>

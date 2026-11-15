@@ -3,6 +3,7 @@ package lab
 import (
 	"cmp"
 	"context"
+	"errors"
 	"log"
 	"math"
 	"net/http"
@@ -72,10 +73,17 @@ type dashboardStockSummary struct {
 }
 
 type marketDashboard struct {
-	Date         string                `json:"date"`
-	PreviousDate string                `json:"previousDate"`
-	Indexes      []dashboardIndexQuote `json:"indexes"`
-	Stocks       dashboardStockSummary `json:"stocks"`
+	Date          string                `json:"date"`
+	PreviousDate  string                `json:"previousDate"`
+	Indexes       []dashboardIndexQuote `json:"indexes"`
+	Stocks        dashboardStockSummary `json:"stocks"`
+	Source        string                `json:"source"`
+	Phase         string                `json:"phase"`
+	CapturedAt    string                `json:"capturedAt,omitempty"`
+	Notice        string                `json:"notice,omitempty"`
+	RefreshAfter  int64                 `json:"refreshAfterMs"`
+	StockQuotes   int                   `json:"stockQuotes,omitempty"`
+	StockUniverse int                   `json:"stockUniverse,omitempty"`
 }
 
 func (s *Server) handleMarketDashboard(w http.ResponseWriter, r *http.Request) {
@@ -84,22 +92,83 @@ func (s *Server) handleMarketDashboard(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "行情库尚未连接")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	at := time.Now()
+	snapshot, err := s.dashboard.viewAt(ctx, at, readDashboardTDX, readDashboardDaily)
+	if err != nil {
+		if r.Context().Err() == nil {
+			log.Printf("[lab] 读取数据看板: %v", err)
+			writeErr(w, http.StatusServiceUnavailable, "行情读取失败，请重试")
+		}
+		return
+	}
+	snapshot.RefreshAfter = max(1000, snapshot.RefreshAfter-time.Since(at).Milliseconds())
+	writeJSON(w, snapshot)
+}
+
+func (c *dashboardLiveCache) viewAt(ctx context.Context, at time.Time, live dashboardLiveReader,
+	daily func(context.Context, string) (marketDashboard, error)) (marketDashboard, error) {
+	at = at.In(protocol.Location())
+	today := at.Format(time.DateOnly)
+	phase, next := dashboardSchedule(at)
+	wait := next.Sub(at)
+	var view, intraday marketDashboard
+	var liveErr error
+	if phase == "trading" {
+		intraday, liveErr = c.load(ctx, at, live)
+		wait = min(wait, dashboardRefresh)
+		if intraday.Date != "" {
+			view = intraday
+			if liveErr != nil {
+				view.Notice = "实时行情暂未更新，显示上次采集的盘中快照。"
+			}
+		}
+	} else {
+		intraday, _ = c.latest(today)
+		if phase == "break" {
+			view = intraday
+		}
+	}
+	if view.Date == "" {
+		var err error
+		view, err = daily(ctx, today)
+		if err != nil && intraday.Date == "" {
+			return marketDashboard{}, err
+		}
+		if phase == "closed" && intraday.Date != "" && view.Date < today {
+			view = intraday
+			view.Notice = "显示最近的盘中快照，等待当日日线入库。"
+			wait = min(wait, time.Minute)
+		}
+		if phase == "trading" {
+			view.Notice = "实时行情读取失败，显示最近入库日线。"
+			if errors.Is(liveErr, errDashboardNoRecentMinute) {
+				view.Notice = "等待本交易时段的报价，显示最近入库日线。"
+			}
+		}
+	}
+	view.Phase = phase
+	view.RefreshAfter = wait.Milliseconds()
+	return view, nil
+}
+
+func dashboardCodes() []string {
 	indexes := make([]string, 0, len(dashboardIndexList))
 	for _, index := range dashboardIndexList {
 		indexes = append(indexes, index.Code)
 	}
-	days, err := common.Pull.ReadDashboardDays(ctx, dashboardCalendarIndex, indexes, time.Now().In(protocol.Location()).Format(time.DateOnly))
+	return indexes
+}
+
+func readDashboardDaily(ctx context.Context, through string) (marketDashboard, error) {
+	days, err := common.Pull.ReadDashboardDays(ctx, dashboardCalendarIndex, dashboardCodes(), through)
 	if err != nil {
-		if r.Context().Err() == nil {
-			log.Printf("[lab] 读取数据看板: %v", err)
-			writeErr(w, http.StatusServiceUnavailable, "日线行情读取失败，请重试")
-		}
-		return
+		return marketDashboard{}, err
 	}
 
 	snapshot := marketDashboard{
+		Source:  "daily",
 		Indexes: dashboardIndexQuotes(days.Indexes),
 		Stocks:  summarizeDashboardStocks(days.Stocks),
 	}
@@ -109,7 +178,7 @@ func (s *Server) handleMarketDashboard(w http.ResponseWriter, r *http.Request) {
 			snapshot.PreviousDate = dates[1].Date
 		}
 	}
-	writeJSON(w, snapshot)
+	return snapshot, nil
 }
 
 func dashboardIndexQuotes(bars map[string][]marketstore.DashboardIndexDay) []dashboardIndexQuote {

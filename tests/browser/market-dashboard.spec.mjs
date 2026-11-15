@@ -70,7 +70,7 @@ test('数据看板加载、空日线、刷新失败和重试状态', async ({pag
         await pending;
         return route.fulfill({json: snapshot});
       case 2:
-        return route.fulfill({status: 503, json: {error: '日线行情读取失败，请重试'}});
+        return route.fulfill({status: 503, json: {error: '行情读取失败，请重试'}});
       default:
         return route.fulfill({json: {
           date: '', indexes: [], stocks: {total: 0, rankings: {amount: [], up: [], down: []}},
@@ -78,15 +78,51 @@ test('数据看板加载、空日线、刷新失败和重试状态', async ({pag
     }
   });
   await page.goto('/?tab=market-dashboard');
-  await expect(page.getByText('正在读取日线行情…')).toBeVisible();
+  await expect(page.getByText('正在读取行情…')).toBeVisible();
   await expect(page.getByRole('button', {name: '刷新行情'})).toBeDisabled();
   release();
   await expect(page.getByText('3,998.48')).toBeVisible();
   await page.getByRole('button', {name: '刷新行情'}).click();
-  await expect(page.getByRole('alert')).toContainText('仍显示上次读取的日线');
+  await expect(page.getByRole('alert')).toContainText('仍显示上次读取的行情');
   await expect(page.getByText('3,998.48')).toBeVisible();
   await page.getByRole('button', {name: '重试读取'}).click();
   await expect(page.getByText('行情库暂无上证指数交易日记录。')).toBeVisible();
   await expect(page.getByText('暂无当日有效成交记录')).toBeVisible();
   await expect(page.getByText('当前榜单暂无数据')).toBeVisible();
+});
+
+test('交易时段自动刷新，切页暂停请求，返回时展示午间快照', async ({page}) => {
+  let requests = 0;
+  await page.clock.install();
+  await page.route('**/api/market-dashboard', route => {
+    const request = ++requests;
+    const intraday = request < 4;
+    return route.fulfill({json: {
+      ...snapshot,
+      source: intraday ? 'tdx' : 'daily',
+      phase: request < 3 ? 'trading' : request === 3 ? 'break' : 'closed',
+      capturedAt: intraday ? '2026-11-13T11:29:37+08:00' : undefined,
+      refreshAfterMs: request < 3 ? 15000 : 3600000,
+      stockQuotes: 25, stockUniverse: 28,
+      indexes: [{...snapshot.indexes[0], close: 3900 + request}],
+    }});
+  });
+  await page.goto('/?tab=market-dashboard');
+  await expect(page.getByText('A 股实时行情', {exact: true})).toBeVisible();
+  await expect(page.getByText('11:29:37', {exact: true})).toBeVisible();
+  await expect(page.getByText('收到 25 / 28 只股票报价', {exact: false})).toBeVisible();
+  await expect(page.getByRole('columnheader', {name: '最新价（元）'})).toBeVisible();
+  await page.clock.fastForward(15000);
+  await expect(page.getByText('3,902.00')).toBeVisible();
+  await page.getByRole('button', {name: '策略回测', exact: true}).click();
+  await page.clock.fastForward(30000);
+  expect(requests).toBe(2);
+  await page.getByRole('button', {name: '数据看板', exact: true}).click();
+  await expect(page.getByText('午间休市', {exact: true})).toBeVisible();
+  await expect(page.getByText('A 股盘中快照', {exact: true})).toBeVisible();
+  await page.clock.fastForward(30000);
+  expect(requests).toBe(3);
+  await page.getByRole('button', {name: '刷新行情'}).click();
+  await expect(page.getByText('A 股日线', {exact: true})).toBeVisible();
+  await expect(page.getByRole('columnheader', {name: '收盘（元）'})).toBeVisible();
 });

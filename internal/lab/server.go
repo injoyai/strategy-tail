@@ -51,9 +51,10 @@ import (
 
 // Server lab 服务。
 type Server struct {
-	runner *Runner
-	mux    *http.ServeMux
-	screen *screenService
+	runner    *Runner
+	mux       *http.ServeMux
+	screen    *screenService
+	dashboard dashboardLiveCache
 	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
