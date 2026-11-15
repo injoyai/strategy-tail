@@ -144,10 +144,11 @@ test('买卖与估值标记按已揭示日定位，越界标记进入 missing �
 
 test('既有页签编号与 slug 不变，10 为数据看板', () => {
   assert.deepEqual(Object.entries(constants.TAB_SLUG).map(([k, v]) => [Number(k), v]),
-    [[1, 'strategy'], [2, 'compare'], [3, 'trades'], [4, 'factor'], [5, 'candidates'], [6, 'portfolio'], [7, 'practice'], [8, 'screen'], [10, 'market-dashboard']]);
+    [[1, 'strategy'], [2, 'compare'], [3, 'trades'], [4, 'factor'], [5, 'candidates'], [6, 'portfolio'], [7, 'practice'], [8, 'screen'], [9, 'index-research'], [10, 'market-dashboard']]);
   assert.equal(constants.TAB_NUM.practice, 7);
+  assert.equal(constants.TAB_NUM['index-research'], 9);
   assert.equal(constants.TAB_NUM['market-dashboard'], 10);
-  assert.deepEqual(constants.TABS.map(t => t.n), [1, 2, 3, 4, 5, 6, 7, 8, 10]);
+  assert.deepEqual(constants.TABS.map(t => t.n), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.equal(constants.TASK_LABEL.practice_prepare, '盘感练习出题');
 });
 

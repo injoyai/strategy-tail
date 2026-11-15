@@ -19,6 +19,7 @@ import Tab5Candidates from './components/Tab5Candidates.js';
 import Tab6Portfolio from './components/Tab6Portfolio.js';
 import Tab7Practice from './components/Tab7Training.js';
 import Tab8Screen from './components/Tab8Screen.js';
+import IndexResearch from './components/IndexResearch.js';
 import MarketDashboard from './components/MarketDashboard.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
 import CandidateEditDlg from './components/CandidateEditDlg.js';
@@ -31,7 +32,7 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, Tab8Screen, MarketDashboard,
+    Tab7Practice, Tab8Screen, IndexResearch, MarketDashboard,
     CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, FactorValidationDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
@@ -419,6 +420,7 @@ const App = {
     <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />
     <tab7-practice :ref="el => setTaskRef('tab7', el)" v-if="t.n === 7" />
     <tab8-screen v-if="t.n === 8" :ref="el => setTaskRef('screen', el)" :active="state.activeTab === 8" :sale-revision="sellCursor" />
+    <index-research v-if="t.n === 9" :active="state.activeTab === 9" />
     <market-dashboard v-if="t.n === 10" :active="state.activeTab === 10" />
   </div>
 </main>

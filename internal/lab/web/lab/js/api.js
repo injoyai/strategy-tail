@@ -1,7 +1,7 @@
 // REST API 访问层：统一 fetch 封装 + 全部端点。非 2xx 抛出后端 error 文案。
 
-export async function api(method, url, body) {
-  const opt = {method, headers: {'Content-Type': 'application/json'}};
+export async function api(method, url, body, signal) {
+  const opt = {method, headers: {'Content-Type': 'application/json'}, signal};
   if (body !== undefined) opt.body = JSON.stringify(body);
   const resp = await fetch(url, opt);
   const data = await resp.json().catch(() => ({}));
@@ -33,6 +33,8 @@ export const Api = {
   screenDiagnose: (code, strategy) => api('GET', '/api/screen/diagnose/' + encodeURIComponent(code) + '?' + new URLSearchParams({strategy})),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
   marketDashboard: signal => api('GET', '/api/market-dashboard', undefined, signal),
+  researchIndexes: signal => api('GET', '/api/index-research/indexes', undefined, signal),
+  indexResearch: (query, signal) => api('GET', '/api/index-research/series?' + new URLSearchParams(query), undefined, signal),
   runStrategy: spec => api('POST', '/api/strategy/run', spec),
   stop: () => api('POST', '/api/stop'),
   status: () => api('GET', '/api/status'),

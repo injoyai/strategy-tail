@@ -101,7 +101,7 @@ function navigationContext() {
 
 test('左侧各组页签始终在自己的主入口下，只选中当前页', () => {
   const ctx = navigationContext();
-  assert.deepEqual(ctx.groups.map(g => g.title), ['数据看板', '策略回测', '因子研究', '盘感练习', '选股策略']);
+  assert.deepEqual(ctx.groups.map(g => g.title), ['数据看板', '策略回测', '因子研究', '指数研究', '盘感练习', '选股策略']);
   assert.deepEqual(ctx.groups.flatMap(g => g.tabs).sort((a, b) => a - b), constants.TABS.map(t => t.n));
   const previous = state.activeTab;
   try {
@@ -122,9 +122,12 @@ test('左侧各组页签始终在自己的主入口下，只选中当前页', ()
       const panels = elements(tree, 'div').filter(v => v.props?.id === 'tab7');
       assert.equal(panels[0].props.role, 'region');
       assert.equal(panels[0].props['aria-labelledby'], 'nav-practice');
-      const [dashboard] = elements(tree, 'div').filter(v => v.props?.id === 'tab10');
-      assert.equal(dashboard.props.role, 'region');
-      assert.equal(dashboard.props['aria-labelledby'], 'nav-market-dashboard');
+      const [indexPanel] = elements(tree, 'div').filter(v => v.props?.id === 'tab9');
+      assert.equal(indexPanel.props.role, 'region');
+      assert.equal(indexPanel.props['aria-labelledby'], 'nav-index-research');
+      const [dashboardPanel] = elements(tree, 'div').filter(v => v.props?.id === 'tab10');
+      assert.equal(dashboardPanel.props.role, 'region');
+      assert.equal(dashboardPanel.props['aria-labelledby'], 'nav-market-dashboard');
     }
   } finally {state.activeTab = previous;}
 });

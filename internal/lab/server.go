@@ -145,6 +145,8 @@ func (s *Server) wirePracticeStores() {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
 	s.mux.HandleFunc("GET /api/market-dashboard", s.handleMarketDashboard)
+	s.mux.HandleFunc("GET /api/index-research/indexes", s.handleIndexResearchCatalog)
+	s.mux.HandleFunc("GET /api/index-research/series", s.handleIndexResearchSeries)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/screen", s.handleScreenState)
 	s.mux.HandleFunc("GET /api/screen/history", s.handleScreenHistory)
