@@ -1,5 +1,5 @@
 // 展示层格式化助手：只影响显示，JSON/提交始终用原始值。
-// unit 取值见 strategies/factor/registry.go（ratio / multiple / percent / 其他原值）。
+// unit 取值见 strategies/factor/registry.go。
 
 // 当前名称仅用于显示；完整市场前缀参与匹配，避免股票与指数混淆。
 export function stockLabel(code, names = {}) {
@@ -62,14 +62,17 @@ export const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&l
 // sig3 3 位有效数字去尾零（0.123→0.123，1234→1230，1e-7→1e-7）。
 export const sig3 = v => String(Number(v.toPrecision(3)));
 
-// fmtFactorVal 因子值展示（unit 感知）：ratio ×100 加 %、multiple 加 ×、
-// percent 原值即百分数直接加 %、其余原值。
+// 因子阈值沿用原始单位。比例阈值输入框使用百分数。
+export function factorInputUnit(unit) {
+  if (unit === 'ratio' || unit === 'percent') return '%';
+  if (unit === 'yi_yuan_per_pct_point') return '亿元/百分点';
+  return '';
+}
+
+// fmtFactorVal 按目录单位展示原始值。
 export function fmtFactorVal(v, unit) {
   if (v == null || !isFinite(v)) return '—';
-  if (unit === 'ratio') return sig3(v * 100) + '%';
-  if (unit === 'multiple') return sig3(v) + '×';
-  if (unit === 'percent') return sig3(v) + '%';
-  return sig3(v);
+  return factorAxisLabel(factorAxisNumber(v, unit), unit);
 }
 
 // groupRangeLabel 组的值域标签：分位模式=全样本累计 min~max（历史分布，
@@ -105,10 +108,8 @@ export function factorAxisNumber(v, unit) {
 
 export function factorAxisLabel(v, unit) {
   if (v == null || !isFinite(v)) return '—';
-  if (unit === 'ratio') return sig3(+v) + '%';
   if (unit === 'multiple') return sig3(+v) + '×';
-  if (unit === 'percent') return sig3(+v) + '%';
-  return sig3(+v);
+  return sig3(+v) + factorInputUnit(unit);
 }
 
 // ma 简单移动平均（K 线 MA 线）。
@@ -220,8 +221,7 @@ export function filterText(f, catalog) {
   if (!f) return '';
   const fent = (catalog || []).find(x => x.kind === f.kind);
   const unit = fent ? fent.unit : '';
-  const fmt = v => v == null ? '—'
-    : (unit === 'ratio' ? sig3(v * 100) + '%' : unit === 'percent' ? sig3(v) + '%' : sig3(v));
+  const fmt = v => v == null ? '—' : sig3(factorAxisNumber(v, unit)) + factorInputUnit(unit);
   // 因子名显示类型名 + 实际参数（days 是真实分析参数），不用目录默认实例名
   const nm = fent ? factorInstanceName(fent, f.days) : `${f.kind}(${f.days})`;
   if (f.operator === 'gte') return nm + '≥' + fmt(f.min);

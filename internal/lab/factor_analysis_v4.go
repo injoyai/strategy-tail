@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -14,6 +16,7 @@ import (
 	"github.com/injoyai/strategy-tail/internal/lab/factorstats"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // factor_analysis_v4.go：v4 研究协议分析编排（Task 5）。v3 主循环保持原行为
@@ -162,7 +165,31 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	}
 	// finishTrial 记录各返回路径的结果。记录失败时保留原有返回值。
 	finishTrial := func(status TrialStatus, msg string) {
-		_ = trials.Finish(trial.ID, TrialResult{Status: status, Message: msg})
+		if err := trials.Finish(trial.ID, TrialResult{Status: status, Message: msg}); err != nil {
+			log.Printf("因子试验 %s 无法记录结束状态: %v", trial.ID, err)
+		}
+	}
+
+	if common.Pull == nil {
+		err := errors.New("行情读取器未初始化")
+		finishTrial(TrialStatusFailed, err.Error())
+		return nil, err
+	}
+	var calendar *factorSessionCalendar
+	if proto.Labels.Kind == labelKindNextOpenHeldSessions {
+		start := time.Date(cfg.StartYear, 1, 1, 0, 0, 0, 0, protocol.Location())
+		end := time.Date(cfg.EndYear+1, 12, 31, 0, 0, 0, 0, protocol.Location())
+		bars, err := common.Pull.DayKlines(factorCalendarCode, start, end)
+		if err == nil && len(bars) == 0 {
+			err = errors.New("请求期间没有上证指数日线")
+		}
+		if err != nil {
+			finishTrial(TrialStatusFailed, "交易日历: "+err.Error())
+			return nil, fmt.Errorf("加载交易日历失败: %w", err)
+		}
+		sessions := newFactorSessionCalendar(bars)
+		calendar = &sessions
+		maxH++ // 退出日是信号后的第 h+1 个市场交易日。
 	}
 
 	// 2. 股票池解析：协议模式决定加载范围。historical_membership 取区间
@@ -171,8 +198,8 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	histMembership := proto.Universe.Mode == universeHistoricalMembership
 	var codes []string
 	if histMembership {
-		start := time.Date(cfg.RunConfig.StartYear, 1, 1, 0, 0, 0, 0, time.Local)
-		end := time.Date(cfg.RunConfig.EndYear, 12, 31, 23, 59, 59, 0, time.Local)
+		start := time.Date(cfg.StartYear, 1, 1, 0, 0, 0, 0, protocol.Location())
+		end := time.Date(cfg.EndYear, 12, 31, 23, 59, 59, 0, protocol.Location())
 		codes, err = r.universe.CodesBetween(start, end)
 		if err != nil {
 			finishTrial(TrialStatusFailed, "解析历史成员股票池失败: "+err.Error())
@@ -185,6 +212,9 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 			return nil, err
 		}
 	}
+	codes = slices.Clone(codes)
+	slices.Sort(codes)
+	codes = slices.Compact(codes)
 	r.totalCodes.Store(int64(len(codes)))
 	r.setTaskProgress("analysis", "stocks", researchrun.Progress{Phase: "observations", Total: len(codes)})
 	years := cfg.RunConfig.years()
@@ -200,6 +230,9 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	}()
 
 	var mu sync.Mutex
+	var signals SignalCoverage
+	var observationFailures []researchrun.Failure
+	dailyHashes := map[string]map[int]string{}
 	// 因子值截面与 Horizon 无关（每股票日只算一次），全局一份；
 	// 收益标签与覆盖按 Horizon 各一份。
 	vals := map[time.Time]map[string]float64{}
@@ -211,8 +244,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	}
 	coverage := researchrun.Coverage{Requested: len(codes)}
 
-	// 3-6. 逐“股票×年份”加载并构建观察：ForwardDays = max(Horizons) 保证
-	// 最大周期尾部标签也能取到下一年开票价（只读缓冲区，绝不进入因子前缀）。
+	// 次年日线只用于取标签，因子只看到信号日及以前的行情。
 	yearCoverage, err := researchrun.ForEachCodeYearData(ctx, researchrun.Config{
 		Codes:        codes,
 		Years:        years,
@@ -233,8 +265,26 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 				coverage.Failures = append(coverage.Failures, *progress.Failure)
 			}
 		},
-	}, func(code string, _ int, d researchrun.YearData) {
-		res := buildObservations(code, d, fct, horizons, proto.Labels.Kind, r.factorData)
+	}, func(code string, year int, d researchrun.YearData) {
+		var included func(time.Time) bool
+		var membershipFailure *researchrun.Failure
+		if histMembership {
+			included = func(asOf time.Time) bool {
+				ok, err := r.universe.Contains(code, asOf)
+				if err != nil && membershipFailure == nil {
+					membershipFailure = &researchrun.Failure{
+						Code: code, Year: year, Stage: "universe_contains", Message: err.Error(),
+					}
+				}
+				return err == nil && ok
+			}
+		}
+		var events []string
+		if proto.Universe.TradabilityPolicy == labelPolicySkipCorporateEvents {
+			events = corporateEventDates(common.Pull.CorporateEvents(code))
+		}
+		dailyHash := factorDailyInputHash(d, events)
+		res := observeFactor(code, d, fct, horizons, proto.Labels.Kind, r.factorData, calendar, included, events)
 		// 局部聚合后再入锁：同票同年同日唯一，锁内纯合并无冲突
 		lv := map[time.Time]float64{}
 		lr := make(map[int]map[time.Time]float64, len(res.Labeled))
@@ -249,6 +299,18 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 			lr[h] = lm
 		}
 		mu.Lock()
+		if dailyHashes[code] == nil {
+			dailyHashes[code] = map[int]string{}
+		}
+		dailyHashes[code][year] = dailyHash
+		signals.Observed += res.Signals.Observed
+		signals.Valid += res.Signals.Valid
+		if membershipFailure != nil {
+			observationFailures = append(observationFailures, *membershipFailure)
+		}
+		if d.ForwardFailure != nil {
+			observationFailures = append(observationFailures, *d.ForwardFailure)
+		}
 		for day, v := range lv {
 			if vals[day] == nil {
 				vals[day] = map[string]float64{}
@@ -284,42 +346,12 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	default:
 	}
 
+	coverage.Failures = append(coverage.Failures, observationFailures...)
 	sortFailures(coverage.Failures)
 	sortFailures(yearCoverage.Failures)
 
-	// historical_membership：按交易日历史成员关系过滤截面（fail closed：
-	// 查询失败视为非成员并记录失败明细，不静默假设在池内）。收益截面与
-	// 因子值截面保持同键。
-	r.setTaskProgress("analysis", "", researchrun.Progress{Phase: "aligning"})
-	if histMembership {
-		for day, cv := range vals {
-			for code := range cv {
-				ok, cerr := r.universe.Contains(code, day)
-				if cerr != nil {
-					coverage.Failures = append(coverage.Failures, researchrun.Failure{
-						Code: code, Year: day.Year(), Stage: "universe_contains", Message: cerr.Error(),
-					})
-					delete(cv, code)
-					continue
-				}
-				if !ok {
-					delete(cv, code)
-				}
-			}
-			for _, h := range horizons {
-				for code := range retsByH[h][day] {
-					if _, ok := cv[code]; !ok {
-						delete(retsByH[h][day], code)
-					}
-				}
-			}
-		}
-		sortFailures(coverage.Failures)
-	}
-
-	// 7-9. 每 Horizon 全区间与年度聚合。聚合期构建“因子值×标签”对齐截面：
-	// aggregateIC/buildQuantileCache 契约要求 vals/rets 同键（同日同票既有
-	// 因子值又有该周期标签），尾部 insufficient_horizon 的观测按周期剔除。
+	// IC uses matched pairs. The calendar label assigns groups from available signal-day
+	// values before excluding missing returns from each group's mean.
 	grouping := proto.Diagnostics.Grouping
 	isBins := grouping.Mode == "bins"
 	g := grouping.groupCount()
@@ -330,10 +362,12 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	// 已保证声明合法，后续扩展承载字段时在此接入 neutralizeCrossSection。
 
 	type hResult struct {
-		analysis    HorizonAnalysis
-		daily       []DailyIC
-		first, last string
-		quintiles   []float64
+		analysis      HorizonAnalysis
+		daily         []DailyIC
+		first, last   string
+		quintiles     []float64
+		allGroupings  []GroupingSet
+		yearGroupings map[int][]GroupingSet
 	}
 	results := make([]hResult, len(horizons))
 	statsByH := make(map[int]ExtendedICStats, len(horizons))
@@ -356,20 +390,23 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		}
 		sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
 
-		hv := map[time.Time]map[string]float64{}
-		for _, day := range days {
-			cv := map[string]float64{}
-			for code := range rets[day] {
-				cv[code] = vals[day][code]
+		groupValues := vals
+		if calendar == nil {
+			groupValues = make(map[time.Time]map[string]float64, len(days))
+			for _, day := range days {
+				cv := make(map[string]float64, len(rets[day]))
+				for code := range rets[day] {
+					cv[code] = vals[day][code]
+				}
+				groupValues[day] = cv
 			}
-			hv[day] = cv
 		}
 
 		lag := resolveHACLag(proto.Diagnostics, h)
 		// 年度拆分复用同一对齐截面与 lag：与全区间同口径重算，避免先算
 		// 年度均值再加权（交易日较少的年份会获得过高权重）。
 		icOf := func(days []time.Time) ExtendedICStats {
-			agg := aggregateIC(days, hv, rets)
+			agg := aggregateIC(days, vals, rets)
 			ics := make([]float64, 0, len(agg.Daily))
 			for _, d := range agg.Daily {
 				if d.IC != nil {
@@ -378,7 +415,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 			}
 			return factorstats.ComputeICStats(ics, proto.Hypothesis.ExpectedDirection, lag)
 		}
-		overall := aggregateIC(days, hv, rets)
+		overall := aggregateIC(days, vals, rets)
 		ics := make([]float64, 0, len(overall.Daily))
 		for _, d := range overall.Daily {
 			if d.IC != nil {
@@ -393,18 +430,27 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		var qs []float64
 		var summary QuintileSummary
 		var turnover []TurnoverPoint
+		var allGroupings []GroupingSet
+		yearGroupings := make(map[int][]GroupingSet)
 		if isBins {
-			groups, qs, summary = aggregateGroups(days, hv, rets, grouping)
+			groups, qs, summary = aggregateGroups(days, groupValues, rets, grouping)
 		} else {
-			cache := buildQuantileCache(days, hv, rets)
-			set := cache.aggregateSet(g, true, nil)
+			cache := buildQuantileCache(days, groupValues, rets)
+			var set GroupingSet
+			if hi == 0 && cfg.HoldingSessions != 0 {
+				allGroupings = cache.allGroupings(true)
+				set = allGroupings[g-minGroups]
+			} else {
+				set = cache.aggregateSet(g, true, nil)
+			}
 			groups, qs, summary = set.Stats, set.Quintiles, set.Summary
-			// 换手序列（设计 §8.4）：等频切组报告最高组（Q_g）的每日成员
-			// 关系——多空组合多头侧的常见研究口径；多间隔请求 v1 取第一个
-			//（TurnoverPeriods 升序，最小周期最先反映成员变动）。bins 固定
-			// 区间不走 aggregateSet 的每日成员路径，v1 不输出换手序列。
+			// 换手跟踪预期方向的多头组。双侧诊断用最高组，仅输出最短请求周期。
 			if len(periods) > 0 {
-				members := cache.dailyGroupMembers(g, g-1)
+				groupIndex := g - 1
+				if proto.Hypothesis.ExpectedDirection == labelDirectionNegative {
+					groupIndex = 0
+				}
+				members := cache.dailyGroupMembers(g, groupIndex)
 				dates := make([]string, len(cache.days))
 				for i, d := range cache.days {
 					dates[i] = d.Format("2006-01-02")
@@ -428,11 +474,17 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 				TradingDays: len(gd),
 			}
 			if isBins {
-				yg, _, ys := aggregateGroups(gd, hv, rets, grouping)
+				yg, _, ys := aggregateGroups(gd, groupValues, rets, grouping)
 				yr.Groups, yr.Summary = yg, ys
 			} else {
-				ycache := buildQuantileCache(gd, hv, rets)
-				yset := ycache.aggregateSet(g, false, nil)
+				ycache := buildQuantileCache(gd, groupValues, rets)
+				var yset GroupingSet
+				if hi == 0 && cfg.HoldingSessions != 0 {
+					yearGroupings[yr.Year] = ycache.allGroupings(false)
+					yset = yearGroupings[yr.Year][g-minGroups]
+				} else {
+					yset = ycache.aggregateSet(g, false, nil)
+				}
 				yr.Groups, yr.Summary = yset.Stats, yset.Summary
 			}
 			yresults = append(yresults, yr)
@@ -445,6 +497,8 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 			last = days[len(days)-1].Format("2006-01-02")
 		}
 		results[hi] = hResult{
+			allGroupings:  allGroupings,
+			yearGroupings: yearGroupings,
 			analysis: HorizonAnalysis{
 				Horizon:       h,
 				Label:         proto.Labels.Kind,
@@ -478,32 +532,45 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 	for _, yr := range main.analysis.Years {
 		yqs, ysum := summarizeFromStats(yr.Groups, g)
 		ya := YearAnalysis{
-			Year:        yr.Year,
-			Stats:       mirrorICStats(yr.IC),
-			Quintiles:   yqs,
-			Summary:     ysum,
-			TradingDays: yr.TradingDays,
+			Year:         yr.Year,
+			Stats:        mirrorICStats(yr.IC),
+			Quintiles:    yqs,
+			Summary:      ysum,
+			TradingDays:  yr.TradingDays,
+			AllGroupings: main.yearGroupings[yr.Year],
 		}
-		if isBins { // v3 语义：quantile 年度组统计走 AllGroupings，v4 无全档预算故留空
+		if isBins || calendar != nil {
 			ya.Groups = yr.Groups
 		}
 		yearly = append(yearly, ya)
 	}
 
+	inputs := r.runInputs(codes, nil, "")
+	inputs.Data = proto.Data
+	if calendar != nil {
+		inputs.CalendarBasis = factorCalendarCode
+		for _, day := range calendar.days {
+			inputs.Calendar = append(inputs.Calendar, day.Format(time.DateOnly))
+		}
+	}
+	inputs.DailyInputSHA = marketInputHash(dailyHashes)
 	rep := &AnalysisReport{
+		Inputs:     inputs,
 		FactorName: fct.Name(),
 		Kind:       cfg.Kind,
 		Window:     horizons[0],
 		Range: AnalysisRange{
-			StartYear:  cfg.RunConfig.StartYear,
-			EndYear:    cfg.RunConfig.EndYear,
-			SampleMode: cfg.RunConfig.SampleMode,
-			SampleSize: len(codes),
+			StartYear:   cfg.RunConfig.StartYear,
+			EndYear:     cfg.RunConfig.EndYear,
+			SampleMode:  cfg.RunConfig.SampleMode,
+			SampleSize:  len(codes),
+			SampleCodes: codes,
 		},
 		AnalysisVersion: 4,
 		Factor:          snapshot,
 		Grouping:        grouping,
 		Groups:          main.analysis.Groups,
+		AllGroupings:    main.allGroupings,
 		Years:           yearly,
 		Stats:           mirrorICStats(main.analysis.IC),
 		Summary:         main.analysis.Summary,
@@ -514,6 +581,7 @@ func (r *Runner) runAnalysisV4(id string, cfg AnalyzeConfig, stop chan struct{})
 		Daily:           main.daily,
 		StartedAt:       started.Format(time.RFC3339),
 		FinishedAt:      time.Now().Format(time.RFC3339),
+		SignalCoverage:  &signals,
 
 		Protocol:        &proto,
 		ProtocolHash:    hash,

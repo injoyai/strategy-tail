@@ -17,7 +17,9 @@ import (
 	"github.com/injoyai/strategy-tail/core"
 	"github.com/injoyai/strategy-tail/internal/portfolioresearch"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // portfolio_runner.go v2 Task 9 组合任务执行器（设计 §9/§10/§11/§12.2/§14）。
@@ -183,6 +185,12 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err erro
 	if m.ModelHash != exp.ModelHash {
 		return r.markExperimentFailed(id, "模型 hash 与实验引用不一致（fail closed）")
 	}
+	if err := validateExperimentRanges(exp.StudyRange, exp.TrainRange, exp.TestRange); err != nil {
+		return r.markExperimentFailed(id, err.Error())
+	}
+	if m.Combination.Method == portfolioresearch.CombinationRollingICWeight && exp.TrainRange.Start == "" {
+		return r.markExperimentFailed(id, "滚动 IC 实验必须指定训练和测试区间")
+	}
 
 	start, err := time.Parse(time.DateOnly, exp.StudyRange.Start)
 	if err != nil {
@@ -223,6 +231,14 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err erro
 	if len(data.dates) == 0 {
 		return r.markExperimentInsufficient(id, "研究区间内无有效交易日")
 	}
+	evaluation := exp.TestRange
+	if evaluation.Start == "" {
+		evaluation = exp.StudyRange
+	}
+	testDates := filterDates(data.dates, evaluation)
+	if len(testDates) < 2 {
+		return r.markExperimentInsufficient(id, "评估区间少于两个有效交易日")
+	}
 	_ = r.experimentStore.UpdateProgress(id, 30, "数据加载完成")
 	r.totalCodes.Store(int64(len(data.dates)))
 	r.doneCodes.Store(0)
@@ -258,11 +274,11 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err erro
 
 	r.setPortfolioPhase(portfolioPhaseExecute)
 	r.doneCodes.Store(0)
-	r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Total: len(data.dates)})
-	ledgers, usedTargets, err := runPortfolioDays(m, scores, data, data.dates, portfolioNotional, stop,
+	r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Total: len(testDates)})
+	ledgers, usedTargets, err := runPortfolioDays(m, scores, data, testDates, portfolioNotional, stop,
 		func(done, total int) {
 			r.doneCodes.Store(int64(done))
-			r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Done: done, Total: total, Code: data.dates[done-1]})
+			r.setTaskProgress(taskPortfolioExperiment, "trading_days", researchrun.Progress{Phase: portfolioPhaseExecute, Done: done, Total: total, Code: testDates[done-1]})
 		})
 	if err != nil {
 		if errors.Is(err, errStopped) {
@@ -274,9 +290,17 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err erro
 
 	r.setPortfolioPhase(portfolioPhaseMetrics)
 	series := portfolioresearch.FromLedgers(ledgers)
-	metrics, err := portfolioresearch.ComputeMetrics(series, nil, 0)
+	benchmark := readPortfolioBenchmark(m.Benchmark, testDates, common.Pull.DayKlines)
+	metrics, err := portfolioresearch.ComputeMetrics(series, benchmark, 0)
 	if err != nil {
 		return r.markExperimentFailed(id, "组合指标计算失败: "+err.Error())
+	}
+	increment, err := r.baselineIncrementFor(m, factors, data, testDates, metrics.Net.CumulativeReturn, stop)
+	if err != nil {
+		if errors.Is(err, errStopped) {
+			return r.cancelExperiment(id, "运行被停止")
+		}
+		return r.markExperimentFailed(id, "等权秩基线执行失败: "+err.Error())
 	}
 	_ = r.experimentStore.UpdateProgress(id, 92, "组合指标完成")
 
@@ -289,13 +313,25 @@ func (r *Runner) runPortfolioExperiment(id string, stop chan struct{}) (err erro
 
 	r.setPortfolioPhase(portfolioPhaseFinalize)
 	rep := assembleExperimentReport(exp, m, metrics, attribution, series, data)
+	rep.Inputs = r.runInputs(data.codes, data.dates, "observed_stock_sessions")
+	rep.Inputs.Execution = &m.Execution
+	rep.Inputs.DailyInputSHA = portfolioInputHash(data)
+	rep.CodeVersion = rep.Inputs.Build.Application
+	rep.BaselineIncrement = &increment
+	rep.EvaluationRange = &DateRange{Start: testDates[0], End: testDates[len(testDates)-1]}
+	if exp.TestRange.Start != "" {
+		rep.TestRange = &exp.TestRange
+	}
+	if exp.TrainRange.Start != "" {
+		rep.TrainRange = &exp.TrainRange
+	}
 	if err := r.writeExperimentArtifacts(id, rep, ledgers); err != nil {
 		return r.markExperimentFailed(id, "产物写入失败: "+err.Error())
 	}
 	if err := r.experimentStore.MarkCompleted(id); err != nil {
 		return fmt.Errorf("标记完成失败: %w", err)
 	}
-	r.doneCodes.Store(int64(len(data.dates)))
+	r.doneCodes.Store(int64(len(testDates)))
 	return nil
 }
 
@@ -470,7 +506,8 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 		}
 
 		setWindowPhase(portfolioPhaseMetrics)
-		wm, err := windowMetrics(ledgers)
+		benchmark := readPortfolioBenchmark(spec.Benchmark, testDates, common.Pull.DayKlines)
+		wm, err := windowMetricsWithBenchmark(ledgers, benchmark)
 		if err != nil {
 			return err
 		}
@@ -502,7 +539,10 @@ func (r *Runner) runPortfolioValidation(id string, stop chan struct{}) error {
 	}
 
 	r.setPortfolioPhase(portfolioPhaseFinalize)
-	_, err = r.validationStore.Complete(id)
+	inputs := r.runInputs(data.codes, data.dates, "observed_stock_sessions")
+	inputs.Execution = &m.Execution
+	inputs.DailyInputSHA = portfolioInputHash(data)
+	_, err = r.validationStore.Complete(id, inputs)
 	if err != nil {
 		return fmt.Errorf("验证结论生成失败: %w", err)
 	}
@@ -535,9 +575,12 @@ type portfolioRunData struct {
 	codes []string
 	dates []string // 升序交易日 YYYY-MM-DD
 	// values 因子 key → 日期 → 代码 → 因子值（信号日收盘后可见）。
-	values map[string]map[string]map[string]float64
-	close  map[string]map[string]float64 // 日期 → 代码 → 收盘
-	open   map[string]map[string]float64 // 日期 → 代码 → 开盘
+	values    map[string]map[string]map[string]float64
+	close     map[string]map[string]float64 // 日期 → 代码 → 收盘
+	open      map[string]map[string]float64 // 日期 → 代码 → 开盘
+	volume    map[string]map[string]int64   // 成交量（手），零成交的日线禁止开盘撮合
+	stockLast map[string]map[string]float64 // 当日行情的昨收，用于识别开盘封板
+	exposures *portfolioExposures
 	// prevClose 日期 → 代码 → 前一交易日收盘（首日无）。
 	prevClose map[string]map[string]float64
 }
@@ -588,7 +631,10 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 		values:    make(map[string]map[string]map[string]float64, len(fcs)),
 		close:     map[string]map[string]float64{},
 		open:      map[string]map[string]float64{},
+		volume:    map[string]map[string]int64{},
+		stockLast: map[string]map[string]float64{},
 		prevClose: map[string]map[string]float64{},
+		exposures: newPortfolioExposures(r.factorData, m.TransformPipeline.Neutralize),
 	}
 	for _, fc := range fcs {
 		data.values[fc.key] = map[string]map[string]float64{}
@@ -613,16 +659,6 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 			r.setTaskProgress(task, "stocks", progress)
 		},
 	}, func(code string, _ int, d researchrun.YearData) {
-		localClose := map[string]float64{}
-		localOpen := map[string]float64{}
-		for _, k := range d.Dks {
-			day := k.Time.Format(time.DateOnly)
-			if day < startDate || day > endDate {
-				continue
-			}
-			localClose[day] = k.Close
-			localOpen[day] = k.Open
-		}
 		localVals := make([]map[string]float64, len(fcs))
 		for i := range fcs {
 			localVals[i] = map[string]float64{}
@@ -639,17 +675,21 @@ func (r *Runner) loadPortfolioData(ctx context.Context, m portfolioresearch.Fact
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		for day, v := range localClose {
+		for _, k := range d.Dks {
+			day := k.Time.Format(time.DateOnly)
+			if day < startDate || day > endDate {
+				continue
+			}
 			if data.close[day] == nil {
 				data.close[day] = map[string]float64{}
-			}
-			data.close[day][code] = v
-		}
-		for day, v := range localOpen {
-			if data.open[day] == nil {
 				data.open[day] = map[string]float64{}
+				data.volume[day] = map[string]int64{}
+				data.stockLast[day] = map[string]float64{}
 			}
-			data.open[day][code] = v
+			data.close[day][code] = k.Close
+			data.open[day][code] = k.Open
+			data.volume[day][code] = k.Volume
+			data.stockLast[day][code] = k.Last
 		}
 		for i := range fcs {
 			dm := data.values[fcs[i].key]
@@ -727,7 +767,7 @@ func (r *Runner) transformFactors(m portfolioresearch.FactorModel, data *portfol
 			if len(rows) == 0 {
 				continue
 			}
-			res, err := portfolioresearch.Transform(pipeline, portfolioresearch.TransformConfig{}, ref.Direction, rows, nil)
+			res, err := portfolioresearch.Transform(pipeline, portfolioresearch.TransformConfig{}, ref.Direction, rows, data.exposures)
 			if err != nil {
 				return nil, fmt.Errorf("截面变换失败 %s/%s: %w", key, date, err)
 			}
@@ -783,7 +823,17 @@ func resolveCombineWeights(spec portfolioresearch.CombinationSpec, factors []por
 			price[d] = pm
 		}
 	}
-	snap, err := portfolioresearch.TrainRollingIC(*spec.RollingIC, portfolioresearch.TrainingView{Dates: trainDates, Price: price}, factors)
+	trainFactors := make([]portfolioresearch.FactorSeries, len(factors))
+	for i, factor := range factors {
+		trainFactors[i] = factor
+		trainFactors[i].Days = make(map[string][]portfolioresearch.TransformedRow, len(trainDates))
+		for _, date := range trainDates {
+			if rows, ok := factor.Days[date]; ok {
+				trainFactors[i].Days[date] = rows
+			}
+		}
+	}
+	snap, err := portfolioresearch.TrainRollingIC(*spec.RollingIC, portfolioresearch.TrainingView{Dates: trainDates, Price: price}, trainFactors)
 	if err != nil {
 		return nil, false, err
 	}
@@ -858,11 +908,23 @@ func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[str
 			continue // 空选日：无目标 → 下一交易日空目标（全现金跳过）
 		}
 		holdings, cashWeight := weightsFromState(state, data.close[date])
+		var industries map[string]string
+		if policy.MaxIndustryWeight > 0 {
+			codes := make([]string, 0, len(scoresAt)+len(holdings))
+			for code := range scoresAt {
+				codes = append(codes, code)
+			}
+			for code := range holdings {
+				codes = append(codes, code)
+			}
+			industries = data.exposures.industries(date, codes)
+		}
 		tgt, err := portfolioresearch.BuildTarget(policy, exec, portfolioresearch.TargetInput{
 			Date:       date,
 			Scores:     scoresAt,
 			Tradable:   tradableFor(data, date),
 			Prices:     data.close[date],
+			Industries: industries,
 			Holdings:   holdings,
 			CashWeight: cashWeight,
 			Notional:   notional,
@@ -875,8 +937,7 @@ func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[str
 	return ledgers, usedTargets, nil
 }
 
-// dayMarketFor 构造执行日行情：开盘/收盘/前收盘来自加载数据；可交易性按
-// 股票池成员（涨跌停/停牌状态当前未建模，见报告 Limitations）。
+// dayMarketFor projects the daily bars to the opening execution model.
 func dayMarketFor(data *portfolioRunData, date string) portfolioresearch.DayMarket {
 	m := portfolioresearch.DayMarket{Date: date}
 	codes := make([]string, 0, len(data.close[date]))
@@ -891,11 +952,17 @@ func dayMarketFor(data *portfolioRunData, date string) portfolioresearch.DayMark
 	m.LimitUp = make(map[string]bool, len(codes))
 	m.LimitDown = make(map[string]bool, len(codes))
 	m.Listed = make(map[string]bool, len(codes))
+	at, _ := time.Parse(time.DateOnly, date)
 	for _, c := range codes {
 		m.OpenPrice[c] = data.open[date][c]
 		m.ClosePrice[c] = data.close[date][c]
 		m.PrevClose[c] = data.prevClose[date][c]
-		m.Tradable[c] = true
+		m.Tradable[c] = data.volume == nil || data.volume[date][c] > 0
+		if data.stockLast != nil {
+			previous := data.stockLast[date][c]
+			m.LimitUp[c] = atNominalStockLimit(c, at, previous, m.OpenPrice[c], true)
+			m.LimitDown[c] = atNominalStockLimit(c, at, previous, m.OpenPrice[c], false)
+		}
 		m.Listed[c] = true
 	}
 	return m
@@ -905,7 +972,7 @@ func dayMarketFor(data *portfolioRunData, date string) portfolioresearch.DayMark
 func tradableFor(data *portfolioRunData, date string) map[string]bool {
 	out := make(map[string]bool, len(data.close[date]))
 	for c := range data.close[date] {
-		out[c] = true
+		out[c] = data.volume == nil || data.volume[date][c] > 0
 	}
 	return out
 }
@@ -973,6 +1040,11 @@ func buildAttribution(ledgers []portfolioresearch.DailyLedger, usedTargets map[s
 			Returns:       returnsFor(data, ledger.Date),
 			ActualWeights: actualWeightsFor(ledger, data.close[ledger.Date]),
 		}
+		codes := make([]string, 0, len(day.ActualWeights))
+		for code := range day.ActualWeights {
+			codes = append(codes, code)
+		}
+		day.Industries = data.exposures.industries(ledger.Date, codes)
 		if tgt, ok := usedTargets[ledger.Date]; ok {
 			day.TargetWeights = tgt.Constrained.Effective
 			day.IdealWeights = tgt.Ideal.Weights
@@ -990,10 +1062,14 @@ func buildAttribution(ledgers []portfolioresearch.DailyLedger, usedTargets map[s
 	})
 }
 
-// windowMetrics 单窗组合指标（基准缺失 → IR/超额为 nil，不阻止绝对收益）。
+// windowMetrics 单窗组合指标（带内计算用于比较净收益增量）。
 func windowMetrics(ledgers []portfolioresearch.DailyLedger) (portfolioresearch.ValidationWindowMetrics, error) {
+	return windowMetricsWithBenchmark(ledgers, nil)
+}
+
+func windowMetricsWithBenchmark(ledgers []portfolioresearch.DailyLedger, benchmark *portfolioresearch.BenchmarkSeries) (portfolioresearch.ValidationWindowMetrics, error) {
 	series := portfolioresearch.FromLedgers(ledgers)
-	metrics, err := portfolioresearch.ComputeMetrics(series, nil, 0)
+	metrics, err := portfolioresearch.ComputeMetrics(series, benchmark, 0)
 	if err != nil {
 		return portfolioresearch.ValidationWindowMetrics{}, err
 	}
@@ -1006,13 +1082,47 @@ func windowMetrics(ledgers []portfolioresearch.DailyLedger) (portfolioresearch.V
 		AvgCashRatio:     metrics.Quality.AvgCashRatio,
 		UnfilledRate:     unfilledRate(ledgers),
 		MaxConcentration: metrics.Quality.MaxConcentration,
-		// 基准缺失：信息比率/年化超额不可用（设计 §9.5）。
-		InformationRatio: nil,
-		AnnualExcess:     nil,
+		InformationRatio: metrics.Benchmark.InformationRatio,
+		AnnualExcess:     metrics.Benchmark.AnnualExcess,
 		// 基线增量默认 0（等权秩模型基线 = 自身）；滚动 IC 模型由验证循环
 		// 在同窗重跑等权秩基线后回填真实值（见 baselineIncrementFor）。
 		BaselineIncrement: 0,
 	}, nil
+}
+
+func readPortfolioBenchmark(spec portfolioresearch.BenchmarkSpec, dates []string, getDays func(string, time.Time, time.Time) (extend.Klines, error)) *portfolioresearch.BenchmarkSeries {
+	if len(dates) < 2 || spec.ID == "" {
+		return nil
+	}
+	code := spec.ID
+	if code == "hs300" {
+		code = "sh000300"
+	}
+	if !protocol.IsIndex(code) {
+		return nil
+	}
+	start, _ := time.Parse(time.DateOnly, dates[0])
+	end, _ := time.Parse(time.DateOnly, dates[len(dates)-1])
+	bars, err := getDays(code, start, end.Add(23*time.Hour+59*time.Minute))
+	if err != nil {
+		return nil
+	}
+	byDate := make(map[string]float64, len(bars))
+	for _, bar := range bars {
+		if bar == nil || bar.Kline == nil {
+			continue
+		}
+		byDate[bar.Time.Format(time.DateOnly)] = bar.Close
+	}
+	b := &portfolioresearch.BenchmarkSeries{Days: make([]portfolioresearch.BenchmarkDay, 0, len(dates))}
+	for _, date := range dates {
+		price := byDate[date]
+		if !validExecutionPrice(price) {
+			return nil
+		}
+		b.Days = append(b.Days, portfolioresearch.BenchmarkDay{Date: date, Nav: price})
+	}
+	return b
 }
 
 // baselineIncrementFor 单窗相对等权秩基线的净收益增量（口径与窗内 Metrics
@@ -1058,18 +1168,24 @@ func unfilledRate(ledgers []portfolioresearch.DailyLedger) float64 {
 
 // PortfolioReport 组合实验报告（output/portfolio/<id>/report.json）。
 type PortfolioReport struct {
-	SchemaVersion int                            `json:"schemaVersion"`
-	ExperimentID  string                         `json:"experimentId"`
-	FamilyID      string                         `json:"familyId"`
-	ModelID       string                         `json:"modelId"`
-	ModelRevision int                            `json:"modelRevision"`
-	ModelHash     string                         `json:"modelHash"`
-	StudyRange    DateRange                      `json:"studyRange"`
-	StartedAt     string                         `json:"startedAt"`
-	FinishedAt    string                         `json:"finishedAt"`
-	EvidenceClass string                         `json:"evidenceClass"`
-	CodeVersion   string                         `json:"codeVersion"`
-	DataSnapshot  portfolioresearch.DataSnapshot `json:"dataSnapshot"`
+	SchemaVersion     int                            `json:"schemaVersion"`
+	ExperimentID      string                         `json:"experimentId"`
+	FamilyID          string                         `json:"familyId"`
+	ModelID           string                         `json:"modelId"`
+	ModelRevision     int                            `json:"modelRevision"`
+	ModelHash         string                         `json:"modelHash"`
+	StudyRange        DateRange                      `json:"studyRange"`
+	TrainRange        *DateRange                     `json:"trainRange,omitempty"`
+	TestRange         *DateRange                     `json:"testRange,omitempty"`
+	EvaluationRange   *DateRange                     `json:"evaluationRange,omitempty"`
+	BaselineIncrement *float64                       `json:"baselineIncrement,omitempty"` // 相对同窗等权秩基线的净收益差
+	StartedAt         string                         `json:"startedAt"`
+	FinishedAt        string                         `json:"finishedAt"`
+	EvidenceClass     string                         `json:"evidenceClass"`
+	CodeVersion       string                         `json:"codeVersion"`
+	DataSnapshot      portfolioresearch.DataSnapshot `json:"dataSnapshot"`
+	Inputs            *RunInputs                     `json:"inputs,omitempty"`
+	ExposureCoverage  *PortfolioExposureCoverage     `json:"exposureCoverage,omitempty"`
 	// Metrics 组合指标（毛/净、质量、稳定性；基准缺失时 Benchmark.Available=false）。
 	Metrics portfolioresearch.PortfolioMetrics `json:"metrics"`
 	// Attribution 组合归因（统计分解，非因果证明）。
@@ -1092,26 +1208,29 @@ type NavPoint struct {
 // assembleExperimentReport 组装实验报告（口径与限制自证）。
 func assembleExperimentReport(exp PortfolioExperiment, m portfolioresearch.FactorModel, metrics portfolioresearch.PortfolioMetrics, attribution portfolioresearch.PortfolioAttribution, series portfolioresearch.PortfolioSeries, data *portfolioRunData) *PortfolioReport {
 	rep := &PortfolioReport{
-		SchemaVersion: 1,
-		ExperimentID:  exp.ExperimentID,
-		FamilyID:      exp.FamilyID,
-		ModelID:       m.ModelID,
-		ModelRevision: m.Revision,
-		ModelHash:     m.ModelHash,
-		StudyRange:    exp.StudyRange,
-		StartedAt:     exp.CreatedAt,
-		FinishedAt:    time.Now().UTC().Format(time.RFC3339),
-		EvidenceClass: exp.EvidenceClass,
-		CodeVersion:   exp.CodeVersion,
-		DataSnapshot:  exp.DataSnapshot,
-		Metrics:       metrics,
-		Attribution:   attribution,
+		SchemaVersion:    1,
+		ExperimentID:     exp.ExperimentID,
+		FamilyID:         exp.FamilyID,
+		ModelID:          m.ModelID,
+		ModelRevision:    m.Revision,
+		ModelHash:        m.ModelHash,
+		StudyRange:       exp.StudyRange,
+		StartedAt:        exp.CreatedAt,
+		FinishedAt:       time.Now().UTC().Format(time.RFC3339),
+		EvidenceClass:    exp.EvidenceClass,
+		CodeVersion:      exp.CodeVersion,
+		DataSnapshot:     exp.DataSnapshot,
+		Metrics:          metrics,
+		Attribution:      attribution,
+		ExposureCoverage: data.exposures.coverage(),
 		Limitations: []string{
-			"涨跌停/停牌状态当前未建模，可交易性按股票池成员判断",
-			"基准数据未接入，超额收益/信息比率不可用（设计 §9.5）",
+			"开盘撮合过滤无成交日和普通板块涨跌停参考价，未校验 ST、新股、除权、盘口排队和订单容量",
 			"v2 归因是统计分解，不是因果证明，也不是完整风险模型归因",
 		},
 		Nav: make([]NavPoint, 0, len(series.Days)),
+	}
+	if !metrics.Benchmark.Available {
+		rep.Limitations = append(rep.Limitations, "未指定基准或基准日线覆盖不足，超额收益与信息比率不可用")
 	}
 	for _, d := range series.Days {
 		rep.Nav = append(rep.Nav, NavPoint{

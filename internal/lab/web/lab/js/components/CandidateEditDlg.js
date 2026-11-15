@@ -3,6 +3,7 @@
 // 乐观并发：携带 expectedRevision，409 不自动覆盖，提示比较服务端最新版本。
 import { state } from '../store.js';
 import { Api } from '../api.js';
+import { factorInputUnit } from '../format.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
@@ -25,8 +26,9 @@ export default {
   computed: {
     unit() { return this.edit && this.edit.factor ? this.edit.factor.unit : ''; },
     rangeUnit() {
-      return this.unit === 'ratio'
-        ? '按百分比填写（5 = 5%），提交转原始比例' : '填写因子原始值';
+      if (this.unit === 'ratio') return '按百分比填写（5 = 5%），提交转原始比例';
+      const unit = factorInputUnit(this.unit);
+      return unit ? `填写因子原始值（${unit}）` : '填写因子原始值';
     },
   },
   watch: {

@@ -277,6 +277,7 @@ type Report struct {
 	StrategySpec *StrategySpec        `json:"strategySpec,omitempty"`
 	Comparison   *ComparisonSummary   `json:"comparison,omitempty"`
 	Benchmark    []BenchmarkPoint     `json:"benchmark,omitempty"`
+	Inputs       *RunInputs           `json:"inputs,omitempty"`
 }
 
 // ComparisonSummary 简单模式对比摘要（实施文档 §4.4）：
@@ -435,22 +436,25 @@ func NewRunnerWithDeps(data researchdata.View, universe researchdata.Universe) *
 	return r
 }
 
-// dataProvenance 从当前 Runner 依赖生成数据来源快照。价格版本与复权口径当前
-// 不可得，显式写 unknown，不允许前端填写后伪装系统已验证；TDX 本地库只有当前
-// 快照、无发布日期与修订历史，PITState 恒为 unverified（设计 6.2）。
+// dataProvenance records the read time and known quality of the market data.
+// The read time does not identify a frozen database snapshot.
 func (r *Runner) dataProvenance() DataProvenance {
 	view := "none"
 	if r.factorData != nil {
 		view = "injected"
 	}
-	return DataProvenance{
-		PriceSource:      "tdx_local",
+	data := DataProvenance{
+		PriceSource:      "mysql_daily_bars",
 		PriceVersion:     "unknown",
 		Adjustment:       adjustmentUnknown,
 		ResearchDataView: view,
 		PITState:         pitUnverified,
 		SnapshotAt:       time.Now().UTC().Format(time.RFC3339),
 	}
+	if common.Pull != nil {
+		data.SchemaVersion = common.Pull.SchemaVersion()
+	}
+	return data
 }
 
 // Start 启动回测，variants 由调用方构建。
@@ -593,7 +597,7 @@ func (r *Runner) Status() map[string]any {
 	} else if total := r.totalCodes.Load(); total > 0 {
 		m["progress"] = float64(r.doneCodes.Load()) / float64(total) * 100
 	}
-	if task == "portfolio" || task == "portfolio_validation" || task == practiceTaskPrepare {
+	if task == "portfolio" || task == "portfolio_validation" || task == taskFactorValidation || task == practiceTaskPrepare {
 		if id := r.portfolioRun.Load(); id != nil {
 			m["runId"] = *id
 		}
@@ -620,6 +624,13 @@ func (r *Runner) LatestAnalysis() *AnalysisReport {
 func (r *Runner) StartAnalysis(cfg AnalyzeConfig) error {
 	if err := cfg.Validate(); err != nil {
 		return err
+	}
+	if cfg.HoldingSessions != 0 || cfg.Protocol != nil {
+		protocol, err := r.bindAnalysisProtocol(cfg)
+		if err != nil {
+			return err
+		}
+		cfg.Protocol = &protocol
 	}
 	if !r.mu.TryLock() {
 		return fmt.Errorf("已有任务在运行")
@@ -792,7 +803,21 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 	researchrun.LogCoverage(run.Coverage)
 
 	// 汇总报告，保持变体输入顺序。
+	inputs := r.runInputs(codes, nil, "")
+	inputs.Costs = &cost
+	if cfg.Account != nil {
+		inputs.CalendarBasis = factorCalendarCode
+		for _, point := range benchmark {
+			inputs.Calendar = append(inputs.Calendar, point.Date)
+		}
+		hashes := make(map[string]string, len(loaded))
+		for code, bars := range loaded {
+			hashes[code] = marketInputHash(bars)
+		}
+		inputs.DailyInputSHA = marketInputHash(hashes)
+	}
 	report := &Report{
+		Inputs:     inputs,
 		Config:     cfg,
 		StartedAt:  started.Format(time.RFC3339),
 		FinishedAt: time.Now().Format(time.RFC3339),

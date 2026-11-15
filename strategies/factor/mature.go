@@ -10,7 +10,7 @@ import (
 const (
 	// skipMonthTradingDays 固定跳过最近约一个交易月，避免把短期反转混入中期动量。
 	skipMonthTradingDays = 21
-	// amountScaleYuan 把 Amihud 原始的“每元成交额”缩放成“每 1 亿元成交额”。
+	// amountScaleYuan 是 1 亿元对应的元数。
 	amountScaleYuan = 100_000_000
 	// marketCapScaleYuan 让对数市值以亿元为输入，数值更便于阅读；缩放不改变横截面排序。
 	marketCapScaleYuan = 100_000_000

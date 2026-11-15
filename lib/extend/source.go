@@ -43,8 +43,15 @@ func (r *MarketReader) DayKlines(code string, start, end time.Time) (Klines, err
 	if !end.IsZero() {
 		endDate = end.Format(time.DateOnly)
 	}
-	// Read the preceding bars as well to retain the true previous close.
-	rows, err := r.source.QueryDay(c, "", endDate)
+	var rows []*model.KlineDay
+	if source, ok := r.source.(interface {
+		QueryDayWithPrevious(model.Code, string, string) ([]*model.KlineDay, error)
+	}); ok && startDate != "" {
+		rows, err = source.QueryDayWithPrevious(c, startDate, endDate)
+	} else {
+		// Older in-memory or custom sources still provide the preceding close.
+		rows, err = r.source.QueryDay(c, "", endDate)
+	}
 	if err != nil {
 		return nil, err
 	}

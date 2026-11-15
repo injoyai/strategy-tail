@@ -96,7 +96,6 @@ export const state = reactive({
   pfValidatedFactors: [],            // 聚合的可选已验证因子（带 validationId）
   pfSelectedValidationIds: [],
   pfModelRequestId: null,            // 模型保存幂等：输入变化时重置
-  pfCandidates: [],
   pfExperiments: null,               // ExperimentPage
   pfExpPage: 1,
   pfExpPageSize: 8,

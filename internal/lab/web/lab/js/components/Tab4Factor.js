@@ -28,7 +28,8 @@ export default {
     return {
       factorKind: '',        // 当前因子 kind
       factorDays: 20,        // 回看天数（无参数因子忽略）
-      factorWindow: 1,       // 未来收益窗口 1-60 交易日
+      holdingSessions: 1,
+      submittingAnalysis: false,
       factorStartYear: 2018, // 本页独立分析区间，不影响策略回测页
       factorEndYear: 2026,
       statOpen: false,       // 统计详情 <details> 展开态（展开后才 init IC 图）
@@ -60,6 +61,28 @@ export default {
     },
     // —— 结果区 ——
     rep() { return state.currentAnalysis; },
+    primaryHorizon() { return this.rep?.horizonAnalyses?.[0] || null; },
+    usesHeldSessions() { return this.primaryHorizon?.label === 'next_open_held_sessions'; },
+    labelCoverageText() {
+      const c = this.primaryHorizon?.labelCoverage;
+      if (!c) return '';
+      const skips = [
+        ['missingSignalSession', '信号日缺指数日线'],
+        ['missingEntryBar', '入场日缺行情'], ['missingExitBar', '退出日缺行情'],
+        ['untradableEntry', '入场日无成交'], ['untradableExit', '退出日无成交'],
+        ['corporateEvent', '持有期间有除权除息记录'],
+        ['insufficientHorizon', '已到日历尾部'],
+        ['missingEntryPrice', '缺入场价'], ['missingExitPrice', '缺退出价'], ['nonFiniteReturn', '收益无效'],
+      ].filter(([key]) => c[key] > 0).map(([key, name]) => `${name} ${c[key].toLocaleString('zh-CN')}`);
+      return [`有效标签 ${c.labeledSignals.toLocaleString('zh-CN')} / ${c.eligibleSignals.toLocaleString('zh-CN')}`, ...skips].join(' · ');
+    },
+    evidenceText() {
+      if (this.usesHeldSessions) return '探索性毛收益 · 按指数日线对齐交易日，未验证涨跌停成交与复权，未计交易成本。';
+      if (!this.primaryHorizon || this.primaryHorizon.label === 'same_close_to_close_legacy') {
+        return '旧口径 · 收盘信号按同一收盘价起算，只用于探索。重新分析可使用次日开盘标签。';
+      }
+      return '次日开盘至信号后第 N 个交易日收盘，N=1 时为日内价格表现。';
+    },
     grp() {
       return state.currentAnalysis ? currentGrouping(state.currentAnalysis, state.currentGroupingN) : null;
     },
@@ -183,12 +206,13 @@ export default {
       const r = rep.range || {};
       items.push({label: '分析区间：', value: (r.startYear > 0 && r.endYear > 0) ? `${r.startYear}–${r.endYear}` : '历史报告未记录'});
       items.push({label: '实际有效日期：', value: (rep.firstDataDate && rep.lastDataDate) ? `${rep.firstDataDate}–${rep.lastDataDate}` : '历史报告未记录'});
-      if (rep.window > 0) items.push({label: '未来收益窗口：', value: `${rep.window} 个交易日`});
+      if (rep.window > 0) items.push({label: this.usesHeldSessions ? '持有周期：' : '未来收益窗口：', value: `${rep.window} 个交易日`});
       const gp = rep.grouping || {};
       const g = this.grp;
       const gn = (g && g.groups && g.groups.length) ? g.groups.length : (g ? (g.n || gp.groups || 5) : 5);
       items.push({label: '分组：', value: gp.mode === 'bins' ? '固定区间' : `${gn} 组等频`});
-      const MODE = {all: '全部股票', random: '随机抽样', codes: '指定代码'};
+      const all = rep.protocol?.universe?.mode === 'historical_membership' ? '历史成员股票池' : '沪深主板日线库';
+      const MODE = {all, random: '沪深主板随机抽样', codes: '指定代码'};
       if (r.sampleMode) {
         items.push({label: '样本：', value: (MODE[r.sampleMode] || r.sampleMode) + (r.sampleSize > 0 ? ` · ${r.sampleSize} 只` : '')});
       }
@@ -213,6 +237,7 @@ export default {
     yearRows() {
       const rep = state.currentAnalysis;
       const years = Array.isArray(rep && rep.years) ? rep.years : [];
+      const extended = new Map((this.primaryHorizon?.years || []).map(y => [y.year, y.ic]));
       const DIR = {ascending: '正向', descending: '反向', mixed: '不一致', flat: '无区分', insufficient: '样本不足'};
       return years.map(y => {
         const st = y.stats || {};
@@ -232,7 +257,7 @@ export default {
           cells = [
             {txt: st.mean.toFixed(4), cls: ''},
             {txt: st.std.toFixed(4), cls: ''},
-            {txt: st.tStat.toFixed(2), cls: ''},
+            {txt: this.primaryHorizon ? (extended.get(y.year)?.hacTStat?.toFixed(2) ?? '—') : st.tStat.toFixed(2), cls: ''},
             q1, q5, sp,
           ];
         }
@@ -243,8 +268,13 @@ export default {
     icStats() {
       const rep = state.currentAnalysis;
       if (!rep || !rep.stats) return '';
+      const hac = this.primaryHorizon?.ic;
+      if (hac) {
+        const f = v => v?.toFixed(4) ?? '—';
+        return `有效日 ${hac.pairs} · IC 均值 ${f(hac.mean)} · 标准差 ${f(hac.std)} · Newey–West t 值 ${hac.hacTStat?.toFixed(2) ?? '—'}（滞后 ${hac.hacLag} 个有效日）`;
+      }
       const s = rep.stats;
-      return `有效日 ${s.pairs} · IC 均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · t 值 ${s.tStat.toFixed(2)}`;
+      return `有效日 ${s.pairs} · IC 均值 ${s.mean.toFixed(4)} · 标准差 ${s.std.toFixed(4)} · 朴素 t 值 ${s.tStat.toFixed(2)}`;
     },
     candidateSaveOk() {
       const rep = state.currentAnalysis;
@@ -303,24 +333,29 @@ export default {
       return {startYear: sy, endYear: ey};
     },
     async runAnalysis() {
+      if (this.submittingAnalysis || state.taskRunning) return;
       state.factorMsg = {text: '', ok: true};
       const yr = this.analysisYears();
       if (yr.err) { state.factorMsg = {text: yr.err, ok: false}; return; }
-      const win = +this.factorWindow;
+      const win = +this.holdingSessions;
       if (!Number.isInteger(win) || win < 1 || win > 60) {
-        state.factorMsg = {text: '未来收益窗口无效：应为 1-60 交易日', ok: false}; return;
+        state.factorMsg = {text: '持有周期应为 1 至 60 个交易日', ok: false};
+        this.$refs.holdingSessions.focus();
+        return;
       }
+      this.submittingAnalysis = true;
       try {
         const cfg = buildConfig(); // 复用 02 样本配置
         cfg.startYear = yr.startYear; // 仅覆盖本次请求，不回写 02 回测年份
         cfg.endYear = yr.endYear;
         cfg.kind = this.factorKind;
         cfg.days = +this.factorDays;
-        cfg.window = +this.factorWindow;
+        cfg.holdingSessions = win;
         cfg.grouping = {mode: 'quantile', groups: 5}; // 后端 quantile 始终预算全档
         await Api.analyze(cfg);
         this.startTask('analysis');
       } catch (e) { state.factorMsg = {text: e.message, ok: false}; }
+      finally { this.submittingAnalysis = false; }
     },
     // “添加到策略条件”：只传 kind/days/版本，不猜 min/max；重复添加聚焦原条件
     addFactorToStrategy() {
@@ -441,16 +476,17 @@ export default {
     </select>
     <label class="factor-inline-label" v-show="hasDays" for="factorDays">{{ factorDaysLabel }}</label>
     <input type="number" id="factorDays" v-show="hasDays" :disabled="!hasDays" v-model.number="factorDays" min="1" style="width:80px" aria-describedby="factorParamHelp">
-    <label class="factor-inline-label" for="factorWindow">未来收益窗口</label>
-    <input type="number" v-model.number="factorWindow" min="1" max="60" step="1" style="width:80px" aria-describedby="factorParamHelp">
+    <label class="factor-inline-label" for="factorWindow">持有周期</label>
+    <input type="number" id="factorWindow" ref="holdingSessions" v-model.number="holdingSessions" min="1" max="60" step="1" style="width:80px" aria-describedby="holdingSessionsHelp">
     <label class="factor-inline-label" for="factorStartYear">开始年份</label>
-    <input type="number" v-model.number="factorStartYear" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
+    <input type="number" id="factorStartYear" v-model.number="factorStartYear" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
     <label class="factor-inline-label" for="factorEndYear">结束年份</label>
-    <input type="number" v-model.number="factorEndYear" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
+    <input type="number" id="factorEndYear" v-model.number="factorEndYear" min="2000" step="1" style="width:80px" aria-describedby="factorParamHelp">
   </div>
-  <details class="ui-help"><summary>分析说明</summary><p class="hint factor-control-help" id="factorParamHelp">因子参数决定历史计算区间，未来收益窗口用于评价；分析年份独立于回测设置。</p></details>
+  <p class="hint factor-control-help" id="holdingSessionsHelp">收盘后形成信号，次日开盘入场。持有 1 日按入场后的下一交易日收盘计价。</p>
+  <details class="ui-help"><summary>分析说明</summary><p class="hint factor-control-help" id="factorParamHelp">因子参数决定历史计算区间。分析年份独立于策略回测设置。</p></details>
   <div class="editor-actions">
-    <button class="primary" @click="runAnalysis" :disabled="state.taskRunning" :aria-busy="String(state.taskRunning)">开始分析</button>
+    <button class="primary" @click="runAnalysis" :disabled="submittingAnalysis || state.taskRunning" :aria-busy="String(submittingAnalysis || state.taskRunning)">开始分析</button>
   </div>
   <div class="msg" :class="state.factorMsg.ok ? 'ok' : 'err'" role="status" aria-live="polite">{{ state.factorMsg.text }}</div>
 
@@ -460,13 +496,13 @@ export default {
     <div class="concept-line" id="fcDesc">{{ fcDesc }}</div>
     <div class="concept-line" id="fcParam">{{ fcParam }}</div>
     <div class="concept-line" id="fcExample">{{ fcExample }}</div>
-    <div class="hint">阈值随市场、样本和周期变化，以本次分布与显著性为准。</div>
   </details>
 
   <div v-if="state.currentAnalysis" ref="factorBody">
     <div class="coverage" id="rangeMeta" style="margin:14px 0 0">
       <span v-for="m in rangeMeta" :key="m.label">{{ m.label }}<b>{{ m.value }}</b></span>
     </div>
+    <div class="warnbar" id="factorEvidence">{{ evidenceText }}</div>
     <div class="filters" v-show="groupSwitchVisible" style="padding:10px 13px;margin-top:12px">
       <span v-show="groupCountVisible" style="display:contents">
         <label for="resultGroups" style="align-self:center;margin:0;width:auto">分组数</label>
@@ -498,7 +534,7 @@ export default {
       <div class="year-title" id="groupDetailTitle">分组明细</div>
       <div class="year-wrap" id="groupDetailWrap">
         <table id="groupDetail">
-          <thead><tr><th>组</th><th>因子值范围</th><th>中位数</th><th>均值</th><th>样本占比</th><th>未来收益</th></tr></thead>
+          <thead><tr><th>组</th><th>因子值范围</th><th>中位数</th><th>均值</th><th>样本占比</th><th v-if="usesHeldSessions">标签覆盖</th><th>未来收益</th></tr></thead>
           <tbody>
             <tr v-for="g in detailGroups" :key="g.label">
               <td>{{ g.label }}</td>
@@ -506,6 +542,7 @@ export default {
               <td>{{ g.factorMedian != null ? fmtFactorVal(g.factorMedian, unit) : '无有效样本' }}</td>
               <td>{{ g.factorMean != null ? fmtFactorVal(g.factorMean, unit) : '无有效样本' }}</td>
               <td>{{ g.countPct > 0 ? (g.countPct * 100).toFixed(1) + '%' : '无有效样本' }}</td>
+              <td v-if="usesHeldSessions">{{ g.observations > 0 ? ((g.labeled || 0) / g.observations * 100).toFixed(1) + '%' : '—' }}</td>
               <td :class="g.forwardReturn != null ? (g.forwardReturn * 100 > 0 ? 'pos' : (g.forwardReturn * 100 < 0 ? 'neg' : '')) : 'na'">{{ g.forwardReturn != null ? (g.forwardReturn * 100).toFixed(2) + '%' : '无有效样本' }}</td>
             </tr>
           </tbody>
@@ -515,6 +552,9 @@ export default {
 
     <div class="coverage">
       <span id="covText">{{ covText }}</span>
+      <span v-if="rep.yearCoverage">股票×年份 {{ rep.yearCoverage.completedCodeYears }} / {{ rep.yearCoverage.requestedCodeYears }}</span>
+      <span v-if="rep.signalCoverage">有效因子值 {{ rep.signalCoverage.valid.toLocaleString('zh-CN') }} / {{ rep.signalCoverage.observed.toLocaleString('zh-CN') }}</span>
+      <span v-if="labelCoverageText" id="factorLabelCoverage">{{ labelCoverageText }}</span>
       <details class="stat" v-if="failures.length" style="margin-top:0">
         <summary id="failSummary">失败明细（{{ failures.length }}）</summary>
         <ul id="failList"><li v-for="(f, i) in failures" :key="i">{{ stockLabel(f.code, state.stockNames) }} · {{ f.year }} · {{ f.stage }} · {{ f.message }}</li></ul>
@@ -527,7 +567,7 @@ export default {
       <div class="year-wrap" id="yearWrap">
         <table id="yearStability">
           <thead><tr>
-            <th>年份</th><th>有效日</th><th>IC 均值</th><th>IC 标准差</th><th>t 值</th>
+            <th>年份</th><th>有效日</th><th>IC 均值</th><th>IC 标准差</th><th>{{ primaryHorizon ? 'HAC t 值' : '朴素 t 值' }}</th>
             <th>{{ edgeLabels.first }}</th><th>{{ edgeLabels.last }}</th><th>{{ edgeLabels.spread }}</th><th>方向</th>
           </tr></thead>
           <tbody>
@@ -540,7 +580,7 @@ export default {
           </tbody>
         </table>
       </div>
-      <details class="ui-help"><summary>样本口径</summary><p class="hint" id="yearBias">使用当前沪深主板股票池，缺少退市股票，存在生存者偏差；后上市股票仅参与有数据的年份，缺失项见覆盖明细。</p></details>
+      <details class="ui-help" v-if="rep.range?.sampleMode !== 'codes'"><summary>样本口径</summary><p class="hint" id="yearBias">{{ rep.protocol?.universe?.mode === 'historical_membership' ? '按信号日历史成员关系纳入股票。' : '从沪深主板日线库选样，包含库中保留的退市代码。逐日成员关系与退市覆盖未验证。' }}</p></details>
     </template>
     <div class="empty" v-show="!hasYears" id="yearNA">{{ yearNA }}</div>
 

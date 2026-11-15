@@ -14,6 +14,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/internal/portfolioresearch"
+	"github.com/injoyai/strategy-tail/lib/extend"
 	"github.com/injoyai/strategy-tail/researchdata"
 )
 
@@ -173,6 +174,73 @@ func TestPortfolioExperimentRunCompletes(t *testing.T) {
 	}
 	if rep.Metrics.TradingDays <= 0 || rep.Attribution.NetReturn == 0 {
 		t.Fatalf("报告应含指标与归因: metrics=%+v attribution=%+v", rep.Metrics, rep.Attribution)
+	}
+}
+
+func TestPortfolioExperimentExecutesOnlyTestRange(t *testing.T) {
+	f := newPortfolioRunFixture(t)
+	req := portfolioExperimentRequest(f.model, testUUID1)
+	req.TrainRange = DateRange{"2025-01-01", "2025-01-07"}
+	req.TestRange = DateRange{"2025-01-10", "2025-01-15"}
+	exp, _, err := f.experiments.Create(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.runner.StartPortfolioExperiment(exp.ExperimentID); err != nil {
+		t.Fatal(err)
+	}
+	if st := waitPortfolioDone(t, f.runner); st["state"] != "done" {
+		t.Fatalf("run status: %v", st)
+	}
+	b, err := os.ReadFile(filepath.Join(f.expArtifacts, exp.ExperimentID, "report.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report PortfolioReport
+	if err := json.Unmarshal(b, &report); err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Nav) != 6 || report.Nav[0].Date != req.TestRange.Start || report.Nav[len(report.Nav)-1].Date != req.TestRange.End {
+		t.Fatalf("净值包含测试区间外的数据: %+v", report.Nav)
+	}
+	if report.TrainRange == nil || *report.TrainRange != req.TrainRange ||
+		report.EvaluationRange == nil || *report.EvaluationRange != req.TestRange ||
+		report.BaselineIncrement == nil || *report.BaselineIncrement != 0 {
+		t.Fatalf("报告未冻结训练/测试区间及等权对照: %+v", report)
+	}
+}
+
+func TestPortfolioMarketAppliesOpeningRestrictions(t *testing.T) {
+	day := "2025-01-02"
+	floats := func(a, b float64) map[string]map[string]float64 {
+		return map[string]map[string]float64{day: {"sh600001": a, "sh600002": b}}
+	}
+	data := &portfolioRunData{open: floats(11, 9), close: floats(10.5, 9), stockLast: floats(10, 10),
+		volume: map[string]map[string]int64{day: {"sh600001": 100, "sh600002": 0}}}
+	m := dayMarketFor(data, day)
+	if !m.LimitUp["sh600001"] || !m.LimitDown["sh600002"] || !m.Tradable["sh600001"] || m.Tradable["sh600002"] {
+		t.Fatalf("开盘状态未接入组合执行: %+v", m)
+	}
+}
+
+func TestReadPortfolioBenchmarkRequiresMatchingDates(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
+	bars := accountBars(dates, 100, 101, 103)
+	read := func(code string, start, end time.Time) (extend.Klines, error) {
+		if code != "sh000300" || bars[0].Time.Format(time.DateOnly) < start.Format(time.DateOnly) ||
+			bars[len(bars)-1].Time.Format(time.DateOnly) > end.Format(time.DateOnly) {
+			t.Fatalf("加载指数 %s %v ～ %v", code, start, end)
+		}
+		return bars, nil
+	}
+	spec := portfolioresearch.BenchmarkSpec{ID: "hs300"}
+	b := readPortfolioBenchmark(spec, dates, read)
+	if b == nil || len(b.Days) != len(dates) || b.Days[2].Nav != 103 {
+		t.Fatalf("指数基准未对齐: %+v", b)
+	}
+	bars = bars[1:]
+	if readPortfolioBenchmark(spec, dates, read) != nil {
+		t.Fatal("基准缺首日时不应计算超额指标")
 	}
 }
 

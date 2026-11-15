@@ -13,7 +13,7 @@ type CatalogEntry struct {
 	Category       string `json:"category"`
 	ParameterLabel string `json:"parameterLabel"`
 	DefaultDays    int    `json:"defaultDays"`
-	Unit           string `json:"unit"` // ratio | multiple | score | correlation | percent
+	Unit           string `json:"unit"` // 取值见因子开发指南。
 	Example        string `json:"example"`
 	// ImplementationVersion 因子实现版本：任何改变相同输入下数值输出的
 	// 算法/缺失值/窗口语义变更都必须递增（见设计文档 §4.1）。候选保存与
@@ -510,6 +510,16 @@ var registry = []entry{
 		ParameterLabel:        "无参数（日频历史值）",
 		Unit:                  "percent",
 		Example:               "原始值 3 表示股息率约 3%（数值本身即百分数）。",
+		ImplementationVersion: 1,
+	},
+	{
+		Kind: "turnover_per_price_move", Default: defaultTurnoverPerPriceMoveDays,
+		New:                   func(d int) core.Factor { return 每百分点成交额{Days: d} },
+		Description:           "含当日的近 N 日总成交额除以各日绝对收盘涨跌幅之和，衡量每 1 个百分点价格变动对应的历史成交额。",
+		Category:              "规模与流动性",
+		ParameterLabel:        "统计天数",
+		Unit:                  "yi_yuan_per_pct_point",
+		Example:               "单日成交 2 亿元、较昨收上涨或下跌 4%，原始值为 0.5，即每 1 个百分点对应 5000 万元成交额。",
 		ImplementationVersion: 1,
 	},
 }

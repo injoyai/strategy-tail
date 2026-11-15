@@ -91,6 +91,22 @@ func (r *MarketReader) MembershipUniverse() (researchdata.Universe, error) {
 	return r.mysql.MembershipUniverse()
 }
 
+// CorporateEvents returns known provider ex-dates. These lack publication,
+// dividend payment and share listing timestamps.
+func (r *MarketReader) CorporateEvents(code string) protocol.XRXDs {
+	if r.metadata == nil || r.metadata.Equity == nil {
+		return nil
+	}
+	return r.metadata.Equity.GetXRXDs(code)
+}
+
+func (r *MarketReader) SchemaVersion() string {
+	if r.mysql == nil {
+		return ""
+	}
+	return r.mysql.SchemaVersion()
+}
+
 func (r *MarketReader) DayKlinesAll(code string) (Klines, error) {
 	return r.DayKlines(code, time.Time{}, time.Time{})
 }

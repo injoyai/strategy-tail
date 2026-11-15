@@ -148,6 +148,9 @@ func assembleFactorModel(req CreateFactorModelRequest, input ValidationInput, no
 		if err != nil {
 			return portfolioresearch.FactorModel{}, fmt.Errorf("读取上游验证 %s 失败: %w", vid, err)
 		}
+		if view.Request.Protocol.TestRange != nil && (view.State != ValidationStatePassed || len(view.SupersededBy) > 0) {
+			return portfolioresearch.FactorModel{}, fmt.Errorf("单因子验证 %s 未通过或已被替代", vid)
+		}
 		ref, err := buildValidatedFactorRef(view)
 		if err != nil {
 			return portfolioresearch.FactorModel{}, fmt.Errorf("factorValidations[%d] %s: %w", i, vid, err)
@@ -174,7 +177,7 @@ func assembleFactorModel(req CreateFactorModelRequest, input ValidationInput, no
 		Execution:         req.Execution,
 		Benchmark:         req.Benchmark,
 		EvidenceClass:     ec,
-		CodeVersion:       "v2-task1",
+		CodeVersion:       readBuildVersions().Application,
 		DataSnapshot:      factors[0].DataSnapshot,
 	}, nil
 }
@@ -190,7 +193,11 @@ func buildValidatedFactorRef(view ValidationView) (portfolioresearch.ValidatedFa
 	if vr.ResearchProtocol == nil {
 		return portfolioresearch.ValidatedFactorRef{}, fmt.Errorf("上游验证 %s 缺少研究协议，无法派生方向/数据快照", vr.ID)
 	}
-	direction, err := mapExpectedDirection(vr.ResearchProtocol.Hypothesis.ExpectedDirection)
+	expectedDirection := vr.Protocol.Direction
+	if expectedDirection == "" {
+		expectedDirection = vr.ResearchProtocol.Hypothesis.ExpectedDirection
+	}
+	direction, err := mapExpectedDirection(expectedDirection)
 	if err != nil {
 		return portfolioresearch.ValidatedFactorRef{}, fmt.Errorf("上游验证 %s: %w", vr.ID, err)
 	}

@@ -10,7 +10,7 @@ import { factorTypeName, filterText, sig3 } from '../format.js';
 
 export default {
   name: 'Tab5Candidates',
-  inject: ['switchTab', 'openCandidateEvidence', 'openCandidateEdit'],
+  inject: ['switchTab', 'openCandidateEvidence', 'openCandidateEdit', 'openFactorValidation'],
   setup() {
     return {state};
   },
@@ -130,7 +130,6 @@ export default {
   <div class="cand-toolbar">
     <button class="secondary" @click="toggleArchived" :aria-pressed="String(state.showCandidatesArchived)">{{ archBtnText }}</button>
     <button class="secondary" @click="loadCandidates">刷新</button>
-    <span class="hint" style="margin:0" id="candListHint">样本内证据，未经样本外验证。</span>
   </div>
   <div class="warnbar" v-if="loadErr" id="candLoadErr" role="alert">{{ loadErr }}</div>
   <template v-if="rows.length">
@@ -150,6 +149,7 @@ export default {
             </td>
             <td class="cand-op">
               <button type="button" @click="openCandidateEvidence(r.raw)">证据</button>
+              <button type="button" @click="openFactorValidation(r.raw)">验证</button>
               <button type="button" @click="openCandidateEdit(r.raw)">编辑</button>
               <button type="button" class="join" v-if="r.canJoin" @click="joinCandidateToStrategy(r.raw)">加入策略</button>
               <button type="button" class="arch" v-if="r.status === 'candidate'" @click="changeCandidateStatus(r.raw, 'archived')">归档</button>

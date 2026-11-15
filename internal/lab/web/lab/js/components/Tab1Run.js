@@ -3,7 +3,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { factorTypeName, groupFactors } from '../format.js';
+import { factorTypeName, groupFactors, factorInputUnit } from '../format.js';
 import { buildConfig, ACCOUNT_CONFIG } from '../config.js';
 import Tab1Builder from './Tab1Builder.js';
 
@@ -55,6 +55,7 @@ export default {
     // —— 条件卡 ——
     condEntry(c) { return state.factorCatalog.find(e => e.kind === c.kind); },
     isRatioCond(c) { const e = this.condEntry(c); return !!(e && e.unit === 'ratio'); },
+    boundUnit(c) { return factorInputUnit(this.condEntry(c)?.unit); },
     condLabel(c) { const e = this.condEntry(c); return e ? factorTypeName(e) : c.kind; },
     defaultCond() {
       const e = state.factorCatalog[0];
@@ -283,8 +284,8 @@ export default {
                     :value="c.min" @input="onBoundInput(c, 'min', $event)"
                     :class="{invalid: c.err && c.errField==='min'}"
                     :ref="el => setInputRef(el, i, 'min')"
-                    :aria-label="'条件 ' + (i + 1) + ' 下限' + (isRatioCond(c) ? '（百分比）' : '')">
-                  <span v-if="isRatioCond(c)" class="lbl">%</span>
+                    :aria-label="'条件 ' + (i + 1) + ' 下限' + (boundUnit(c) ? '（' + boundUnit(c) + '）' : '')">
+                  <span v-if="boundUnit(c)" class="lbl">{{ boundUnit(c) }}</span>
                 </template>
                 <template v-if="c.operator!=='gte' && c.operator!=='score_only'">
                   <span class="lbl">上限</span>
@@ -292,8 +293,8 @@ export default {
                     :value="c.max" @input="onBoundInput(c, 'max', $event)"
                     :class="{invalid: c.err && c.errField==='max'}"
                     :ref="el => setInputRef(el, i, 'max')"
-                    :aria-label="'条件 ' + (i + 1) + ' 上限' + (isRatioCond(c) ? '（百分比）' : '')">
-                  <span v-if="isRatioCond(c)" class="lbl">%</span>
+                    :aria-label="'条件 ' + (i + 1) + ' 上限' + (boundUnit(c) ? '（' + boundUnit(c) + '）' : '')">
+                  <span v-if="boundUnit(c)" class="lbl">{{ boundUnit(c) }}</span>
                 </template>
               </div>
               <div class="cond-grid" style="margin-top:8px">

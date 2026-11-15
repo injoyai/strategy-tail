@@ -181,8 +181,8 @@ func (s *ValidationStore) Create(req CreateValidationRequest, deps FreezeDepende
 	if err != nil {
 		return ValidationRequest{}, false, fmt.Errorf("发现期证据读取失败: %w", err)
 	}
-	if evidence == nil {
-		return ValidationRequest{}, false, fmt.Errorf("发现期证据缺失: %s", candidate.Evidence.AnalysisID)
+	if evidence == nil || evidence.Protocol == nil {
+		return ValidationRequest{}, false, fmt.Errorf("发现期报告缺少完整研究协议，请重新分析后保存候选")
 	}
 	trials, err := deps.Trials.ListFamily(evidence.Protocol.Trial.FamilyID)
 	if err != nil {

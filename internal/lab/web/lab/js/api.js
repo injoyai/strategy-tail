@@ -13,6 +13,15 @@ export async function api(method, url, body) {
   return data;
 }
 
+export function requestUUID() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  b[6] = (b[6] & 15) | 64;
+  b[8] = (b[8] & 63) | 128;
+  const hex = Array.from(b, n => n.toString(16).padStart(2, '0')).join('');
+  return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+}
+
 export const Api = {
   stockNames: () => api('GET', '/api/stock-names'),
   stockInfo: (code, asOf = '') => api('GET', '/api/stock-info/' + encodeURIComponent(code) + (asOf ? '?asOf=' + encodeURIComponent(asOf) : '')),
@@ -65,6 +74,11 @@ export const Api = {
   candidate: id => api('GET', '/api/factor-candidates/' + encodeURIComponent(id)),
   createCandidate: req => api('POST', '/api/factor-candidates', req),
   updateCandidate: (id, req) => api('PUT', '/api/factor-candidates/' + encodeURIComponent(id), req),
+  factorValidationInputs: id => api('GET', '/api/factor-candidates/' + encodeURIComponent(id) + '/validation-inputs'),
+  factorValidations: query => api('GET', '/api/factor-validations?' + new URLSearchParams(query)),
+  factorValidation: id => api('GET', '/api/factor-validations/' + encodeURIComponent(id)),
+  createFactorValidation: req => api('POST', '/api/factor-validations', req),
+  runFactorValidation: id => api('POST', '/api/factor-validations/' + encodeURIComponent(id) + '/run'),
   // 组合研究：因子模型
   factorModels: query => api('GET', '/api/factor-models' + (query || '')),
   factorModel: id => api('GET', '/api/factor-models/' + encodeURIComponent(id)),

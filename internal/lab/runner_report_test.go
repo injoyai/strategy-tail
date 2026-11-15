@@ -432,7 +432,7 @@ func TestRunnerUniverseAndProvenance(t *testing.T) {
 
 	// 数据来源快照：版本与复权口径不可得时写 unknown，PIT 恒为 unverified。
 	dp := r2.dataProvenance()
-	if dp.PriceSource != "tdx_local" || dp.PriceVersion != "unknown" || dp.Adjustment != "unknown" {
+	if dp.PriceSource != "mysql_daily_bars" || dp.PriceVersion != "unknown" || dp.Adjustment != "unknown" {
 		t.Fatalf("数据来源快照 = %+v", dp)
 	}
 	if dp.PITState != pitUnverified {

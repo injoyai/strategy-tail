@@ -87,16 +87,17 @@ type Seller interface {
 
 ### Docker 部署策略实验室
 
-策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（需已安装 Docker、Python 3，且 `docker` 在 PATH 中）：
+策略实验室除 `go run ./cmd/lab` 本地直跑外，可通过 Docker 部署（需要 Docker、Python 3 和 Git）：
 
 macOS / Linux：
 
 ```bash
-./deploy.sh
+./deploy.sh --verify
 ```
 
 - `deploy.sh` 在构建前和切换前检查 `/api/status`。回测运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，保留原数据挂载。新容器通过组件接口及 `/api/market-data/status` 的 MySQL 读取检查后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
+- `--verify` 在构建前运行 Go 测试、`go vet`、前端单测和部署替身回归，需要本机有 Go 和 Node.js。`./deploy.sh` 可直接构建。构建记录 Lab 和同级 TDX 的提交号及工作区修改标记，容器以本次构建的镜像 ID 启动。
 - Docker 默认映射宿主机 `80` 到容器 `8765`，本机访问 `http://localhost/`；可用 `PORT=8765 ./deploy.sh` 指定其他宿主机端口。本地 `go run ./cmd/lab` 仍默认使用 8765。
 - `./data`、`./output` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
@@ -175,6 +176,8 @@ go vet ./internal/lab/...
 
 
 ## 多变体研究执行
+
+在“候选因子”打开“验证”，选定方向、独立测试区间和验收门槛后冻结。测试区间结束且行情已覆盖后可运行。通过的因子直接出现在“组合研究”的模型输入列表。详见[因子研究与回测搭建](docs/guides/research-and-backtest-concepts.md)。
 
 临时策略验证使用项目已配置的只读行情、独立临时目录和统一报告格式。调用示例见[临时策略回测指南](docs/guides/ad-hoc-backtest.md)。
 

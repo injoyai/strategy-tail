@@ -20,11 +20,14 @@ pull:
 | `<地区>_<资产>_kline_day` | `code, time, open, high, low, close, volume, amount`，按 `(code, time)` 排序，`time` 为 `DATE`。例如 `cn_stock_kline_day`、`cn_index_kline_day`。 |
 | `<地区>_<资产>_kline_minute_<年份>` | 日线字段和 `source`，`time` 为 `DATETIME`。按源年份分表，例如 `cn_stock_kline_minute_2026`。 |
 | `codes` | `exchange, code, name, multiple, decimal, last_price`。缺少代码目录时，选股使用库存日线的股票代码。 |
-| `gbbq` | `id, code, time, category, c1, c2, c3, c4`。策略按交易日匹配股本事件并计算换手率。 |
+| `gbbq` | `id, code, time, category, c1, c2, c3, c4`。策略按交易日匹配股本事件并计算换手率。新因子分析和对应验证使用第 1 类记录识别持有区间的已知除权除息日。 |
+| `kline_schema` | 读取上游已就绪的 `market-v1` 布局标识。行情修订需要独立版本。 |
 
 日线、分钟线的时间与单位见 [源时间与策略口径](source-time-storage.md)。代码目录、股本事件和历史成员在打开读取器时载入。选股在交易时间默认每分钟查询一次 MySQL，把当日已入库的分钟线汇总成盘中 K 线，信号时间取该股票最新入库分钟。盘中新鲜度取决于外部项目的写入频率。
 
 ## 研究数据
+
+有起始日的日线读取返回请求区间和起点前最后一根，用前一根延续昨收。以 2024 年日线验证 5,920 个库存股票代码，两种查询的区间内 OHLC、成交量、成交额和昨收逐股一致。读取行数由 16,001,558 降到 1,301,033，8 并发探针的读取及校验耗时由 4.11 秒降至 1.34–1.35 秒，采样堆内存增量峰值由 7.23 MiB 降至 1.79–2.27 MiB。
 
 下列两张表由数据维护方按研究需求提供。行情回测可单独运行。
 
@@ -34,5 +37,7 @@ pull:
 | `universe_members` | 每个代码一行，包含 `code, listed_at, delisted_at, available_at`。上市和退市日期使用 `DATE`，仍在市时 `delisted_at` 为 `NULL`。`available_at` 是记录可知时间，使用正数 Unix 纳秒 `BIGINT`。缺表或空表时使用 MySQL 股票日线覆盖集合，成员历史标记为 `unverified`。 |
 
 `research_records` 只返回 `event_at` 和 `available_at` 都不晚于信号时点的记录。历史成员按上市到退市的日期闭区间判断，`available_at` 保留来源时间，成员关系在缺少经过验证的版本历史时标记为 `unverified`。
+
+组合行业约束使用 `industry.daily` 的文本属性 `industry`，中性化可使用模型指定的行业和市值数据集，市值记录须提供数值 `log_float_cap`。字段按信号日收盘查询。缺行业的归因贡献显示为 `unknown`，启用中性化且数据不足时任务报告缺口。
 
 SQLite 的 `data/database/trade.db` 保存选股生成的买卖点。Lab 的策略、练习和报告使用本地持久状态。

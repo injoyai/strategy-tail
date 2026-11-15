@@ -2,7 +2,7 @@
 // 迁移自 index.html openPfExperimentDlg/createPfExperiment。
 // 由根组件 provide openPfExpDlg(model) 打开；保存成功后置 pfExpDirty 通知 06 页刷新。
 import { state } from '../store.js';
-import { Api } from '../api.js';
+import { Api, requestUUID } from '../api.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
@@ -13,6 +13,10 @@ export default {
       model: null, // 目标模型（含 revision/hash/evidenceClass）
       studyStart: '',
       studyEnd: '',
+      trainStart: '',
+      trainEnd: '',
+      testStart: '',
+      testEnd: '',
       variantName: '主基线',
       variantSource: 'baseline',
       trialCounted: true,
@@ -21,10 +25,17 @@ export default {
       saving: false,
     };
   },
+  computed: {
+    needsTraining() { return this.model?.combination?.method === 'rolling_ic_weight'; },
+  },
   watch: {
     // 表单输入变化 → 重置幂等 requestId（同一次动作网络失败重试复用）
     studyStart() { state.pfExpRequestId = null; },
     studyEnd() { state.pfExpRequestId = null; },
+    trainStart() { state.pfExpRequestId = null; },
+    trainEnd() { state.pfExpRequestId = null; },
+    testStart() { state.pfExpRequestId = null; },
+    testEnd() { state.pfExpRequestId = null; },
     variantName() { state.pfExpRequestId = null; },
     variantSource() { state.pfExpRequestId = null; },
     trialCounted() { state.pfExpRequestId = null; },
@@ -36,6 +47,7 @@ export default {
       const m = model;
       if (!m || !m.modelId) return;
       this.model = m;
+      this.trainStart = this.trainEnd = this.testStart = this.testEnd = '';
       this.variantName = '主基线';
       this.variantSource = 'baseline';
       this.trialCounted = true;
@@ -49,15 +61,30 @@ export default {
     },
     async createExperiment() {
       const m = this.model;
-      if (!m) return;
+      if (!m || this.saving) return;
       const start = this.studyStart, end = this.studyEnd;
       if (!start || !end) { this.msg = {text: '请填写研究区间起止日期（YYYY-MM-DD）', ok: false}; return; }
       if (start > end) { this.msg = {text: '研究区间起始晚于结束', ok: false}; return; }
+      const train = this.needsTraining ? {start: this.trainStart, end: this.trainEnd} : {};
+      const test = {start: this.testStart, end: this.testEnd};
+      const checkRange = (range, label, field) => {
+        if (range.start && range.end && range.start <= range.end && range.start >= start && range.end <= end) return true;
+        this.msg = {text: `请填写研究区间内有效的${label}起止日期`, ok: false};
+        this.$refs[field]?.focus();
+        return false;
+      };
+      if (this.needsTraining && !checkRange(train, '训练区间', 'trainStart')) return;
+      if ((this.needsTraining || test.start || test.end) && !checkRange(test, '测试区间', 'testStart')) return;
+      if (this.needsTraining && train.end >= test.start) {
+        this.msg = {text: '训练结束日须早于测试开始日', ok: false};
+        this.$refs.testStart?.focus();
+        return;
+      }
       const name = this.variantName.trim();
       if (!name) { this.msg = {text: '请填写变体名', ok: false}; return; }
       const reason = this.countReason.trim();
       if (!reason) { this.msg = {text: '请填写计数理由', ok: false}; return; }
-      if (!state.pfExpRequestId) state.pfExpRequestId = crypto.randomUUID();
+      if (!state.pfExpRequestId) state.pfExpRequestId = requestUUID();
       const body = {
         requestId: state.pfExpRequestId,
         familyId: 'fam_' + m.modelId,
@@ -65,7 +92,7 @@ export default {
         modelRevision: m.revision,
         modelHash: m.modelHash,
         studyRange: {start, end},
-        trainRange: {}, testRange: {},
+        trainRange: train, testRange: test,
         variant: {name, desc: ''},
         variantSource: this.variantSource,
         dataSnapshot: m.dataSnapshot || {},
@@ -100,6 +127,12 @@ export default {
     <div class="cf-row"><label for="pfExpModelRef">模型</label><span id="pfExpModelRef" style="font-size:12px;color:var(--ink2)">{{ model ? model.modelId + '（revision v' + model.revision + '）' : '—' }}</span></div>
     <div class="cf-row"><label for="pfStudyStart">研究区间起</label><input type="date" id="pfStudyStart" ref="studyStart" v-model="studyStart" aria-describedby="pfExpNote"></div>
     <div class="cf-row"><label for="pfStudyEnd">研究区间止</label><input type="date" id="pfStudyEnd" v-model="studyEnd" aria-describedby="pfExpNote"></div>
+    <template v-if="needsTraining">
+      <div class="cf-row"><label for="pfTrainStart">训练区间起</label><input type="date" id="pfTrainStart" ref="trainStart" v-model="trainStart" :min="studyStart" :max="studyEnd" aria-describedby="pfExpNote" required></div>
+      <div class="cf-row"><label for="pfTrainEnd">训练区间止</label><input type="date" id="pfTrainEnd" v-model="trainEnd" :min="trainStart || studyStart" :max="studyEnd" aria-describedby="pfExpNote" required></div>
+    </template>
+    <div class="cf-row"><label for="pfTestStart">测试区间起</label><input type="date" id="pfTestStart" ref="testStart" v-model="testStart" :min="studyStart" :max="studyEnd" aria-describedby="pfExpNote" :required="needsTraining"></div>
+    <div class="cf-row"><label for="pfTestEnd">测试区间止</label><input type="date" id="pfTestEnd" v-model="testEnd" :min="testStart || studyStart" :max="studyEnd" aria-describedby="pfExpNote" :required="needsTraining"></div>
     <div class="cf-row"><label for="pfVariantName">变体名</label><input type="text" id="pfVariantName" v-model="variantName" maxlength="80" placeholder="如 主基线"></div>
     <div class="cf-row"><label for="pfVariantSource">变体来源</label>
       <select id="pfVariantSource" v-model="variantSource">
@@ -109,7 +142,7 @@ export default {
       </select></div>
     <div class="cf-row"><label for="pfTrialCounted">计入试验次数</label><input type="checkbox" id="pfTrialCounted" v-model="trialCounted"></div>
     <div class="cf-row"><label for="pfCountReason">计数理由</label><textarea class="resize-none" id="pfCountReason" v-model="countReason" maxlength="500" placeholder="说明计入/不计入试验次数的理由"></textarea></div>
-    <div class="hint" id="pfExpNote" style="margin:4px 0 10px">创建后在运行列表中启动。</div>
+    <div class="hint" id="pfExpNote" style="margin:4px 0 10px">{{ needsTraining ? '训练区间须早于测试区间。净值只在测试区间统计。' : '等权模型可选填测试区间。留空时，报告覆盖全研究区间。' }} 创建后在运行列表中启动。</div>
     <div class="cf-row">
       <div class="cf-actions">
         <button type="button" class="primary" @click="createExperiment" :disabled="saving" :aria-busy="String(saving)">创建实验</button>

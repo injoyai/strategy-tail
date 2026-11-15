@@ -114,6 +114,16 @@ func boundedQuery(query string, code model.Code, start, end string) (string, []a
 }
 
 func (r *MySQLReader) QueryDay(code model.Code, start, end string) ([]*model.KlineDay, error) {
+	return r.queryDay(code, start, end, false)
+}
+
+// QueryDayWithPrevious reads the requested bars and at most one preceding bar
+// in a single database snapshot. Both branches use the (code, time) key.
+func (r *MySQLReader) QueryDayWithPrevious(code model.Code, start, end string) ([]*model.KlineDay, error) {
+	return r.queryDay(code, start, end, true)
+}
+
+func (r *MySQLReader) queryDay(code model.Code, start, end string, previous bool) ([]*model.KlineDay, error) {
 	if err := timeRange(start, end, time.DateOnly); err != nil {
 		return nil, err
 	}
@@ -121,7 +131,12 @@ func (r *MySQLReader) QueryDay(code model.Code, start, end string) ([]*model.Kli
 	if err != nil {
 		return nil, err
 	}
-	query, args := boundedQuery("SELECT DATE_FORMAT(`time`,'%Y-%m-%d'),`open`,`high`,`low`,`close`,`volume`,`amount` FROM `"+table+"` WHERE `code`=?", code, start, end)
+	selectDay := "SELECT DATE_FORMAT(`time`,'%Y-%m-%d') AS `date`,`open`,`high`,`low`,`close`,`volume`,`amount` FROM `" + table + "` WHERE `code`=?"
+	query, args := boundedQuery(selectDay, code, start, end)
+	if previous && start != "" {
+		query = "(" + selectDay + " AND `time`<? ORDER BY `time` DESC LIMIT 1) UNION ALL (" + query + ") ORDER BY `date`"
+		args = append([]any{code.Code, start}, args...)
+	}
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("查询日线: %w", err)

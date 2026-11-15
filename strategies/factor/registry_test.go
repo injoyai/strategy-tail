@@ -17,7 +17,7 @@ var wantKinds = [...]string{
 	"macd_negative_shrinking_streak", "macd_same_sign_reversals", "macd_same_sign_max_change",
 	"downside_vol", "return_skew", "parkinson_vol",
 	"turnover_mean", "turnover_pct", "volume_cv", "volume_up_ratio", "volume_down_ratio",
-	"range_ratio", "bar_center", "dividend_yield",
+	"range_ratio", "bar_center", "dividend_yield", "turnover_per_price_move",
 }
 
 func TestAll(t *testing.T) {
@@ -63,6 +63,7 @@ func TestRegistryMetadata(t *testing.T) {
 	}
 	wantUnit := map[string]bool{
 		"ratio": true, "multiple": true, "score": true, "correlation": true, "percent": true,
+		"yi_yuan_per_pct_point": true,
 	}
 	for _, e := range All() {
 		if !wantCategory[e.Category] {
@@ -75,7 +76,7 @@ func TestRegistryMetadata(t *testing.T) {
 			t.Fatalf("%s: defaultDays = %d, 应为正", e.Kind, e.DefaultDays)
 		}
 		if !wantUnit[e.Unit] {
-			t.Fatalf("%s: unit %q 非法（ratio|multiple|score|correlation|percent）", e.Kind, e.Unit)
+			t.Fatalf("%s: unit %q 不在约定单位内", e.Kind, e.Unit)
 		}
 		if e.Example == "" || !strings.ContainsAny(e.Example, "0123456789") {
 			t.Fatalf("%s: example 未解释原始值: %q", e.Kind, e.Example)

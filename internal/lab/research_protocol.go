@@ -50,6 +50,7 @@ const (
 
 	// LabelSpec.Kind
 	labelKindNextOpenToClose        = "next_open_to_close"         // 次日开盘进、第 h 日收盘出
+	labelKindNextOpenHeldSessions   = "next_open_held_sessions"    // 次日开盘进，再过 h 个市场交易日收盘出
 	labelKindSameCloseToCloseLegacy = "same_close_to_close_legacy" // 旧同收盘标签：上限 exploratory
 
 	// DiagnosticSpec.HACLagMode
@@ -120,6 +121,7 @@ type DataProvenance struct {
 	ResearchDataView string `json:"researchDataView"`
 	PITState         string `json:"pitState"`
 	SnapshotAt       string `json:"snapshotAt,omitempty"`
+	SchemaVersion    string `json:"schemaVersion,omitempty"`
 }
 
 // SignalSpec 信号形成声明：v1 仅 daily + close。
@@ -214,7 +216,7 @@ func (p ResearchProtocol) Validate() error {
 	}
 
 	switch p.Labels.Kind {
-	case labelKindNextOpenToClose, labelKindSameCloseToCloseLegacy:
+	case labelKindNextOpenToClose, labelKindNextOpenHeldSessions, labelKindSameCloseToCloseLegacy:
 	default:
 		return fmt.Errorf("标签类型非法: %q", p.Labels.Kind)
 	}
@@ -336,6 +338,7 @@ func protocolHash(p ResearchProtocol) (string, error) {
 // 时为 retrospective（历史回放）；prospective 只属于验证层。
 func deriveEvidenceClass(p ResearchProtocol) string {
 	if p.Universe.Mode == universeCurrentStatic ||
+		p.Labels.Kind == labelKindNextOpenHeldSessions || // 日线参考价未验证涨跌停、排队及实际成交
 		p.Labels.Kind == labelKindSameCloseToCloseLegacy ||
 		p.Data.PITState != pitVerified ||
 		p.Data.Adjustment == adjustmentUnknown {

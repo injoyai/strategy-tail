@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/injoyai/tdx/v2/protocol"
 )
 
 // factor_validation.go 冻结验证领域层（设计 §11，计划 Task 7 Step 1/2）。
@@ -101,7 +103,7 @@ type WalkForwardSpec struct {
 }
 
 // validate 窗口规格合法性：训练/测试/步长 1~10 年（资源保护上限），
-// PurgeDays 0~60（与标签周期同界）；purgeDays >= max Horizon 由
+// PurgeDays 0~61（最长退出偏移）；最小隔离天数由
 // freezeValidation 结合发现期协议校验。
 func (w WalkForwardSpec) validate() error {
 	for name, v := range map[string]int{
@@ -113,8 +115,8 @@ func (w WalkForwardSpec) validate() error {
 			return fmt.Errorf("%s 无效: %d（应为 1-10 年）", name, v)
 		}
 	}
-	if w.PurgeDays < 0 || w.PurgeDays > 60 {
-		return fmt.Errorf("purgeDays 无效: %d（应为 0-60）", w.PurgeDays)
+	if w.PurgeDays < 0 || w.PurgeDays > 61 {
+		return fmt.Errorf("purgeDays 无效: %d（应为 0-61）", w.PurgeDays)
 	}
 	return nil
 }
@@ -184,14 +186,17 @@ func (p ValidationPolicy) validate() error {
 // ValidationProtocol 冻结的验证协议（设计 §11.1）：候选 revision、发现期
 // 分析与 trial 清单、滚动窗口与验收政策的完整声明，冻结后不可修改。
 type ValidationProtocol struct {
-	SchemaVersion        int              `json:"schemaVersion"`
-	EvidenceClass        string           `json:"evidenceClass"` // retrospective | prospective
-	CandidateID          string           `json:"candidateId"`
-	CandidateRevision    int              `json:"candidateRevision"`
-	DiscoveryAnalysisIDs []string         `json:"discoveryAnalysisIds"`
-	TrialIDs             []string         `json:"trialIds"`
-	Windows              WalkForwardSpec  `json:"windows"`
-	Policy               ValidationPolicy `json:"policy"`
+	SchemaVersion          int              `json:"schemaVersion"`
+	EvidenceClass          string           `json:"evidenceClass"` // retrospective | prospective
+	CandidateID            string           `json:"candidateId"`
+	CandidateRevision      int              `json:"candidateRevision"`
+	DiscoveryAnalysisIDs   []string         `json:"discoveryAnalysisIds"`
+	TrialIDs               []string         `json:"trialIds"`
+	Windows                WalkForwardSpec  `json:"windows"`
+	Policy                 ValidationPolicy `json:"policy"`
+	TestRange              *DateRange       `json:"testRange,omitempty"`
+	Direction              string           `json:"direction,omitempty"`
+	DiscoverySignalThrough string           `json:"discoverySignalThrough,omitempty"`
 }
 
 // Validate 验证协议合法性：schema 版本、受限 ID、清单非空、窗口与政策
@@ -233,6 +238,22 @@ func (p ValidationProtocol) Validate() error {
 	if err := p.Policy.validate(); err != nil {
 		return err
 	}
+	return validateFactorTestPlan(p.TestRange, p.Direction, p.Windows)
+}
+
+func validateFactorTestPlan(test *DateRange, direction string, windows WalkForwardSpec) error {
+	if test == nil && direction == "" {
+		return nil // Legacy frozen requests did not store explicit test dates.
+	}
+	if test == nil || test.Start < portfolioMinDate || test.End > portfolioMaxDate || test.validate() != nil {
+		return fmt.Errorf("测试区间需要有效的起止日期")
+	}
+	if direction != labelDirectionPositive && direction != labelDirectionNegative {
+		return fmt.Errorf("请选择预期正向或负向")
+	}
+	if windows.StepYears < windows.TestYears {
+		return fmt.Errorf("测试窗不可重叠，步长必须大于或等于测试年数")
+	}
 	return nil
 }
 
@@ -247,6 +268,8 @@ type CreateValidationRequest struct {
 	TrialIDs             []string         `json:"trialIds"`
 	Windows              WalkForwardSpec  `json:"windows"`
 	Policy               ValidationPolicy `json:"policy"`
+	TestRange            *DateRange       `json:"testRange,omitempty"`
+	Direction            string           `json:"direction,omitempty"`
 	// Supersedes 被替换的旧验证 ID（可选）：旧记录保留并由此派生
 	// supersededBy 标记，不删除、不改写。
 	Supersedes string `json:"supersedes,omitempty"`
@@ -287,7 +310,7 @@ func normalizeCreateValidationRequest(req CreateValidationRequest) (CreateValida
 	if err := req.Policy.validate(); err != nil {
 		return req, err
 	}
-	return req, nil
+	return req, validateFactorTestPlan(req.TestRange, req.Direction, req.Windows)
 }
 
 // normalizeIDList 受限 ID 列表规范化：非空、逐项校验、拒绝重复，排序后
@@ -324,8 +347,10 @@ func createValidationRequestHash(req CreateValidationRequest) (string, error) {
 		Windows              WalkForwardSpec  `json:"windows"`
 		Policy               ValidationPolicy `json:"policy"`
 		Supersedes           string           `json:"supersedes"`
+		TestRange            *DateRange       `json:"testRange,omitempty"`
+		Direction            string           `json:"direction,omitempty"`
 	}{req.CandidateID, req.CandidateRevision, req.EvidenceClass, req.DiscoveryAnalysisIDs,
-		req.TrialIDs, req.Windows, req.Policy, req.Supersedes}
+		req.TrialIDs, req.Windows, req.Policy, req.Supersedes, req.TestRange, req.Direction}
 	buf, err := json.Marshal(canon)
 	if err != nil {
 		return "", err
@@ -407,7 +432,9 @@ type ValidationWindowHorizon struct {
 	HACTStat  *float64 `json:"hacTStat,omitempty"`
 	Coverage  float64  `json:"coverage"`
 	// Spread 高低组收益差（Q_high − Q_low；分组方向以冻结预期方向为准）。
-	Spread *float64 `json:"spread,omitempty"`
+	Spread        *float64       `json:"spread,omitempty"`
+	TopExcess     *float64       `json:"topExcess,omitempty"` // 预期方向头部组减同截面等权标签收益。
+	LabelCoverage *LabelCoverage `json:"labelCoverage,omitempty"`
 }
 
 // ValidationWindowReport 单个测试窗口报告（Task 8 引擎写入 windows/NNNN.json）。
@@ -427,7 +454,10 @@ type ValidationWindowReport struct {
 	State   ValidationWindowState `json:"state"`
 	Message string                `json:"message,omitempty"`
 	// Observations 窗口内有效观察日数（观察日加权聚合与等权披露的权重）。
-	Observations int `json:"observations"`
+	Observations     int `json:"observations"`
+	ObservedSignals  int `json:"observedSignals,omitempty"`
+	ValidSignals     int `json:"validSignals,omitempty"`
+	MissingCodeYears int `json:"missingCodeYears,omitempty"`
 	// Horizons 各周期统计（升序，与冻结协议发现期 Horizons 一致）。
 	Horizons []ValidationWindowHorizon `json:"horizons"`
 }
@@ -482,7 +512,8 @@ type FactorValidationReport struct {
 	// Aggregate 聚合披露（error 状态可为 nil——执行异常不生成统计结论）。
 	Aggregate *ValidationAggregate `json:"aggregate,omitempty"`
 	// Message 结论说明（尤其 insufficient/error 的原因）。
-	Message string `json:"message,omitempty"`
+	Message string     `json:"message,omitempty"`
+	Inputs  *RunInputs `json:"inputs,omitempty"`
 }
 
 // validate 基本合法性：schema、ID、终态白名单、Verdict 与 State 一致、
@@ -642,13 +673,32 @@ func freezeValidation(
 			maxHorizon = h
 		}
 	}
+	if evidence.Protocol.Labels.Kind == labelKindNextOpenHeldSessions {
+		maxHorizon++
+	}
 	if norm.Windows.PurgeDays < maxHorizon {
-		return ValidationRequest{}, fmt.Errorf("purgeDays(%d) 必须覆盖最大收益周期(%d)", norm.Windows.PurgeDays, maxHorizon)
+		return ValidationRequest{}, fmt.Errorf("purgeDays(%d) 必须覆盖信号到退出的最大交易日偏移(%d)", norm.Windows.PurgeDays, maxHorizon)
 	}
 
 	// 7. 证据等级与冻结时间关系。
 	if err := validateFreezeEvidenceClass(norm.EvidenceClass, evidence, now); err != nil {
 		return ValidationRequest{}, err
+	}
+	discoveryThrough := ""
+	if norm.TestRange != nil {
+		discoveryThrough = latestDiscoverySignal(evidence)
+		if discoveryThrough == "" || norm.TestRange.Start <= discoveryThrough {
+			return ValidationRequest{}, fmt.Errorf("测试开始必须晚于发现期最后有效信号日")
+		}
+		if evidence.Protocol.Labels.Kind != labelKindNextOpenHeldSessions {
+			return ValidationRequest{}, fmt.Errorf("请用次日开盘、按交易日持有的标签重新分析后再冻结验证")
+		}
+		if norm.EvidenceClass == validationEvidenceProspective && norm.TestRange.Start <= now.In(protocol.Location()).Format(time.DateOnly) {
+			return ValidationRequest{}, fmt.Errorf("前瞻测试开始必须晚于冻结日")
+		}
+		if norm.EvidenceClass == validationEvidenceRetrospective && norm.TestRange.End >= now.In(protocol.Location()).Format(time.DateOnly) {
+			return ValidationRequest{}, fmt.Errorf("历史验证测试结束日必须早于冻结日")
+		}
 	}
 
 	protocolHashValue, err := protocolHash(*evidence.Protocol)
@@ -657,14 +707,17 @@ func freezeValidation(
 	}
 
 	protocol := ValidationProtocol{
-		SchemaVersion:        validationSchemaVersion,
-		EvidenceClass:        norm.EvidenceClass,
-		CandidateID:          norm.CandidateID,
-		CandidateRevision:    norm.CandidateRevision,
-		DiscoveryAnalysisIDs: append([]string(nil), norm.DiscoveryAnalysisIDs...),
-		TrialIDs:             append([]string(nil), norm.TrialIDs...),
-		Windows:              norm.Windows,
-		Policy:               norm.Policy,
+		SchemaVersion:          validationSchemaVersion,
+		EvidenceClass:          norm.EvidenceClass,
+		CandidateID:            norm.CandidateID,
+		CandidateRevision:      norm.CandidateRevision,
+		DiscoveryAnalysisIDs:   append([]string(nil), norm.DiscoveryAnalysisIDs...),
+		TrialIDs:               append([]string(nil), norm.TrialIDs...),
+		Windows:                norm.Windows,
+		Policy:                 norm.Policy,
+		TestRange:              norm.TestRange,
+		Direction:              norm.Direction,
+		DiscoverySignalThrough: discoveryThrough,
 	}
 	if err := protocol.Validate(); err != nil {
 		return ValidationRequest{}, err
@@ -685,6 +738,16 @@ func freezeValidation(
 		CreateRequestHash:    mustCreateValidationRequestHash(norm),
 		Supersedes:           norm.Supersedes,
 	}, nil
+}
+
+func latestDiscoverySignal(evidence AnalysisReport) string {
+	last := evidence.LastDataDate
+	for _, series := range evidence.HorizonDaily {
+		for _, day := range series {
+			last = max(last, day.Date)
+		}
+	}
+	return last
 }
 
 // mustCreateValidationRequestHash 规范化请求 hash（norm 已通过校验，marshal

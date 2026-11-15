@@ -500,11 +500,21 @@ func renderAnalysisHTMLV4(rep *AnalysisReport) []byte {
 	stats := make([][]string, 0, len(rep.HorizonAnalyses))
 	series := make([]map[string]any, 0, len(rep.HorizonAnalyses))
 	for _, ha := range rep.HorizonAnalyses {
+		label := ha.Label
+		switch ha.Label {
+		case labelKindNextOpenHeldSessions:
+			label = "次日开盘，持有 N 个交易日后收盘"
+		case labelKindNextOpenToClose:
+			label = "次日开盘至信号后第 N 日收盘"
+		case labelKindSameCloseToCloseLegacy:
+			label = "旧口径，同一收盘价起算"
+		}
 		stats = append(stats, []string{
-			fmt.Sprintf("%d", ha.Horizon), ha.Label,
+			fmt.Sprintf("%d", ha.Horizon), label,
 			fcell(ha.IC.Mean), fcell(ha.IC.Std),
-			fcell(ha.IC.NaiveTStat), fcell(ha.IC.HACTStat),
+			fcell(ha.IC.NaiveTStat), fcell(ha.IC.HACTStat), fmt.Sprintf("%d", ha.IC.HACLag),
 			fmt.Sprintf("%d", ha.IC.Pairs),
+			fmt.Sprintf("%d / %d", ha.LabelCoverage.LabeledSignals, ha.LabelCoverage.EligibleSignals),
 		})
 		data := make([]*float64, len(days))
 		if m, ok := perH[ha.Horizon]; ok {
@@ -541,8 +551,12 @@ func renderAnalysisHTMLV4(rep *AnalysisReport) []byte {
 	if hashShort == "" {
 		hashShort = "-"
 	}
+	note := ""
+	if rep.Protocol != nil && rep.Protocol.Labels.Kind == labelKindNextOpenHeldSessions {
+		note = "<p>按上证指数日线对齐沪深交易日。收益按日线参考价格计算，未验证涨跌停成交、复权与公司行为，未计交易成本。</p>"
+	}
 	return []byte(fmt.Sprintf(analysisHTMLV4, rep.FactorName, rep.FactorName,
-		strings.Join(hstr, "/"), evidence, hashShort, statsJSON, dayJSON, seriesJSON))
+		strings.Join(hstr, "/"), evidence, hashShort, note, statsJSON, dayJSON, seriesJSON))
 }
 
 // sortedHorizonDailyKeys 返回 HorizonDaily 键的升序切片。
@@ -575,10 +589,11 @@ const analysisHTMLV4 = `<!DOCTYPE html>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-<h2>%s · 多周期 IC（未来 %s 个交易日）</h2>
+<h2>%s · IC（周期 %s 个交易日）</h2>
 <p>证据等级 %s · 协议 %s</p>
+%s
 <table border="1" cellspacing="0" cellpadding="4">
-<thead><tr><th>周期(日)</th><th>标签</th><th>IC 均值</th><th>标准差</th><th>naive t</th><th>HAC t</th><th>有效样本(日)</th></tr></thead>
+<thead><tr><th>周期(日)</th><th>标签</th><th>IC 均值</th><th>标准差</th><th>朴素 t</th><th>HAC t</th><th>HAC 滞后（日）</th><th>有效 IC 日</th><th>标签覆盖</th></tr></thead>
 <tbody id="stats"></tbody>
 </table>
 <div id="chart" style="width:100%%;height:420px"></div>

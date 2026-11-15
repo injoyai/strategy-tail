@@ -3,7 +3,8 @@
 // 等频默认“仅保存观察结果”且阈值为空，不自动读取分组边界；bins 只展示断点建议。
 // 一次保存动作固定 requestId：网络失败重试复用，服务端拒绝时保留输入。
 import { state } from '../store.js';
-import { Api } from '../api.js';
+import { Api, requestUUID } from '../api.js';
+import { factorInputUnit } from '../format.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
@@ -27,8 +28,9 @@ export default {
       return rep && rep.factor ? rep.factor.unit : '';
     },
     rangeUnit() {
-      return this.unit === 'ratio'
-        ? '按百分比填写（5 = 5%），提交转原始比例' : '填写因子原始值';
+      if (this.unit === 'ratio') return '按百分比填写（5 = 5%），提交转原始比例';
+      const unit = factorInputUnit(this.unit);
+      return unit ? `填写因子原始值（${unit}）` : '填写因子原始值';
     },
     useHint() {
       const rep = state.currentAnalysis;
@@ -97,7 +99,7 @@ export default {
         if (op !== 'lte') use.filter.min = min;
         if (op !== 'gte') use.filter.max = max;
       }
-      if (!state.candidateRequestId) state.candidateRequestId = crypto.randomUUID();
+      if (!state.candidateRequestId) state.candidateRequestId = requestUUID();
       const body = {requestId: state.candidateRequestId, analysisId: rep.analysisId, name, use,
         notes: this.notes.trim()};
       this.saving = true;

@@ -1,6 +1,7 @@
 package marketstore
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -8,6 +9,17 @@ import (
 	"github.com/injoyai/strategy-tail/researchdata"
 	"github.com/injoyai/tdx/v2/protocol"
 )
+
+// SchemaVersion identifies the storage layout. It does not version the rows.
+func (r *MySQLReader) SchemaVersion() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	var version string
+	if err := r.db.QueryRowContext(ctx, "SELECT version FROM kline_schema WHERE version='market-v1' AND ready=1").Scan(&version); err != nil {
+		return ""
+	}
+	return version
+}
 
 func (r *MySQLReader) ResearchView() (researchdata.View, error) {
 	var exists bool

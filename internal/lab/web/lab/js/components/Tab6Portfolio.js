@@ -5,7 +5,7 @@
 // 归因/指标/窗口/门禁等无按钮区使用 v-html（内部已 esc），状态行与操作按钮用模板渲染。
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
-import { Api } from '../api.js';
+import { Api, requestUUID } from '../api.js';
 import { stockLabel, esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 
@@ -20,10 +20,11 @@ export default {
   name: 'Tab6Portfolio',
   inject: ['switchTab', 'startTask', 'openPfExpDlg', 'openPfValDlg'],
   setup() {
-    return {stockLabel, state, PF_RUNSTATE, PF_VERDICT};
+    return {stockLabel, state, PF_RUNSTATE, PF_VERDICT, pfPct, pfCls, pfShort};
   },
   data() {
     return {
+      passedFactorEvidence: [],
       pfInitialized: false,
       editOpen: false,        // 模型编辑卡可见
       editMsg: {text: '', ok: true},
@@ -47,6 +48,7 @@ export default {
         maxStockWeight: 0, maxIndustryWeight: 0, maxTurnover: 0, minHoldings: 5, cashBuffer: 0,
         rebalance: 'daily', fillAt: 'next_open', sellFirst: true, t1: true, carryUnfilled: false,
         lotSize: 100, commission: 0.0003, stampDuty: 0.001, transferFee: 0, slippage: 0.01, minCommission: 5,
+        benchmarkId: '',
         trainDays: '', testDays: '', step: '',
         minValidWindows: 0, minTradingDays: 0, minNetReturn: '', maxDrawdown: '', maxCostDrag: '',
         minIR: '', minExcessStability: '', maxTurnoverGate: '', maxCashResidual: '', maxUnfilled: '',
@@ -161,6 +163,9 @@ export default {
         this.pfMetric('目标偏离最大', pfPct(q.targetDeviation && q.targetDeviation.max)),
         this.pfMetric('未成交', unf.count == null ? '—' : unf.count + ' 笔', '', reasons || ''),
         this.pfMetric('基准', bm.available ? '可用' : '不可用', '', bm.unavailableReason || ''),
+        this.pfMetric('年化超额', pfPct(bm.annualExcess), pfCls(bm.annualExcess)),
+        this.pfMetric('信息比率', pfNum(bm.informationRatio, 2), '', bm.irReason || ''),
+        this.pfMetric('较同窗等权秩净收益', pfPct(rep.baselineIncrement), pfCls(rep.baselineIncrement)),
       ].join('');
     },
     runLimitations() { return (this.selectedRunReport && this.selectedRunReport.limitations || []).join('；'); },
@@ -501,9 +506,7 @@ export default {
         state.pfModels = items;
         if (!state.pfEvidenceLoaded) {
           try {
-            const full = await Api.factorModels('');
-            state.pfEvidenceModels = full.models || [];
-            state.pfEvidenceLoaded = true;
+            await this.refreshFactorEvidence();
           } catch (e) { /* 证据聚合失败：下次加载重试 */ }
         }
         state.pfStale = false;
@@ -528,8 +531,20 @@ export default {
         state.pfLastValCache[modelId] = {verdict: '', id: '', createdAt: '', _ok: false};
       }
     },
+    async refreshFactorEvidence() {
+      try {
+        const [full, validations] = await Promise.all([Api.factorModels(''), Api.factorValidations({state: 'passed'})]);
+        state.pfEvidenceModels = full.models || [];
+        this.passedFactorEvidence = validations.validatedFactors || [];
+        state.pfEvidenceLoaded = true;
+      } catch (e) {
+        state.pfEvidenceLoaded = false;
+        this.modelErr = '已验证因子列表加载失败：' + pfErrMsg(e);
+      }
+      this.aggregateValidatedFactors();
+    },
     aggregateValidatedFactors() {
-      const map = new Map();
+      const map = new Map((this.passedFactorEvidence || []).map(f => [f.validationId, f]));
       (state.pfEvidenceModels.length ? state.pfEvidenceModels : state.pfModels).forEach(m => (m.validatedFactors || []).forEach(f => {
         if (!f.validationId || map.has(f.validationId)) return;
         map.set(f.validationId, {validationId: f.validationId, factorKind: f.factorKind, factorDays: f.factorDays,
@@ -643,6 +658,7 @@ export default {
       f.transferFee = cost.transferFeeRate || 0;
       f.slippage = pick(cost.slippage, 0.01);
       f.minCommission = pick(cost.minCommission, 5);
+      f.benchmarkId = m.benchmark?.id || '';
       state.pfSelectedValidationIds = (m.validatedFactors || []).map(x => x.validationId).filter(Boolean);
     },
     pfDefaultForm() {
@@ -655,6 +671,7 @@ export default {
       f.maxStockWeight = 0; f.maxIndustryWeight = 0; f.maxTurnover = 0; f.minHoldings = 5; f.cashBuffer = 0;
       f.rebalance = 'daily'; f.fillAt = 'next_open'; f.sellFirst = true; f.t1 = true; f.carryUnfilled = false;
       f.lotSize = 100; f.commission = 0.0003; f.stampDuty = 0.001; f.transferFee = 0; f.slippage = 0.01; f.minCommission = 5;
+      f.benchmarkId = '';
       state.pfSelectedValidationIds = [];
     },
     openPfCreate() {
@@ -770,7 +787,8 @@ export default {
             minCommission: parseFloat(f.minCommission) || 0,
           },
         },
-        benchmark: {},
+        benchmark: f.benchmarkId ? (f.benchmarkId === state.pfEditModel?.benchmark?.id
+          ? {...state.pfEditModel.benchmark} : {id: f.benchmarkId}) : {},
       };
       if (state.pfEditModel && state.pfEditModel.modelId) {
         req.modelId = state.pfEditModel.modelId;
@@ -800,7 +818,7 @@ export default {
     async savePfModel() {
       this.editMsg = {text: '', ok: true};
       if (!this.validatePfModel()) return;
-      if (!state.pfModelRequestId) state.pfModelRequestId = crypto.randomUUID();
+      if (!state.pfModelRequestId) state.pfModelRequestId = requestUUID();
       const body = this.buildModelRequest();
       try {
         const d = await Api.saveFactorModel(body);
@@ -1067,10 +1085,6 @@ export default {
       await this.loadPortfolioModels(false);
       await this.loadPfExperiments(false);
       await this.loadPfValidations(false);
-      try {
-        const d = await Api.candidates(false);
-        state.pfCandidates = d.candidates || [];
-      } catch (e) { /* 候选参照失败不影响主流程 */ }
     },
   },
   template: `
@@ -1176,16 +1190,15 @@ export default {
       <div class="hint">仅可引用已验证因子；候选因子须先完成因子验证。</div>
       <div class="pf-evidence-list">
         <div class="pf-evidence-item" v-for="f in state.pfValidatedFactors" :key="f.validationId">
-          <input type="checkbox" :id="'pfev_' + f.validationId" :checked="state.pfSelectedValidationIds.includes(f.validationId)" @change="onEvidenceToggle(f, $event)">
+          <input type="checkbox" :id="'pfev_' + f.validationId" :aria-label="factorNameOf(f.factorKind, f.factorDays) + ' ' + f.validationId" :checked="state.pfSelectedValidationIds.includes(f.validationId)" @change="onEvidenceToggle(f, $event)">
           <div class="pf-ev-main">
             <div class="pf-ev-name">{{ factorNameOf(f.factorKind, f.factorDays) }}</div>
-            <div class="pf-ev-meta"><b>验证</b> {{ pfShort(f.validationId, 16) }} · <b>方向</b> {{ pfDir(f.direction) }} · <b>候选</b> v{{ f.candidateRevision }} · <b>实现</b> v{{ f.implementationVersion }} · <b>主预测周期</b> {{ f.primaryHorizon }} 交易日 · <b>来源</b> {{ pfShort(f.sourceModel, 10) }} v{{ f.sourceRevision }}</div>
+            <div class="pf-ev-meta"><b>验证</b> {{ pfShort(f.validationId, 16) }} · <b>方向</b> {{ pfDir(f.direction) }} · <b>候选</b> v{{ f.candidateRevision }} · <b>实现</b> v{{ f.implementationVersion }} · <b>主预测周期</b> {{ f.primaryHorizon }} 交易日 <template v-if="f.sourceModel"> · <b>来源</b> {{ pfShort(f.sourceModel, 10) }} v{{ f.sourceRevision }}</template></div>
           </div>
           <span class="pf-ev-ec" :class="f.evidenceClass || ''">{{ pfEvidenceText(f.evidenceClass) }}</span>
         </div>
       </div>
-      <div class="empty" v-if="!state.pfValidatedFactors.length" style="margin-top:10px" role="status">暂无可用验证因子：请先在“05 候选因子”完成候选并做 v1 验证（Task 1-9 生成验证记录），或从已有模型中选择因子。</div>
-      <div class="pf-cand-ref" id="pfEvidenceRef">候选库参照：{{ state.pfCandidates.length }} 个候选因子（未进入组合模型）。候选须先完成 v1 验证并冻结后才能作为组合输入证据；这里仅聚合已有模型中的已验证因子。</div>
+      <div class="empty" v-if="!state.pfValidatedFactors.length" style="margin-top:10px" role="status">暂无可用因子。通过单因子验证后可在此选择。</div>
     </details>
 
     <details class="pf-section" id="pfSecTransform">
@@ -1270,6 +1283,14 @@ export default {
         <div class="pf-field"><label for="pfFillAt">成交时点</label>
           <select id="pfFillAt" v-model="form.fillAt">
             <option value="next_open">next_open（次日开盘）</option>
+          </select></div>
+        <div class="pf-field"><label for="pfBenchmarkId">价格指数基准</label>
+          <select id="pfBenchmarkId" v-model="form.benchmarkId">
+            <option value="">不指定</option>
+            <option value="sh000001">上证指数</option>
+            <option value="sh000300">沪深300</option>
+            <option value="hs300" v-if="form.benchmarkId === 'hs300'">沪深300（旧标识）</option>
+            <option v-if="form.benchmarkId && !['sh000001','sh000300','hs300'].includes(form.benchmarkId)" :value="form.benchmarkId">{{ form.benchmarkId }}</option>
           </select></div>
         <div class="pf-field pf-check"><label for="pfSellFirst">先卖后买</label><input type="checkbox" id="pfSellFirst" v-model="form.sellFirst"></div>
         <div class="pf-field pf-check"><label for="pfT1">T+1 限制</label><input type="checkbox" id="pfT1" v-model="form.t1"></div>
@@ -1429,6 +1450,15 @@ export default {
     <div class="empty" v-if="!selectedRunReport" role="status">{{ runLoadingText }}</div>
     <div class="warnbar" v-if="runErr" role="alert">{{ runErr }}</div>
     <div v-if="selectedRunReport">
+      <div v-if="selectedRunReport.evaluationRange" class="coverage">
+        <span v-if="selectedRunReport.trainRange">训练 {{ selectedRunReport.trainRange.start }} 至 {{ selectedRunReport.trainRange.end }}</span>
+        <span>{{ selectedRunReport.testRange ? '测试实测' : '全研究区间评估' }} {{ selectedRunReport.evaluationRange.start }} 至 {{ selectedRunReport.evaluationRange.end }}</span>
+      </div>
+      <div v-else class="hint">历史报告未单独记录实际评估区间。</div>
+      <div v-if="selectedRunReport.exposureCoverage?.requested" class="coverage">
+        <span>行业覆盖 {{ selectedRunReport.exposureCoverage.withIndustry }}/{{ selectedRunReport.exposureCoverage.requested }} 个股票日</span>
+        <span v-if="selectedRunReport.exposureCoverage.sizeDataset">市值覆盖 {{ selectedRunReport.exposureCoverage.withSize }}/{{ selectedRunReport.exposureCoverage.requested }} 个股票日</span>
+      </div>
       <div class="pf-detail-block">
         <h4>毛 / 净指标（后端报告口径）</h4>
         <div class="pf-metric-grid" v-html="runMetricsHtml"></div>

@@ -263,7 +263,7 @@ func (s *PortfolioValidationStore) SaveWindow(id string, w portfolioresearch.Val
 // Complete 汇总并发布最终结论：读取冻结 spec + 全部窗口结果，由后端
 // Evaluate 生成 verdict（passed | failed | insufficient | error），原子写
 // 报告（完成标记，只允许一次）。客户端不能指定 verdict。
-func (s *PortfolioValidationStore) Complete(id string) (PortfolioValidationReport, error) {
+func (s *PortfolioValidationStore) Complete(id string, inputs ...*RunInputs) (PortfolioValidationReport, error) {
 	if !validPortfolioValidationID(id) {
 		return PortfolioValidationReport{}, fmt.Errorf("非法验证 ID: %q", id)
 	}
@@ -297,6 +297,9 @@ func (s *PortfolioValidationStore) Complete(id string) (PortfolioValidationRepor
 		WindowCount:      res.WindowCount,
 		ValidWindowCount: res.ValidWindowCount,
 		Message:          res.Message,
+	}
+	if len(inputs) > 0 {
+		report.Inputs = inputs[0]
 	}
 	if err := report.validate(); err != nil {
 		return PortfolioValidationReport{}, err

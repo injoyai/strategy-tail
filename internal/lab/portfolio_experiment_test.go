@@ -11,6 +11,22 @@ import (
 	"github.com/injoyai/strategy-tail/internal/portfolioresearch"
 )
 
+func TestExperimentRejectsOverlappingAndInvalidRanges(t *testing.T) {
+	study := DateRange{"2025-01-01", "2025-12-31"}
+	for _, tt := range []struct {
+		train, test DateRange
+	}{
+		{DateRange{"2025-01-01", "2025-06-01"}, DateRange{"2025-06-01", "2025-12-01"}},
+		{DateRange{"2024-12-31", "2025-05-01"}, DateRange{"2025-06-01", "2025-12-01"}},
+		{DateRange{"2025-01-01", "2025-05-01"}, DateRange{}},
+		{DateRange{}, DateRange{"2025-02-29", "2025-03-01"}},
+	} {
+		if validateExperimentRanges(study, tt.train, tt.test) == nil {
+			t.Errorf("accepted train=%+v test=%+v", tt.train, tt.test)
+		}
+	}
+}
+
 // portfolio_experiment_test.go v2 Task 7 领域层测试：实验 ID、状态机迁移表、
 // 产物名白名单、manifest 完整性、completed 记录校验与创建请求规范化/hash。
 

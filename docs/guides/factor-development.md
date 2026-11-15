@@ -73,7 +73,7 @@ type ContextFactor interface {
 | `Description` | 简洁说明公式或数值语义 |
 | `Category` | 沿用已有分类：趋势与动量、波动、量能、规模与流动性、K线形态、位置、相关性、估值 |
 | `ParameterLabel` | 说明 `days` 的真实含义；无参数因子写明“无参数”，此时 `Default:1`，构造函数忽略 `days` |
-| `Unit` | 当前目录接受 `ratio`、`multiple`、`score`、`correlation`、`percent`；`percent` 的原始值 3 表示 3%，不再乘 100 |
+| `Unit` | 目录支持 `ratio`、`multiple`、`score`、`correlation`、`percent` 和 `yi_yuan_per_pct_point`。`percent` 的原始值 3 表示 3%，`yi_yuan_per_pct_point` 的原始值 0.5 表示 0.5 亿元/百分点 |
 | `Example` | 用具体数字解释原始值；不提供阈值推荐、评级或经验收益 |
 | `ImplementationVersion` | 新因子从 1 开始，禁止省略或使用 0 |
 
@@ -81,7 +81,7 @@ type ContextFactor interface {
 
 注册后，`GET /api/factors` 和通用选择器读取同一目录，无须再硬编码一份前端列表。旧 Yaegi 脚本已暴露 `factor.Build`，可用它创建新注册的价量因子；只有确实需要脚本直接使用导出类型字面量时才更新 [`symbols.go`](../../internal/lab/script/symbols.go)。汉字开头的类型在 Go 中不导出；上下文工厂和数据视图目前没有通过该符号表暴露，不能把目录注册等同于上下文因子的脚本接入。
 
-当前通用目录工厂只支持一个整数 `days`，没有任意参数字典。多参数实现可先作为底层因子由 Go 调用方明确构造；需要在研究界面配置多个参数时，先说明保存契约、校验、界面与兼容性的影响，再单独设计。输出单位不在现有五类内或需要新分类时，也须同步检查目录测试与前端格式化，不能用错误单位凑合注册。
+当前通用目录工厂支持一个整数 `days`。多参数实现可先作为底层因子由 Go 调用方明确构造。需要在研究界面配置多个参数时，先说明保存契约、校验、界面与兼容性的影响，再单独设计。扩展单位或分类时，同步检查目录测试与前端格式化。
 
 ## 5. 版本与兼容性
 

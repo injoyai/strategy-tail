@@ -153,8 +153,9 @@ type AnalyzeConfig struct {
 	// Window 未来收益窗口（交易日），legacy 字段：仅 Protocol=nil 的 v3 分析
 	// 使用（1-60）。带协议的 v4 分析以 Protocol.Labels.Horizons 为准，
 	// Window 必须为 0，报告中的 Window 只镜像主周期（horizons[0]）。
-	Window   int            `json:"window"`
-	Grouping GroupingConfig `json:"grouping,omitempty"` // 分组方式；缺省等数量 5 组
+	Window          int            `json:"window"`
+	HoldingSessions int            `json:"holdingSessions,omitempty"` // 次日开盘入场后到退出隔开的交易日数
+	Grouping        GroupingConfig `json:"grouping,omitempty"`        // 分组方式；缺省等数量 5 组
 	// Protocol 研究协议（可选）：nil 保持 v3 执行与响应；非 nil 输出
 	// AnalysisVersion=4 并保存协议、hash 与证据等级。
 	Protocol *ResearchProtocol `json:"protocol,omitempty"`
@@ -325,15 +326,25 @@ func (c AnalyzeConfig) Validate() error {
 	if err := c.validateSample(); err != nil {
 		return err
 	}
-	if c.Protocol != nil {
+	switch {
+	case c.HoldingSessions != 0:
+		if c.HoldingSessions < 1 || c.HoldingSessions > 60 {
+			return fmt.Errorf("持有周期无效：应为 1-60 个交易日")
+		}
+		if c.Window != 0 || c.Protocol != nil {
+			return fmt.Errorf("持有周期不能与旧收益窗口或自定义协议同时提交")
+		}
+	case c.Protocol != nil:
 		if err := c.Protocol.Validate(); err != nil {
 			return fmt.Errorf("研究协议非法: %w", err)
 		}
 		if c.Window != 0 {
 			return fmt.Errorf("带协议的 v4 分析不接受 legacy window 字段: %d（请使用 protocol.labels.horizons）", c.Window)
 		}
-	} else if c.Window < 1 || c.Window > 60 {
-		return fmt.Errorf("未来收益窗口无效: %d（应为 1-60 交易日）", c.Window)
+	default:
+		if c.Window < 1 || c.Window > 60 {
+			return fmt.Errorf("未来收益窗口无效: %d（应为 1-60 交易日）", c.Window)
+		}
 	}
 	if f.BuildContext(c.Kind, c.Days) == nil {
 		return fmt.Errorf("未知因子类型: %s", c.Kind)
@@ -351,7 +362,7 @@ type FactorSnapshot struct {
 	Description    string `json:"description"`
 	ParameterLabel string `json:"parameterLabel"`
 	Days           int    `json:"days"`
-	Unit           string `json:"unit"` // ratio | multiple | score | correlation
+	Unit           string `json:"unit"` // 与因子目录的单位一致。
 	// ImplementationVersion 因子实现版本快照（来自 registry.Catalog）。候选保存
 	// 与旧报告展示依赖该字段；缺失时反序列化为 0，仅用于展示、不可保存为候选。
 	ImplementationVersion int `json:"implementationVersion"`
@@ -372,9 +383,10 @@ type FactorGroupStats struct {
 	FactorP75     *float64 `json:"factorP75"`
 	FactorMax     *float64 `json:"factorMax"`
 	FactorStd     *float64 `json:"factorStd"`
-	Observations  int      `json:"observations"` // 股票×日期有效观测数
-	Dates         int      `json:"dates"`        // 该组非空日期数
-	CountPct      float64  `json:"countPct"`     // 占全部有效观测比例，0..1
+	Observations  int      `json:"observations"`      // 股票×日期有效观测数
+	Labeled       int      `json:"labeled,omitempty"` // 其中有收益标签的观测数
+	Dates         int      `json:"dates"`             // 该组非空日期数
+	CountPct      float64  `json:"countPct"`          // 占全部有效观测比例，0..1
 	ForwardReturn *float64 `json:"forwardReturn"`
 }
 
@@ -414,10 +426,11 @@ func summarizeFromStats(stats []FactorGroupStats, g int) ([]float64, QuintileSum
 // 早期年份无数据、后上市股票不参与早期统计、未来收益窗口尾部被剔除等都会缩短
 // 实际有效区间。
 type AnalysisRange struct {
-	StartYear  int    `json:"startYear"`
-	EndYear    int    `json:"endYear"`
-	SampleMode string `json:"sampleMode"`           // all | random | codes
-	SampleSize int    `json:"sampleSize,omitempty"` // 实际请求代码数
+	StartYear   int      `json:"startYear"`
+	EndYear     int      `json:"endYear"`
+	SampleMode  string   `json:"sampleMode"`            // all | random | codes
+	SampleSize  int      `json:"sampleSize,omitempty"`  // 实际请求代码数
+	SampleCodes []string `json:"sampleCodes,omitempty"` // 本次实际加载的代码清单
 }
 
 // YearAnalysis 单年度统计，与全区间使用同一批逐日观测、同口径（有效交易日
@@ -471,6 +484,9 @@ type AnalysisReport struct {
 	StartedAt     string    `json:"startedAt"`
 	FinishedAt    string    `json:"finishedAt"`
 
+	SignalCoverage *SignalCoverage `json:"signalCoverage,omitempty"`
+	Inputs         *RunInputs      `json:"inputs,omitempty"`
+
 	// —— v4 新增字段（Protocol 非 nil 的分析才填充；均 omitempty，旧报告
 	// 序列化不出现这些键）——
 	// Protocol 冻结的研究协议副本；改变方向、窗口、标签或股票池构成新变体。
@@ -518,11 +534,16 @@ func aggregateIC(days []time.Time, vals, rets map[time.Time]map[string]float64) 
 	daily := make([]DailyIC, 0, len(days))
 	ics := make([]float64, 0, len(days))
 	for _, day := range days {
-		vs := make([]float64, 0, len(vals[day]))
-		rs := make([]float64, 0, len(vals[day]))
-		for c, v := range vals[day] {
+		cv := vals[day]
+		vs := make([]float64, 0, len(rets[day]))
+		rs := make([]float64, 0, len(rets[day]))
+		for c, ret := range rets[day] {
+			v, ok := cv[c]
+			if !ok {
+				continue
+			}
 			vs = append(vs, v)
-			rs = append(rs, rets[day][c])
+			rs = append(rs, ret)
 		}
 		di := DailyIC{Date: day.Format("2006-01-02")}
 		if ic := spearmanIC(vs, rs); !math.IsNaN(ic) {
@@ -572,8 +593,9 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 	g := grouping.groupCount()
 	accVals := make([][]float64, g) // 组内因子值（全样本累计）
 	accObs := make([]int, g)        // 有效观测数
-	dayCnts := make([]int, g)       // 组非空日期数
-	dayRets := make([]float64, g)   // 组非空日期的日内组均值之和
+	accLabeled := make([]int, g)
+	dayCnts := make([]int, g)     // 组非空日期数
+	dayRets := make([]float64, g) // 组非空日期的日内组均值之和
 	for _, day := range days {
 		obs := make([]factorObs, 0, len(vals[day]))
 		for c, v := range vals[day] {
@@ -598,8 +620,11 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 			k := assign[i]
 			accVals[k] = append(accVals[k], o.Value)
 			accObs[k]++
-			gSums[k] += rets[day][o.Code]
-			gCnts[k]++
+			if ret, ok := rets[day][o.Code]; ok {
+				gSums[k] += ret
+				gCnts[k]++
+				accLabeled[k]++
+			}
 		}
 		for k := 0; k < g; k++ {
 			if gCnts[k] > 0 {
@@ -637,6 +662,7 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 				f64p(st.Mean), f64p(st.P75), f64p(st.Max), f64p(st.Std)
 		}
 		gs.Observations = accObs[k]
+		gs.Labeled = accLabeled[k]
 		gs.Dates = dayCnts[k]
 		if totalObs > 0 {
 			gs.CountPct = float64(accObs[k]) / float64(totalObs)
@@ -656,17 +682,19 @@ func aggregateGroups(days []time.Time, vals, rets map[time.Time]map[string]float
 // （与 quantileAssign 同序，保证切组结果与单档请求完全一致）。排序与组数
 // 无关，构建一次即可服务任意档位；v3 全档预算与 v4 单档请求共用。
 type quantileCache struct {
-	days  []time.Time
-	codes [][]string
-	vals  [][]float64
-	rets  [][]float64
+	days    []time.Time
+	codes   [][]string
+	vals    [][]float64
+	rets    [][]float64
+	labeled [][]bool
 }
 
 // buildQuantileCache 对一组交易日各排序一次并预取收益切片：后续各档按索引
 // 访问，避免逐观测 map 查找。
 func buildQuantileCache(days []time.Time, vals, rets map[time.Time]map[string]float64) *quantileCache {
 	c := &quantileCache{days: days, codes: make([][]string, 0, len(days)),
-		vals: make([][]float64, 0, len(days)), rets: make([][]float64, 0, len(days))}
+		vals: make([][]float64, 0, len(days)), rets: make([][]float64, 0, len(days)),
+		labeled: make([][]bool, 0, len(days))}
 	for _, day := range days {
 		obs := make([]factorObs, 0, len(vals[day]))
 		for code, v := range vals[day] {
@@ -682,12 +710,15 @@ func buildQuantileCache(days []time.Time, vals, rets map[time.Time]map[string]fl
 		dc := make([]string, n)
 		dv := make([]float64, n)
 		dr := make([]float64, n)
+		labeled := make([]bool, n)
 		for i, o := range obs {
-			dc[i], dv[i], dr[i] = o.Code, o.Value, rets[day][o.Code]
+			dc[i], dv[i] = o.Code, o.Value
+			dr[i], labeled[i] = rets[day][o.Code]
 		}
 		c.codes = append(c.codes, dc)
 		c.vals = append(c.vals, dv)
 		c.rets = append(c.rets, dr)
+		c.labeled = append(c.labeled, labeled)
 	}
 	return c
 }
@@ -707,6 +738,7 @@ func (c *quantileCache) aggregateSet(g int, fullStats bool, membersOut []map[str
 	}
 	accMin, accMax, accSums := make([]float64, g), make([]float64, g), make([]float64, g)
 	accObs := make([]int, g)
+	accLabeled := make([]int, g)
 	dayCnts := make([]int, g)
 	dayRets := make([]float64, g)
 	for di, ds := range c.vals {
@@ -736,8 +768,11 @@ func (c *quantileCache) aggregateSet(g int, fullStats bool, membersOut []map[str
 				}
 				accSums[gr] += ds[k]
 				accObs[gr]++
-				gSums[gr] += c.rets[di][k]
-				gCnts[gr]++
+				if c.labeled[di][k] {
+					gSums[gr] += c.rets[di][k]
+					gCnts[gr]++
+					accLabeled[gr]++
+				}
 			}
 			i = j + 1
 		}
@@ -770,6 +805,7 @@ func (c *quantileCache) aggregateSet(g int, fullStats bool, membersOut []map[str
 				f64p(accMin[k]), f64p(accSums[k]/float64(accObs[k])), f64p(accMax[k])
 		}
 		gs.Observations = accObs[k]
+		gs.Labeled = accLabeled[k]
 		gs.Dates = dayCnts[k]
 		if totalObs > 0 {
 			gs.CountPct = float64(accObs[k]) / float64(totalObs)
@@ -791,9 +827,13 @@ func (c *quantileCache) aggregateSet(g int, fullStats bool, membersOut []map[str
 func aggregateQuantileSets(days []time.Time, vals, rets map[time.Time]map[string]float64,
 	fullStats bool) []GroupingSet {
 	cache := buildQuantileCache(days, vals, rets)
+	return cache.allGroupings(fullStats)
+}
+
+func (c *quantileCache) allGroupings(fullStats bool) []GroupingSet {
 	sets := make([]GroupingSet, 0, maxGroups-minGroups+1)
 	for g := minGroups; g <= maxGroups; g++ {
-		sets = append(sets, cache.aggregateSet(g, fullStats, nil))
+		sets = append(sets, c.aggregateSet(g, fullStats, nil))
 	}
 	return sets
 }

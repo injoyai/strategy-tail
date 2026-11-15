@@ -3,7 +3,7 @@
 // 验证规格（窗口/门禁）使用 06 页“⑥ 门禁”分区当前值：主组件 provide getPfGates()。
 // 由根组件 provide openPfValDlg(model) 打开；保存成功后置 pfValDirty 通知 06 页刷新。
 import { state } from '../store.js';
-import { Api } from '../api.js';
+import { Api, requestUUID } from '../api.js';
 import { dlgMixin } from './dlgMixin.js';
 
 export default {
@@ -40,7 +40,7 @@ export default {
       if (!(trainDays >= 1 && trainDays <= 10000)) { this.msg = {text: '训练窗天数应为 1-10000', ok: false}; return; }
       if (!(testDays >= 1 && testDays <= 10000)) { this.msg = {text: '测试窗天数应为 1-10000', ok: false}; return; }
       if (step < testDays || step > 10000) { this.msg = {text: '步长应为 >= 测试窗天数（且 <=10000）', ok: false}; return; }
-      if (!state.pfValRequestId) state.pfValRequestId = crypto.randomUUID();
+      if (!state.pfValRequestId) state.pfValRequestId = requestUUID();
       const body = {
         requestId: state.pfValRequestId,
         spec: {
@@ -62,7 +62,7 @@ export default {
             minBaselineIncrement: gates.minBaselineIncrement || 0,
             maxDegradedWindows: gates.maxDegradedWindows || 0,
           },
-          benchmark: {},
+          benchmark: m.benchmark || {},
           evidenceRequirement: '',
         },
       };

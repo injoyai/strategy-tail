@@ -22,6 +22,7 @@ import Tab8Screen from './components/Tab8Screen.js';
 import MarketDashboard from './components/MarketDashboard.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
 import CandidateEditDlg from './components/CandidateEditDlg.js';
+import FactorValidationDlg from './components/FactorValidationDlg.js';
 import CandidateEvidenceDlg from './components/CandidateEvidenceDlg.js';
 import PfExperimentDlg from './components/PfExperimentDlg.js';
 import PfValidationDlg from './components/PfValidationDlg.js';
@@ -30,7 +31,8 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, Tab8Screen, MarketDashboard, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
+    Tab7Practice, Tab8Screen, MarketDashboard,
+    CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, FactorValidationDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
     return {state, tabs: TABS, groups: NAV_GROUPS, tabSlug: TAB_SLUG, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false, sellEvents: [], sellCursor: 0, sellSocket: null, sellReconnect: null};
@@ -58,6 +60,7 @@ const App = {
       openRunConfig: (mode, run) => this.$refs.runConfig.openDlg(mode, run),
       openCandidateDlg: () => this.$refs.candSave && this.$refs.candSave.openDlg(),
       openCandidateEdit: c => this.$refs.candEdit && this.$refs.candEdit.openDlg(c),
+      openFactorValidation: c => this.$refs.factorValidation?.openDlg(c),
       openCandidateEvidence: c => this.$refs.candEv && this.$refs.candEv.openDlg(c),
       openPfExpDlg: m => this.$refs.pfExpDlg && this.$refs.pfExpDlg.openDlg(m),
       openPfValDlg: m => this.$refs.pfValDlg && this.$refs.pfValDlg.openDlg(m),
@@ -278,6 +281,9 @@ const App = {
           } else if (s.task === 'portfolio' || s.task === 'portfolio_validation') {
             // 组合任务完成：终态以持久 Store 为准，刷新 06 页对应详情（不自动切页）。
             if (s.runId && this.$refs.tab6) await this.$refs.tab6.pfOnTaskDone(s.runId, s.task);
+          } else if (s.task === 'factor_validation') {
+            this.$refs.factorValidation?.onTaskDone(s.runId);
+            this.$refs.tab6?.refreshFactorEvidence();
           } else if (s.task === 'screen_history' || s.task === 'screen_scan') {
             if (this.$refs.screen) await this.$refs.screen.onTaskDone(s.task);
           } else if (s.task === 'practice_prepare') {
@@ -422,6 +428,7 @@ const App = {
 <candidate-save-dlg ref="candSave" />
 <candidate-edit-dlg ref="candEdit" />
 <candidate-evidence-dlg ref="candEv" />
+<factor-validation-dlg ref="factorValidation" />
 <pf-experiment-dlg ref="pfExpDlg" />
 <pf-validation-dlg ref="pfValDlg" />
 <run-config-dlg ref="runConfig" />

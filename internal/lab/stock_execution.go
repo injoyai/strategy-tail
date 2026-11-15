@@ -13,6 +13,14 @@ func validExecutionPrice(price float64) bool {
 	return price > 0 && price <= math.MaxFloat64
 }
 
+func corporateEventDates(events protocol.XRXDs) []string {
+	dates := make([]string, 0, len(events))
+	for _, event := range events {
+		dates = append(dates, event.Time.Format(time.DateOnly))
+	}
+	return dates
+}
+
 func priorStockClose(ks extend.Klines) float64 {
 	if last := ks[len(ks)-1].Last; validExecutionPrice(last) {
 		return last

@@ -13,10 +13,14 @@ func (s *PortfolioExperimentStore) lockRun(id string) (func() error, error) {
 	if !validExperimentID(id) {
 		return nil, fmt.Errorf("非法实验 ID: %q", id)
 	}
-	if err := os.MkdirAll(s.recordsRoot, 0755); err != nil {
+	return lockResearchRun(s.recordsRoot, id)
+}
+
+func lockResearchRun(root, id string) (func() error, error) {
+	if err := os.MkdirAll(root, 0755); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(filepath.Join(s.recordsRoot, ".run-"+id+".lock"), os.O_CREATE|os.O_RDWR, 0600)
+	f, err := os.OpenFile(filepath.Join(root, ".run-"+id+".lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return nil, err
 	}

@@ -36,6 +36,7 @@ func conformanceKs(base time.Time, n int) extend.Klines {
 		l := math.Min(o, c) - (0.1 + 0.05*math.Abs(math.Sin(float64(i)/5)))
 		k := mk(base, i, o, h, l, c, int64(10000+1000*(i%13)))
 		k.Turnover = 2 + 0.1*float64(i%7)
+		k.Amount = 10_000_000 + float64(i)*100_000
 		ks = append(ks, k)
 	}
 	return ks
@@ -65,7 +66,7 @@ func TestNewFactorsConformance(t *testing.T) {
 		"downside_vol", "return_skew", "parkinson_vol",
 		"turnover_mean", "turnover_pct", "volume_cv",
 		"volume_up_ratio", "volume_down_ratio",
-		"range_ratio", "bar_center",
+		"range_ratio", "bar_center", "turnover_per_price_move",
 	}
 	const n = 120
 	base := time.Date(2025, 1, 1, 0, 0, 0, 0, time.Local)

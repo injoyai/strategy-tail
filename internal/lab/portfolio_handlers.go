@@ -164,6 +164,13 @@ func (s *Server) handleCreateExperiment(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusInternalServerError, "实验存储未注入")
 		return
 	}
+	if req.TrainRange.Start == "" && s.modelStore != nil {
+		model, err := s.modelStore.Get(req.ModelID, req.ModelRevision)
+		if err == nil && model.Combination.Method == portfolioresearch.CombinationRollingICWeight {
+			writeErr(w, http.StatusBadRequest, "滚动 IC 实验必须指定训练和测试区间")
+			return
+		}
+	}
 	exp, created, err := s.experimentStore.Create(req)
 	if err != nil {
 		if errors.Is(err, errIdempotencyConflict) {

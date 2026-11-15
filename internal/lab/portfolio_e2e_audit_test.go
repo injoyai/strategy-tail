@@ -893,6 +893,8 @@ func auditLeakData(future bool) *portfolioRunData {
 	for i, d := range dates {
 		closeM[d] = map[string]float64{}
 		openM[d] = map[string]float64{}
+		values["k1"][d] = map[string]float64{}
+		values["k2"][d] = map[string]float64{}
 		for j, c := range codes {
 			base := 10 + float64(j)*0.5 + float64(i)*0.3
 			if future && i >= 8 {
@@ -900,8 +902,6 @@ func auditLeakData(future bool) *portfolioRunData {
 			}
 			closeM[d][c] = base
 			openM[d][c] = base - 0.05
-			values["k1"][d] = map[string]float64{}
-			values["k2"][d] = map[string]float64{}
 			v1 := 0.1*float64(i+1) + 0.05*float64(j)
 			v2 := 0.3 - 0.04*float64(j) + 0.02*float64(i)
 			if future && i >= 8 {
@@ -936,7 +936,7 @@ func auditLeakFactors(data *portfolioRunData) []portfolioresearch.FactorSeries {
 			}
 			days[d] = rows
 		}
-		return portfolioresearch.FactorSeries{Key: key, Direction: dir, Horizon: 1, Days: days}
+		return portfolioresearch.FactorSeries{Key: key, Direction: dir, Horizon: 3, Days: days}
 	}
 	return []portfolioresearch.FactorSeries{
 		build("k1", portfolioresearch.DirectionHigherIsBetter),
@@ -993,7 +993,7 @@ func TestAuditLeakIsolationFutureReturns(t *testing.T) {
 			WindowYears: 1, Shrinkage: 0, MaxAbsWeight: 1, Fallback: portfolioresearch.CombinationFallbackEqualWeight,
 		},
 	}
-	trainDates := base.dates[:8] // 训练窗 = 前 8 日；测试窗 = 第 9~11 日
+	trainDates := base.dates[:8] // 3 日标签有 5 个训练日可用，其余标签会跨入测试窗。
 
 	w1, cash1, err := resolveCombineWeights(spec, auditLeakFactors(base), trainDates, base.close)
 	if err != nil {
@@ -1003,14 +1003,21 @@ func TestAuditLeakIsolationFutureReturns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveCombineWeights(mutated): %v", err)
 	}
-	if cash1 != cash2 {
-		t.Fatalf("现金 fallback 标记不一致: %v/%v", cash1, cash2)
+	if cash1 || cash2 {
+		t.Fatalf("训练样本充足，不应退回现金: %v/%v", cash1, cash2)
 	}
 	if !reflect.DeepEqual(w1, w2) {
 		t.Fatalf("测试窗未来收益变化后训练权重变化（泄漏）: base=%v mutated=%v", w1, w2)
 	}
-	if w1 == nil {
-		t.Fatal("训练窗数据充足，滚动 IC 权重不应回退（nil）")
+	if len(w1) != 2 || math.Abs(w1["k1"]) > 1e-9 || math.Abs(w1["k2"]-1) > 1e-9 {
+		t.Fatalf("训练窗内 k1、k2 的 IC 分别为 -1 和 +1，权重应为 0 和 1: %v", w1)
+	}
+	wShort, _, err := resolveCombineWeights(spec, auditLeakFactors(mutated), trainDates[:7], mutated.close)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wShort) != 2 || wShort["k1"] != 0.5 || wShort["k2"] != 0.5 {
+		t.Fatalf("训练窗只有 4 个有效标签，不能借用窗外收益，应退回等权: %v", wShort)
 	}
 
 	// 前 8 日分数与成交逐位一致（此前权重和成交不变）。

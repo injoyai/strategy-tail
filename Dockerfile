@@ -22,12 +22,19 @@ COPY --from=tdx /internal /tdx/internal
 COPY --from=tdx /lib /tdx/lib
 COPY --from=tdx /extend /tdx/extend
 COPY . .
-RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/lab ./cmd/lab
+ARG APP_REVISION=unknown
+ARG TDX_REVISION=unknown
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/injoyai/strategy-tail/internal/lab.appRevision=${APP_REVISION} -X github.com/injoyai/strategy-tail/internal/lab.tdxRevision=${TDX_REVISION}" -o /out/lab ./cmd/lab
 
 ###############################################################################
 #                                  运行阶段
 ###############################################################################
 FROM alpine:3.22
+
+ARG APP_REVISION=unknown
+ARG TDX_REVISION=unknown
+LABEL org.opencontainers.image.revision="${APP_REVISION}" \
+      io.injoyai.tdx.revision="${TDX_REVISION}"
 
 # K 线时间与交易日判断依赖本地时区（Asia/Shanghai）
 ENV TZ=Asia/Shanghai

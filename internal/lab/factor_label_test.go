@@ -25,6 +25,48 @@ func labelDay(n int) time.Time {
 	return time.Date(2024, 12, 2+n, 0, 0, 0, 0, time.Local)
 }
 
+func TestFactorSessionLabelUsesMarketDates(t *testing.T) {
+	days := []time.Time{labelDay(0), labelDay(1), labelDay(2), labelDay(3)}
+	calendar := newFactorSessionCalendar(extend.Klines{
+		labelKline(days[0], 10, 10), labelKline(days[1], 10, 10),
+		labelKline(days[2], 10, 10), labelKline(days[3], 10, 10),
+	})
+	for _, tt := range []struct {
+		name   string
+		edit   func(map[time.Time]*extend.Kline)
+		events []string
+		held   int
+		reason LabelSkipReason
+	}{
+		{name: "持有一日跨过买入当日", held: 1},
+		{name: "缺入场日不可顺延", edit: func(b map[time.Time]*extend.Kline) { delete(b, days[1]) }, held: 1, reason: LabelSkipMissingEntryBar},
+		{name: "缺退出日不可顺延", edit: func(b map[time.Time]*extend.Kline) { delete(b, days[2]) }, held: 1, reason: LabelSkipMissingExitBar},
+		{name: "入场日无成交", edit: func(b map[time.Time]*extend.Kline) { b[days[1]].Volume = 0 }, held: 1, reason: LabelSkipUntradableEntry},
+		{name: "退出日无成交", edit: func(b map[time.Time]*extend.Kline) { b[days[2]].Volume = 0 }, held: 1, reason: LabelSkipUntradableExit},
+		{name: "指数未覆盖远期退出日", held: 3, reason: LabelSkipInsufficientHorizon},
+		{name: "买入是在除权日开盘", held: 1, events: []string{days[1].Format(time.DateOnly)}},
+		{name: "持仓期间发生除权", held: 1, events: []string{days[2].Format(time.DateOnly)}, reason: LabelSkipCorporateEvent},
+		{name: "退出后除权", held: 1, events: []string{days[3].Format(time.DateOnly)}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bars := map[time.Time]*extend.Kline{
+				days[1]: labelKline(days[1], 11, 12), days[2]: labelKline(days[2], 12, 13),
+				days[3]: labelKline(days[3], 13, 14),
+			}
+			if tt.edit != nil {
+				tt.edit(bars)
+			}
+			ret, reason, ok := calendar.labelWithEvents(days[0], bars, tt.held, tt.events)
+			if reason != tt.reason || ok != (reason == LabelOK) {
+				t.Fatalf("label = (%g, %q, %v), want reason %q", ret, reason, ok, tt.reason)
+			}
+			if ok && math.Abs(ret-(13.0/11-1)) > 1e-12 {
+				t.Fatalf("持有 1 日收益 = %v", ret)
+			}
+		})
+	}
+}
+
 // h=1 精确使用次日 Open → 次日 Close。
 func TestLabelReturnNextOpenToCloseH1UsesNextDayOpenClose(t *testing.T) {
 	dks := extend.Klines{

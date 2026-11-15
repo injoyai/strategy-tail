@@ -145,6 +145,7 @@ type PortfolioValidationReport struct {
 	WindowCount      int                            `json:"windowCount"`
 	ValidWindowCount int                            `json:"validWindowCount"`
 	Message          string                         `json:"message,omitempty"`
+	Inputs           *RunInputs                     `json:"inputs,omitempty"`
 }
 
 // validate 报告基本合法性：schema、ID、终态白名单、证据等级、逐项门禁披露。

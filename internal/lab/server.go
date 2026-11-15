@@ -66,11 +66,12 @@ type Server struct {
 
 	// 多因子组合研究 v2（Task 9）依赖：模型/实验/验证库与组合执行器。
 	// validationInput 为 v1 验证输入适配器（模型装配时重读上游验证）。
-	modelStore      *FactorModelStore
-	experimentStore *PortfolioExperimentStore
-	validationStore *PortfolioValidationStore
-	portfolioRunner *Runner // 与 runner 同一实例（组合任务与回测/分析共享互斥）
-	validationInput ValidationInput
+	modelStore            *FactorModelStore
+	experimentStore       *PortfolioExperimentStore
+	validationStore       *PortfolioValidationStore
+	portfolioRunner       *Runner // 与 runner 同一实例（组合任务与回测/分析共享互斥）
+	validationInput       ValidationInput
+	factorValidationStore *ValidationStore
 }
 
 // NewServer 创建服务并注册路由。
@@ -101,7 +102,8 @@ func (s *Server) wirePortfolioStores() {
 	s.modelStore = NewFactorModelStore(DefaultFactorModelRoot())
 	s.experimentStore = NewPortfolioExperimentStore(DefaultPortfolioExperimentRoot(), DefaultPortfolioArtifactRoot())
 	s.validationStore = NewPortfolioValidationStore(DefaultPortfolioValidationRoot())
-	s.validationInput = NewValidationStoreAdapter(NewValidationStore(DefaultValidationRoot()))
+	s.factorValidationStore = NewValidationStore(DefaultValidationRoot())
+	s.validationInput = NewValidationStoreAdapter(s.factorValidationStore)
 	s.portfolioRunner = s.runner
 	s.runner.ConfigurePortfolio(s.modelStore, s.experimentStore, s.validationStore)
 }
@@ -173,6 +175,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/factor-candidates", s.handleListCandidates)
 	s.mux.HandleFunc("GET /api/factor-candidates/{id}", s.handleGetCandidate)
 	s.mux.HandleFunc("PUT /api/factor-candidates/{id}", withSameOrigin(s.handleUpdateCandidate))
+	s.mux.HandleFunc("GET /api/factor-candidates/{id}/validation-inputs", s.handleFactorValidationInputs)
+	s.mux.HandleFunc("POST /api/factor-validations", withSameOrigin(s.handleCreateFactorValidation))
+	s.mux.HandleFunc("GET /api/factor-validations", s.handleListFactorValidations)
+	s.mux.HandleFunc("GET /api/factor-validations/{id}", s.handleGetFactorValidation)
+	s.mux.HandleFunc("POST /api/factor-validations/{id}/run", withSameOrigin(s.handleRunFactorValidation))
 
 	// 搭建器：自由组合策略（设计文档 §5）。写端点已在 handler 内校验同源。
 	s.mux.HandleFunc("GET /api/builder/components", s.handleBuilderComponents)

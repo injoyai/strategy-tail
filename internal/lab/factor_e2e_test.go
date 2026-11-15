@@ -174,7 +174,7 @@ func TestServerFactorsAPI(t *testing.T) {
 	if err := json.Unmarshal(res, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog) != 46 {
+	if len(catalog) != 47 {
 		t.Fatalf("因子目录项数 = %d", len(catalog))
 	}
 	for _, e := range catalog {
@@ -210,13 +210,13 @@ func TestServerAnalysisAPI(t *testing.T) {
 
 	h := NewServer().Handler()
 
-	// 因子目录：46 项，每项含 kind/name/description
+	// 因子目录：47 项，每项含 kind/name/description
 	res := doReq(t, h, http.MethodGet, "/api/factors", nil, http.StatusOK)
 	var catalog []map[string]any
 	if err := json.Unmarshal(res, &catalog); err != nil {
 		t.Fatal(err)
 	}
-	if len(catalog) != 46 {
+	if len(catalog) != 47 {
 		t.Fatalf("因子目录项数 = %d", len(catalog))
 	}
 	for _, e := range catalog {

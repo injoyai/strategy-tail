@@ -1,5 +1,5 @@
 import { useId } from '../vendor/vue.esm-browser.prod.js';
-import { factorHasDays, factorTypeName, groupFactors } from '../format.js';
+import { factorHasDays, factorTypeName, groupFactors, factorInputUnit } from '../format.js';
 
 export function newFactorCondition(entry) {
   return {kind: entry.kind, days: entry.defaultDays, factorVersion: entry.implementationVersion,
@@ -31,6 +31,7 @@ export default {
     groups() { return groupFactors(this.catalog); },
     hasDays() { return this.entry ? factorHasDays(this.entry) : true; },
     isRatio() { return this.entry?.unit === 'ratio'; },
+    inputUnit() { return factorInputUnit(this.entry?.unit); },
     error() { return factorConditionError(this.condition, this.catalog); },
     fields() {
       const fields = this.hasDays ? [{key: 'days', label: this.entry?.parameterLabel || '回看天数'}] : [];
@@ -90,7 +91,7 @@ export default {
         </div>
       </div>
       <div class="bnode-param" v-for="field in fields" :key="field.key">
-        <label class="bnode-param-lbl" :for="id(field.key)">{{ field.label }}<span v-if="field.key !== 'days' && isRatio" class="bnode-unit">%</span></label>
+        <label class="bnode-param-lbl" :for="id(field.key)">{{ field.label }}<span v-if="field.key !== 'days' && inputUnit" class="bnode-unit">{{ inputUnit }}</span></label>
         <div class="bnode-field">
           <input type="number" :id="id(field.key)" :step="field.key === 'days' ? 1 : 'any'" :min="field.key === 'days' ? 1 : undefined"
             :value="displayValue(field.key)" @input="input(field.key, $event)"

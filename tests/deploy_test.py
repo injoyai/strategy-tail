@@ -16,7 +16,9 @@ with (root/'calls').open('a') as f: f.write(json.dumps(args)+'\n')
 scenario=os.environ['DEPLOY_TEST_CASE']
 if args[:2]==['container','inspect']: sys.exit(0)
 if args[0]=='inspect': print('true')
-elif args[0]=='build' and scenario=='build-fail': sys.exit(1)
+elif args[0]=='build':
+ if scenario=='build-fail': sys.exit(1)
+ if scenario!='missing-image-id': Path(args[args.index('--iidfile')+1]).write_text('sha256:'+'a'*64)
 elif args[0]=='exec':
  if args[-1].endswith('/api/status'):
   count=int((root/'checks').read_text()) if (root/'checks').exists() else 0
@@ -51,7 +53,7 @@ class DeployTest(unittest.TestCase):
             return result.returncode, calls
 
     def test_busy_or_build_failure_keeps_old_container(self):
-        for case in ('busy', 'busy-after-build', 'build-fail'):
+        for case in ('busy', 'busy-after-build', 'build-fail', 'missing-image-id'):
             with self.subTest(case=case):
                 code, calls = self.scenario(case)
                 self.assertNotEqual(code, 0)
@@ -64,11 +66,14 @@ class DeployTest(unittest.TestCase):
         build = next(call for call in calls if call[0] == 'build')
         self.assertIn('--build-context', build)
         self.assertIn('tdx=' + str(ROOT / '../tdx'), build)
+        self.assertTrue(any(arg.startswith('APP_REVISION=') for arg in build))
+        self.assertTrue(any(arg.startswith('TDX_REVISION=') for arg in build))
         self.assertFalse(any(call[0] == 'rm' for call in calls))
         run = next(call for call in calls if call[0] == 'run')
         self.assertIn(str(ROOT / 'data') + ':/app/data', run)
         self.assertIn('0.0.0.0:80:8765', run)
         self.assertIn('pull.mysql', run)
+        self.assertEqual(run[-1], 'sha256:' + 'a' * 64)
 
     def test_explicit_bind_is_preserved(self):
         code, calls = self.scenario('success', bind='192.168.1.10')

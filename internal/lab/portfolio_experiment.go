@@ -73,19 +73,40 @@ type DateRange struct {
 	End   string `json:"end"`
 }
 
-var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
-
 // validate 区间校验：空区间合法（训练/测试可选）；非空时格式 YYYY-MM-DD
 // 且 Start <= End（同格式可直接字典序比较）。
 func (d DateRange) validate() error {
 	if d.Start == "" && d.End == "" {
 		return nil
 	}
-	if !dateRe.MatchString(d.Start) || !dateRe.MatchString(d.End) {
+	_, startErr := time.Parse(time.DateOnly, d.Start)
+	_, endErr := time.Parse(time.DateOnly, d.End)
+	if startErr != nil || endErr != nil {
 		return fmt.Errorf("区间日期必须为 YYYY-MM-DD，实际 %q ~ %q", d.Start, d.End)
 	}
 	if d.Start > d.End {
 		return fmt.Errorf("区间起始晚于结束: %s > %s", d.Start, d.End)
+	}
+	return nil
+}
+
+func validateExperimentRanges(study, train, test DateRange) error {
+	if study.Start == "" {
+		return fmt.Errorf("studyRange 必填")
+	}
+	for _, item := range []struct {
+		name string
+		rng  DateRange
+	}{{"studyRange", study}, {"trainRange", train}, {"testRange", test}} {
+		if err := item.rng.validate(); err != nil {
+			return fmt.Errorf("%s: %w", item.name, err)
+		}
+		if item.rng.Start != "" && (item.rng.Start < study.Start || item.rng.End > study.End) {
+			return fmt.Errorf("%s 必须位于研究区间内", item.name)
+		}
+	}
+	if train.Start != "" && (test.Start == "" || train.End >= test.Start) {
+		return fmt.Errorf("训练区间必须结束于测试区间之前")
 	}
 	return nil
 }
@@ -339,18 +360,8 @@ func normalizeCreatePortfolioExperimentRequest(req CreatePortfolioExperimentRequ
 	if !hashHexRe.MatchString(req.ModelHash) {
 		return req, fmt.Errorf("modelHash 必须为 64 位十六进制")
 	}
-	if err := req.StudyRange.validate(); err != nil {
-		return req, fmt.Errorf("studyRange: %w", err)
-	}
-	// 研究区间必填（运行总归有研究窗口）；训练/测试区间可选。
-	if req.StudyRange.Start == "" || req.StudyRange.End == "" {
-		return req, fmt.Errorf("studyRange 必填（研究区间 start/end 均为 YYYY-MM-DD）")
-	}
-	if err := req.TrainRange.validate(); err != nil {
-		return req, fmt.Errorf("trainRange: %w", err)
-	}
-	if err := req.TestRange.validate(); err != nil {
-		return req, fmt.Errorf("testRange: %w", err)
+	if err := validateExperimentRanges(req.StudyRange, req.TrainRange, req.TestRange); err != nil {
+		return req, err
 	}
 	if n := runeLen(req.Variant.Name); n < 1 || n > limits.MaxVariantNameRunes {
 		return req, fmt.Errorf("variant.name 需要 1～%d 个字符，实际 %d", limits.MaxVariantNameRunes, n)
