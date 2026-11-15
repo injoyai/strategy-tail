@@ -23,6 +23,7 @@ export const Api = {
   refreshScreenHistory: () => api('POST', '/api/screen/history'),
   screenDiagnose: (code, strategy) => api('GET', '/api/screen/diagnose/' + encodeURIComponent(code) + '?' + new URLSearchParams({strategy})),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
+  marketDashboard: signal => api('GET', '/api/market-dashboard', undefined, signal),
   runStrategy: spec => api('POST', '/api/strategy/run', spec),
   stop: () => api('POST', '/api/stop'),
   status: () => api('GET', '/api/status'),

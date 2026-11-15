@@ -142,6 +142,7 @@ func (s *Server) wirePracticeStores() {
 // 写端点通过 withSameOrigin 或 handler 内的同源校验防止跨站写入。
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
+	s.mux.HandleFunc("GET /api/market-dashboard", s.handleMarketDashboard)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/screen", s.handleScreenState)
 	s.mux.HandleFunc("GET /api/screen/history", s.handleScreenHistory)

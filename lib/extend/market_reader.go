@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -118,6 +119,13 @@ func (r *MarketReader) LatestDayDate(code string) (string, error) {
 		return "", err
 	}
 	return r.source.LastDayTime(c)
+}
+
+func (r *MarketReader) ReadDashboardDays(ctx context.Context, calendar string, indexes []string, through string) (marketstore.DashboardDays, error) {
+	if r.mysql == nil {
+		return marketstore.DashboardDays{}, errors.New("数据看板需要 MySQL 行情源")
+	}
+	return r.mysql.ReadDashboardDays(ctx, calendar, indexes, through)
 }
 
 func (r *MarketReader) StockSessionBars(codes []string, now time.Time) (map[string]*protocol.Kline, error) {

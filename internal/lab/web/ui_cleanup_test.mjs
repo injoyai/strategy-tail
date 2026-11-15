@@ -101,15 +101,15 @@ function navigationContext() {
 
 test('左侧各组页签始终在自己的主入口下，只选中当前页', () => {
   const ctx = navigationContext();
-  assert.deepEqual(ctx.groups.map(g => g.title), ['策略回测', '因子研究', '盘感练习', '选股策略']);
-  assert.deepEqual(ctx.groups.flatMap(g => g.tabs), constants.TABS.map(t => t.n));
+  assert.deepEqual(ctx.groups.map(g => g.title), ['数据看板', '策略回测', '因子研究', '盘感练习', '选股策略']);
+  assert.deepEqual(ctx.groups.flatMap(g => g.tabs).sort((a, b) => a - b), constants.TABS.map(t => t.n));
   const previous = state.activeTab;
   try {
     for (const group of ctx.groups) {
       state.activeTab = group.tabs[0];
       const tree = compile(App.template)(ctx, []);
       const [nav] = elements(tree, 'nav');
-      assert.equal(elements(nav, 'button').filter(b => b.props.id?.startsWith('nav-')).length, 4);
+      assert.equal(elements(nav, 'button').filter(b => b.props.id?.startsWith('nav-')).length, ctx.groups.length);
       assert.equal(elements(nav, 'button').filter(b => b.props['aria-current'] === 'location').length, 1);
       for (const [i, section] of elements(nav, 'div').filter(v => v.props?.class === 'workspace-group').entries()) {
         const owner = ctx.groups[i];
@@ -122,6 +122,9 @@ test('左侧各组页签始终在自己的主入口下，只选中当前页', ()
       const panels = elements(tree, 'div').filter(v => v.props?.id === 'tab7');
       assert.equal(panels[0].props.role, 'region');
       assert.equal(panels[0].props['aria-labelledby'], 'nav-practice');
+      const [dashboard] = elements(tree, 'div').filter(v => v.props?.id === 'tab10');
+      assert.equal(dashboard.props.role, 'region');
+      assert.equal(dashboard.props['aria-labelledby'], 'nav-market-dashboard');
     }
   } finally {state.activeTab = previous;}
 });
@@ -141,12 +144,13 @@ test('因子研究入口直达因子分析，回测恢复上次页面，组内�
     }
     ctx.switchTab(3);
     ctx.switchTab(5);
-    ctx.switchGroup(ctx.groups[0]);
+    ctx.switchGroup(ctx.groups.find(group => group.id === 'backtest'));
     assert.equal(state.activeTab, 3);
-    ctx.switchGroup(ctx.groups[1]);
+    const factor = ctx.groups.find(group => group.id === 'factor');
+    ctx.switchGroup(factor);
     assert.equal(state.activeTab, 4);
     assert.equal(url, '?tab=factor');
-    const key = k => ctx.onTabsKeydown({key: k, target: {dataset: {tab: String(state.activeTab)}}, preventDefault() {}}, ctx.groups[1]);
+    const key = k => ctx.onTabsKeydown({key: k, target: {dataset: {tab: String(state.activeTab)}}, preventDefault() {}}, factor);
     key('End'); assert.equal(state.activeTab, 6); assert.equal(focused, 'tabbtn6');
     key('ArrowRight'); assert.equal(state.activeTab, 4); assert.equal(focused, 'tabbtn4');
     key('ArrowLeft'); assert.equal(state.activeTab, 6);

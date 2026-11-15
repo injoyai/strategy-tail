@@ -19,6 +19,7 @@ import Tab5Candidates from './components/Tab5Candidates.js';
 import Tab6Portfolio from './components/Tab6Portfolio.js';
 import Tab7Practice from './components/Tab7Training.js';
 import Tab8Screen from './components/Tab8Screen.js';
+import MarketDashboard from './components/MarketDashboard.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
 import CandidateEditDlg from './components/CandidateEditDlg.js';
 import CandidateEvidenceDlg from './components/CandidateEvidenceDlg.js';
@@ -29,10 +30,10 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, Tab8Screen, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
+    Tab7Practice, Tab8Screen, MarketDashboard, CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
-    return {state, tabs: TABS, groups: NAV_GROUPS, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false, sellEvents: [], sellCursor: 0, sellSocket: null, sellReconnect: null};
+    return {state, tabs: TABS, groups: NAV_GROUPS, tabSlug: TAB_SLUG, groupTabs: {backtest: 1, factor: 4, practice: 7, screen: 8}, navOpen: false, sellEvents: [], sellCursor: 0, sellSocket: null, sellReconnect: null};
   },
   computed: {
     activeGroup() {
@@ -402,7 +403,7 @@ const App = {
   </section>
 
   <div v-for="t in tabs" :key="t.n" class="tab-panel" :id="'tab' + t.n" :ref="el => setPanelRef(el, t.n)"
-    :role="t.n >= 7 ? 'region' : 'tabpanel'" :aria-labelledby="t.n === 7 ? 'nav-practice' : t.n === 8 ? 'nav-screen' : 'tabbtn' + t.n"
+    :role="t.n >= 7 ? 'region' : 'tabpanel'" :aria-labelledby="t.n >= 7 ? 'nav-' + tabSlug[t.n] : 'tabbtn' + t.n"
     tabindex="0" v-show="state.activeTab === t.n">
     <tab1-run v-if="t.n === 1" />
     <tab2-compare v-if="t.n === 2" />
@@ -412,6 +413,7 @@ const App = {
     <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />
     <tab7-practice :ref="el => setTaskRef('tab7', el)" v-if="t.n === 7" />
     <tab8-screen v-if="t.n === 8" :ref="el => setTaskRef('screen', el)" :active="state.activeTab === 8" :sale-revision="sellCursor" />
+    <market-dashboard v-if="t.n === 10" :active="state.activeTab === 10" />
   </div>
 </main>
   </div>

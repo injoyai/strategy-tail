@@ -717,3 +717,70 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 .screen-sale-notices ul{list-style:none;max-height:190px;overflow:auto}
 .screen-sale-notices li{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--rule)}
 .screen-sale-notices li:first-child{margin-top:6px}
+
+/* 数据看板 */
+.market-toolbar,
+.market-session,
+.market-rank-toolbar,
+.market-rank-filters {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.market-toolbar,.market-rank-toolbar {justify-content:space-between}
+.market-toolbar button {min-width:6.8em;padding-inline:10px}
+.market-toolbar button:disabled {opacity:.55;cursor:not-allowed;transform:none}
+.market-session strong {font-size:14px}
+.market-session time,.market-source {font-size:12px;color:var(--ink2)}
+.market-session time {font-variant-numeric:tabular-nums}
+.market-source {color:var(--muted)}
+.market-feedback {min-height:22px}
+.market-feedback :is(.hint,.msg) {margin:0}
+.market-content {display:grid;gap:12px}
+.market-content h2 {font-size:14px;font-weight:650;line-height:1.45}
+.market-index-panel h2,.market-breadth-panel h2 {margin-bottom:10px}
+.market-index-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
+.market-index-quote {background:var(--surface);padding:10px 12px}
+.market-index-name,.market-index-numbers {display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;column-gap:8px}
+.market-index-name {font-size:12px}
+.market-index-name span {color:var(--muted);font-variant-numeric:tabular-nums}
+.market-index-numbers {margin-top:3px;font-variant-numeric:tabular-nums}
+.market-index-numbers strong {font-family:var(--font-disp);font-size:clamp(17px,2vw,24px);line-height:1.25}
+.market-index-numbers span {font-size:13px}
+.market-index-date {margin:2px 0 0}
+.market-index-empty {grid-column:1 / -1;min-height:128px;display:grid;place-items:center}
+.market-panels {display:grid;grid-template-columns:minmax(300px,0.9fr) minmax(0,1.6fr);align-items:start;gap:12px}
+.market-totals,.market-breadth-legend {display:grid;gap:8px}
+.market-totals {grid-template-columns:repeat(2,minmax(0,1fr));margin:0 0 12px}
+.market-totals dt,.market-breadth-legend dt {font-size:12px;color:var(--ink2)}
+.market-totals dd,.market-breadth-legend dd {font-variant-numeric:tabular-nums;font-family:var(--font-disp);font-weight:650}
+.market-totals dd {font-size:21px;line-height:1.35}
+.market-totals small {font-size:12px;font-weight:500;color:var(--muted)}
+.market-breadth-bar {display:flex;height:7px;overflow:hidden;border-radius:4px;background:var(--surface-soft)}
+.market-breadth-bar span {flex:0 0 0}
+.market-breadth-bar [data-side="up"] {background:var(--color-up)}
+.market-breadth-bar [data-side="flat"] {background:var(--muted)}
+.market-breadth-bar [data-side="down"] {background:var(--color-down)}
+.market-breadth-bar [data-side="unclassified"] {background:var(--rule2)}
+.market-breadth-legend {grid-template-columns:repeat(4,minmax(0,1fr));margin:8px 0 14px}
+.market-breadth-legend .pos {color:var(--color-up)}
+.market-breadth-legend .neg {color:var(--color-down)}
+.market-rank-toolbar {margin-bottom:10px}
+.market-rank-filters {margin:0}
+.market-rank-filters select {cursor:pointer}
+.market-table-wrap th[scope="row"] {position:static;background:transparent;color:var(--ink);border-bottom-color:var(--rule);font-weight:600;letter-spacing:0}
+.market-table-wrap :is(td,th) {padding:7px 9px;text-align:right}
+.market-table-wrap :is(th:first-child,td:first-child) {text-align:left}
+.market-ranking :is(th:nth-child(2),td:nth-child(2)) {text-align:left}
+.market-ranking {max-height:386px}
+.market-ranking [aria-sort] {color:var(--ink)}
+.market-sr-only {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media(max-width:1000px) {
+  .market-panels {grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:560px) {
+  .market-index-grid {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .market-index-quote {padding:8px 9px}
+  .market-content .card {padding:11px}
+}
