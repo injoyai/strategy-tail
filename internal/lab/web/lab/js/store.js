@@ -35,7 +35,7 @@ export const state = reactive({
   stopBusy: false,                   // 停止任务按钮 busy
 
   // —— 02 简单配置（跨页共享：01/05 会向条件列表追加条件） ——
-  simpleConds: [],                   // 条件卡数据源 {kind, days, operator, min, max, factorVersion, err, errField}；
+  simpleConds: [],                   // 条件卡数据源 {kind, days, operator, min, max, factorVersion, scoreDirection, err, errField}；
                                      // min/max 为显示值（ratio 因子按百分比），提交时转原始比例
   condsInitialized: false,           // 默认条件卡只创建一次（因子目录就绪后）
   presetId: '',                      // 基础策略预设选择（''=不使用预设）

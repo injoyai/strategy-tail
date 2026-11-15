@@ -26,9 +26,10 @@ export default {
     presetDescText() {
       const p = this.presetInfo;
       return p
-        ? `${p.description}。它会作为基础买入条件，并与下方因子条件同时满足。`
-        : '不附加市值、价格、涨停或均线回调等预设条件；买入只由下方因子条件决定，对照基准为全部样本。';
+        ? `${p.description}。它会作为基础买入条件，并与下方筛选条件同时满足。`
+        : '全部样本作为对照基准。';
     },
+    hasScores() { return state.simpleConds.some(c => c.scoreDirection); },
     sampleSizeVisible() { return state.runCfg.sampleMode === 'random'; },
     sampleCodesVisible() { return state.runCfg.sampleMode === 'codes'; },
   },
@@ -92,10 +93,12 @@ export default {
       c.kind = ne.kind;
       c.days = ne.defaultDays;
       c.factorVersion = ne.implementationVersion || 0;
+      c.scoreDirection = '';
       c.err = ''; c.errField = '';
     },
     onDaysInput(c, e) { c.days = Math.floor(+e.target.value) || 0; c.err = ''; c.errField = ''; },
     onOpChange(c, e) { c.operator = e.target.value; c.err = ''; c.errField = ''; },
+    onScoreChange(c, e) { c.scoreDirection = e.target.value; c.err = ''; c.errField = ''; },
     onBoundInput(c, key, e) {
       const v = e.target.value.trim();
       c[key] = v === '' ? null : +v;
@@ -130,8 +133,9 @@ export default {
       try {
         const d = await Api.runStrategy(spec);
         const n = spec.factorFilters.length;
-        const detail = n === 0 ? '仅基准（无因子条件）'
-          : n === 1 ? '基准 + 1 个因子条件' : `基准 + ${n} 个单条件 + 因子组合`;
+        let detail = n === 0 ? '基准'
+          : n === 1 ? '基准 + 1 个筛选条件' : `基准 + ${n} 个单条件 + 因子组合`;
+        if (spec.factorScores?.length) detail += ' + 因子评分';
         state.runMsg = {text: `已提交 ${d.variants} 个变体（${detail}），运行进度见右下角任务卡。`, ok: true};
         this.startTask('backtest');
         return true;
@@ -162,6 +166,7 @@ export default {
       if (cfg.sampleMode === 'codes') spec.run.sampleCodes = cfg.sampleCodes;
 
       const seen = new Set();
+      const scores = [];
       state.simpleConds.forEach(c => {
         const ent = this.condEntry(c);
         const isRatio = !!(ent && ent.unit === 'ratio');
@@ -170,6 +175,8 @@ export default {
           cardErr(c, 'days', '回看天数需为正整数');
         } else if (seen.has(c.kind + ':' + c.days)) {
           cardErr(c, 'days', '与其他条件重复：相同因子+天数只能出现一次');
+        } else if (c.operator === 'score_only' && !c.scoreDirection) {
+          cardErr(c, 'scoreDirection', '请选择评分方向');
         } else if (c.operator === 'between' && (c.min == null || c.max == null)) {
           cardErr(c, c.min == null ? 'min' : 'max', '区间条件需同时填写下限和上限');
         } else if (c.operator === 'gte' && c.min == null) {
@@ -180,13 +187,18 @@ export default {
           cardErr(c, 'min', '下限不能大于上限');
         } else {
           seen.add(c.kind + ':' + c.days);
-          const ft = {kind: c.kind, days: c.days, operator: c.operator,
+          const factor = {kind: c.kind, days: c.days,
             factorVersion: c.factorVersion || (ent ? (ent.implementationVersion || 0) : 0)};
-          if (c.operator !== 'lte') ft.min = conv(c.min);
-          if (c.operator !== 'gte') ft.max = conv(c.max);
-          spec.factorFilters.push(ft);
+          if (c.operator !== 'score_only') {
+            const ft = {...factor, operator: c.operator};
+            if (c.operator !== 'lte') ft.min = conv(c.min);
+            if (c.operator !== 'gte') ft.max = conv(c.max);
+            spec.factorFilters.push(ft);
+          }
+          if (c.scoreDirection) scores.push({...factor, direction: c.scoreDirection});
         }
       });
+      if (scores.length) spec.factorScores = scores;
       const errs = [];
       if (!spec.exit.holdingDays && !spec.exit.takeProfit && !spec.exit.stopLoss) {
         errs.push('卖出规则至少启用一项（持仓天数 / 止盈 / 止损）');
@@ -237,11 +249,10 @@ export default {
         <input type="text" v-model="state.specName" maxlength="80" placeholder="可选，留空自动生成">
       </div>
 
-      <div class="subhead">因子条件（数量不限，可为 0，全部并且 AND）</div>
+      <div class="subhead">因子筛选与评分</div>
       <div id="condCards">
         <template v-if="state.simpleConds.length">
           <template v-for="(c, i) in state.simpleConds" :key="i">
-            <div v-if="i>0" class="and-sep">并且（AND）</div>
             <div class="cond-card" :class="{highlight: c.hl}">
               <div class="cond-head">
                 <span class="cond-no">条件 {{ i + 1 }} · {{ condLabel(c) }}</span>
@@ -259,12 +270,14 @@ export default {
                 <input type="number" min="1" style="width:64px" :value="c.days"
                   @input="onDaysInput(c, $event)" :class="{invalid: c.err && c.errField==='days'}"
                   :ref="el => setInputRef(el, i, 'days')" :aria-label="'条件 ' + (i + 1) + ' 回看天数'">
-                <select :value="c.operator" @change="onOpChange(c, $event)" :aria-label="'条件 ' + (i + 1) + ' 比较方式'">
+                <label class="lbl" :for="'condFilter' + i">筛选</label>
+                <select :id="'condFilter' + i" :value="c.operator" @change="onOpChange(c, $event)" :aria-label="'条件 ' + (i + 1) + ' 比较方式'">
                   <option value="between">介于</option>
                   <option value="gte">≥ 至少</option>
                   <option value="lte">≤ 至多</option>
+                  <option value="score_only">仅评分</option>
                 </select>
-                <template v-if="c.operator!=='lte'">
+                <template v-if="c.operator!=='lte' && c.operator!=='score_only'">
                   <span class="lbl">下限</span>
                   <input type="number" step="any" :placeholder="isRatioCond(c) ? '如 5 (=5%)' : '数值'"
                     :value="c.min" @input="onBoundInput(c, 'min', $event)"
@@ -273,7 +286,7 @@ export default {
                     :aria-label="'条件 ' + (i + 1) + ' 下限' + (isRatioCond(c) ? '（百分比）' : '')">
                   <span v-if="isRatioCond(c)" class="lbl">%</span>
                 </template>
-                <template v-if="c.operator!=='gte'">
+                <template v-if="c.operator!=='gte' && c.operator!=='score_only'">
                   <span class="lbl">上限</span>
                   <input type="number" step="any" :placeholder="isRatioCond(c) ? '如 5 (=5%)' : '数值'"
                     :value="c.max" @input="onBoundInput(c, 'max', $event)"
@@ -283,12 +296,24 @@ export default {
                   <span v-if="isRatioCond(c)" class="lbl">%</span>
                 </template>
               </div>
-              <div class="hint" v-if="condEntry(c)">
+              <div class="cond-grid" style="margin-top:8px">
+                <label class="lbl" :for="'condScore' + i">评分方向</label>
+                <select :id="'condScore' + i" :value="c.scoreDirection || ''" @change="onScoreChange(c, $event)"
+                  :ref="el => setInputRef(el, i, 'scoreDirection')"
+                  :class="{invalid: c.errField==='scoreDirection'}"
+                  :aria-invalid="c.errField==='scoreDirection'"
+                  :aria-describedby="c.errField==='scoreDirection' ? 'condError' + i : undefined">
+                  <option value="" :disabled="c.operator==='score_only'">{{ c.operator==='score_only' ? '请选择方向' : '不参与评分' }}</option>
+                  <option value="higher_is_better">数值越大，得分越高</option>
+                  <option value="lower_is_better">数值越小，得分越高</option>
+                </select>
+              </div>
+              <div class="hint" v-if="condEntry(c) && c.operator!=='score_only'">
                 {{ isRatioCond(c)
                   ? '按百分比填写（输入 5 表示 5%），提交时转换为原始比例 0.05。原始值示例：' + condEntry(c).example
                   : '原始值示例：' + condEntry(c).example }}
               </div>
-              <div class="cond-err">{{ c.err }}</div>
+              <div :id="'condError' + i" class="cond-err">{{ c.err }}</div>
             </div>
           </template>
         </template>
@@ -298,6 +323,8 @@ export default {
         <button class="secondary" ref="btnAddCond" @click="addCond">添加条件</button>
         <span class="hint" id="condLimitHint">当前 {{ state.simpleConds.length }} 个条件</span>
       </div>
+      <div v-if="hasScores" class="hint">符合全部筛选条件的股票按各因子名次等权评分。因子值缺失的股票不参与排名。综合分越高，次日开盘越优先尝试买入。</div>
+      <div v-else-if="state.simpleConds.length > 1" class="hint">筛选条件须同时满足。</div>
       <div class="hint" style="margin-top:8px">收盘买入信号在下一交易日开盘执行。因子页展示的是分组价格收益，账户回测另计资金约束和成本。</div>
     </template>
 

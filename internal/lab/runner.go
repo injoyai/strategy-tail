@@ -305,13 +305,10 @@ type FactorVariantSummary struct {
 // 变体数与 Variants() 合同不符时返回 nil，防止高级多变体脚本被误当作
 // 多条件对照：N≥2 时为 N+2（N 个条件 + 基准 + 组合增强）；N=1 时
 // 组合增强与单条件等价、N=0 时无单条件，均为 N+1（N=0 即只有基准，
-// 组合字段与基准指向同一变体），组合字段指向最后一个变体。
+// 组合字段与基准指向同一变体）。配置因子评分时多一个变体，组合字段
+// 始终指向最后一个变体。
 func buildComparison(spec StrategySpec, variants []VariantReport) *ComparisonSummary {
-	want := len(spec.FactorFilters) + 2
-	if len(spec.FactorFilters) <= 1 {
-		want = len(spec.FactorFilters) + 1
-	}
-	if len(variants) != want {
+	if len(variants) != spec.variantCount() {
 		return nil
 	}
 	base, combined := variants[0], variants[len(variants)-1]
@@ -462,11 +459,13 @@ func (r *Runner) Start(cfg RunConfig, variants []core.Variant) error {
 }
 
 // StartStrategy 启动简单模式回测：spec 为声明式配置快照，随报告保存
-// 并生成 Comparison 摘要。variants 由 spec.Variants() 构建（N≥2 为
-// N+2 顺序，N=1 为 基准+单条件 2 个，N=0 仅基准 1 个）。
+// 并生成 Comparison 摘要。variants 由 spec.Variants() 构建。
 func (r *Runner) StartStrategy(cfg RunConfig, variants []core.Variant, spec StrategySpec) error {
 	if err := spec.Validate(); err != nil {
 		return err
+	}
+	if len(spec.FactorScores) > 0 && (cfg.Account == nil || len(variants) != spec.variantCount()) {
+		return fmt.Errorf("因子评分缺少账户配置或回测变体")
 	}
 	return r.startBacktest(cfg, variants, &spec)
 }
@@ -668,6 +667,14 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 		return nil, fmt.Errorf("行情运行时尚未初始化")
 	}
 	started := time.Now()
+	var scoreFactors []accountScoreFactor
+	if spec != nil {
+		var err error
+		scoreFactors, err = spec.buildScoreFactors()
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	codes, err := r.resolveCodes(cfg, stop)
 	if err != nil {
@@ -729,6 +736,9 @@ func (r *Runner) run(cfg RunConfig, variants []core.Variant, spec *StrategySpec,
 					rv.Seller = cfg.recordedDefaultSeller(rc)
 				}
 			}
+		}
+		if i == len(variants)-1 && len(scoreFactors) > 0 {
+			rv.Buyer = scoredAccountBuyer{Buyer: rv.Buyer, factors: scoreFactors}
 		}
 		runVariants[i] = rv
 	}

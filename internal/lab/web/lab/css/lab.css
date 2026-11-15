@@ -253,7 +253,7 @@ details.stat>summary{cursor:pointer;font-family:var(--font-disp);font-weight:600
 .cond-grid select:hover,.cond-grid input:hover{border-color:rgba(255,255,255,.26)}
 .cond-grid input[type=number]{width:86px}
 .cond-grid .invalid{border-color:var(--red);box-shadow:0 0 0 2px rgba(239,68,68,.2)}
-.and-sep{text-align:center;font-family:var(--font-num);font-size:10px;font-weight:700;line-height:1.5;color:rgba(216,180,90,.65);margin:7px 0;letter-spacing:.2em}
+#condCards .cond-card+.cond-card{margin-top:8px}
 .cond-err{color:#ff8080;font-size:12px;margin-top:5px}.cond-err:empty{display:none}
 .preset-rules{font-size:12px;color:var(--muted);margin:5px 0 10px;padding-left:20px}
 .subhead{font-family:var(--font-disp);font-size:12px;font-weight:600;color:var(--gold-soft);margin:16px 0 9px;letter-spacing:.08em}

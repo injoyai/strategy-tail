@@ -248,7 +248,7 @@ export default {
   <p v-if="rep && !accountMode" class="hint" role="status">历史报告未记录账户资金；重新运行回测后可查看账户收益率与上证指数对比。</p>
   <details v-if="accountMode" class="macd-parameters">
     <summary>账户：{{ rep.config.account.initialCapital / 10000 }} 万元 · 最多 {{ rep.config.account.maxPositions }} 只 · 每笔预算 {{ rep.config.account.orderBudget / 10000 }} 万元</summary>
-    <p v-if="nextBarExecution">收盘买入信号次日开盘执行。开盘先处理待卖仓位，买入按代码升序。盘中卖出信号使用后续可成交分钟的收盘价，收盘信号从次日开盘起执行。</p>
+    <p v-if="nextBarExecution">收盘买入信号次日开盘执行。开盘先处理待卖仓位，{{ rep.strategySpec?.factorScores?.length ? '评分变体按综合分优先买入，其余变体按代码升序' : '买入按代码升序' }}。盘中卖出信号使用后续可成交分钟的收盘价，收盘信号从次日开盘起执行。</p>
     <p v-else>历史口径，收盘信号按同日收盘价买入。</p>
     <p>每笔预算含买入费用，资金不足时减少股数，按 100 股取整。单票只持有一笔，跨年保留现金与持仓，按每日收盘价估值。</p>
     <p>账户收益率 =（现金 + 持仓市值）÷ 初始资金 − 1。上证指数以回测首个交易日收盘价为基准，按同期买入持有价格涨幅计算；指数不扣交易成本，策略含费用与滑点。超额列为两者之差（百分点）。</p>

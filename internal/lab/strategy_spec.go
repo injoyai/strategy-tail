@@ -15,7 +15,7 @@ import (
 // 职责边界：Validate 只管声明式合同（version/可选 preset/名称/N 项因子过滤）；
 // RunConfig 只做字段转换，运行范围与卖出规则的最终合法性留给现有 RunConfig；
 // Variants 从可选预设 Builder 取基础 Buyer；未选预设时以 A全部 作为透明
-// 对照基准，买入只由逐项 A因子过滤决定。
+// 对照基准。可选的因子评分追加一个按分数安排买入优先级的账户变体。
 // 不给 core.Buyer 增加序列化能力，接口实例不写入报告。
 
 // strategySpecVersion 首版配置版本；升级时显式迁移。
@@ -49,6 +49,7 @@ type StrategySpec struct {
 	Name          string             `json:"name"`
 	BasePresetID  string             `json:"basePresetId"` // 空值=不使用预设，仅因子条件
 	FactorFilters []FactorFilterSpec `json:"factorFilters"`
+	FactorScores  []FactorScoreSpec  `json:"factorScores,omitempty"`
 	Exit          ExitSpec           `json:"exit"`
 	Run           StrategyRunSpec    `json:"run"`
 }
@@ -66,7 +67,11 @@ func (s StrategySpec) Validate() error {
 			return err
 		}
 	}
-	return s.validateFilters()
+	if err := s.validateFilters(); err != nil {
+		return err
+	}
+	_, err := s.buildScoreFactors()
+	return err
 }
 
 // validateFilters 因子过滤声明校验：数量不限、可为 0（2026-09-19 用户裁决
@@ -111,6 +116,9 @@ func (s StrategySpec) DisplayName() string {
 	if name := strings.TrimSpace(s.Name); name != "" {
 		return name
 	}
+	if len(s.FactorScores) > 0 {
+		return fmt.Sprintf("因子评分 · %d 项", len(s.FactorScores))
+	}
 	if strings.TrimSpace(s.BasePresetID) == "" {
 		return fmt.Sprintf("仅因子条件 · %d 条", len(s.FactorFilters))
 	}
@@ -144,7 +152,8 @@ func (s StrategySpec) baseBuyer() (core.Buyer, error) {
 // 只追加单个过滤用于解释）→ 组合增强 · 预设名 · N 个条件
 // （And{基础, filter1..filterN}）。N≥2 时共 N+2 个；N=1 时组合增强
 // 与单条件 1 完全等价、N=0 时无单条件，均不重复生成组合增强
-// （共 N+1 个，N=0 即只有基准 1 个）。
+// （共 N+1 个，N=0 即只有基准 1 个）。配置评分时额外追加评分变体，
+// 沿用完整组合的筛选条件。
 // 调用前必须先通过 Validate。
 func (s StrategySpec) Variants() ([]core.Variant, error) {
 	base, err := s.baseBuyer()
@@ -162,7 +171,7 @@ func (s StrategySpec) Variants() ([]core.Variant, error) {
 		filters = append(filters, flt)
 		descs = append(descs, s.FactorFilters[i].Describe())
 	}
-	vs := make([]core.Variant, 0, len(s.FactorFilters)+2)
+	vs := make([]core.Variant, 0, s.variantCount())
 	vs = append(vs, core.Variant{Name: "基准 · " + presetName, Buyer: base})
 	for i := range filters {
 		vs = append(vs, core.Variant{
@@ -170,23 +179,31 @@ func (s StrategySpec) Variants() ([]core.Variant, error) {
 			Buyer: sb.And{base, filters[i]},
 		})
 	}
-	if len(s.FactorFilters) <= 1 {
-		// N=1：单条件 1 = And{基础, filter1}，即组合增强本身；N=0：无单条件。
-		// 两者都不再生成组合增强（N=0 时 vs 只有基准）。
-		return vs, nil
+	if len(filters) > 1 {
+		combined := make(sb.And, 0, len(filters)+1)
+		combined = append(combined, base)
+		combined = append(combined, toBuyers(filters)...)
+		combinedName := "组合增强 · " + presetName + " · " + strings.Join(descs, "、")
+		if strings.TrimSpace(s.BasePresetID) == "" {
+			combinedName = "因子组合 · " + strings.Join(descs, "、")
+		}
+		vs = append(vs, core.Variant{Name: combinedName, Buyer: combined})
 	}
-	combined := make(sb.And, 0, len(filters)+1)
-	combined = append(combined, base)
-	combined = append(combined, toBuyers(filters)...)
-	combinedName := "组合增强 · " + presetName + " · " + strings.Join(descs, "、")
-	if strings.TrimSpace(s.BasePresetID) == "" {
-		combinedName = "因子组合 · " + strings.Join(descs, "、")
+	if len(s.FactorScores) > 0 {
+		vs = append(vs, core.Variant{Name: "因子评分", Buyer: vs[len(vs)-1].Buyer})
 	}
-	vs = append(vs, core.Variant{
-		Name:  combinedName,
-		Buyer: combined,
-	})
 	return vs, nil
+}
+
+func (s StrategySpec) variantCount() int {
+	n := len(s.FactorFilters) + 1
+	if len(s.FactorFilters) > 1 {
+		n++
+	}
+	if len(s.FactorScores) > 0 {
+		n++
+	}
+	return n
 }
 
 // toBuyers A因子过滤 值切片 → Buyer 接口切片（And 需要接口元素）。
@@ -233,10 +250,22 @@ func (s StrategySpec) RecordVariants() ([]core.Variant, error) {
 			Buyer: rc.WrapBuyerGroup(members, "buy", builder.RoleBuy, true),
 		})
 	}
-	if len(s.FactorFilters) <= 1 {
-		return out, nil
+	for len(out) < len(plain) {
+		// The scored variant uses the same filters and has its own replay context.
+		buyer, err := s.recordCombinedBuyer(base)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, core.Variant{Name: plain[len(out)].Name, Buyer: buyer})
 	}
-	rc = builder.NewRecordContext()
+	return out, nil
+}
+
+func (s StrategySpec) recordCombinedBuyer(base core.Buyer) (core.Buyer, error) {
+	rc := builder.NewRecordContext()
+	if len(s.FactorFilters) == 0 {
+		return rc.WrapBuyerTree(base, "buy", builder.RoleBuy, true), nil
+	}
 	members := make([]core.Buyer, 0, len(s.FactorFilters)+1)
 	members = append(members, rc.WrapBuyerTree(base, "buy.children[0]", builder.RoleBuy, false))
 	for i := range s.FactorFilters {
@@ -247,9 +276,5 @@ func (s StrategySpec) RecordVariants() ([]core.Variant, error) {
 		members = append(members, rc.WrapBuyerRule(flt, builder.NewFactorRule(
 			&s.FactorFilters[i], fmt.Sprintf("buy.children[%d]", i+1), builder.RoleBuy), false, false))
 	}
-	out = append(out, core.Variant{
-		Name:  plain[len(plain)-1].Name,
-		Buyer: rc.WrapBuyerGroup(members, "buy", builder.RoleBuy, true),
-	})
-	return out, nil
+	return rc.WrapBuyerGroup(members, "buy", builder.RoleBuy, true), nil
 }

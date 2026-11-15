@@ -67,7 +67,8 @@ type accountSignal struct {
 }
 
 type accountBuySignal struct {
-	code string
+	code     string
+	priority float64
 	accountSignal
 }
 
@@ -146,7 +147,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		calendar[date] = true
 		benchmark = append(benchmark, BenchmarkPoint{Date: date, Return: (k.Close/index[0].Close - 1) * 100})
 	}
-	// 代码顺序决定同一收盘时刻多个信号的开盘买入优先级。
+	// 代码顺序是默认买入优先级，也是因子评分并列时的顺序。
 	codes := append([]string(nil), cfg.Codes...)
 	for i := range codes {
 		codes[i] = protocol.AddPrefix(codes[i])
@@ -368,6 +369,9 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 						signal := newAccountSignal(accountCloseTime(ks[len(ks)-1].Time), false, s.replay, contexts, i)
 						s.entries = append(s.entries, accountBuySignal{code: code, accountSignal: *signal})
 					}
+				}
+				if buyer, ok := variant.Buyer.(scoredAccountBuyer); ok && len(s.entries) != 0 {
+					s.entries = buyer.prioritize(s.entries, prefixes)
 				}
 			}
 			equity := s.cash

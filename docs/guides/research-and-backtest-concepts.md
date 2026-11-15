@@ -81,12 +81,14 @@
 | --- | --- |
 | 数值因子 | [`core.Factor`](../../core/factor.go)、[`core.ContextFactor`](../../core/factor_context.go)、[`strategies/factor/`](../../strategies/factor) |
 | 因子加区间判断 | [`A因子过滤`](../../strategies/buy/factor_filter.go) |
-| 因子组合模式 | [`StrategySpec`](../../internal/lab/strategy_spec.go)，将因子条件组合为买入规则 |
+| 因子组合模式 | [`StrategySpec`](../../internal/lab/strategy_spec.go)，组合筛选条件并可配置账户买入的评分方向 |
 | 自由搭建 | [`BuilderSpec`](../../internal/lab/builder/spec.go) 与[条件组件目录](../../internal/lab/builder/catalog.go)，组织买入、卖出和风控规则 |
 | 因子研究 | [`analysis.go`](../../internal/lab/analysis.go) 与 [`factor_analysis_v4.go`](../../internal/lab/factor_analysis_v4.go) |
 | 回测基础与研究执行 | [`core.Backtest`](../../core/backtest.go) 与 [`internal/researchrun/`](../../internal/researchrun) |
 
-因子组合模式复用因子值，再通过区间生成条件；自由搭建保留原条件组件，价量、均线、RSI、ATR、布林/ZScore 和 MACD 等数值计算由底层因子提供，条件层负责比较、时序判断和组合。
+在「回测 → 因子组合」中，每条因子可设置区间筛选和评分方向。比较方式选「仅评分」时，只需指定因子和方向。设置评分后，报告增加「因子评分」变体并保存方向设置。该变体在每个信号日收盘后，对通过全部筛选且评分因子值齐全的股票按各因子方向分别排名，再取等权平均。分数相同按股票代码排序。下一交易日开盘按该顺序尝试买入，仍受资金、持仓和成交约束。
+
+自由搭建保留原条件组件，价量、均线、RSI、ATR、布林/ZScore 和 MACD 等数值计算由底层因子提供，条件层负责比较、时序判断和组合。
 
 ### 底层因子与条件的拆分
 

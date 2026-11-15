@@ -14,6 +14,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/core"
+	"github.com/injoyai/strategy-tail/internal/portfolioresearch"
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	ss "github.com/injoyai/strategy-tail/strategies/sell"
@@ -230,6 +231,61 @@ func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
 		t.Fatalf("position limit ignored despite spare cash: %v", err)
 	}
 	nearAccount(t, accounts[0].Points[1].Cash, 60000)
+}
+
+func TestAccountFactorScoreDirectionControlsNextOpenPriority(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
+	data := map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 100, 100),
+		"sh600001": accountBars(dates, 10, 10, 10),
+		"sh600002": accountBars(dates, 10, 10.5, 10),
+		"sh600003": accountBars(dates, 10, 9.5, 10),
+	}
+	account := AccountConfig{InitialCapital: 20000, MaxPositions: 1, OrderBudget: 20000}
+	for _, tc := range []struct {
+		direction string
+		code      string
+	}{
+		{portfolioresearch.DirectionHigherIsBetter, "sh600002"},
+		{portfolioresearch.DirectionLowerIsBetter, "sh600003"},
+	} {
+		t.Run(tc.direction, func(t *testing.T) {
+			spec := StrategySpec{
+				Version: strategySpecVersion,
+				Run:     StrategyRunSpec{Account: &account},
+				FactorScores: []FactorScoreSpec{
+					{Kind: "momentum", Days: 1, Direction: tc.direction},
+				},
+			}
+			if err := spec.Validate(); err != nil {
+				t.Fatal(err)
+			}
+			variants, err := spec.RecordVariants()
+			if err != nil || len(variants) != 2 || variants[1].Name != "因子评分" {
+				t.Fatalf("expected baseline and scored variants, got %v (%v)", variants, err)
+			}
+			factors, err := spec.buildScoreFactors()
+			if err != nil {
+				t.Fatal(err)
+			}
+			base := accountBuyer{onlyDate: dates[1]}
+			cfg := accountTestConfig(data, base, accountNeverSell{})
+			cfg.Variants = append(cfg.Variants, researchrun.Variant{
+				Name: variants[1].Name, Buyer: scoredAccountBuyer{Buyer: base, factors: factors},
+			})
+			r, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, account)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if trades := r.Results[0].Trades; len(trades) != 1 || trades[0].Code != "sh600001" {
+				t.Fatalf("baseline priority changed: %+v", trades)
+			}
+			if trades := r.Results[1].Trades; len(trades) != 1 || trades[0].Code != tc.code ||
+				trades[0].BuyTime.Format(time.DateTime) != dates[2]+" 09:30:00" {
+				t.Fatalf("expected %s first at the next open, got %+v", tc.code, trades)
+			}
+		})
+	}
 }
 
 func TestAccountMinuteSignalUsesLaterPriceAndRebuyWaitsForOpen(t *testing.T) {
