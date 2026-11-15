@@ -211,6 +211,9 @@ tbody tr.selected{background:rgba(76,141,255,.14)}
 .stock-info-comparison tbody tr{cursor:default}
 .stock-info-comparison tbody tr:hover{background:none}
 button.trade-kline-button{min-height:28px;padding:3px 8px;font-family:var(--font-num);white-space:nowrap}
+button.stock-chart-button{border:0;padding:0;background:none;color:var(--accent);font:inherit;text-align:left;text-decoration:underline;text-underline-offset:.18em;cursor:pointer}
+button.stock-chart-button:hover,button.stock-chart-button:active{color:var(--ink)}
+.pf-attribution-heading{font-family:var(--font-disp);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold-soft);margin:14px 0 6px}
 .trade-table-tools{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .trade-table-tools .hint{margin:0}
 .trade-table.tabulator{margin-top:10px;max-width:100%;border:1px solid var(--rule);border-radius:12px;background:var(--bg2);color:var(--ink2);font-family:inherit;font-size:12px;line-height:1.6;font-variant-numeric:tabular-nums}
@@ -724,14 +727,18 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
   .screen-results .screen-table-wrap,.screen-results .screen-signal-table{flex:none;--signal-table-height:clamp(240px,46dvh,460px)}
   .screen-table-wrap{height:var(--signal-table-height)}
 }
-.screen-diagnosis{width:min(1150px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 24px);overflow:auto}
-.screen-diagnosis h2{font-size:16px}
+.screen-diagnosis,.stock-chart-dialog{width:min(1150px,calc(100% - 24px));max-width:none;max-height:calc(100dvh - 24px);overflow:auto}
+.screen-diagnosis h2,.stock-chart-dialog h2{font-size:16px;overflow-wrap:anywhere}
+.stock-chart-dialog .dlg-head button{flex:none}
+.stock-chart-frame{position:relative}
+.stock-chart-frame .chart-kline{height:clamp(320px,64dvh,680px);margin:0}
+.stock-chart-status{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:12px;text-align:center}
 .screen-diagnosis>.screen-result-head{margin-bottom:10px}
 .screen-kline{height:clamp(320px,54vh,580px);margin-bottom:12px}
 .screen-rule-tree,.screen-rule-tree ul{padding-left:18px;overflow-wrap:anywhere}
 .screen-rule-tree li{margin:4px 0}
 @media(max-width:560px){
-  .screen-diagnosis{padding:12px}
+  .screen-diagnosis,.stock-chart-dialog{padding:12px}
   .screen-kline{height:380px}
   .screen-result-filter select{max-width:170px}
   .screen-history-filters input{width:82px}

@@ -31,7 +31,7 @@ const {default: Tab7} = await import(moduleURL(Tab7Src));
 const appSrc = read('./lab/js/app.js')
   .replace(/^import (\w+) from .*;$/gm, 'const $1 = {};')
   .replace(/^import (\{.*\}) from .*;$/gm, 'const $1 = globalThis.practiceTest;')
-  .replace("createApp(App).mount('#app');", 'export default App;');
+  .replace(/^createApp\(App\).*$/m, 'export default App;');
 globalThis.practiceTest.taskProgress = format.taskProgress;
 globalThis.practiceTest.TABS = constants.TABS;
 globalThis.practiceTest.NAV_GROUPS = constants.NAV_GROUPS;

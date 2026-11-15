@@ -142,7 +142,7 @@ for (const width of [1440, 390]) {
         rules: [{name: 'MACD精选', matched: false, children: [{name: '均线条件', matched: true}]}]}});
     });
     await page.goto('/?tab=screen');
-    const buy = page.getByRole('button', {name: '查看 sh600000 K线', exact: true});
+    const buy = page.getByRole('button', {name: '查看 sh600000 浦发银行 K线', exact: true});
     await buy.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('alert')).toContainText('测试行情读取失败');

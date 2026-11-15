@@ -32,6 +32,7 @@ export function taskProgress(s = {}, names) {
       ? (s.task === 'screen_scan' || s.task === 'screen_history' ? '已处理' : '当前股票') : '当前';
   return {phase, label, done, total, percent: total > 0 ? Math.round(done / total * 100) : null,
     counts: total > 0 ? `${done}/${total} ${unitLabel}` : '',
+    currentLabel,
     current: s.currentCode ? `${currentLabel} ${stockLabel(s.currentCode, names)}` : ''};
 }
 

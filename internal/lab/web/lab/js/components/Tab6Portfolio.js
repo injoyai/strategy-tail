@@ -6,7 +6,7 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api, requestUUID } from '../api.js';
-import { stockLabel, esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
+import { esc, pfPct, pfNum, pfCls, pfShort, pfErrMsg, factorInstanceName, taskProgress } from '../format.js';
 import { mountChart, dropChart, NAV_COLORS } from '../echarts.js';
 
 const PF_EVIDENCE = {exploratory: '探索性', retrospective: '回溯', prospective: '前瞻'};
@@ -20,7 +20,7 @@ export default {
   name: 'Tab6Portfolio',
   inject: ['switchTab', 'startTask', 'openPfExpDlg', 'openPfValDlg'],
   setup() {
-    return {stockLabel, state, PF_RUNSTATE, PF_VERDICT, pfPct, pfCls, pfShort};
+    return {state, PF_RUNSTATE, PF_VERDICT, pfPct, pfCls, pfShort};
   },
   data() {
     return {
@@ -182,11 +182,8 @@ export default {
         return {code, t, a, dv};
       });
     },
-    attributionHtml() {
-      const rep = this.selectedRunReport;
-      if (!rep) return '';
-      const att = rep.attribution || {};
-      const rd = att.redundancy || {};
+    redundancyHtml() {
+      const rd = this.selectedRunReport?.attribution?.redundancy || {};
       const parts = [];
       parts.push(this.pfH4('因子相关（两两日截面 Spearman，时间均值/分位）'));
       parts.push(this.pfTable(['因子 A', '因子 B', '均值', 'P25', 'P50', 'P75', '有效日'],
@@ -213,8 +210,11 @@ export default {
           rd.weightStability.map(w => `<tr><td>${esc(w.factor)}</td><td class="pf-num">${pfNum(w.meanWeight, 4)}</td><td class="pf-num">${pfNum(w.stdWeight, 4)}</td><td class="pf-num">${w.capHits}</td><td class="pf-num">${w.snapshots}</td></tr>`)));
       }
       (rd.warnings || []).forEach(w => parts.push(`<div class="hint" style="color:#f0cd86">⚠ ${esc(w)}</div>`));
-      parts.push(this.pfH4('股票贡献（算术累计）'));
-      parts.push(this.pfTable(['代码', '贡献'], (att.stocks || []).map(s => `<tr><td>${esc(stockLabel(s.code, state.stockNames))}</td><td class="pf-num ${pfCls(s.contribution)}">${pfPct(s.contribution, 4)}</td></tr>`)));
+      return parts.join('');
+    },
+    attributionHtml() {
+      const att = this.selectedRunReport?.attribution || {};
+      const parts = [];
       parts.push(this.pfH4('行业贡献'));
       parts.push(this.pfTable(['行业', '贡献', '股票数'], (att.industries || []).map(i => `<tr><td>${esc(i.industry)}</td><td class="pf-num ${pfCls(i.contribution)}">${pfPct(i.contribution, 4)}</td><td class="pf-num">${i.stockCount}</td></tr>`)));
       parts.push(this.pfH4('成本与偏离'));
@@ -432,7 +432,7 @@ export default {
       const v = value == null || value === '—' ? '<span class="na">—</span>' : esc(String(value));
       return `<div class="pf-metric"><div class="pf-m-label">${esc(label)}</div><div class="pf-m-value ${cls || ''}">${v}${sub ? '<small> ' + esc(sub) + '</small>' : ''}</div></div>`;
     },
-    pfH4(t) { return `<h4 style="font-family:var(--font-disp);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--gold-soft);margin:14px 0 6px">${esc(t)}</h4>`; },
+    pfH4(t) { return `<h4 class="pf-attribution-heading">${esc(t)}</h4>`; },
     pfTable(headers, rows) {
       if (!rows || !rows.length) return '<div class="empty">报告未包含该归因数据。</div>';
       return `<div class="pf-table-wrap" style="max-height:300px"><table><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -1480,7 +1480,7 @@ export default {
               <thead><tr><th>代码</th><th>目标权重</th><th>实际权重</th><th>偏离</th></tr></thead>
               <tbody id="pfWeightBody">
                 <tr v-for="w in weightRows" :key="w.code">
-                  <td>{{ stockLabel(w.code, state.stockNames) }}</td>
+                  <td><stock-chart-button :code="w.code" /></td>
                   <td>{{ pfPct(w.t) }}</td>
                   <td>{{ pfPct(w.a) }}</td>
                   <td :class="pfCls(w.dv)">{{ pfPct(w.dv) }}</td>
@@ -1493,7 +1493,21 @@ export default {
       </div>
       <div class="pf-detail-block">
         <h4>归因详情</h4>
-        <div id="pfAttribution" v-html="attributionHtml"></div>
+        <div id="pfAttribution">
+          <div v-html="redundancyHtml"></div>
+          <h4 class="pf-attribution-heading">股票贡献（算术累计）</h4>
+          <div v-if="selectedRunReport.attribution?.stocks?.length" class="pf-table-wrap" style="max-height:300px">
+            <table>
+              <thead><tr><th>代码</th><th>贡献</th></tr></thead>
+              <tbody><tr v-for="row in selectedRunReport.attribution.stocks" :key="row.code">
+                <td><stock-chart-button :code="row.code" /></td>
+                <td class="pf-num" :class="pfCls(row.contribution)">{{ pfPct(row.contribution, 4) }}</td>
+              </tr></tbody>
+            </table>
+          </div>
+          <div v-else class="empty">报告未包含该归因数据。</div>
+          <div v-html="attributionHtml"></div>
+        </div>
       </div>
       <div class="pf-detail-block">
         <h4>产物下载（仅 completed 可读，白名单五类）</h4>

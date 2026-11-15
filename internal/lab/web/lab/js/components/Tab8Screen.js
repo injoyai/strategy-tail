@@ -305,14 +305,17 @@ export default {
         <p class="hint screen-coverage">已评估 {{ result.evaluated }} / {{ result.universe }} 只 · 无当日可用行情 {{ result.noSessionBars }} 只
           <span v-if="result.failed"> · 日线读取失败 {{ result.failed }} 只</span>
         </p>
-        <details v-if="result.failedCodes?.length" class="ui-help"><summary>读取失败的股票</summary><p>{{ result.failedCodes.join('、') }}</p></details>
+        <details v-if="result.failedCodes?.length" class="ui-help">
+          <summary>读取失败的股票</summary>
+          <p><template v-for="(code, index) in result.failedCodes" :key="code">{{ index ? '、' : '' }}<stock-chart-button :code="code" /></template></p>
+        </details>
       </template>
       <div v-if="shown.length" class="screen-table-wrap" tabindex="0" aria-label="选股结果表格">
         <table class="screen-table" aria-labelledby="screen-results-title">
           <thead><tr><th scope="col">股票</th><th scope="col">价格（元）</th><th scope="col">涨跌幅</th><th scope="col">行情时间</th><th scope="col">命中策略</th></tr></thead>
           <tbody><tr v-for="row in shown" :key="row.code">
-            <th scope="row"><button type="button" class="secondary trade-kline-button" :aria-label="'查看 ' + row.code + ' K线'"
-              aria-controls="screen-diagnosis" @click="diagnose(row)">{{ row.name || row.code }} · K线</button><small v-if="row.name">{{ row.code }}</small></th>
+            <th scope="row"><button type="button" class="secondary trade-kline-button" :aria-label="'查看 ' + row.code + (row.name ? ' ' + row.name : '') + ' K线'"
+              aria-controls="screen-diagnosis" @click="diagnose(row)">{{ row.code }}{{ row.name ? ' ' + row.name : '' }} · K线</button></th>
             <td>{{ row.price.toFixed(2) }}</td>
             <td :class="{'num-up': row.rise > 0, 'num-down': row.rise < 0}">{{ riseText(row.rise) }}</td>
             <td><time :datetime="row.time.replace(' ', 'T') + '+08:00'">{{ row.time }}</time></td>

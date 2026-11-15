@@ -27,12 +27,14 @@ import FactorValidationDlg from './components/FactorValidationDlg.js';
 import CandidateEvidenceDlg from './components/CandidateEvidenceDlg.js';
 import PfExperimentDlg from './components/PfExperimentDlg.js';
 import PfValidationDlg from './components/PfValidationDlg.js';
+import StockChartButton from './components/StockChartButton.js';
+import StockChartDialog from './components/StockChartDialog.js';
 
 const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, Tab8Screen, IndexResearch, MarketDashboard,
+    Tab7Practice, Tab8Screen, IndexResearch, MarketDashboard, StockChartDialog,
     CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, FactorValidationDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
@@ -57,6 +59,7 @@ const App = {
   provide() {
     return {
       switchTab: n => this.switchTab(n),
+      openStockChart: (code, name) => this.$refs.stockChart.show(code, name),
       startTask: (task, opts) => this.startTask(task, opts),
       openRunConfig: (mode, run) => this.$refs.runConfig.openDlg(mode, run),
       openCandidateDlg: () => this.$refs.candSave && this.$refs.candSave.openDlg(),
@@ -219,6 +222,8 @@ const App = {
         indeterminate: !determinate && st === 'running',
         detail,
         current,
+        currentStock: st === 'running' && /^(sh|sz|bj)\d{6}$/i.test(s.currentCode || '') ? s.currentCode : '',
+        currentLabel: p.currentLabel,
         error: s.error || '',
         running: st === 'running',
         background: s.background,
@@ -372,7 +377,7 @@ const App = {
     </div>
     <ul>
       <li v-for="event in sellEvents" :key="event.id">
-        <span>{{ event.signal.name || event.signal.code }} · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元</span>
+        <span><stock-chart-button :code="event.signal.code" :name="event.signal.name" /> · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元</span>
         <button type="button" class="secondary" @click="openScreenSale(event)">查看K线</button>
       </li>
     </ul>
@@ -395,7 +400,10 @@ const App = {
     <div class="status-foot">
       <div class="status-meta">
         <span id="statusDetail" class="status-detail">{{ taskDock?.detail || '' }}</span>
-        <span id="statusCurrent" class="status-current">{{ taskDock?.current || '' }}</span>
+        <span id="statusCurrent" class="status-current">
+          <template v-if="taskDock?.currentStock">{{ taskDock.currentLabel }} <stock-chart-button :code="taskDock.currentStock" /></template>
+          <template v-else>{{ taskDock?.current || '' }}</template>
+        </span>
       </div>
       <div class="status-actions">
         <button type="button" class="secondary" v-if="taskDock?.connectionError" @click="pollStatus()">重试读取</button>
@@ -434,7 +442,8 @@ const App = {
 <pf-experiment-dlg ref="pfExpDlg" />
 <pf-validation-dlg ref="pfValDlg" />
 <run-config-dlg ref="runConfig" />
+<stock-chart-dialog ref="stockChart" />
   `,
 };
 
-createApp(App).mount('#app');
+createApp(App).component('StockChartButton', StockChartButton).mount('#app');

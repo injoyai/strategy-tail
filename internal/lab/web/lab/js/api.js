@@ -53,7 +53,7 @@ export const Api = {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
   deleteReport: id => api('DELETE', '/api/report/' + encodeURIComponent(id)),
-  kline: (code, from, to) => api('GET', `/api/kline/${encodeURIComponent(code)}?from=${from}&to=${to}`),
+  kline: (code, from, to, signal) => api('GET', `/api/kline/${encodeURIComponent(code)}?from=${from}&to=${to}`, undefined, signal),
   // 回放（报告内快照，旧报告不可用时 400 提示重新回测）
   replay: (id, variant) => api('GET', `/api/report/${encodeURIComponent(id)}/replay/${variant}`),
   replayKline: (id, code) => api('GET', `/api/report/${encodeURIComponent(id)}/replay/kline/${encodeURIComponent(code)}`),

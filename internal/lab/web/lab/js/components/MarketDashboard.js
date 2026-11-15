@@ -1,6 +1,4 @@
 import { Api } from '../api.js';
-import { stockLabel } from '../format.js';
-import { state } from '../store.js';
 
 const exchangeNames = {sh: '沪市', sz: '深市', bj: '北交所'};
 const breadthFields = [
@@ -110,7 +108,6 @@ export default {
       }
     },
     exchangeName(code) { return exchangeNames[code]; },
-    stockName(code) { return stockLabel(code, state.stockNames); },
     count(value) { return integer.format(value); },
     captured(value) { return marketClock.format(new Date(value)); },
     price(value) { return value == null ? '—' : decimal.format(value); },
@@ -274,7 +271,7 @@ export default {
             <tbody>
               <tr v-for="(row, i) in rankedStocks" :key="row.code">
                 <td>{{ i + 1 }}</td>
-                <th scope="row">{{ stockName(row.code) }}</th>
+                <th scope="row"><stock-chart-button :code="row.code" /></th>
                 <td>{{ price(row.close) }}</td>
                 <td :class="direction(row.change)">{{ change(row.change) }}</td>
                 <td>{{ amount(row.amount) }}</td>

@@ -145,7 +145,10 @@ export default {
   <p v-if="data?.archiveError" class="builder-field-error" role="alert">{{ data.archiveError }}</p>
   <p v-if="error" class="builder-field-error" role="alert">{{ error }} <button type="button" class="secondary" @click="load">重试读取</button></p>
   <p v-if="tableError" class="builder-field-error" role="alert">{{ tableError }} <button type="button" class="secondary" @click="syncTable">重试表格</button></p>
-  <details v-if="data?.failedCodes?.length" class="ui-help"><summary>{{ data.failedCodes.length }} 只股票行情读取失败</summary><p>{{ data.failedCodes.join('、') }}</p></details>
+  <details v-if="data?.failedCodes?.length" class="ui-help">
+    <summary>{{ data.failedCodes.length }} 只股票行情读取失败</summary>
+    <p><template v-for="(code, index) in data.failedCodes" :key="code">{{ index ? '、' : '' }}<stock-chart-button :code="code" /></template></p>
+  </details>
   <div v-show="data?.total > 0" ref="table" class="trade-table screen-signal-table" aria-label="策略信号表格"></div>
   <p v-if="!data?.total && !data?.running && !error" class="screen-empty" role="status">{{ loading ? '正在读取记录…' : sellMode ? '今日暂无已入库的卖点。' : '当前条件下暂无交易记录。' }}</p>
   <div v-if="data?.total" class="screen-pagination">

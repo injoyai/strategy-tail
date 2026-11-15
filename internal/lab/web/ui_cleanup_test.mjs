@@ -14,7 +14,7 @@ globalThis.cleanupTestGlobals = {...Vue, ...constants, ...format, state, runtime
 const importStubs = s => s.replace(/^import (\w+) from .*;$/gm, 'const $1 = {};')
   .replace(/^import (\{.*\}) from .*;$/gm, 'const $1 = globalThis.cleanupTestGlobals;');
 const {default: App} = await import(moduleURL(importStubs(read('./lab/js/app.js'))
-  .replace("createApp(App).mount('#app');", 'export default App;')));
+  .replace(/^createApp\(App\).*$/m, 'export default App;')));
 const {default: Run} = await import(moduleURL(importStubs(read('./lab/js/components/Tab1Run.js'))));
 const compile = template => Vue.compile(template, {decodeEntities: s => s, hoistStatic: false,
   onError: error => {throw error;}});

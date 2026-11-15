@@ -8,7 +8,6 @@
 import { watch } from '../vendor/vue.esm-browser.prod.js';
 import { state } from '../store.js';
 import { Api } from '../api.js';
-import { stockLabel } from '../format.js';
 import { practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel, practiceFailReasonLabel, practiceActionLabel, practiceDayLabel, newCommandId, pnlClass, fmtMoney, fmtPct, fmtTime, practiceKlineData, practiceReportSections, practiceReportSummary, practiceReportText } from '../practice.js';
 import { mountKline, dropKline } from '../kline.js';
 import { StockInfo } from './StockInfo.js';
@@ -23,7 +22,7 @@ export default {
   setup() {
     // 模板中直接调用的格式化与文案函数必须从 setup 返回，否则模板作用域不可见。
     return {
-      stockLabel, state,
+      state,
       fmtMoney, fmtPct, fmtTime, pnlClass, practiceReportSections, practiceReportSummary,
       practicePhaseLabel, practiceStageLabel, practiceEndReasonLabel,
       practiceFailReasonLabel, practiceActionLabel, practiceDayLabel,
@@ -88,11 +87,8 @@ export default {
       if (s.stage === 'sold') return `${s.quantity} 股已卖出 · 回收 ${fmtMoney(s.sellIncomeYuan)} 元`;
       return '—';
     },
-    reviewTitle() {
-      const rv = this.review;
-      if (!rv) return '';
-      const sig = (rv.days || []).find(d => d.day === 0);
-      return `${stockLabel(rv.code, state.stockNames)} · 信号日 ${sig && sig.date ? sig.date : '—'}`;
+    reviewSignalDate() {
+      return this.review?.days?.find(d => d.day === 0)?.date;
     },
     // 本题评估行（口径全部来自服务端 eval，前端不重算）。
     evalRows() {
@@ -613,7 +609,11 @@ export default {
 
       <!-- 复盘视图：结束后披露身份与真实日期 -->
       <section v-else class="card practice-chart-panel" :class="{'practice-report-panel': reviewMode === 'report'}">
-        <h3>{{ reviewMode === 'report' ? '分析报告' : '复盘' }} · {{ reviewTitle || '载入中' }}</h3>
+        <h3>
+          {{ reviewMode === 'report' ? '分析报告' : '复盘' }} ·
+          <template v-if="review"><stock-chart-button :code="review.code" /> · 信号日 {{ reviewSignalDate || '—' }}</template>
+          <template v-else>载入中</template>
+        </h3>
         <p v-if="reviewLoading" class="empty" role="status">载入复盘…</p>
         <div v-else-if="reviewErr" class="warnbar" role="alert">复盘加载失败：{{ reviewErr }}
           <button type="button" class="secondary" @click="openReview">重试</button>
@@ -646,13 +646,13 @@ export default {
             <details v-if="review.coverage" class="ui-help">
               <summary>抽题覆盖（扫描 {{ review.coverage.scanned }} 只 · 有本地数据 {{ review.coverage.withData }} 只 · 命中 {{ review.coverage.hits }} 个）</summary>
             <div class="msg">扫描股票 {{ review.coverage.codes }} 只，失败 {{ review.coverage.failed }} 只。
-              <div v-for="(f, i) in review.coverage.failures || []" :key="i">{{ stockLabel(f.code, state.stockNames) }}：{{ f.message }}</div>
+              <div v-for="(f, i) in review.coverage.failures || []" :key="i"><stock-chart-button :code="f.code" />：{{ f.message }}</div>
             </div>
             </details>
           </details>
           <p v-if="reviewMode === 'chart' && review.extraDays < 20" class="hint" role="status">结束后仅有 {{ review.extraDays }} 个可用交易日，不足 20 日；按开题快照实际数据展示。</p>
           <p v-if="reviewMode === 'chart' && klineWarning" class="hint" role="status">{{ klineWarning }}</p>
-          <StockInfo v-if="reviewMode === 'chart' && review.code" :code="review.code" :history-date="review.days?.find(d => d.day === 0)?.date || ''" history-label="信号日" />
+          <StockInfo v-if="reviewMode === 'chart' && review.code" :code="review.code" :history-date="reviewSignalDate || ''" history-label="信号日" />
           <div v-show="reviewMode === 'chart'" ref="reviewChart" class="chart-kline" role="img" aria-label="复盘日K、成交量、MACD 与真实日期买卖点图"></div>
           <details class="ui-help practice-trades"><summary>成交明细（{{ (review.trades || []).length }} 笔）</summary>
           <div class="detail-wrap">

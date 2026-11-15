@@ -8,7 +8,7 @@ globalThis.taskStatusTest = {...format, state, runtime, Api, TASK_LABEL: {analys
 const source = fs.readFileSync(new URL('./lab/js/app.js', import.meta.url), 'utf8')
   .replace(/^import (\w+) from .*;$/gm, 'const $1 = {};')
   .replace(/^import (\{.*\}) from .*;$/gm, 'const $1 = globalThis.taskStatusTest;')
-  .replace('createApp(App).mount(\'#app\');', 'export default App;');
+  .replace(/^createApp\(App\).*$/m, 'export default App;');
 const {default: App} = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
 
 test('因子统计、组合指标与保存阶段均清除上一阶段的满格进度', () => {

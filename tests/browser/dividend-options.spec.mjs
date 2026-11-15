@@ -58,6 +58,7 @@ for (const width of [1440, 390]) {
   test(`${width}px 单股键盘选择、编辑代码和取消不提交`, async ({page}) => {
     await page.setViewportSize({width, height: 1000});
     let calls = 0, payload;
+    await page.route('**/api/kline/sh601166?*', route => route.fulfill({json: []}));
     await page.route('**/api/builder/run', route => {
       calls++; payload = route.request().postDataJSON();
       return route.fulfill({status: 503, json: {error: '保留配置供检查'}});
@@ -71,6 +72,13 @@ for (const width of [1440, 390]) {
     await expect(sample(page)).toHaveValue('sh601398');
     await expect(dialog(page).getByLabel('股票代码', {exact: true})).toHaveValue('sh601398');
     await sample(page).selectOption({label: '601166 兴业银行'});
+    const stock = dialog(page).getByRole('button', {name: '查看 sh601166 兴业银行 日K线'});
+    await stock.press('Enter');
+    const chart = page.getByRole('dialog', {name: 'sh601166 兴业银行 · 日K线'});
+    await expect(chart.getByRole('status')).toHaveText('该标的暂无日K数据。');
+    await page.keyboard.press('Escape');
+    await expect(stock).toBeFocused();
+    await expect(sample(page)).toHaveValue('sh601166');
     await dialog(page).getByRole('button', {name: '开始回测', exact: true}).click();
     await expect(dialog(page).getByRole('alert')).toContainText('保留配置供检查');
     expect(payload.sampleMode).toBe('codes'); expect(payload.sampleCodes).toEqual(['sh601166']);

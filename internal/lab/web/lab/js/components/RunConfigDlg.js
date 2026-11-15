@@ -21,6 +21,9 @@ export default {
       ],
     };
   },
+  computed: {
+    selectedDividendStock() { return this.dividendStocks.find(s => s.code === this.sampleChoice); },
+  },
   methods: {
     openDlg(mode, run) {
       if (this.submitting || state.taskRunning) return;
@@ -123,7 +126,10 @@ export default {
       <div v-if="cfg.sampleMode==='codes'" class="form-row"><label for="run-sampleCodes">股票代码</label>
         <input id="run-sampleCodes" type="text" v-model="cfg.sampleCodes" @input="sampleChoice='codes'" placeholder="sh600000,sz000001" :aria-invalid="String(errorKey==='sampleCodes')" :aria-describedby="errorKey==='sampleCodes' ? 'runConfigError' : undefined">
       </div>
-      <p v-if="sampleChoice==='dividend' || dividendStocks.some(s => s.code===sampleChoice)" class="hint">人工参考名单，非历史指数成分或实时股息率排名；可编辑股票代码。</p>
+      <p v-if="sampleChoice==='dividend' || selectedDividendStock" class="hint">
+        人工参考名单，非历史指数成分或实时股息率排名；可编辑股票代码。
+        <stock-chart-button v-if="selectedDividendStock" :code="selectedDividendStock.code" :name="selectedDividendStock.name" />
+      </p>
       <template v-if="mode!=='builder'">
         <h4>卖出规则</h4>
         <div v-for="e in exits" :key="e.key" class="form-row run-config-exit">
