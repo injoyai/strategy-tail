@@ -23,6 +23,7 @@ export default {
   computed: {
     rep() { return state.currentReport; },
     accountMode() { return !!this.rep?.config.account; },
+    nextBarExecution() { return this.vs.some(v => v.account?.execution === 'next_available_bar'); },
     // 回放入口（spec §3）：仅账户报告且至少一个变体有回放数据时展示。
     hasReplay() { return this.accountMode && (this.rep?.variants ?? []).some(v => v.replay?.available); },
     benchmarkReturn() { return this.rep?.benchmark?.at(-1)?.return ?? null; },
@@ -31,8 +32,10 @@ export default {
         const a = v.account;
         if (!a) return [];
         const messages = [];
-        if (a.missingMinuteDays) messages.push(`${v.name}：${a.missingMinuteDays} 个持仓交易日缺少分钟行情，卖出按日线收盘判断`);
+        if (a.missingMinuteDays) messages.push(`${v.name}：${a.missingMinuteDays} 个持仓交易日缺少分钟行情，${a.execution === 'next_available_bar' ? '按日线收盘判断，命中后等待后续报价' : '卖出按日线收盘判断'}`);
         if (a.staleValuationDays) messages.push(`${v.name}：${a.staleValuationDays} 个持仓交易日缺少日线，沿用上一收盘价估值`);
+        if (a.unfilledBuys) messages.push(`${v.name}：${a.unfilledBuys} 笔次日开盘买入未成交`);
+        if (a.pendingSells) messages.push(`${v.name}：${a.pendingSells} 笔卖出信号截至期末未成交`);
         return messages;
       });
     },
@@ -245,10 +248,12 @@ export default {
   <p v-if="rep && !accountMode" class="hint" role="status">历史报告未记录账户资金；重新运行回测后可查看账户收益率与上证指数对比。</p>
   <details v-if="accountMode" class="macd-parameters">
     <summary>账户：{{ rep.config.account.initialCapital / 10000 }} 万元 · 最多 {{ rep.config.account.maxPositions }} 只 · 每笔预算 {{ rep.config.account.orderBudget / 10000 }} 万元</summary>
-    <p>每笔预算含买入费用，资金不足时减少股数，按 100 股取整；同日先卖后买，买入信号按代码升序执行，单票只持有一笔。跨年保留现金与持仓，未卖出持仓按每日收盘价估值。</p>
+    <p v-if="nextBarExecution">收盘买入信号次日开盘执行。开盘先处理待卖仓位，买入按代码升序。盘中卖出信号使用后续可成交分钟的收盘价，收盘信号从次日开盘起执行。</p>
+    <p v-else>历史口径，收盘信号按同日收盘价买入。</p>
+    <p>每笔预算含买入费用，资金不足时减少股数，按 100 股取整。单票只持有一笔，跨年保留现金与持仓，按每日收盘价估值。</p>
     <p>账户收益率 =（现金 + 持仓市值）÷ 初始资金 − 1。上证指数以回测首个交易日收盘价为基准，按同期买入持有价格涨幅计算；指数不扣交易成本，策略含费用与滑点。超额列为两者之差（百分点）。</p>
     <p v-if="showCmp">各变体使用独立账户；成交数比是实际成交笔数相对基准的比例，不代表买入信号筛选比例。</p>
-    <p>沿用现有行情和策略成交假设，未新增分红现金流、涨跌停排队和成交容量模型；该结果为模拟账户收益。</p>
+    <p>模拟账户收益。分红现金流、涨跌停排队和成交容量未纳入。</p>
   </details>
   <div v-if="accountWarnings.length" class="warnbar" role="status"><ul><li v-for="message in accountWarnings" :key="message">{{ message }}</li></ul></div>
   <details v-if="rep?.coverage.skipped > 0" class="macd-parameters">

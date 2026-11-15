@@ -323,10 +323,10 @@ export default {
             <td :class="t.side === 'buy' ? 'pos' : 'neg'">{{ t.side === 'buy' ? '买入' : '卖出' }}</td>
             <td>{{ fmtTime(t.time) }}</td>
             <td>{{ t.price.toFixed(2) }}</td>
-            <td>{{ t.execPrice.toFixed(2) }}{{ t.minuteFallback ? '（缺分钟，按日线收盘）' : '' }}</td>
+            <td>{{ t.execPrice.toFixed(2) }}{{ t.minuteFallback ? (t.signalTime ? '（日线卖出信号）' : '（缺分钟，按日线收盘）') : '' }}</td>
             <td>{{ t.quantity }}</td>
             <td>{{ t.fee.toFixed(2) }}</td>
-            <td class="replay-reason">{{ reasonText(t) }}</td>
+            <td class="replay-reason"><span v-if="t.signalTime" class="hint">信号 {{ t.signalTime }} · </span>{{ reasonText(t) }}</td>
           </tr>
         </tbody>
       </table>

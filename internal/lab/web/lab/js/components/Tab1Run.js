@@ -298,7 +298,7 @@ export default {
         <button class="secondary" ref="btnAddCond" @click="addCond">添加条件</button>
         <span class="hint" id="condLimitHint">当前 {{ state.simpleConds.length }} 个条件</span>
       </div>
-      <div class="hint" style="margin-top:8px">口径说明：当前回测仍按当日数据判定并以同日价格成交；因子页的未来收益只用于因子评价，不代表可实现的组合收益。信号与次日成交的解耦将作为后续执行模型改造。</div>
+      <div class="hint" style="margin-top:8px">收盘买入信号在下一交易日开盘执行。因子页展示的是分组价格收益，账户回测另计资金约束和成本。</div>
     </template>
 
     <!-- 自由搭建：条件树策略搭建器 -->

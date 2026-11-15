@@ -45,10 +45,11 @@ type ReplayTrade struct {
 	Seq            int      `json:"seq"` // 变体内递增执行序号
 	PositionID     int      `json:"positionId"`
 	Code           string   `json:"code"`
-	Time           string   `json:"time"`      // 实际成交时刻
-	Side           string   `json:"side"`      // buy | sell
-	Price          float64  `json:"price"`     // 策略可见原始价
-	ExecPrice      float64  `json:"execPrice"` // 实际成交价（含滑点）
+	Time           string   `json:"time"`                 // 实际成交时刻
+	SignalTime     string   `json:"signalTime,omitempty"` // 触发条件的行情时间
+	Side           string   `json:"side"`                 // buy | sell
+	Price          float64  `json:"price"`                // 撮合参考价（未加滑点）
+	ExecPrice      float64  `json:"execPrice"`            // 实际成交价（含滑点）
 	Quantity       int      `json:"quantity"`
 	Fee            float64  `json:"fee"`
 	MinuteFallback bool     `json:"minuteFallback,omitempty"` // 分钟缺数降级

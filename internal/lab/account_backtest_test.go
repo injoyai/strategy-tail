@@ -32,10 +32,17 @@ type accountNeverSell struct{}
 func (accountNeverSell) Name() string                              { return "hold" }
 func (accountNeverSell) Sell(string, extend.Klines, core.Buy) bool { return false }
 
+type accountTestSeller func(string, extend.Klines, core.Buy) bool
+
+func (accountTestSeller) Name() string { return "account test seller" }
+func (f accountTestSeller) Sell(code string, ks extend.Klines, buy core.Buy) bool {
+	return f(code, ks, buy)
+}
+
 func accountBars(dates []string, prices ...float64) extend.Klines {
 	ks := make(extend.Klines, len(prices))
 	for i, p := range prices {
-		d, _ := time.ParseInLocation(time.DateOnly, dates[i], time.Local)
+		d, _ := time.ParseInLocation(time.DateTime, dates[i]+" 15:00:00", time.Local)
 		v := p
 		ks[i] = &extend.Kline{Unix: d.Unix(), Kline: &protocol.Kline{Time: d, Open: v, Close: v, High: v, Low: v, Volume: 1000}}
 	}
@@ -72,6 +79,62 @@ func nearAccount(t *testing.T, got, want float64) {
 	t.Helper()
 	if math.Abs(got-want) > 1e-7 {
 		t.Fatalf("got %.10f want %.10f", got, want)
+	}
+}
+
+func TestAccountCloseSignalBuysAtNextOpen(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03"}
+	bars := accountBars(dates, 10, 13)
+	bars[1].Open = 12
+	cfg := accountTestConfig(map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101),
+		"sh600001": bars,
+	}, accountBuyer{onlyDate: dates[0]}, accountNeverSell{})
+	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := r.Results[0].Trades
+	if len(ts) != 1 || ts[0].BuyTime.Format(time.DateTime) != dates[1]+" 09:30:00" || ts[0].BuyPrice != 12 {
+		t.Fatalf("收盘信号未按次日开盘成交: %+v", ts)
+	}
+	nearAccount(t, accounts[0].Points[0].Cash, 100000)
+}
+
+func TestAccountOpeningBuySkipsSuspensionAndLimit(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
+	data := map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101, 102),
+		"sh600001": accountBars(dates, 10, 11, 10),
+		"sh600002": accountBars(dates, 10, 10, 10),
+		"sh600003": accountBars([]string{dates[0], dates[2]}, 10, 10),
+	}
+	data["sh600001"][1].Low = 10.5 // 开盘涨停，即使日内开板也不能补作开盘成交。
+	data["sh600002"][1].Volume = 0
+	cfg := accountTestConfig(data, accountBuyer{onlyDate: dates[0]}, accountNeverSell{})
+	r, reports, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Results[0].Trades) != 0 || reports[0].UnfilledBuys != 3 {
+		t.Fatalf("不可成交的买单未在开盘失效: %+v, %+v", r.Results[0].Trades, reports[0])
+	}
+}
+
+func TestAccountUnfilledDailySellCarriesPastLimit(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07", "2025-01-08"}
+	cfg := accountTestConfig(map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101, 102, 103, 104),
+		"sh600001": accountBars(dates, 10, 10, 10, 9, 9.2),
+	}, accountBuyer{onlyDate: dates[0]}, dateCodeSeller{"sh600001": {dates[2]: true}})
+	r, reports, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := r.Results[0].Trades
+	if len(ts) != 1 || ts[0].Virtual || ts[0].SellPrice != 9.2 ||
+		ts[0].SellTime.Format(time.DateTime) != dates[4]+" 09:30:00" || reports[0].Points[3].Holdings != 1 {
+		t.Fatalf("卖单未正确跨过跌停日: %+v", ts)
 	}
 }
 
@@ -112,6 +175,7 @@ func TestAccountBacktestProgressByPhase(t *testing.T) {
 func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 	dates := []string{"2025-01-02", "2025-01-03"}
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}
+	data["sh600001"][1].Open = 10
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	cfg.Cost = core.Cost{MinCommission: 5, StampDutyRate: .001, Slippage: .01}
 	r, accounts, _, benchmark, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
@@ -126,8 +190,9 @@ func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 		t.Fatalf("unexpected holding: %+v", tr)
 	}
 	nearAccount(t, tr.BuyCost, 19024)
-	nearAccount(t, accounts[0].Points[0].Cash, 80976)
-	nearAccount(t, accounts[0].Points[0].Equity, 99976)
+	nearAccount(t, accounts[0].Points[0].Cash, 100000)
+	nearAccount(t, accounts[0].Points[0].Equity, 100000)
+	nearAccount(t, accounts[0].Points[1].Cash, 80976)
 	nearAccount(t, accounts[0].Points[1].Equity, 103776)
 	nearAccount(t, accounts[0].Points[1].Return, 3.776)
 	nearAccount(t, benchmark[1].Return, 10)
@@ -138,10 +203,10 @@ func TestAccountCashBudgetLotsAndDailyValuation(t *testing.T) {
 }
 
 func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
-	dates := []string{"2025-01-02"}
-	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100)}
+	dates := []string{"2025-01-02", "2025-01-03"}
+	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 100)}
 	for _, c := range []string{"sh600003", "sh600001", "sh600002"} {
-		data[c] = accountBars(dates, 10)
+		data[c] = accountBars(dates, 10, 10)
 	}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	cfg.Codes = []string{"sh600003", "sh600002", "sh600001", "sh600001"}
@@ -153,8 +218,8 @@ func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
 	if len(trades) != 2 || trades[0].Code != "sh600001" || trades[0].Quantity != 2000 || trades[1].Code != "sh600002" || trades[1].Quantity != 500 {
 		t.Fatalf("priority/partial fill: %+v", trades)
 	}
-	nearAccount(t, accounts[0].Points[0].Cash, 0)
-	if accounts[0].Points[0].Holdings != 2 {
+	nearAccount(t, accounts[0].Points[1].Cash, 0)
+	if accounts[0].Points[1].Holdings != 2 {
 		t.Fatal("position limit")
 	}
 	if r.Coverage.Requested != 3 {
@@ -164,30 +229,43 @@ func TestAccountPriorityPositionsAndInsufficientCash(t *testing.T) {
 	if err != nil || len(r.Results[0].Trades) != 2 {
 		t.Fatalf("position limit ignored despite spare cash: %v", err)
 	}
-	nearAccount(t, accounts[0].Points[0].Cash, 60000)
+	nearAccount(t, accounts[0].Points[1].Cash, 60000)
 }
 
-func TestAccountSellsBeforeRebuyAndUsesMinutePrice(t *testing.T) {
-	dates := []string{"2025-01-02", "2025-01-03"}
-	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 101), "sh600001": accountBars(dates, 10, 20)}
-	cfg := accountTestConfig(data, accountBuyer{}, ss.A持仓N天{Days: 1})
-	d, _ := time.ParseInLocation(time.DateTime, "2025-01-03 09:31:00", time.Local)
+func TestAccountMinuteSignalUsesLaterPriceAndRebuyWaitsForOpen(t *testing.T) {
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07"}
+	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 101, 102, 103), "sh600001": accountBars(dates, 10, 10, 12, 20)}
+	data["sh600001"][2].FloatStock = 10_000_000
+	data["sh600001"][2].Turnover = 5
+	baseSeller := ss.A持仓N天{Days: 1}
+	cfg := accountTestConfig(data, accountBuyer{}, accountTestSeller(func(code string, ks extend.Klines, buy core.Buy) bool {
+		current := ks[len(ks)-1]
+		if current.Time.Format(time.DateTime) != dates[2]+" 09:31:00" || current.Unix != current.Time.Unix() || current.Turnover != 1 {
+			t.Errorf("卖出信号应读取当前分钟的时间和累计换手率: %+v", current)
+		}
+		return baseSeller.Sell(code, ks, buy)
+	}))
 	cfg.GetMinKlines = func(string, time.Time, time.Time) (protocol.Klines, error) {
-		p := 11.0
-		return protocol.Klines{&protocol.Kline{Time: d, Open: p, Close: p, High: p, Low: p}}, nil
+		signal, _ := time.ParseInLocation(time.DateTime, dates[2]+" 09:31:00", time.Local)
+		return protocol.Klines{
+			&protocol.Kline{Time: signal, Open: 10, Close: 10, High: 10, Low: 10, Volume: 1000},
+			&protocol.Kline{Time: signal.Add(time.Minute), Open: 10, Close: 10.8, High: 10.8, Low: 10, Volume: 1000},
+		}, nil
 	}
 	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 10000, MaxPositions: 1, OrderBudget: 10000})
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts := r.Results[0].Trades
-	if len(ts) != 2 || ts[0].Virtual || !ts[1].Virtual || !ts[0].SellTime.Equal(d) || ts[1].Quantity != 500 {
+	if len(ts) != 2 || ts[0].Virtual || !ts[1].Virtual ||
+		ts[0].SellTime.Format(time.DateTime) != dates[2]+" 09:32:00" || ts[0].SellPrice != 10.8 ||
+		ts[1].BuyTime.Format(time.DateTime) != dates[3]+" 09:30:00" || ts[1].Quantity != 500 {
 		t.Fatalf("sells/rebuy: %+v", ts)
 	}
-	nearAccount(t, accounts[0].Points[1].Equity, 11000)
-	nearAccount(t, accounts[0].Points[1].Cash, 1000)
-	if data["sh600001"][1].Close != 20 {
-		t.Fatal("minute sell contaminated buy close")
+	nearAccount(t, accounts[0].Points[2].Cash, 10800)
+	nearAccount(t, accounts[0].Points[3].Cash, 800)
+	if data["sh600001"][2].Close != 12 {
+		t.Fatal("minute sell contaminated daily close")
 	}
 }
 
@@ -196,6 +274,7 @@ func TestAccountCarriesHoldingsAndCashAcrossYears(t *testing.T) {
 	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 110), "sh600001": accountBars(dates, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{onlyDate: dates[0]}, accountNeverSell{})
 	cfg.Years = []int{2025, 2026}
+	data["sh600001"][1].Open = 10
 	r, accounts, _, _, _, err := runAccountBacktest(context.Background(), cfg, AccountConfig{InitialCapital: 100000, MaxPositions: 5, OrderBudget: 20000})
 	if err != nil {
 		t.Fatal(err)
@@ -246,8 +325,9 @@ func TestAccountRejectsInvalidConfigAndMissingBenchmark(t *testing.T) {
 }
 
 func TestAccountValuationGapsAndBenchmarkCoverage(t *testing.T) {
-	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
-	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 105, 110), "sh600001": accountBars([]string{dates[0], dates[2]}, 10, 12)}
+	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06", "2025-01-07"}
+	data := map[string]extend.Klines{"sh000001": accountBars(dates, 100, 105, 110, 111),
+		"sh600001": accountBars([]string{dates[0], dates[1], dates[3]}, 10, 10, 12)}
 	cfg := accountTestConfig(data, accountBuyer{}, accountNeverSell{})
 	account := AccountConfig{100000, 5, 20000}
 	r, a, _, _, _, err := runAccountBacktest(context.Background(), cfg, account)
@@ -257,14 +337,13 @@ func TestAccountValuationGapsAndBenchmarkCoverage(t *testing.T) {
 	if a[0].StaleValuationDays != 1 || a[0].MissingMinuteDays != 1 {
 		t.Fatalf("quality: %+v", a[0])
 	}
-	nearAccount(t, a[0].Points[1].Equity, 100000)
+	nearAccount(t, a[0].Points[2].Equity, 100000)
 	var profit float64
 	for _, tr := range r.Results[0].Trades {
 		profit += tr.ProfitAmount()
 	}
-	nearAccount(t, profit, a[0].Points[2].Equity-account.InitialCapital)
-	data["sh000001"] = accountBars([]string{dates[0], dates[2]}, 100, 110)
-	data["sh600001"] = accountBars(dates, 10, 11, 12)
+	nearAccount(t, profit, a[0].Points[3].Equity-account.InitialCapital)
+	data["sh000001"] = accountBars([]string{dates[0], dates[2], dates[3]}, 100, 110, 111)
 	if _, _, _, _, _, err := runAccountBacktest(context.Background(), cfg, account); err == nil {
 		t.Fatal("missing index day accepted")
 	}
