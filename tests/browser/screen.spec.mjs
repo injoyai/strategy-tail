@@ -231,37 +231,88 @@ for (const width of [1440, 390]) {
   });
 }
 
-test('其他工作区收到已提交卖点，可直接打开共用诊断且重复消息只显示一次', async ({page}) => {
-  const strategy = {id: 'macd-premium', name: 'MACD精选', enabled: true};
-  const signal = {code: 'sh600000', name: '浦发银行', strategy: strategy.id,
-    buyTime: '2026-11-12 15:00:00', buyPrice: 10, sellTime: '2026-11-13 10:01:00', sellPrice: 11,
-    tracked: true, sellSource: 'live', rate: 10};
-  const message = JSON.stringify({type:'sell', id:1, strategyName:strategy.name, signal});
-  await page.routeWebSocket('**/api/screen/events?*', ws => {
-    ws.send(message);
-    ws.send(message);
+for (const width of [1440, 390]) {
+  test(`卖点提醒浮层不移动正文，支持关闭、重开及查看 K 线（${width}px）`, async ({page}) => {
+    await page.setViewportSize({width, height: 844});
+    const strategy = {id: 'macd-premium', name: 'MACD精选'};
+    const signal = {code: 'sh600000', name: '浦发银行', strategy: strategy.id,
+      buyTime: '2026-11-12 15:00:00', buyPrice: 10, sellTime: '2026-11-13 10:01:00', sellPrice: 11,
+      tracked: true, sellSource: 'live', rate: 10};
+    const message = id => JSON.stringify({type:'sell', id, strategyName:strategy.name, signal});
+    let socket;
+    await page.routeWebSocket('**/api/screen/events?*', ws => { socket = ws; });
+    await page.route('**/api/screen', async route => {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      return route.fulfill({json:{config:{version:1, strategies:[strategy]}, running:false}});
+    });
+    await page.route('**/api/screen/history?*', route => route.fulfill({json:{
+      rows:[signal], total:1, page:1, pages:1, running:false, lookback:60, avgHoldingDays:1, stats:{total:1, winRate:100, profitFactor:null},
+    }}));
+    const bars = [
+      {date:'2026-11-12',open:10,high:10,low:10,close:10,volume:100,dif:0,dea:0,macd:0},
+      {date:'2026-11-13',open:10,high:11,low:10,close:11,volume:120,dif:0,dea:0,macd:0},
+    ];
+    await page.route('**/api/screen/diagnose/**', route => route.fulfill({json:{
+      code:signal.code, name:signal.name, asOf:signal.sellTime, signals:[signal], rules:[], klines:bars,
+    }}));
+    await page.route('**/api/kline/sh600000?*', route => route.fulfill({json:bars}));
+    await page.goto('/?tab=trades');
+    await expect.poll(() => Boolean(socket)).toBe(true);
+    const heading = page.getByRole('heading', {level: 1});
+    await expect(heading).toHaveText('交易明细');
+    const content = page.locator('#tab3');
+    await expect(content.locator('.tabulator-row').first()).toBeVisible();
+    await content.focus();
+    const before = await content.boundingBox();
+    socket.send(message(1));
+    socket.send(message(1));
+    const notices = page.getByRole('region', {name:'卖点提醒'});
+    const trigger = page.getByRole('button', {name: /^卖点提醒（/, includeHidden: true});
+    await expect(notices).toBeVisible();
+    await expect(notices.getByRole('listitem')).toHaveCount(1);
+    await expect(content).toBeFocused();
+    expect(await content.boundingBox()).toEqual(before);
+    const bounds = await notices.boundingBox();
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+    await notices.getByRole('button', {name: '关闭'}).click();
+    await expect(notices).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await trigger.press('Enter');
+    await expect(notices).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(notices).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await trigger.press('Enter');
+    await notices.getByRole('button', {name: '查看 sh600000 浦发银行 日K线'}).press('Enter');
+    const stockChart = page.getByRole('dialog', {name: 'sh600000 浦发银行 · 日K线'});
+    await expect(stockChart.locator('canvas').first()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(notices).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(page).toHaveURL(/tab=trades$/);
+    await trigger.press('Enter');
+    await notices.getByRole('button',{name:'查看K线'}).click();
+    const diagnosis = page.getByRole('dialog');
+    await expect(diagnosis.locator('.screen-kline canvas').first()).toBeVisible();
+    socket.send(message(2));
+    await expect(trigger).toHaveText('卖点提醒（2）');
+    await expect(diagnosis).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(notices).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(page.getByRole('tab',{name:'当日卖点'})).toHaveAttribute('aria-selected','true');
+    await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
+    await trigger.press('Enter');
+    await expect(notices.getByRole('listitem')).toHaveCount(2);
+    await notices.getByRole('button', {name: '清除提醒'}).click();
+    await expect(notices).toBeHidden();
+    await expect(trigger).toHaveCount(0);
+    await expect(heading).toBeFocused();
+    await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
   });
-  await page.route('**/api/screen', async route => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return route.fulfill({json:{config:{version:1, strategies:[strategy]}, running:false}});
-  });
-  await page.route('**/api/screen/history?*', route => route.fulfill({json:{
-    rows:[signal], total:1, page:1, pages:1, running:false, lookback:60, avgHoldingDays:1, stats:{total:1, winRate:100, profitFactor:null},
-  }}));
-  await page.route('**/api/screen/diagnose/**', route => route.fulfill({json:{
-    code:signal.code, name:signal.name, asOf:signal.sellTime, signals:[signal], rules:[],
-    klines:[{date:'2026-11-12',open:10,high:10,low:10,close:10,volume:100,dif:0,dea:0,macd:0},
-      {date:'2026-11-13',open:10,high:11,low:10,close:11,volume:120,dif:0,dea:0,macd:0}],
-  }}));
-  await page.goto('/?tab=trades');
-  const notices = page.getByRole('region', {name:'卖点提醒'});
-  await expect(notices.getByRole('listitem')).toHaveCount(1);
-  await notices.getByRole('button',{name:'查看K线'}).click();
-  await expect(page.getByRole('dialog').locator('.screen-kline canvas').first()).toBeVisible();
-  await page.keyboard.press('Escape');
-  await expect(page.getByRole('tab',{name:'当日卖点'})).toHaveAttribute('aria-selected','true');
-  await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
-});
+}
 
 test('历史只重算所选策略，保留全局进度并滚动查看全部结果', async ({page}) => {
   const other = {id: 'macd-premium', name: 'MACD精选'};

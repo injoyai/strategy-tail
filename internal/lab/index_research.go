@@ -36,6 +36,7 @@ type researchIndex struct {
 type indexResearchPoint struct {
 	Date          string              `json:"date"`
 	Close         *float64            `json:"close"`
+	RSI           *float64            `json:"rsi"`
 	Concentration *concentrationPoint `json:"concentration"`
 }
 
@@ -149,11 +150,11 @@ func (s *Server) handleIndexResearchSeries(w http.ResponseWriter, r *http.Reques
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	points, err := readIndexResearch(ctx, market, code, from, to, topPercent)
+	points, err := s.indexResearch.query(ctx, market, code, from, to, topPercent, time.Now())
 	if err != nil {
 		if r.Context().Err() == nil {
 			log.Printf("[lab] 查询指数研究 (%s): %v", code, err)
-			writeErr(w, http.StatusServiceUnavailable, "日线读取失败，请重试或缩短日期范围")
+			writeErr(w, http.StatusServiceUnavailable, "指数研究数据读取或缓存失败，请重试或缩短日期范围")
 		}
 		return
 	}

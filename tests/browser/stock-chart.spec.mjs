@@ -8,13 +8,14 @@ const bars = [
 ];
 
 test.beforeEach(async ({page}) => {
+  await page.route('**/api/market-dashboard/sectors', route => route.fulfill({status: 503, json: {error: '板块行情暂不可用'}}));
   await page.route('**/api/stock-names', route => route.fulfill({json: {
     [first.code]: '中际旭创', [second.code]: '寒武纪',
   }}));
   await page.route('**/api/market-dashboard', route => route.fulfill({json: {
     date: '2026-11-13', indexes: [], stocks: {
       total: 2, up: 1, down: 1, flat: 0, amount: first.amount + second.amount, withAmount: 2,
-      rankings: {amount: [first, second], up: [second], down: [first]}, exchanges: [],
+      rankings: {amount: [first, second], changeDesc: [second, first], changeAsc: [first, second]}, exchanges: [],
     },
   }}));
 });
@@ -26,7 +27,9 @@ test('股票代码和名称在当前榜单打开日K，键盘关闭后保留榜�
     return route.fulfill({json: bars});
   });
   await page.goto('/?tab=market-dashboard');
-  await page.getByLabel('榜单类型').selectOption('down');
+  const change = page.getByRole('columnheader', {name: '涨跌幅'});
+  await change.getByRole('button').click();
+  await change.getByRole('button').click();
   const stock = page.getByRole('button', {name: '查看 sz300308 中际旭创 日K线'});
   await stock.press('Enter');
   const dialog = page.getByRole('dialog', {name: 'sz300308 中际旭创 · 日K线'});
@@ -40,7 +43,7 @@ test('股票代码和名称在当前榜单打开日K，键盘关闭后保留榜�
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(stock).toBeFocused();
-  await expect(page.getByLabel('榜单类型')).toHaveValue('down');
+  await expect(change).toHaveAttribute('aria-sort', 'ascending');
 });
 
 test('窄屏日K弹窗支持失败重试和无行情，关闭后可查看另一股', async ({page}, testInfo) => {

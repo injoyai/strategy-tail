@@ -22,11 +22,11 @@ func standardSourceCode(code string) (model.Code, error) {
 }
 
 func sourceVolume(code model.Code, volume int64) (int64, error) {
-	if volume >= 0 && (code.Market == protocol.MarketIndex || code.Market == protocol.MarketBlock) {
-		return volume, nil
+	if volume < 0 {
+		return 0, fmt.Errorf("成交量不能为负数: %d", volume)
 	}
-	if volume < 0 || volume%protocol.SharesPerLot != 0 {
-		return 0, fmt.Errorf("成交量 %d 股无法无损转换为整数手", volume)
+	if code.Market == protocol.MarketIndex || code.Market == protocol.MarketBlock {
+		return volume, nil
 	}
 	return protocol.FromShares(volume), nil
 }

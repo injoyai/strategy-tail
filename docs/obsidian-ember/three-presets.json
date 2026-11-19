@@ -1,0 +1,89 @@
+{
+  "renderer": {
+    "pixelRatioCap": 1.6,
+    "antialias": true,
+    "alpha": true,
+    "toneMapping": "ACESFilmicToneMapping",
+    "exposure": {
+      "dark": 1,
+      "light": 1.1
+    },
+    "shadowMap": "PCFSoftShadowMap"
+  },
+  "camera": {
+    "fov": 35,
+    "near": 0.1,
+    "far": 100
+  },
+  "lights": {
+    "hemisphere": {
+      "sky": "#e9eff4",
+      "ground": "#33302d",
+      "intensity": 1.4
+    },
+    "key": {
+      "color": "#f0f2f3",
+      "intensity": 4,
+      "position": [
+        -4,
+        9,
+        7
+      ],
+      "shadowMap": 1024
+    },
+    "rim": {
+      "color": "#f4a36b",
+      "intensity": 3.6,
+      "position": [
+        5,
+        5,
+        -6
+      ]
+    },
+    "fill": {
+      "color": "#a9bed0",
+      "intensity": 1.7,
+      "position": [
+        -8,
+        3,
+        -4
+      ]
+    }
+  },
+  "materials": {
+    "silver": {
+      "color": "#c4c8c9",
+      "metalness": 0.63,
+      "roughness": 0.31
+    },
+    "steel": {
+      "color": "#747b80",
+      "metalness": 0.82,
+      "roughness": 0.28
+    },
+    "graphite": {
+      "color": "#24292d",
+      "metalness": 0.5,
+      "roughness": 0.35
+    },
+    "matte": {
+      "color": "#16191c",
+      "metalness": 0.05,
+      "roughness": 0.9
+    },
+    "ember": {
+      "color": "#ef8447",
+      "metalness": 0.5,
+      "roughness": 0.32,
+      "emissive": "#9a3e17",
+      "emissiveIntensity": 0.28
+    },
+    "glow": {
+      "color": "#f5ad7d",
+      "metalness": 0.25,
+      "roughness": 0.2,
+      "emissive": "#da632b",
+      "emissiveIntensity": 1.3
+    }
+  }
+}

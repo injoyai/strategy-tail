@@ -4,9 +4,9 @@
   const hour = 3_600_000;
   const day = 24 * hour;
   const offset = 8 * hour;
-  const colors = ["#16669d", "#9a590c", "#6c4a9d", "#267675", "#a03e67", "#526a30", "#475a76", "#876044"];
+  const colors = ["#ab4a21", "#535d6a", "#6c4a9d", "#267675", "#a03e67", "#526a30", "#475a76", "#876044"];
   const shapes = ["●", "▲", "◆", "■"];
-  const muted = "#50627a";
+  const muted = "#535d6a";
   const numbers = new Intl.NumberFormat("zh-CN", { maximumSignificantDigits: 10 });
   const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
@@ -269,11 +269,11 @@
       ctx.textBaseline = "middle";
       for (const value of ticks) {
         const at = y(value);
-        lineAcross(at, "#e0e8f0");
+        lineAcross(at, "#cfd4da");
         ctx.fillText(axisValue(value), left - 8, at, left - 9);
       }
-      if (data.zeroBaseline) lineAcross(y(0), "#8297ab", [5, 4]);
-      lineAcross(bottom, "#a6b7c9");
+      if (data.zeroBaseline) lineAcross(y(0), "#9da4b0", [5, 4]);
+      lineAcross(bottom, "#a8adb7");
       ctx.textAlign = "center";
       const labelGap = width < 560 ? 102 : 128;
       let labelRight = 0;
@@ -282,7 +282,7 @@
         const halfLabel = ctx.measureText(tick.label).width / 2;
         const labelAt = clamp(at, halfLabel + 1, width - halfLabel - 1);
         if (labelAt - halfLabel < labelRight + 6) continue;
-        ctx.strokeStyle = "#a6b7c9";
+        ctx.strokeStyle = "#a8adb7";
         ctx.beginPath();
         ctx.moveTo(at, bottom);
         ctx.lineTo(at, bottom + 4);

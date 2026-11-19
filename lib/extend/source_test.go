@@ -10,6 +10,34 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
+func TestReadNonWholeLotVolume(t *testing.T) {
+	store := testmarket.New()
+	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}
+	store.SeedDay(code, []*model.KlineDay{{Time: "2026-01-05", Close: 11, Volume: 150}})
+	store.SeedEquity(code.Code, "2026-01-05", 1000, 2000)
+	reader := NewMarketReader(oddLotMinuteSource{Store: store}, store.Equity)
+
+	t.Run("daily", func(t *testing.T) {
+		days, err := reader.DayKlinesAll(code.Code)
+		if err != nil || len(days) != 1 || days[0].Volume != 1 || days[0].Turnover != 15 {
+			t.Fatalf("daily bars %v: %v", days, err)
+		}
+	})
+	t.Run("minute", func(t *testing.T) {
+		at := time.Date(2026, 1, 5, 9, 31, 0, 0, protocol.Location())
+		minutes, err := reader.MinuteKlines(code.Code, at, at)
+		if err != nil || len(minutes) != 1 || minutes[0].Volume != 1 {
+			t.Fatalf("minute bars %v: %v", minutes, err)
+		}
+	})
+}
+
+type oddLotMinuteSource struct{ *testmarket.Store }
+
+func (oddLotMinuteSource) QueryMinute(model.Code, string, string) ([]*model.KlineMinute, error) {
+	return []*model.KlineMinute{{Time: "2026-01-05 09:31", Close: 11, Volume: 150}}, nil
+}
+
 func TestReadDayUsesStoredSourceDatesAndHistoricalEquity(t *testing.T) {
 	store := testmarket.New()
 	code := model.Code{Market: protocol.MarketAStock, Code: "sh600000"}

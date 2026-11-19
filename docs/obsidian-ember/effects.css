@@ -1,0 +1,44 @@
+/* CSS 3D needs no WebGL or Three.js. Add .oe-tilt only to non-modal surfaces. */
+.oe-tilt { position: relative; isolation: isolate; transform-style: preserve-3d; transform: perspective(1000px) rotateX(var(--oe-tilt-x, 0deg)) rotateY(var(--oe-tilt-y, 0deg)); transition: transform 380ms var(--oe-ease); }
+.oe-tilt::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: radial-gradient(circle at var(--oe-light-x, 50%) var(--oe-light-y, 35%), color-mix(in srgb, var(--oe-accent) 14%, transparent), transparent 60%); pointer-events: none; opacity: var(--oe-light-opacity, 0); transition: opacity 300ms; }
+.oe-tilt-layer { position: relative; transform: translateZ(18px); }
+.oe-theme[data-oe-motion="on"] .oe-tilt.is-tracking { transition-duration: 80ms; }
+.oe-depth-stack { position: relative; isolation: isolate; transform-style: preserve-3d; }
+.oe-depth-stack::before, .oe-depth-stack::after { content: ""; position: absolute; inset: 0; z-index: -1; border: 1px solid var(--oe-border); border-radius: inherit; background: var(--oe-surface-alt); transform: translate(7px, 7px) translateZ(-10px); opacity: .5; pointer-events: none; }
+.oe-depth-stack::after { transform: translate(14px, 14px) translateZ(-20px); opacity: .2; }
+.oe-reveal-pending { opacity: 0; }
+.oe-theme[data-oe-motion="on"] .oe-reveal { animation: oe-enter var(--oe-duration-scene) var(--oe-ease) both; }
+.oe-theme[data-oe-motion="on"] .oe-dialog[open] { animation: oe-dialog-in var(--oe-duration-normal) var(--oe-ease) both; }
+.oe-theme[data-oe-motion="on"] .oe-button { transition: transform 180ms, background-color 180ms, border-color 180ms; }
+@keyframes oe-enter { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes oe-dialog-in { from { opacity: 0; transform: perspective(800px) rotateX(-5deg) translateY(14px) scale(.97); } to { opacity: 1; transform: perspective(800px) rotateX(0) translateY(0) scale(1); } }
+/* One element per role; the helper temporarily names only the current scope. */
+html[data-oe-transition] .oe-transition-scope .oe-transition-plane { view-transition-name: oe-plane; }
+html[data-oe-transition] .oe-transition-scope .oe-transition-panel { view-transition-name: oe-panel; }
+html[data-oe-transition] { --oe-out-scale: .89; --oe-in-scale: 1.08; --oe-in-angle: -5deg; }
+html[data-oe-transition="back"] { --oe-out-scale: 1.07; --oe-in-scale: .89; --oe-in-angle: 5deg; }
+html[data-oe-transition]::view-transition { pointer-events: none; }
+html[data-oe-transition]::view-transition-old(root), html[data-oe-transition]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+html[data-oe-transition]::view-transition-group(*) { animation-duration: 700ms; animation-timing-function: cubic-bezier(.16,1,.3,1); }
+html[data-oe-transition]::view-transition-image-pair(*) { isolation: isolate; }
+html[data-oe-transition]::view-transition-old(*), html[data-oe-transition]::view-transition-new(*) { mix-blend-mode: normal; }
+html[data-oe-transition]::view-transition-group(oe-plane), html[data-oe-transition]::view-transition-group(oe-panel) { overflow: clip; border-radius: 10px; }
+html[data-oe-transition]::view-transition-old(oe-plane) { animation: oe-plane-out 300ms cubic-bezier(.4,0,1,1) both; }
+html[data-oe-transition]::view-transition-new(oe-plane) { animation: oe-plane-in 640ms 60ms cubic-bezier(.16,1,.3,1) both; }
+html[data-oe-transition]::view-transition-old(oe-panel) { animation: oe-panel-out 220ms ease-in both; }
+html[data-oe-transition]::view-transition-new(oe-panel) { animation: oe-panel-in 520ms 110ms cubic-bezier(.16,1,.3,1) both; }
+@keyframes oe-plane-out { to { opacity: 0; transform: perspective(1200px) rotateX(4deg) scale(var(--oe-out-scale)); } }
+@keyframes oe-plane-in { from { opacity: 0; transform: perspective(1200px) translateY(22px) rotateX(var(--oe-in-angle)) scale(var(--oe-in-scale)); } to { opacity: 1; transform: perspective(1200px) translateY(0) rotateX(0) scale(1); } }
+@keyframes oe-panel-out { to { opacity: 0; transform: translateX(14px); } }
+@keyframes oe-panel-in { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: translateX(0); } }
+.oe-theme[data-oe-motion="off"] :is(.oe-tilt, .oe-tilt-layer, .oe-depth-stack) { transform: none; }
+.oe-theme[data-oe-motion="off"] .oe-tilt::before { opacity: 0; }
+.oe-theme[data-oe-motion="off"] .oe-reveal-pending { opacity: 1; }
+.oe-theme[data-oe-motion="off"] *, .oe-theme[data-oe-motion="off"] *::before, .oe-theme[data-oe-motion="off"] *::after { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .oe-theme *, .oe-theme *::before, .oe-theme *::after { animation: none !important; transition: none !important; }
+  .oe-theme :is(.oe-tilt, .oe-tilt-layer, .oe-depth-stack) { transform: none; }
+  .oe-theme .oe-tilt::before { opacity: 0; }
+  .oe-reveal-pending { opacity: 1; }
+  html[data-oe-transition]::view-transition-group(*), html[data-oe-transition]::view-transition-old(*), html[data-oe-transition]::view-transition-new(*) { animation: none !important; }
+}

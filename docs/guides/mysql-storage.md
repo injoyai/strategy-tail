@@ -19,7 +19,7 @@ pull:
 | --- | --- |
 | `<地区>_<资产>_kline_day` | `code, time, open, high, low, close, volume, amount`，按 `(code, time)` 排序，`time` 为 `DATE`。例如 `cn_stock_kline_day`、`cn_index_kline_day`。 |
 | `<地区>_<资产>_kline_minute_<年份>` | 日线字段和 `source`，`time` 为 `DATETIME`。按源年份分表，例如 `cn_stock_kline_minute_2026`。 |
-| `codes` | `exchange, code, name, multiple, decimal, last_price`。缺少代码目录时，选股使用库存日线的股票代码。 |
+| `codes` | `exchange, code, name, multiple, decimal, last_price`。Lab 读取沪、深、北交易所的记录到标准证券缓存。缺少代码目录时，选股使用库存日线的股票代码。 |
 | `gbbq` | `id, code, time, category, c1, c2, c3, c4`。策略按交易日匹配股本事件并计算换手率。新因子分析和对应验证使用第 1 类记录识别持有区间的已知除权除息日。 |
 | `kline_schema` | 读取上游已就绪的 `market-v1` 布局标识。行情修订需要独立版本。 |
 

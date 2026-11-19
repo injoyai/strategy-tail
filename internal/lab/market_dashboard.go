@@ -61,9 +61,14 @@ type dashboardExchange struct {
 }
 
 type dashboardRankings struct {
-	Amount []dashboardStockQuote `json:"amount"`
-	Up     []dashboardStockQuote `json:"up"`
-	Down   []dashboardStockQuote `json:"down"`
+	Amount     []dashboardStockQuote `json:"amount"`
+	AmountAsc  []dashboardStockQuote `json:"amountAsc"`
+	ChangeAsc  []dashboardStockQuote `json:"changeAsc"`
+	ChangeDesc []dashboardStockQuote `json:"changeDesc"`
+	CloseAsc   []dashboardStockQuote `json:"closeAsc"`
+	CloseDesc  []dashboardStockQuote `json:"closeDesc"`
+	Up         []dashboardStockQuote `json:"up"`
+	Down       []dashboardStockQuote `json:"down"`
 }
 
 type dashboardStockSummary struct {
@@ -219,8 +224,10 @@ func dashboardChange(close, previous float64) *float64 {
 func summarizeDashboardStocks(rows []marketstore.DashboardStockDay) dashboardStockSummary {
 	summary := dashboardStockSummary{
 		Exchanges: []dashboardExchange{{Exchange: "sh"}, {Exchange: "sz"}, {Exchange: "bj"}},
-		Rankings:  dashboardRankings{Amount: []dashboardStockQuote{}, Up: []dashboardStockQuote{}, Down: []dashboardStockQuote{}},
 	}
+	amounts := make([]dashboardStockQuote, 0, len(rows))
+	changes := make([]dashboardStockQuote, 0, len(rows))
+	prices := make([]dashboardStockQuote, 0, len(rows))
 	byExchange := make(map[string]*dashboardBreadth, len(summary.Exchanges))
 	for i := range summary.Exchanges {
 		item := &summary.Exchanges[i]
@@ -236,25 +243,27 @@ func summarizeDashboardStocks(rows []marketstore.DashboardStockDay) dashboardSto
 		}
 		if validDashboardValue(bar.Amount) {
 			quote.Amount = bar.Amount
-			summary.Rankings.Amount = append(summary.Rankings.Amount, quote)
+			amounts = append(amounts, quote)
+		}
+		if quote.Close > 0 {
+			prices = append(prices, quote)
 		}
 		if quote.Change != nil {
+			changes = append(changes, quote)
 			if *quote.Change != 0 {
 				summary.ChangeDistribution[dashboardChangeBucket(*quote.Change)]++
-			}
-			switch {
-			case *quote.Change > 0:
-				summary.Rankings.Up = append(summary.Rankings.Up, quote)
-			case *quote.Change < 0:
-				summary.Rankings.Down = append(summary.Rankings.Down, quote)
 			}
 		}
 		summary.dashboardBreadth.add(quote)
 		byExchange[strings.ToLower(bar.Code[:2])].add(quote)
 	}
-	summary.Rankings.Amount = topDashboardStocks(summary.Rankings.Amount, func(a, b dashboardStockQuote) int { return cmp.Compare(b.Amount, a.Amount) })
-	summary.Rankings.Up = topDashboardStocks(summary.Rankings.Up, func(a, b dashboardStockQuote) int { return cmp.Compare(*b.Change, *a.Change) })
-	summary.Rankings.Down = topDashboardStocks(summary.Rankings.Down, func(a, b dashboardStockQuote) int { return cmp.Compare(*a.Change, *b.Change) })
+	ranks := &summary.Rankings
+	ranks.AmountAsc, ranks.Amount = dashboardRankExtremes(amounts, func(q dashboardStockQuote) float64 { return q.Amount })
+	ranks.ChangeAsc, ranks.ChangeDesc = dashboardRankExtremes(changes, func(q dashboardStockQuote) float64 { return *q.Change })
+	ranks.CloseAsc, ranks.CloseDesc = dashboardRankExtremes(prices, func(q dashboardStockQuote) float64 { return q.Close })
+	// The existing sign-specific lists are prefixes of the full change rankings.
+	ranks.Up = ranks.ChangeDesc[:min(summary.Up, len(ranks.ChangeDesc))]
+	ranks.Down = ranks.ChangeAsc[:min(summary.Down, len(ranks.ChangeAsc))]
 	return summary
 }
 
@@ -297,9 +306,16 @@ func (b *dashboardBreadth) add(quote dashboardStockQuote) {
 	}
 }
 
-func topDashboardStocks(rows []dashboardStockQuote, compare func(dashboardStockQuote, dashboardStockQuote) int) []dashboardStockQuote {
+func dashboardRankExtremes(rows []dashboardStockQuote, value func(dashboardStockQuote) float64) (ascending, descending []dashboardStockQuote) {
+	limit := min(len(rows), dashboardMaxRank)
+	// Copy the bounded results so the next sort cannot reorder the first list
+	// and the shared snapshot does not keep the full market's backing arrays.
 	slices.SortFunc(rows, func(a, b dashboardStockQuote) int {
-		return cmp.Or(compare(a, b), strings.Compare(a.Code, b.Code))
+		return cmp.Or(cmp.Compare(value(a), value(b)), strings.Compare(a.Code, b.Code))
 	})
-	return rows[:min(len(rows), dashboardMaxRank)]
+	ascending = slices.Clone(rows[:limit])
+	slices.SortFunc(rows, func(a, b dashboardStockQuote) int {
+		return cmp.Or(cmp.Compare(value(b), value(a)), strings.Compare(a.Code, b.Code))
+	})
+	return ascending, slices.Clone(rows[:limit])
 }

@@ -50,7 +50,7 @@ func OpenMarketReader(dsn string) (*MarketReader, error) {
 }
 
 func readMarketMetadata(store *marketstore.MySQLReader) (*MarketData, error) {
-	codes, err := store.Codes()
+	codes, err := store.StandardCodes()
 	if err != nil {
 		return nil, err
 	}

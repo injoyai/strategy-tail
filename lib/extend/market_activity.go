@@ -23,3 +23,14 @@ func (r *MarketReader) ReadStockTurnover(ctx context.Context, from, to string, v
 	}
 	return source.ReadStockTurnover(ctx, from, to, visit)
 }
+
+// SectorHistory returns block closes for the five sessions before date.
+func (r *MarketReader) SectorHistory(ctx context.Context, date string) ([]string, []marketstore.SectorDayClose, error) {
+	source, ok := r.source.(interface {
+		SectorHistory(context.Context, string) ([]string, []marketstore.SectorDayClose, error)
+	})
+	if !ok {
+		return nil, nil, errors.New("行情源不支持板块历史")
+	}
+	return source.SectorHistory(ctx, date)
+}

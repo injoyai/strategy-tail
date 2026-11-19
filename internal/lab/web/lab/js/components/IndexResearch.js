@@ -14,7 +14,8 @@ function coverage(value) {
   return `沪 ${countFormat.format(value.shanghai)} · 深 ${countFormat.format(value.shenzhen)} · 北 ${countFormat.format(value.beijing)}`;
 }
 
-function chartOption(points, indexName) {
+function chartOption(points, indexName, momentum = false) {
+  const metrics = points;
   const dates = points.map(point => point.date);
   const axis = {type: 'category', boundaryGap: false, data: dates};
   return {
@@ -22,11 +23,11 @@ function chartOption(points, indexName) {
     backgroundColor: 'transparent',
     title: [
       {text: `${indexName} · 收盘点位`, left: 8, top: 3, textStyle: {fontSize: 13, color: NAV_COLORS.gross}},
-      {text: '成交拥挤度 · %', left: 8, top: '46%', textStyle: {fontSize: 13, color: NAV_COLORS.net}},
+      {text: momentum ? '上证 RSI(14)' : '成交拥挤度 · %', left: 8, top: '46%', textStyle: {fontSize: 13, color: NAV_COLORS.net}},
     ],
     grid: [{left: 62, right: 18, top: 39, height: '32%'}, {left: 62, right: 18, top: '54%', bottom: 66}],
     xAxis: [{...axis, axisLabel: {show: false}, axisTick: {show: false}}, {...axis, gridIndex: 1, axisLabel: {hideOverlap: true}}],
-    yAxis: [{type: 'value', scale: true}, {type: 'value', gridIndex: 1, scale: true, axisLabel: {formatter: '{value}%'}}],
+    yAxis: [{type: 'value', scale: true}, {type: 'value', gridIndex: 1, scale: true, axisLabel: {formatter: momentum ? '{value}' : '{value}%'}}],
     axisPointer: {link: [{xAxisIndex: 'all'}]},
     tooltip: {
       trigger: 'axis', axisPointer: {type: 'line'}, renderMode: 'richText', confine: true,
@@ -34,6 +35,10 @@ function chartOption(points, indexName) {
         const point = points[params[0]?.dataIndex];
         if (!point) return '';
         const sample = point.concentration;
+        if (momentum) {
+          const metric = metrics[params[0].dataIndex];
+          return [point.date, `指数收盘 ${point.close == null ? '缺日线' : close(point.close)}`, `RSI(14) ${metric.rsi == null ? '数据不足' : numberFormat.format(metric.rsi)}`].join('\n');
+        }
         const lines = [point.date, `指数收盘 ${point.close == null ? '缺日线' : close(point.close)}`,
           `成交拥挤度 ${sample?.share == null ? '无有效值' : pct(sample.share)}`];
         if (sample) {
@@ -50,7 +55,7 @@ function chartOption(points, indexName) {
     series: [
       {type: 'line', color: NAV_COLORS.gross, data: points.map(p => p.close), lineStyle: {width: 2}},
       {type: 'line', color: NAV_COLORS.net, xAxisIndex: 1, yAxisIndex: 1,
-        data: points.map(p => p.concentration?.share == null ? null : p.concentration.share * 100), lineStyle: {width: 2}},
+        data: momentum ? metrics.map(p => p.rsi) : points.map(p => p.concentration?.share == null ? null : p.concentration.share * 100), lineStyle: {width: 2}},
     ].map(series => ({...series, symbolSize: 4,
       showSymbol: series.data.some((value, i, data) => value != null && data[i - 1] == null && data[i + 1] == null)})),
   };
@@ -63,13 +68,14 @@ export default {
     return {
       indexes: null, catalogError: '', catalogBusy: false, busy: false, error: '', invalidField: '',
       query: {index: '', from: '2000-01-01', to: dateFormat.format(new Date()), topPercent: 5},
-      result: null, chart: null, chartError: false, request: null, inspected: null,
+      result: null, chart: null, momentumChart: null, chartError: false, request: null, inspected: null, inspectedMomentum: null,
     };
   },
   computed: {
     latestShare() { return this.result?.points.findLast(p => p.concentration?.share != null); },
     latestClose() { return this.result?.points.findLast(p => p.close != null); },
     latestSample() { return this.result?.points.findLast(p => p.concentration); },
+    metrics() { return this.result?.points || []; },
     excludedDays() { return this.result?.points.filter(p => p.concentration?.excluded > 0).length || 0; },
   },
   watch: {
@@ -82,9 +88,10 @@ export default {
   beforeUnmount() {
     this.request?.abort();
     dropChart(this.chart);
+    dropChart(this.momentumChart);
   },
   methods: {
-    indexLabel, pct, close, coverage, stockCount,
+    indexLabel, pct, close, coverage, stockCount, numberFormatMetric: value => numberFormat.format(value),
     async loadIndexes() {
       if (this.catalogBusy) return;
       this.catalogBusy = true;
@@ -99,7 +106,12 @@ export default {
         this.catalogBusy = false;
       }
       if (!this.indexes?.length) return;
-      this.query.index = (this.indexes.find(item => item.code === 'sh000001') || this.indexes[0]).code;
+      if (!this.indexes.some(item => item.code === 'sh000001')) {
+        this.catalogError = '行情库暂无上证指数日线。';
+        this.indexes = null;
+        return;
+      }
+      this.query.index = 'sh000001';
       this.calculate();
     },
     async calculate() {
@@ -120,8 +132,11 @@ export default {
         const points = await Api.indexResearch(rule, request.signal);
         this.result = {rule, indexName: item?.name || rule.index, points};
         this.inspected = null;
+        this.inspectedMomentum = null;
         dropChart(this.chart);
+        dropChart(this.momentumChart);
         this.chart = null;
+        this.momentumChart = null;
         this.chartError = false;
       } catch (err) {
         if (request.signal.aborted) return;
@@ -136,26 +151,32 @@ export default {
       try {
         this.chart = mountChart(this.$refs.chart);
         if (this.chart) this.chart.setOption(chartOption(this.result.points, this.result.indexName), true);
-        this.chartError = !this.chart;
+        this.momentumChart = this.$refs.momentumChart ? mountChart(this.$refs.momentumChart) : null;
+        if (this.momentumChart) this.momentumChart.setOption(chartOption(this.result.points, this.result.indexName, true), true);
+        this.chartError = !this.chart || (!!this.$refs.momentumChart && !this.momentumChart);
       } catch {
         dropChart(this.chart);
+        dropChart(this.momentumChart);
         this.chart = null;
+        this.momentumChart = null;
         this.chartError = true;
       }
     },
-    onChartKey(event) {
-      if (!this.chart || event.altKey || event.ctrlKey || event.metaKey) return;
+    onChartKey(event, momentum = false) {
+      const chart = momentum ? this.momentumChart : this.chart;
+      if (!chart || event.altKey || event.ctrlKey || event.metaKey) return;
       const points = this.result.points;
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        const current = this.inspected ?? points.length - 1;
-        this.inspected = Math.max(0, Math.min(points.length - 1, current + (event.key === 'ArrowLeft' ? -1 : 1)));
-        const point = points[this.inspected];
-        this.chart.dispatchAction({type: 'showTip', seriesIndex: point.close == null ? 1 : 0, dataIndex: this.inspected});
+        const key = momentum ? 'inspectedMomentum' : 'inspected';
+        const current = this[key] ?? points.length - 1;
+        this[key] = Math.max(0, Math.min(points.length - 1, current + (event.key === 'ArrowLeft' ? -1 : 1)));
+        const point = points[this[key]];
+        chart.dispatchAction({type: 'showTip', seriesIndex: point.close == null ? 1 : 0, dataIndex: this[key]});
       } else if (['+', '=', '-', 'Home'].includes(event.key)) {
-        const {start, end} = this.chart.getOption().dataZoom[0];
+        const {start, end} = chart.getOption().dataZoom[0];
         const center = (start + end) / 2;
         const halfWidth = Math.max(100 / points.length, (end - start) * (event.key === '-' ? 0.7 : 0.35));
-        this.chart.dispatchAction({type: 'dataZoom', dataZoomIndex: 0,
+        chart.dispatchAction({type: 'dataZoom', dataZoomIndex: 0,
           start: event.key === 'Home' ? 0 : Math.max(0, center - halfWidth),
           end: event.key === 'Home' ? 100 : Math.min(100, center + halfWidth)});
       } else return;
@@ -173,19 +194,11 @@ export default {
   <template v-if="indexes?.length">
     <form class="card index-research-controls" novalidate @submit.prevent="calculate">
       <fieldset :disabled="busy" aria-label="成交拥挤度规则">
-        <div class="form-row index-research-index"><label for="indexResearchIndex">对照指数</label>
-          <select id="indexResearchIndex" v-model="query.index">
-            <option v-for="item in indexes" :key="item.code" :value="item.code">{{ indexLabel(item) }}</option>
-          </select>
-        </div>
         <div class="form-row"><label for="indexResearchFrom">起始日期</label>
           <input id="indexResearchFrom" ref="from" type="date" v-model="query.from" required :aria-invalid="invalidField === 'from'" aria-describedby="indexResearchError">
         </div>
         <div class="form-row"><label for="indexResearchTo">结束日期</label>
           <input id="indexResearchTo" ref="to" type="date" v-model="query.to" required :aria-invalid="invalidField === 'to'" aria-describedby="indexResearchError">
-        </div>
-        <div class="form-row index-research-top"><label for="indexResearchTop">成交额前 N%</label>
-          <input id="indexResearchTop" ref="topPercent" type="number" v-model.number="query.topPercent" min="1" max="100" step="1" required :aria-invalid="invalidField === 'topPercent'" aria-describedby="indexResearchError">
         </div>
         <button type="submit" class="primary" :aria-busy="busy">绘制曲线</button>
       </fieldset>
@@ -193,6 +206,7 @@ export default {
       <p id="indexResearchError" class="msg err" role="alert">{{ error }}</p>
     </form>
     <div v-if="result" class="card index-research-result">
+      <h2>上证指数与 5% 拥挤度</h2>
       <div class="index-research-readout" role="status">
         <p v-if="latestClose"><span>{{ result.indexName }}</span> <strong>{{ close(latestClose.close) }}</strong> <time>{{ latestClose.date }}</time></p>
         <p v-else>所选区间无指数收盘数据</p>
@@ -201,18 +215,26 @@ export default {
       </div>
       <p class="hint index-research-rule">{{ result.rule.from }} 至 {{ result.rule.to }} · 成交额前 {{ result.rule.topPercent }}% 的股票占当日样本成交额的比例</p>
       <div v-if="latestClose || latestShare" ref="chart" class="index-research-chart" v-show="!chartError" tabindex="0" role="group"
-        aria-label="指数收盘点位和成交拥挤度曲线，左右键查值，加减键缩放，Home 显示全程" @keydown="onChartKey"></div>
+        aria-label="指数收盘点位和成交拥挤度曲线，左右键查值，加减键缩放，Home 显示全程" @keydown="onChartKey($event)"></div>
       <p v-if="chartError" class="hint" role="status">图表组件加载失败。可查看上方最近一个有效交易日的数据。</p>
       <p v-if="inspected !== null" class="hint" role="status">
         {{ result.points[inspected].date }} · 收盘 {{ result.points[inspected].close == null ? '缺日线' : close(result.points[inspected].close) }}
         · 拥挤度 {{ result.points[inspected].concentration?.share == null ? '无有效值' : pct(result.points[inspected].concentration.share) }}
       </p>
       <p class="hint index-research-coverage">
-        样本为库内当日有有效成交的沪深北 A 股，含 ST，覆盖完整性未核验。
+        样本为库内当日有有效成交的沪深北 A 股，含 ST，覆盖完整性未核验。历史结果已缓存，近 7 日在访问时最多每小时检查一次，更早历史修订不会自动检测。
         <template v-if="latestSample">{{ latestSample.date }} 样本 {{ stockCount(latestSample.concentration).toLocaleString('zh-CN') }} 只（{{ coverage(latestSample.concentration) }}）。</template>
         <template v-if="excludedDays">{{ excludedDays }} 个交易日排除了成交额缺失或无效的股票。</template>
       </p>
     </div>
+    <section v-if="result && latestClose" class="card index-research-result" aria-label="上证指数与 RSI">
+      <h2>上证指数与 RSI(14)</h2>
+      <p class="hint">RSI 使用最近 14 个交易日的简单平均涨跌幅，缺少连续收盘价时不显示。</p>
+      <div ref="momentumChart" class="index-research-chart" v-show="!chartError" tabindex="0" role="group"
+        aria-label="上证指数收盘点位和 RSI 曲线，左右键查值，加减键缩放，Home 显示全程" @keydown="onChartKey($event, true)"></div>
+      <p v-if="chartError" class="hint" role="status">图表组件加载失败。</p>
+      <p v-if="inspectedMomentum !== null" class="hint" role="status">{{ result.points[inspectedMomentum].date }} · 收盘 {{ result.points[inspectedMomentum].close == null ? '缺日线' : close(result.points[inspectedMomentum].close) }} · RSI(14) {{ metrics[inspectedMomentum].rsi == null ? '数据不足' : numberFormatMetric(metrics[inspectedMomentum].rsi) }}</p>
+    </section>
   </template>
 </div>
 `,

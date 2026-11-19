@@ -12,7 +12,9 @@ INSERT INTO cn_stock_kline_minute_2026 VALUES
   ('sh600000','2026-11-10 09:32:00',10.5,11,10,11,200,NULL,''),
   ('sh600000','2026-11-10 09:33:00',11,100,1,20,100,2000,'');
 CREATE TABLE codes (exchange VARCHAR(8), code VARCHAR(32), name VARCHAR(64), multiple INT, `decimal` INT, last_price DOUBLE, PRIMARY KEY(exchange,code));
-INSERT INTO codes VALUES ('sh','600000','浦发银行',100,2,12);
+INSERT INTO codes VALUES
+  ('sh','600000','浦发银行',100,2,12),
+  ('hi','CES100','中华交易服务中国120',100,2,100);
 CREATE TABLE gbbq (id BIGINT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(32), time DATETIME, category INT, c1 DOUBLE, c2 DOUBLE, c3 DOUBLE, c4 DOUBLE);
 INSERT INTO gbbq (code,time,category,c1,c2,c3,c4) VALUES ('sh600000','2026-11-10 00:00:00',5,0,0,1000,2000),('sh600000','2026-11-11 00:00:00',5,0,0,9999,9999);
 CREATE TABLE research_records (dataset VARCHAR(64), code VARCHAR(32), record_key VARCHAR(128), source VARCHAR(64), revision VARCHAR(64), event_at BIGINT, available_at BIGINT, values_json JSON, attributes_json JSON);

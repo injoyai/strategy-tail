@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>黑曜石 + 信号橙 · 通用视觉效果包</title>
+  <link rel="stylesheet" href="./tokens.css">
+  <link rel="stylesheet" href="./components.css">
+  <link rel="stylesheet" href="./effects.css">
+  <style>
+    body{margin:0;min-width:320px}.demo-lead{font-size:12px;margin:10px 0 0;color:var(--oe-muted)}.demo-stage{min-height:350px;display:grid;place-items:center;padding:38px 32px;overflow:hidden}.demo-surface{max-width:360px;width:100%;padding:26px}.demo-surface h2{margin:14px 0 9px;font-weight:500;font-size:23px}.demo-label{font-size:11px;color:var(--oe-accent-text)}.demo-surface p{font-size:12px;color:var(--oe-muted);line-height:1.9;margin:0}.demo-surface footer{display:flex;gap:18px;margin-top:24px;padding-top:16px;border-top:1px solid var(--oe-border);font-size:11px;color:var(--oe-quiet)}.demo-side dl{display:grid;grid-template-columns:1fr auto;gap:12px;font-size:12px;margin:20px 0}.demo-side dt{color:var(--oe-muted)}.demo-side dd{margin:0}.demo-colors{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}.demo-swatch{border:1px solid var(--oe-border);border-radius:6px;overflow:hidden}.demo-swatch i{display:block;height:56px;background:var(--swatch)}.demo-swatch span,.demo-swatch code{display:block;padding:0 10px;font-size:11px}.demo-swatch span{margin-top:9px}.demo-swatch code{margin:4px 0 10px;color:var(--oe-muted);font-size:10px}.demo-lower{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.demo-form{display:grid;gap:14px;margin-top:18px}.demo-help{display:block;margin-top:10px;color:var(--oe-quiet);font-size:11px}.demo-footer{padding:4px 0 12px;color:var(--oe-quiet);font-size:11px}.demo-status{min-height:18px;color:var(--oe-accent-text);font-size:11px}.demo-rail-label{color:var(--oe-accent-text);text-align:center;font-size:15px;margin:4px 0 20px;font-weight:500}.demo-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.demo-controls{justify-content:space-between}.demo-form input[type=checkbox]{accent-color:var(--oe-accent)}
+    @media(max-width:1000px){.demo-colors{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:600px){.demo-lower{grid-template-columns:minmax(0,1fr)}.demo-colors{grid-template-columns:repeat(2,minmax(0,1fr))}.demo-stage{padding:28px 22px;min-height:310px}.demo-surface{padding:18px}.demo-surface h2{font-size:20px}.demo-surface footer{gap:12px;flex-wrap:wrap}.demo-header-title{width:100%}.demo-table-panel{padding:0;overflow:hidden}.demo-table-panel h2{padding:16px 16px 0}.demo-rail-label{font-size:12px}}
+  </style>
+</head>
+<body class="oe-theme" data-oe-theme="dark" data-oe-motion="on">
+  <div class="oe-shell">
+    <nav class="oe-rail" aria-label="示例章节">
+      <span class="demo-rail-label">视觉库</span>
+      <button type="button" aria-current="page" data-scroll="surfaces">立体表面</button>
+      <button type="button" data-scroll="palette">主题配色</button>
+      <button type="button" data-scroll="components">基础组件</button>
+    </nav>
+    <div class="oe-workspace">
+      <header class="oe-header"><div class="demo-header-title"><h1 class="oe-title">通用视觉效果包</h1><p class="demo-lead">黑曜石 + 信号橙</p></div><div class="demo-actions"><button id="motion" class="oe-button" type="button" aria-pressed="true">动效：开启</button><button id="theme" class="oe-button" type="button">切换浅色</button></div></header>
+      <main class="oe-content">
+        <div class="oe-row demo-controls"><div class="oe-segmented" role="group" aria-label="效果示例"><button type="button" data-view="0" aria-pressed="true">立体层次</button><button type="button" data-view="1" aria-pressed="false">景深切换</button></div><button id="open-dialog" class="oe-button oe-button--primary" type="button">弹窗动效</button></div>
+        <section id="surfaces" class="oe-split" aria-label="立体与切换效果">
+          <div class="oe-panel oe-stage demo-stage oe-transition-plane">
+            <article id="tilt-surface" class="oe-panel oe-depth-stack demo-surface"><div class="oe-tilt-layer"><span class="demo-label" id="surface-label">悬停体验</span><h2 id="surface-title">有层次的内容表面</h2><p id="surface-copy">移动鼠标查看轻微透视和随光变化。表面可承载任何项目中的信息。</p><footer><span>透视 1000px</span><span>最大倾斜 6°</span></footer></div></article>
+          </div>
+          <aside class="oe-panel demo-side oe-transition-panel" aria-label="效果参数"><h2 class="oe-subtitle" id="side-title">立体表面</h2><dl><dt>页面切换</dt><dd>700ms</dd><dt>弹窗进入</dt><dd>380ms</dd><dt>强调色</dt><dd>信号橙</dd><dt>系统减少动态效果</dt><dd id="reduced-state">正在检测</dd></dl><hr class="oe-rule"><p class="oe-note">切换按钮会演示主面板与侧板协调过渡。快速连续切换按最后一次选择结束。</p><p class="oe-note" style="margin-top:12px">此示例使用 CSS 3D，无需加载 WebGL；通用灯光与材质另见可选模块。</p></aside>
+        </section>
+        <section id="palette" class="oe-panel" data-oe-reveal aria-labelledby="palette-title"><h2 id="palette-title" class="oe-subtitle">主题配色</h2><p class="oe-note" style="margin:8px 0 16px">深浅主题使用相同语义变量，以下色值随主题同步。</p><div id="swatches" class="demo-colors"></div></section>
+        <div id="components" class="demo-lower">
+          <section class="oe-panel" data-oe-reveal aria-labelledby="controls-title"><h2 id="controls-title" class="oe-subtitle">按钮与表单</h2><form class="demo-form"><label class="oe-field">内容名称<input class="oe-input" placeholder="请输入名称" autocomplete="off"></label><label class="oe-field">展示方式<select class="oe-input"><option>标准视图</option><option>紧凑视图</option></select></label><div class="oe-row"><button class="oe-button oe-button--primary" type="submit">保存示例</button><button class="oe-button" type="reset">重置</button><button class="oe-button" type="button" disabled>禁用状态</button></div><span class="demo-status" role="status"></span></form></section>
+          <section class="oe-panel demo-table-panel" data-oe-reveal aria-labelledby="table-title"><h2 id="table-title" class="oe-subtitle">表格与状态</h2><div class="oe-table-scroll" style="margin-top:18px"><table class="oe-table"><thead><tr><th>组件</th><th>用途</th><th>状态</th></tr></thead><tbody><tr><td>内容面板</td><td>信息浏览</td><td><span class="oe-chip oe-chip--success">可用</span></td></tr><tr><td>动作按钮</td><td>执行操作</td><td><span class="oe-chip oe-chip--success">可用</span></td></tr><tr><td>视频容器</td><td>媒体展示</td><td><span class="oe-chip oe-chip--warning">待配置</span></td></tr></tbody></table></div></section>
+        </div>
+        <footer class="demo-footer">独立样式示例 · 不包含业务数据、模型或外部网络资源</footer>
+      </main>
+    </div>
+  </div>
+  <dialog id="sample-dialog" class="oe-dialog" aria-labelledby="dialog-title"><div class="oe-dialog-head"><h2 id="dialog-title" class="oe-subtitle">立体弹窗</h2><button class="oe-button oe-button--quiet" type="button" data-close>关闭</button></div><p class="oe-muted">轻微透视、位移和淡入共同表达进入层级。</p><p class="oe-note">按 Esc 或点击遮罩可关闭。系统减少动态效果时直接呈现。</p><div class="oe-dialog-actions"><button class="oe-button oe-button--primary" type="button" data-close>完成</button></div></dialog>
+  <script type="module" src="./demo.js"></script>
+</body>
+</html>

@@ -2,12 +2,12 @@ import { expect, test } from '@playwright/test';
 
 const indexes = [{code: 'sh000001', name: '上证指数'}, {code: 'sh000300', name: '沪深300'}];
 const points = [
-  {date: '2024-01-02', close: 3000, concentration: null},
-  {date: '2024-01-03', close: 3080, concentration: {share: 0.25, selected: 250, shanghai: 2200, shenzhen: 2500, beijing: 300, excluded: 5}},
-  {date: '2024-01-04', close: 3097.25, concentration: {share: 0.2745, selected: 251, shanghai: 2210, shenzhen: 2500, beijing: 300, excluded: 0}},
+  {date: '2024-01-02', close: 3000, rsi: null, concentration: null},
+  {date: '2024-01-03', close: 3080, rsi: 52.86, concentration: {share: 0.25, selected: 250, shanghai: 2200, shenzhen: 2500, beijing: 300, excluded: 5}},
+  {date: '2024-01-04', close: 3097.25, rsi: 55, concentration: {share: 0.2745, selected: 251, shanghai: 2210, shenzhen: 2500, beijing: 300, excluded: 0}},
 ];
 
-test('指数研究默认绘图并按用户规则重新查询，窄屏菜单可达', async ({page}) => {
+test('指数研究固定上证和前5%并按日期重新查询，窄屏菜单可达', async ({page}) => {
   const requests = [];
   await page.route('**/api/index-research/indexes', route => route.fulfill({json: indexes}));
   await page.route('**/api/index-research/series?*', route => {
@@ -31,23 +31,21 @@ test('指数研究默认绘图并按用户规则重新查询，窄屏菜单可�
   await expect(page.getByText('2024-01-03 · 收盘 3,080.00 点 · 拥挤度 25.00%')).toBeVisible();
   expect(await chart.evaluate(el => window.echarts.getInstanceByDom(el).getOption().dataZoom[0].xAxisIndex)).toEqual([0, 1]);
 
-  await page.getByLabel('成交额前 N%').fill('0');
-  await page.getByRole('button', {name: '绘制曲线'}).click();
-  await expect(page.getByRole('alert')).toContainText('1 至 100');
-  await expect(page.getByLabel('成交额前 N%')).toBeFocused();
-  expect(requests).toHaveLength(1);
-  const indexSelect = page.getByLabel('对照指数');
-  await indexSelect.focus();
-  await page.keyboard.press('Space');
-  await page.keyboard.press('Escape');
-  await expect(indexSelect).toBeFocused();
-  await indexSelect.selectOption('sh000300');
+  await expect(page.getByRole('region', {name: '上证指数与 RSI'})).toBeVisible();
+  const rsiChart = page.getByRole('group', {name: /上证指数收盘点位和 RSI 曲线/});
+  await expect(rsiChart).toBeVisible();
+  const rsiOption = await rsiChart.evaluate(el => window.echarts.getInstanceByDom(el).getOption());
+  expect(rsiOption.series[0].data).toEqual([3000, 3080, 3097.25]);
+  expect(rsiOption.series[1].data).toEqual([null, 52.86, 55]);
+  await rsiChart.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByText('2024-01-03 · 收盘 3,080.00 点 · RSI(14) 52.86')).toBeVisible();
+  await expect(page.getByLabel('对照指数')).toHaveCount(0);
+  await expect(page.getByLabel('成交额前 N%')).toHaveCount(0);
   await page.getByLabel('起始日期').fill('2024-01-02');
   await page.getByLabel('结束日期').fill('2024-01-04');
-  await page.getByLabel('成交额前 N%').fill('10');
   await page.getByRole('button', {name: '绘制曲线'}).click();
-  await expect(page.getByText('成交额前 10% 的股票占当日样本成交额的比例', {exact: false})).toBeVisible();
-  expect(requests[1]).toEqual({index: 'sh000300', from: '2024-01-02', to: '2024-01-04', topPercent: '10'});
+  expect(requests[1]).toEqual({index: 'sh000001', from: '2024-01-02', to: '2024-01-04', topPercent: '5'});
 
   await page.setViewportSize({width: 390, height: 844});
   await page.getByRole('button', {name: '菜单', exact: true}).press('Enter');

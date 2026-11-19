@@ -1,0 +1,9 @@
+{
+  "name": "obsidian-ember-visual-kit",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Framework-free theme, CSS 3D and motion with an optional Three.js surface helper",
+  "peerDependencies": { "three": "0.187.0" },
+  "peerDependenciesMeta": { "three": { "optional": true } }
+}

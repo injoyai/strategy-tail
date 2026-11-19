@@ -34,6 +34,7 @@ export const Api = {
   screenDiagnose: (code, strategy) => api('GET', '/api/screen/diagnose/' + encodeURIComponent(code) + '?' + new URLSearchParams({strategy})),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
   marketDashboard: signal => api('GET', '/api/market-dashboard', undefined, signal),
+  marketDashboardSectors: signal => api('GET', '/api/market-dashboard/sectors', undefined, signal),
   researchIndexes: signal => api('GET', '/api/index-research/indexes', undefined, signal),
   indexResearch: (query, signal) => api('GET', '/api/index-research/series?' + new URLSearchParams(query), undefined, signal),
   runStrategy: spec => api('POST', '/api/strategy/run', spec),

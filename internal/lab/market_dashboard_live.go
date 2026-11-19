@@ -199,31 +199,44 @@ func dashboardLiveIndexes(date string, quotes []tdx.Quote) []dashboardIndexQuote
 type dashboardLiveReader func(context.Context, time.Time) (marketDashboard, error)
 
 type dashboardLiveCache struct {
-	mu        sync.Mutex
-	last      marketDashboard
-	attemptAt time.Time
-	err       error
-	pending   chan struct{}
+	dashboardSnapshotCache[marketDashboard]
 }
 
-func (c *dashboardLiveCache) latest(date string) (marketDashboard, error) {
+func (c *dashboardLiveCache) load(ctx context.Context, at time.Time, read dashboardLiveReader) (marketDashboard, error) {
+	return c.loadWithInterval(ctx, at, dashboardRefresh, read)
+}
+
+type dashboardSnapshotCache[T any] struct {
+	mu          sync.Mutex
+	last        T
+	lastDay     string
+	attemptDay  string
+	nextAttempt time.Time
+	err         error
+	pending     chan struct{}
+}
+
+func (c *dashboardSnapshotCache[T]) latest(date string) (T, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.last.Date == date {
+	if c.lastDay == date {
 		return c.last, c.err
 	}
-	return marketDashboard{}, c.err
+	var empty T
+	return empty, c.err
 }
 
-// load shares one bounded request across all viewers. Leaving the page cancels
+// loadWithInterval shares one bounded request across all viewers. Leaving the page cancels
 // its wait without aborting the upstream request for other viewers.
-func (c *dashboardLiveCache) load(ctx context.Context, at time.Time, read dashboardLiveReader) (marketDashboard, error) {
+func (c *dashboardSnapshotCache[T]) loadWithInterval(ctx context.Context, at time.Time, period time.Duration,
+	read func(context.Context, time.Time) (T, error)) (T, error) {
+	day := at.Format(time.DateOnly)
 	c.mu.Lock()
-	if c.pending == nil && (c.attemptAt.IsZero() || at.Sub(c.attemptAt) >= dashboardRefresh ||
-		at.Format(time.DateOnly) != c.attemptAt.Format(time.DateOnly)) {
-		c.attemptAt = at
+	if c.pending == nil && (day != c.attemptDay || !at.Before(c.nextAttempt)) {
+		c.attemptDay = day
+		c.nextAttempt = at.Add(period)
 		c.pending = make(chan struct{})
-		go c.refresh(at, read)
+		go c.refresh(at, day, read)
 	}
 	pending := c.pending
 	c.mu.Unlock()
@@ -231,24 +244,26 @@ func (c *dashboardLiveCache) load(ctx context.Context, at time.Time, read dashbo
 	if pending != nil {
 		select {
 		case <-ctx.Done():
-			return marketDashboard{}, ctx.Err()
+			var empty T
+			return empty, ctx.Err()
 		case <-pending:
 		}
 	}
-	return c.latest(at.Format(time.DateOnly))
+	return c.latest(day)
 }
 
-func (c *dashboardLiveCache) refresh(at time.Time, read dashboardLiveReader) {
+func (c *dashboardSnapshotCache[T]) refresh(at time.Time, day string, read func(context.Context, time.Time) (T, error)) {
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 	view, err := read(ctx, at)
 	if err != nil && !errors.Is(err, errDashboardNoRecentMinute) {
-		log.Printf("[lab] 更新数据看板实时行情: %v", err)
+		log.Printf("[lab] 更新数据看板行情: %v", err)
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if err == nil {
 		c.last = view
+		c.lastDay = day
 	}
 	c.err = err
 	close(c.pending)

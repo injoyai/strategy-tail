@@ -108,10 +108,25 @@ const App = {
         this.sellCursor = event.id;
         try { sessionStorage.setItem('lab-screen-sell-cursor', String(event.id)); } catch {}
         this.sellEvents = [event, ...this.sellEvents];
+        this.$nextTick(() => {
+          if (!this.navOpen && !document.querySelector(':modal, :popover-open')) {
+            this.$refs.saleNotices.showPopover();
+          }
+        });
       };
       socket.onclose = () => { this.sellReconnect = setTimeout(() => this.connectScreenEvents(), 3000); };
     },
+    closeSellNotices() {
+      this.$refs.saleNotices.hidePopover();
+      this.$refs.saleNoticeTrigger.focus();
+    },
+    clearSellNotices() {
+      this.$refs.saleNotices.hidePopover();
+      this.sellEvents = [];
+      this.$refs.pageTitle.focus();
+    },
     openScreenSale(event) {
+      this.closeSellNotices();
       this.switchTab(8);
       this.$nextTick(() => this.$refs.screen?.openSale(event.signal));
     },
@@ -340,7 +355,7 @@ const App = {
   <aside id="lab-sidebar" ref="sidebar" class="lab-sidebar" :class="{'is-open': navOpen}">
     <div class="sidebar-brand">
       <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#ecd69c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#7aa8ff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#ecd69c" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 32 32" fill="none"><path d="M5 24.5V17l6-6 5 5 10-10" stroke="#f3ac81" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 6h6v6" stroke="#ed9968" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 27h22" stroke="#f3ac81" stroke-opacity=".5" stroke-width="1.4" stroke-linecap="round"/></svg>
       </div>
       <span class="brand-copy">策略实验室</span>
     </div>
@@ -366,22 +381,31 @@ const App = {
     <header class="masthead">
       <button ref="navToggle" class="secondary workspace-toggle" type="button" aria-controls="lab-sidebar"
         :aria-expanded="String(navOpen)" @click="toggleNav">菜单</button>
-      <h1>{{ pageTitle }}</h1>
+      <h1 ref="pageTitle" tabindex="-1">{{ pageTitle }}</h1>
+      <button v-if="sellEvents.length" ref="saleNoticeTrigger" type="button" class="secondary screen-sale-trigger"
+        popovertarget="screen-sale-notices">卖点提醒（{{ sellEvents.length }}）</button>
+      <span class="screen-sale-status" role="status">{{ sellEvents.length ? sellEvents.length + ' 条卖点提醒' : '' }}</span>
+      <section ref="saleNotices" id="screen-sale-notices" class="screen-sale-notices" popover="auto" aria-labelledby="screen-sale-title">
+        <div class="screen-result-head">
+          <h2 id="screen-sale-title">卖点提醒</h2>
+          <div class="screen-actions">
+            <button type="button" class="secondary" @click="clearSellNotices">清除提醒</button>
+            <button type="button" class="secondary" @click="closeSellNotices">关闭</button>
+          </div>
+        </div>
+        <ul>
+          <li v-for="event in sellEvents" :key="event.id">
+            <span>
+              <stock-chart-button :code="event.signal.code" :name="event.signal.name" @click.capture="closeSellNotices" />
+              · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元
+            </span>
+            <button type="button" class="secondary" @click="openScreenSale(event)">查看K线</button>
+          </li>
+        </ul>
+      </section>
     </header>
 <main :class="{'practice-page': state.activeTab === 7 && !taskDock, 'screen-main': state.activeTab === 8, 'has-task-dock': taskDock}">
   <data-update />
-  <section v-if="sellEvents.length" class="screen-sale-notices card" aria-label="卖点提醒">
-    <div class="screen-result-head">
-      <strong role="status" aria-live="polite">{{ sellEvents.length }} 条卖点提醒</strong>
-      <button type="button" class="secondary" @click="sellEvents = []">清除提醒</button>
-    </div>
-    <ul>
-      <li v-for="event in sellEvents" :key="event.id">
-        <span><stock-chart-button :code="event.signal.code" :name="event.signal.name" /> · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元</span>
-        <button type="button" class="secondary" @click="openScreenSale(event)">查看K线</button>
-      </li>
-    </ul>
-  </section>
   <section class="statusbar" ref="statusbar" v-show="!!taskDock" :data-state="taskDock ? taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
     <div class="status-head">

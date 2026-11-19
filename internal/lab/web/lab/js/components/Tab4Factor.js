@@ -15,7 +15,7 @@ import {
   factorAxisNumber, factorAxisLabel,
   currentGrouping, analysisYearsForChart, groupingSummaryText,
 } from '../format.js';
-import { mountChart, dropChart } from '../echarts.js';
+import { mountChart, dropChart, ANNUAL_PALETTE } from '../echarts.js';
 import { animateFactorResult } from '../motion.js';
 
 export default {
@@ -436,7 +436,7 @@ export default {
             groupLabel: g.label, range: groupRangeLabel(g, unit), mean: fmtFactorVal(g.factorMean, unit),
           })),
           lineStyle: {width: 2, type: i % 3 === 1 ? 'dashed' : (i % 3 === 2 ? 'dotted' : 'solid')},
-          itemStyle: {color: ['#d8b45a','#4c8dff','#a78bfa','#38bdf8','#f59e0b','#f472b6','#94a3b8','#2dd4bf','#818cf8','#c084fc','#67e8f9'][i % 11]},
+          itemStyle: {color: ANNUAL_PALETTE[i % ANNUAL_PALETTE.length]},
           emphasis: {focus: 'series'},
           markLine: i === 0 ? {silent: true, symbol: 'none', lineStyle: {color: 'rgba(255,255,255,.22)', type: 'dashed'}, data: [{yAxis: 0}]} : undefined,
         })),

@@ -8,8 +8,10 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func (r *MySQLReader) Codes() ([]*model.CodeModel, error) {
-	rows, err := r.db.Query("SELECT `exchange`,`code`,`name`,`multiple`,`decimal`,`last_price` FROM `codes` ORDER BY `exchange`,`code`")
+// StandardCodes reads the markets accepted by the TDX standard security cache.
+func (r *MySQLReader) StandardCodes() ([]*model.CodeModel, error) {
+	rows, err := r.db.Query("SELECT `exchange`,`code`,`name`,`multiple`,`decimal`,`last_price` FROM `codes` " +
+		"WHERE `exchange` IN ('sh','sz','bj') ORDER BY `exchange`,`code`")
 	if missingTable(err) {
 		return nil, nil
 	}

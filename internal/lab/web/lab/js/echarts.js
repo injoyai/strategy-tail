@@ -41,7 +41,7 @@ export const CHART_COLORS = {pos: '#ef4444', neg: '#22c55e'};
 export const MA_COLORS = {ma5: '#f59e0b', ma10: '#8b5cf6', ma20: '#3b82f6'};
 
 // 净值图：毛策略 / 净策略。
-export const NAV_COLORS = {gross: '#4c8dff', net: '#ecd69c'};
+export const NAV_COLORS = {gross: '#a8adb7', net: '#ed9968'};
 
 // 年度对比调色板：年份是类别，不借用红涨绿跌语义；配合实/虚/点线辅助辨认。
-export const ANNUAL_PALETTE = ['#d8b45a','#4c8dff','#a78bfa','#38bdf8','#f59e0b','#f472b6','#94a3b8','#2dd4bf','#818cf8','#c084fc','#67e8f9'];
+export const ANNUAL_PALETTE = ['#ed9968','#a8adb7','#a78bfa','#38bdf8','#f59e0b','#f472b6','#94a3b8','#2dd4bf','#818cf8','#c084fc','#67e8f9'];

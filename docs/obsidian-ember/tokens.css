@@ -1,0 +1,53 @@
+/* Standalone semantic tokens, copied from the approved palette. */
+.oe-theme {
+  --oe-bg: #191b1f;
+  --oe-surface: #222529;
+  --oe-surface-alt: #2c3036;
+  --oe-stage: #25282c;
+  --oe-stage-center: #393c41;
+  --oe-text: #e7e9ed;
+  --oe-muted: #a8adb7;
+  --oe-quiet: #9da4b0;
+  --oe-border: #373c44;
+  --oe-accent: #ed9968;
+  --oe-accent-text: #f3ac81;
+  --oe-accent-soft: #3d3029;
+  --oe-on-accent: #2b1c12;
+  --oe-success: #a5c8b6;
+  --oe-warning: #dec391;
+  --oe-shadow: 0 10px 32px #1011141a;
+  --oe-font: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --oe-font-mono: "DejaVu Sans Mono", Consolas, monospace;
+  --oe-font-size: 13px;
+  --oe-radius-panel: 10px;
+  --oe-radius-control: 6px;
+  --oe-radius-chip: 3px;
+  --oe-gap: 12px;
+  --oe-ease: cubic-bezier(.16,1,.3,1);
+  --oe-duration-fast: 180ms;
+  --oe-duration-normal: 380ms;
+  --oe-duration-scene: 700ms;
+  color-scheme: dark;
+  color: var(--oe-text);
+  background: var(--oe-bg);
+  font: var(--oe-font-size)/1.6 var(--oe-font);
+}
+.oe-theme[data-oe-theme="light"] {
+  --oe-bg: #eceef0;
+  --oe-surface: #f7f8fa;
+  --oe-surface-alt: #e5e8eb;
+  --oe-stage: #dfe3e7;
+  --oe-stage-center: #eef0f2;
+  --oe-text: #272c34;
+  --oe-muted: #535d6a;
+  --oe-quiet: #58606c;
+  --oe-border: #cfd4da;
+  --oe-accent: #ab4a21;
+  --oe-accent-text: #a9431c;
+  --oe-accent-soft: #f6e7dd;
+  --oe-on-accent: #fff9f5;
+  --oe-success: #35705c;
+  --oe-warning: #8b5d23;
+  --oe-shadow: 0 10px 32px #313c4b0a;
+  color-scheme: light;
+}

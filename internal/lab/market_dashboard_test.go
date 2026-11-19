@@ -36,6 +36,25 @@ func TestMarketDashboardStockSummary(t *testing.T) {
 	if ranks := got.Rankings.Down; len(ranks) != 1 || ranks[0].Change == nil || *ranks[0].Change != -20 {
 		t.Fatalf("unexpected decliners: %+v", ranks)
 	}
+	for _, check := range []struct {
+		name  string
+		ranks []dashboardStockQuote
+		want  []string
+	}{
+		{"amount ascending", got.Rankings.AmountAsc, []string{"bj920001", "sz000002", "sh600001", "sz000001"}},
+		{"change ascending", got.Rankings.ChangeAsc, []string{"bj920001", "sh600002", "sh600001", "sz000001"}},
+		{"change descending", got.Rankings.ChangeDesc, []string{"sh600001", "sz000001", "sh600002", "bj920001"}},
+		{"price ascending", got.Rankings.CloseAsc, []string{"bj920001", "sh600002", "sh600001", "sz000001", "sz000002"}},
+		{"price descending", got.Rankings.CloseDesc, []string{"sz000002", "sh600001", "sz000001", "sh600002", "bj920001"}},
+	} {
+		codes := make([]string, 0, len(check.ranks))
+		for _, row := range check.ranks {
+			codes = append(codes, row.Code)
+		}
+		if !slices.Equal(codes, check.want) {
+			t.Errorf("%s: got %v, want %v", check.name, codes, check.want)
+		}
+	}
 }
 
 func TestMarketDashboardChangeDistributionBoundaries(t *testing.T) {
@@ -65,6 +84,9 @@ func TestMarketDashboardRankingsAreBoundedAndKeepFullMarketTotals(t *testing.T) 
 	}
 	if got.ChangeDistribution[7] != len(rows) {
 		t.Fatalf("distribution should include stocks beyond the ranking limit: %v", got.ChangeDistribution)
+	}
+	if asc := got.Rankings.AmountAsc; len(asc) != 50 || asc[0].Amount != 1 || asc[49].Amount != 50 {
+		t.Fatalf("ascending ranking must use the full market snapshot: %+v", asc)
 	}
 }
 

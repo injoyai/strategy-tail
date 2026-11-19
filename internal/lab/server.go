@@ -51,10 +51,12 @@ import (
 
 // Server lab 服务。
 type Server struct {
-	runner    *Runner
-	mux       *http.ServeMux
-	screen    *screenService
-	dashboard dashboardLiveCache
+	runner        *Runner
+	mux           *http.ServeMux
+	screen        *screenService
+	dashboard     dashboardLiveCache
+	sectors       dashboardSectorService
+	indexResearch indexResearchCache
 	// analysisStore 不可变分析历史（生产默认 output/factor；测试注入临时根）。
 	analysisStore *AnalysisStore
 	// candidateStore 候选因子追加式库（生产默认 data/lab/factor-candidates；测试注入临时根）。
@@ -117,6 +119,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		runner:         runner,
 		mux:            http.NewServeMux(),
 		screen:         newScreenService(filepath.Join(candidates.root, "screen.json")),
+		indexResearch:  indexResearchCache{path: filepath.Join(candidates.root, "index-research.sqlite")},
 		analysisStore:  analyses,
 		candidateStore: candidates,
 		builderStore:   NewBuilderStore(builderDataDir),                              // 搭建器测试按需覆盖
@@ -146,6 +149,7 @@ func (s *Server) wirePracticeStores() {
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/market-data/status", s.handleMarketDataStatus)
 	s.mux.HandleFunc("GET /api/market-dashboard", s.handleMarketDashboard)
+	s.mux.HandleFunc("GET /api/market-dashboard/sectors", s.handleDashboardSectors)
 	s.mux.HandleFunc("GET /api/index-research/indexes", s.handleIndexResearchCatalog)
 	s.mux.HandleFunc("GET /api/index-research/series", s.handleIndexResearchSeries)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)

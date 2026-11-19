@@ -1,6 +1,7 @@
 package extend
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
@@ -27,6 +28,10 @@ func TestReadOnlyMarketWithSelectGrant(t *testing.T) {
 	days, err := reader.DayKlinesAll("sh600000")
 	if err != nil || len(days) != 1 || days[0].Close != 12 || days[0].FloatStock != 1000 || days[0].Turnover != 10 {
 		t.Fatalf("daily bars %v: %v", days, err)
+	}
+	closes, err := reader.StockLatestDayCloses(context.Background(), []string{"sh600000", "sh600001"}, date)
+	if last := closes["sh600000"]; err != nil || len(closes) != 1 || last == nil || last.Close != 12 || !last.Time.Equal(days[0].Time) {
+		t.Fatalf("latest stock closes %v: %v", closes, err)
 	}
 	if name := reader.Metadata().Codes.GetName("sh600000"); name != "浦发银行" {
 		t.Fatalf("code snapshot name=%q", name)
