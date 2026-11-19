@@ -118,7 +118,7 @@ export default {
     },
   },
   template: `
-<section class="card screen-results" :class="{'has-rows': data?.total}" :aria-busy="loading || !!data?.running">
+<section v-show="active" class="card screen-results" :class="{'has-rows': data?.total}" :aria-busy="loading || !!data?.running">
   <form class="screen-history-filters" novalidate @submit.prevent="applySearch">
     <label>策略 <select v-model="strategy" @change="page = 1"><option value="">全部</option>
       <option v-for="item in strategies" :key="item.id" :value="item.id">{{ item.name }}</option>

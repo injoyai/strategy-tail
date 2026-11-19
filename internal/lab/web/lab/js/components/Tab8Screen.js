@@ -339,7 +339,7 @@ export default {
         <button type="button" class="secondary" :disabled="page >= pages" @click="page++">下一页</button>
       </div>
     </section>
-    <screen-history ref="history" v-show="mode !== 'buy'" :active="active && mode !== 'buy'" :mode="mode"
+    <screen-history ref="history" :active="active && mode !== 'buy'" :mode="mode"
       :strategies="strategies" :revision="config.version" :sale-revision="saleRevision" @diagnose="diagnose" />
     </div>
     <screen-diagnosis ref="diagnosis" :strategies="strategies" />

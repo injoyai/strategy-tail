@@ -143,6 +143,9 @@ for (const width of [1440, 390]) {
     });
     await page.goto('/?tab=screen');
     const buy = page.getByRole('button', {name: '查看 sh600000 浦发银行 K线', exact: true});
+    const historyFilters = page.locator('.screen-history-filters');
+    await expect(buy).toBeVisible();
+    await expect(historyFilters).toBeHidden();
     await buy.click();
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('alert')).toContainText('测试行情读取失败');
@@ -157,6 +160,8 @@ for (const width of [1440, 390]) {
 
     const sell = page.getByRole('tab', {name: '当日卖点'});
     await sell.click();
+    await expect(historyFilters).toBeVisible();
+    await expect(buy).toBeHidden();
     const table = page.locator('.screen-signal-table');
     await expect(table).toHaveClass(/tabulator/);
     await expect(table).toContainText('分钟线');
@@ -167,6 +172,7 @@ for (const width of [1440, 390]) {
     await sell.focus();
     await page.keyboard.press('ArrowRight');
     await expect(page.getByRole('tab', {name: '历史买卖'})).toBeFocused();
+    await expect(page.getByRole('button', {name: '重算历史'})).toBeVisible();
     await expect(page.getByText(/胜率 100\.0%/)).toBeVisible();
     await expect(table).toContainText('2026-11-12');
     await expect(table).toHaveClass(/\btrade-table\b/);
@@ -174,6 +180,9 @@ for (const width of [1440, 390]) {
     expect(bounds.width).toBeGreaterThan(width === 1440 ? 1100 : 300);
     expect(bounds.height).toBeGreaterThan(width === 1440 ? 500 : 300);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('tab', {name: '当日买点'}).click();
+    await expect(buy).toBeVisible();
+    await expect(historyFilters).toBeHidden();
     expect(errors).toEqual([]);
   });
 }
