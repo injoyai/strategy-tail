@@ -7,16 +7,18 @@ test.beforeEach(async ({page}) => {
 test('配置多套策略、合并命中、按策略查看并保留配置', async ({page}) => {
   await page.goto('/?tab=screen');
   await expect(page.getByRole('heading', {level: 1})).toHaveText('选股策略');
-  const library = page.getByRole('button', {name: '策略列表'});
-  await library.click();
-  await expect(page.getByRole('checkbox', {name: /^MACD精选\s*内置$/})).not.toBeChecked();
-  await expect(page.getByRole('button', {name: '立即选股'})).toBeDisabled();
+  const library = page.getByRole('region', {name: '策略列表'});
+  await expect(library).toBeVisible();
+  await expect(library.getByRole('button', {name: '全部策略', exact: true})).toHaveCount(0);
+  await expect(library.locator('input')).toHaveCount(0);
+  await expect(library.getByRole('button', {name: /^(运行|已启用|未启用)/})).toHaveCount(0);
+  await expect(library.getByRole('button', {name: '立即选股'})).toBeEnabled();
 
   // Keep the actual service for config writes. The browser fixture has no market
   // attached, so inject two synthetic hits for the results presentation.
   const own = ['价格筛选 A', '价格筛选 B'];
   for (const name of own) {
-    await page.getByRole('button', {name: '新建策略'}).click();
+    await library.getByRole('button', {name: '新建策略'}).click();
     const dlg = page.getByRole('dialog');
     await dlg.getByRole('textbox', {name: '策略名称'}).fill(name);
     const save = dlg.getByRole('button', {name: '保存策略'});
@@ -26,7 +28,7 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
     const component = dlg.getByRole('combobox', {name: /选择组件/});
     await component.selectOption('buy_price');
     await dlg.getByRole('spinbutton', {name: /最低价/}).fill('5');
-    await dlg.getByRole('checkbox', {name: '保存后启用'}).check();
+    await expect(dlg.getByRole('checkbox', {name: '保存后启用'})).toHaveCount(0);
     await save.click();
     await expect(dlg).toBeHidden();
   }
@@ -35,27 +37,23 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
     const payload = await response.json();
-    const enabled = payload.config.strategies.filter(strategy => strategy.enabled);
+    const custom = payload.config.strategies.filter(strategy => strategy.buy);
     await route.fulfill({response, json: {...payload, running: false, error: '',
       result: {asOf: '2026-11-13 10:00:00', universe: 1, evaluated: 1, noSessionBars: 0, failed: 0,
-        matches: enabled.length ? [{code: 'sh600000', name: '浦发银行', price: 12, rise: 1.25, time: '2026-11-13 09:59:00',
-          hits: enabled.map(strategy => ({id: strategy.id}))}] : []}}});
+        matches: custom.length ? [{code: 'sh600000', name: '浦发银行', price: 12, rise: 1.25, time: '2026-11-13 09:59:00',
+          hits: custom.map(strategy => ({id: strategy.id}))}] : []}}});
   });
   await page.reload();
-  await expect(page.getByText('2 套已启用')).toBeVisible();
-  await library.click();
   const table = page.getByRole('table', {name: /选股结果/});
+  const firstStrategy = library.getByRole('button', {name: '价格筛选 A', exact: true});
+  await expect(library.locator('[aria-current="true"]')).toHaveCount(0);
   await expect(table.getByRole('row')).toHaveCount(2);
   await expect(table).toContainText('价格筛选 A');
   await expect(table).toContainText('价格筛选 B');
   await expect(table).toContainText('+1.25%');
-  const filter = page.getByRole('combobox', {name: '策略', exact: true});
-  await filter.focus();
-  await filter.press('Space');
-  await filter.press('Escape');
-  await filter.selectOption({label: '价格筛选 A'});
-  await expect(filter.locator('option:checked')).toHaveText('价格筛选 A');
+  await firstStrategy.click();
   await expect(table.getByRole('row')).toHaveCount(2);
+  await expect(table).not.toContainText('价格筛选 B');
 
   await page.getByRole('button', {name: '编辑 价格筛选 A'}).click();
   let dlg = page.getByRole('dialog');
@@ -72,11 +70,12 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
   await expect(dlg.getByRole('button', {name: '取消'})).toBeFocused();
   await dlg.getByRole('button', {name: '删除策略'}).click();
   await expect(dlg).toBeHidden();
-  await expect(page.getByText('1 套已启用')).toBeVisible();
-  const checkbox = page.getByRole('checkbox', {name: /^价格筛选 B\s*自定义$/});
-  await checkbox.click();
-  await expect(checkbox).not.toBeChecked();
-  await expect(page.getByText('0 套已启用')).toBeVisible();
+  await expect(firstStrategy).toHaveCount(0);
+  await expect(library.locator('[aria-current="true"]')).toHaveCount(0);
+  await page.getByRole('button', {name: '编辑 价格筛选 B'}).click();
+  await expect(dlg.getByRole('checkbox', {name: '保存后启用'})).toHaveCount(0);
+  await dlg.getByRole('button', {name: '保存策略'}).click();
+  await expect(dlg).toBeHidden();
   await page.getByRole('button', {name: '删除 价格筛选 B'}).click();
   await page.getByRole('dialog').getByRole('button', {name: '删除策略'}).click();
   await expect(page.getByRole('dialog')).toBeHidden();
@@ -101,14 +100,10 @@ test('窄屏菜单、旧深链、状态失败与重试', async ({page}) => {
   await expect(page.getByText(/读取选股状态失败/)).toBeVisible();
   fail = false;
   await page.getByRole('button', {name: '重试读取'}).click();
-  const library = page.getByRole('button', {name: '策略列表', exact: true});
-  await expect(library).toHaveAttribute('aria-expanded', 'false');
-  await library.focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', {name: '策略列表'})).toBeVisible();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('region', {name: '策略列表'})).toBeHidden();
-  await page.getByRole('button', {name: '新建策略'}).click();
+  const library = page.getByRole('region', {name: '策略列表'});
+  await expect(library).toBeVisible();
+  await expect(page.getByRole('button', {name: '策略列表', exact: true})).toHaveCount(0);
+  await library.getByRole('button', {name: '新建策略'}).press('Enter');
   const dlg = page.getByRole('dialog');
   await dlg.getByRole('button', {name: '+ 条件', exact: true}).click();
   await expect(dlg.getByRole('combobox', {name: /选择组件/})).toBeVisible();
@@ -121,7 +116,7 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({width, height: 900});
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
-    const strategy = {id: 'macd-premium', name: 'MACD精选', enabled: true};
+    const strategy = {id: 'macd-premium', name: 'MACD精选'};
     const buyTime = '2026-11-12 15:00:00', sellTime = '2026-11-13 10:00:00';
     const signal = {code: 'sh600000', name: '浦发银行', strategy: strategy.id, buyTime, sellTime,
       buyPrice: 10, sellPrice: 11, lastPrice: 12, rate: 10, sellSource: 'minute', tags: ['涨停^']};
@@ -144,6 +139,7 @@ for (const width of [1440, 390]) {
     await page.goto('/?tab=screen');
     const buy = page.getByRole('button', {name: '查看 sh600000 浦发银行 K线', exact: true});
     const historyFilters = page.locator('.screen-history-filters');
+    const toolbar = page.locator('.screen-results-toolbar');
     await expect(buy).toBeVisible();
     await expect(historyFilters).toBeHidden();
     await buy.click();
@@ -162,6 +158,8 @@ for (const width of [1440, 390]) {
     await sell.click();
     await expect(historyFilters).toBeVisible();
     await expect(buy).toBeHidden();
+    await expect(toolbar.getByRole('textbox')).toHaveCount(1);
+    await expect(toolbar.getByRole('button', {name: '查看K线', exact: true})).toHaveCount(0);
     const table = page.locator('.screen-signal-table');
     await expect(table).toHaveClass(/tabulator/);
     await expect(table).toContainText('分钟线');
@@ -171,14 +169,37 @@ for (const width of [1440, 390]) {
 
     await sell.focus();
     await page.keyboard.press('ArrowRight');
-    await expect(page.getByRole('tab', {name: '历史买卖'})).toBeFocused();
+    await expect(page.getByRole('tab', {name: '历史交易'})).toBeFocused();
     await expect(page.getByRole('button', {name: '重算历史'})).toBeVisible();
     await expect(page.getByText(/胜率 100\.0%/)).toBeVisible();
     await expect(table).toContainText('2026-11-12');
     await expect(table).toHaveClass(/\btrade-table\b/);
+    const stockInput = toolbar.getByRole('textbox', {name: '股票', exact: true});
+    await expect(toolbar.getByRole('textbox')).toHaveCount(2);
+    await expect(toolbar.getByRole('button', {name: '查看K线', exact: true})).toHaveCount(0);
+    await expect(toolbar.getByRole('button', {name: '筛选', exact: true})).toBeVisible();
+    await stockInput.fill('浦发银行');
+    const filtered = page.waitForResponse(response => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/screen/history' && url.searchParams.get('code') === '浦发银行';
+    });
+    await stockInput.press('Enter');
+    await filtered;
+    await expect(toolbar.getByRole('button', {name: '清除股票筛选'})).toBeVisible();
+    const historyStock = table.getByRole('button', {name: /查看 sh600000 浦发银行/});
+    await historyStock.click();
+    await expect(dialog.getByRole('heading')).toContainText('浦发银行');
+    await page.keyboard.press('Escape');
+    await expect(historyStock).toBeFocused();
+    await expect(page.getByRole('region', {name: '策略列表'}).getByRole('textbox')).toHaveCount(0);
     const bounds = await table.boundingBox();
-    expect(bounds.width).toBeGreaterThan(width === 1440 ? 1100 : 300);
+    const signalSpace = await page.locator('.screen-signal-workspace').boundingBox();
+    expect(bounds.width).toBeGreaterThan(signalSpace.width - 24);
+    expect(bounds.width).toBeLessThanOrEqual(signalSpace.width);
     expect(bounds.height).toBeGreaterThan(width === 1440 ? 500 : 300);
+    if (width === 1440) {
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(900);
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('tab', {name: '当日买点'}).click();
     await expect(buy).toBeVisible();
@@ -219,37 +240,77 @@ test('其他工作区收到已提交卖点，可直接打开共用诊断且重�
   await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
 });
 
-test('历史默认读取本地库，手动回算在全局任务栏显示真实进度', async ({page}) => {
-  const strategy = {id: 'macd-premium', name: 'MACD精选', enabled: true};
+test('历史只重算所选策略，保留全局进度并滚动查看全部结果', async ({page}) => {
+  const other = {id: 'macd-premium', name: 'MACD精选'};
+  const strategy = {id: 'macd-base', name: 'MACD基础(测试)'};
   await page.route('**/api/screen', route => route.fulfill({json: {
-    config: {version: 1, strategies: [strategy]}, running: false,
+    config: {version: 1, strategies: [other, strategy]}, running: false,
   }}));
   let runs = 0;
+  let attempts = 0;
   let finished = false;
+  let rejectRun = true;
   await page.route('**/api/status', route => route.fulfill({json: runs === 0 ? {state: 'idle'} : {
     state: finished ? 'done' : 'running', task: 'screen_history', phase: 'scan', unit: 'stocks',
     done: finished ? 10 : 3, total: 10, currentCode: 'sh600000',
   }}));
   await page.route('**/api/screen/history**', route => {
+    const query = new URL(route.request().url()).searchParams;
     if (route.request().method() === 'POST') {
+      attempts++;
+      expect(query.get('lookback')).toBe('120');
+      expect(query.getAll('strategy')).toEqual([strategy.id]);
+      if (rejectRun) return route.fulfill({status: 409, json: {error: '已有批量任务在运行'}});
       runs++;
       return route.fulfill({json: {running: true}});
     }
-    const query = new URL(route.request().url()).searchParams;
     const history = query.get('mode') === 'history';
-    const rows = history && finished ? [{code: 'sh600000', name: '浦发银行', strategy: strategy.id,
-      buyTime: '2026-11-12 15:00:00', sellTime: '2026-11-13 10:00:00', buyPrice: 10, sellPrice: 11, rate: 10}] : [];
+    if (history) expect(query.has('page')).toBe(false);
+    const selected = query.get('strategy');
+    const forSelected = history && selected === strategy.id;
+    const rows = history && finished && (!selected || forSelected) ? Array.from({length: 60}, (_, index) => ({
+      code: `sh${600000 + index}`,
+      name: index === 0 ? '浦发银行' : `测试股票 ${index + 1}`, strategy: strategy.id,
+      buyTime: '2026-11-12 15:00:00', sellTime: '2026-11-13 10:00:00', buyPrice: 10, sellPrice: 11, rate: 10,
+    })) : [];
     return route.fulfill({json: {rows, total: rows.length, page: 1, pages: 1,
-      running: runs > 0 && history && !finished, through: history && finished ? '2026-11-13' : '', lookback: 60}});
+      running: runs > 0 && forSelected && !finished, through: forSelected && finished ? '2026-11-13' : '',
+      lookback: forSelected && finished ? 120 : 60, defaultLookback: 60}});
   });
   await page.goto('/?tab=screen');
-  await page.getByRole('tab', {name: '历史买卖'}).click();
+  await page.getByRole('tab', {name: '历史交易'}).click();
   await expect(page.getByText('当前条件下暂无交易记录。')).toBeVisible();
   expect(runs).toBe(0);
-  await page.getByRole('button', {name: '重算历史'}).click();
+  const rebuild = page.getByRole('button', {name: '重算历史', exact: true});
+  await expect(rebuild).toBeDisabled();
+  const selectStrategy = name => page.getByRole('region', {name: '策略列表'}).getByRole('button', {name, exact: true}).click();
+  await selectStrategy(strategy.name);
+  const dialog = page.getByRole('dialog', {name: '重算历史'});
+  const lookback = dialog.getByRole('combobox', {name: '回算范围'});
+  const start = dialog.getByRole('button', {name: '开始重算'});
+  await expect(lookback).toBeHidden();
+  await rebuild.click();
+  await expect(dialog).toHaveAccessibleDescription('本次仅重算「MACD基础(测试)」的历史交易。');
+  await expect(lookback).toBeFocused();
+  await lookback.selectOption('120');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(rebuild).toBeFocused();
+  expect(attempts).toBe(0);
+  await rebuild.click();
+  await expect(lookback.locator('option:checked')).toHaveText('最近 60 个交易日（默认）');
+  await lookback.selectOption('120');
+  await start.click();
+  await expect(dialog.getByRole('alert')).toHaveText('已有批量任务在运行');
+  await expect(lookback).toHaveValue('120');
+  rejectRun = false;
+  await start.click();
+  await expect(dialog).toBeHidden();
   const progress = page.getByRole('progressbar', {name: /历史选股回算/});
   await expect(progress).toHaveAttribute('value', '30');
   await expect(progress).toHaveAttribute('aria-valuetext', /3\/10 只股票/);
+  await expect(rebuild).toBeDisabled();
+  expect(attempts).toBe(2);
   expect(runs).toBe(1);
   await page.getByRole('tab', {name: '当日卖点'}).click();
   await expect(page.getByText('今日暂无已入库的卖点。')).toBeVisible();
@@ -257,24 +318,129 @@ test('历史默认读取本地库，手动回算在全局任务栏显示真实�
   await page.getByRole('navigation', {name: '主导航'}).getByRole('button', {name: '盘感练习'}).click();
   await expect(progress).toBeVisible();
   await page.getByRole('navigation', {name: '主导航'}).getByRole('button', {name: '选股策略'}).click();
-  await page.getByRole('tab', {name: '历史买卖'}).click();
+  await page.getByRole('tab', {name: '历史交易'}).click();
   finished = true;
   await expect(progress).toHaveAttribute('value', '100');
-  await expect(page.getByText('上次重算截至 2026-11-13', {exact: false})).toBeVisible();
+  await expect(page.getByText('上次重算截至 2026-11-13 · 回看 120 个交易日')).toBeVisible();
   await expect(page.locator('.screen-signal-table')).toContainText('浦发银行');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeLessThanOrEqual(0);
+  const tableBody = page.locator('.screen-signal-table .tabulator-tableholder');
+  await expect.poll(() => tableBody.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(0);
+  const lastRowButton = tableBody.getByRole('button', {name: /sh600059/});
+  await expect(async () => {
+    await tableBody.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect(lastRowButton).toBeInViewport({timeout: 500});
+  }).toPass({timeout: 5000});
+  await expect(page.getByRole('button', {name: '下一页', exact: true})).toHaveCount(0);
+  await expect(page.getByRole('button', {name: '上一页', exact: true})).toHaveCount(0);
+  await selectStrategy(other.name);
+  await expect(page.getByText('上次重算截至 2026-11-13 · 回看 120 个交易日')).toBeHidden();
+  await expect(page.getByText('当前条件下暂无交易记录。')).toBeVisible();
+  await selectStrategy(strategy.name);
   await page.getByRole('tab', {name: '当日买点'}).click();
-  await page.getByRole('tab', {name: '历史买卖'}).click();
+  await page.getByRole('tab', {name: '历史交易'}).click();
   await expect(page.locator('.screen-signal-table')).toContainText('浦发银行');
   await page.reload();
-  await page.getByRole('tab', {name: '历史买卖'}).click();
+  await page.getByRole('tab', {name: '历史交易'}).click();
   await expect(page.locator('.screen-signal-table')).toContainText('浦发银行');
   expect(runs).toBe(1);
   await expect(page).toHaveURL(/tab=screen$/);
 });
 
+for (const width of [1440, 390]) {
+  test(`${width}px 左侧策略列表可滚动，历史结果按筛选显示统计`, async ({page}) => {
+    await page.setViewportSize({width, height: 844});
+    const first = {id: 'macd-premium', name: 'MACD精选'};
+    const second = {id: 'macd-base', name: 'MACD基础(测试)'};
+    const extraStrategies = Array.from({length: 30}, (_, index) => ({
+      id: 'test-' + index, name: '测试策略 ' + (index + 1),
+    }));
+    await page.route('**/api/screen', route => route.fulfill({json: {
+      config: {version: 1, strategies: [first, second, ...extraStrategies]}, running: false,
+      strategyStats: {[first.id]: {total: 59, closed: 51, marked: 8, winRate: 58.8, profitFactor: 0.68}, [second.id]: {total: 0}},
+    }}));
+    await page.route('**/api/screen/history?*', route => {
+      const filtered = new URL(route.request().url()).searchParams.get('strategy') === second.id;
+      const rows = filtered ? [] : [{code: 'sh600000', strategy: first.id, buyTime: '2026-11-12 15:00:00',
+        buyPrice: 10, lastPrice: 12, rate: 20, tracked: true}, {code: 'sh600001', strategy: first.id,
+        buyTime: '2026-11-12 15:00:00', buyPrice: 10, rate: 0, tracked: true}];
+      return route.fulfill({json: {rows, total: rows.length, page: 1, pages: 1, through: '2026-11-13', lookback: 60,
+        stats: filtered ? {total: 0} : {total: 59, closed: 51, marked: 8, unpriced: 1, winRate: 58.8, profitFactor: 0.68},
+        avgHoldingDays: 16.1}});
+    });
+    await page.goto('/?tab=screen');
+    const library = page.getByRole('region', {name: '策略列表'});
+    await expect(library).toBeVisible();
+    const list = library.getByRole('list');
+    await expect(list.getByRole('button')).toHaveCount(32);
+    await expect(list.locator('input')).toHaveCount(0);
+    const secondStrategy = list.getByRole('button', {name: second.name, exact: true});
+    await expect(list.locator('[aria-current="true"]')).toHaveCount(0);
+    const cards = library.getByRole('listitem');
+    await expect(cards.nth(0)).toContainText('历史胜率 58.8%');
+    await expect(cards.nth(0)).toContainText('盈亏比 0.68');
+    await expect(cards.nth(1)).toContainText('历史胜率 —');
+    await page.getByRole('tab', {name: '历史交易'}).click();
+    const rebuild = page.getByRole('button', {name: '重算历史', exact: true});
+    await expect(rebuild).toBeDisabled();
+    await list.getByRole('button', {name: first.name, exact: true}).click();
+    await rebuild.click();
+    const rebuildDialog = page.getByRole('dialog', {name: '重算历史'});
+    await expect(rebuildDialog.getByRole('combobox', {name: '回算范围'})).toBeInViewport();
+    await expect(rebuildDialog.getByRole('button', {name: '开始重算'})).toBeInViewport();
+    await rebuildDialog.getByRole('button', {name: '取消'}).click();
+    await expect(rebuild).toBeFocused();
+    const summary = page.locator('.screen-history-performance');
+    await expect(summary).toContainText('已卖出 51 笔');
+    await expect(summary).toContainText('持仓估值 8 笔');
+    await expect(summary).toContainText('缺价 1 笔');
+    await expect(summary).toContainText('胜率 58.8%');
+    await expect(summary).toContainText('盈亏比 0.68');
+    await expect(summary).toContainText('平均持有 16.1 天');
+    const table = page.locator('.screen-signal-table');
+    const priced = table.locator('.tabulator-row').filter({hasText: 'sh600000'});
+    const unpriced = table.locator('.tabulator-row').filter({hasText: 'sh600001'});
+    await expect(priced.locator('[tabulator-field="lastPrice"]')).toHaveText('12.00');
+    await expect(priced.locator('[tabulator-field="rate"]')).toHaveText('20.00');
+    await expect(unpriced.locator('[tabulator-field="rate"]')).toHaveText('—');
+    const bounds = await summary.boundingBox();
+    const panel = await page.getByRole('tabpanel', {name: '历史交易'}).boundingBox();
+    const libraryBounds = await library.boundingBox();
+    if (width === 390) {
+      expect(libraryBounds.y + libraryBounds.height).toBeLessThan(panel.y);
+    } else {
+      expect(libraryBounds.x + libraryBounds.width).toBeLessThan(panel.x);
+    }
+    expect(panel.x + panel.width - bounds.x - bounds.width).toBeLessThan(15);
+    expect(await list.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+    await list.getByRole('button', {name: '测试策略 30', exact: true}).focus();
+    await expect.poll(() => list.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+    const panelAfterScroll = await page.getByRole('tabpanel', {name: '历史交易'}).boundingBox();
+    expect(panelAfterScroll.width).toBe(panel.width);
+    await secondStrategy.press('Enter');
+    await expect(secondStrategy).toHaveAttribute('aria-current', 'true');
+    await expect(list.locator('[aria-current="true"]')).toHaveCount(1);
+    await expect(list.locator('.is-selected')).toHaveCount(1);
+    await expect(summary).toBeHidden();
+    await expect(table).toBeHidden();
+    await expect(page.getByText('当前条件下暂无交易记录。')).toBeVisible();
+    const sellRequest = page.waitForRequest(request => {
+      const url = new URL(request.url());
+      return url.pathname === '/api/screen/history' && url.searchParams.get('mode') === 'sell' &&
+        url.searchParams.get('strategy') === second.id;
+    });
+    await page.getByRole('tab', {name: '当日卖点'}).click();
+    await sellRequest;
+    await page.getByRole('tab', {name: '当日买点'}).click();
+    await expect(page.getByText('点击「立即选股」扫描全部策略。')).toBeVisible();
+    await expect(cards.nth(0)).toContainText('历史胜率 58.8%');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}
+
 test('窄屏下自动和手动选股共用任务栏，手动扫描可停止', async ({page}) => {
   await page.setViewportSize({width: 390, height: 844});
-  const config = {version: 1, strategies: [{id: 'macd-premium', name: 'MACD精选', enabled: true}]};
+  const config = {version: 1, strategies: [{id: 'macd-premium', name: 'MACD精选'}]};
   let preview = true;
   let started = false;
   let stopped = false;
@@ -297,10 +463,11 @@ test('窄屏下自动和手动选股共用任务栏，手动扫描可停止', as
   await expect(progress).toHaveAttribute('value', '25');
   await expect(stop).toHaveCount(0);
   preview = false;
-  await page.getByRole('button', {name: '立即选股'}).click();
+  const run = page.getByRole('region', {name: '策略列表'}).getByRole('button', {name: '立即选股'});
+  await run.click();
   await expect(progress).toHaveAttribute('value', '50');
   await stop.click();
   await expect(page.getByText('选股扫描已停止')).toBeVisible();
-  await expect(page.getByRole('button', {name: '立即选股'})).toBeEnabled();
+  await expect(run).toBeEnabled();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

@@ -75,11 +75,11 @@ const BenchmarkCode = "sh000001"
 // ScanProgress publishes the number of symbols processed, including skipped symbols.
 type ScanProgress func(done, total int, code string)
 
-func (s *Scanner) Scan(m Market, at time.Time, enabledPresets map[string]bool, custom []Rule, workers int) (Result, error) {
-	return s.ScanWithProgress(context.Background(), m, at, enabledPresets, custom, workers, nil)
+func (s *Scanner) Scan(m Market, at time.Time, custom []Rule, workers int) (Result, error) {
+	return s.ScanWithProgress(context.Background(), m, at, custom, workers, nil)
 }
 
-func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, enabledPresets map[string]bool, custom []Rule, workers int, progress ScanProgress) (Result, error) {
+func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, custom []Rule, workers int, progress ScanProgress) (Result, error) {
 	at = at.In(protocol.Location())
 	date := at.Format(time.DateOnly)
 	result := Result{AsOf: at.Format(time.DateTime), Matches: []Match{}}
@@ -109,7 +109,7 @@ func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, 
 		return result, fmt.Errorf("读取当日分钟行情: %w", err)
 	}
 
-	rules, err := buildRules(m, at, dayEnd(at, daily), enabledPresets, custom, daily || len(minutes) > 0)
+	rules, err := buildRules(m, at, dayEnd(at, daily), custom, "", daily || len(minutes) > 0)
 	if err != nil {
 		return result, err
 	}
@@ -182,14 +182,14 @@ func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, 
 	return result, nil
 }
 
-// BuildRules loads the index data needed by enabled preset rules.
-func BuildRules(m Market, start, end time.Time, enabledPresets map[string]bool, custom []Rule) ([]Rule, error) {
-	return buildRules(m, start, end, enabledPresets, custom, true)
+// BuildRules builds all preset and custom rules unless a strategy ID selects a single rule.
+func BuildRules(m Market, start, end time.Time, custom []Rule, strategyID string) ([]Rule, error) {
+	return buildRules(m, start, end, custom, strategyID, true)
 }
 
-func buildRules(m Market, start, end time.Time, enabledPresets map[string]bool, custom []Rule, loadIndex bool) ([]Rule, error) {
+func buildRules(m Market, start, end time.Time, custom []Rule, strategyID string, loadIndex bool) ([]Rule, error) {
 	var index extend.Klines
-	if enabledPresets[IndexPreset] && loadIndex {
+	if loadIndex && (strategyID == "" || strategyID == IndexPreset) {
 		var err error
 		index, err = m.DayKlines(BenchmarkCode, start.AddDate(0, -3, 0), end)
 		if err != nil {
@@ -199,13 +199,18 @@ func buildRules(m Market, start, end time.Time, enabledPresets map[string]bool, 
 			return nil, errors.New("上证指数日线为空，无法运行 MACD精选2")
 		}
 	}
-	rules := make([]Rule, 0, len(enabledPresets)+len(custom))
-	for _, preset := range Presets(index) {
-		if enabledPresets[preset.Key] {
+	presets := Presets(index)
+	rules := make([]Rule, 0, len(presets)+len(custom))
+	for _, preset := range presets {
+		if strategyID == "" || preset.Key == strategyID {
 			rules = append(rules, Rule{ID: preset.Key, Name: preset.Name, Buyer: preset.Buyer, Seller: preset.Seller, Tags: preset.Tags, Builtin: true})
 		}
 	}
-	rules = append(rules, custom...)
+	for _, rule := range custom {
+		if strategyID == "" || rule.ID == strategyID {
+			rules = append(rules, rule)
+		}
+	}
 
 	return rules, nil
 }

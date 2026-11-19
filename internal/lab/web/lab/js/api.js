@@ -29,7 +29,8 @@ export const Api = {
   saveScreen: config => api('PUT', '/api/screen', config),
   runScreen: () => api('POST', '/api/screen/run'),
   screenHistory: query => api('GET', '/api/screen/history?' + new URLSearchParams(query)),
-  refreshScreenHistory: () => api('POST', '/api/screen/history'),
+  refreshScreenHistory: (strategy, lookback) => api('POST', '/api/screen/history?' +
+    new URLSearchParams({strategy, ...(lookback ? {lookback} : {})})),
   screenDiagnose: (code, strategy) => api('GET', '/api/screen/diagnose/' + encodeURIComponent(code) + '?' + new URLSearchParams({strategy})),
   marketDataStatus: () => api('GET', '/api/market-data/status'),
   marketDashboard: signal => api('GET', '/api/market-dashboard', undefined, signal),

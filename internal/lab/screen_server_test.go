@@ -91,12 +91,15 @@ func TestScreenConfigAndScan(t *testing.T) {
 		return state
 	}
 	initial := request("GET", "/api/screen", nil, http.StatusOK)
-	if len(initial.Config.Strategies) != 4 || hasEnabledScreenStrategy(initial.Config) || initial.Running {
+	if len(initial.Config.Strategies) != 4 || initial.Running {
 		t.Fatalf("unexpected default config: %+v", initial)
 	}
-	request("POST", "/api/screen/run", nil, http.StatusBadRequest)
+	request("POST", "/api/screen/run", nil, http.StatusOK)
+	if status := waitStatus(t, handler); status["state"] != "done" {
+		t.Fatalf("scan with built-in strategies: %v", status)
+	}
 	config := initial.Config
-	config.Strategies = append(config.Strategies, screenStrategy{Name: "价格组合", Enabled: true})
+	config.Strategies = append(config.Strategies, screenStrategy{Name: "价格组合"})
 	request("PUT", "/api/screen", config, http.StatusBadRequest)
 	config.Strategies[4].Buy = &builder.BuilderNode{Type: "group", Op: "and", Children: []*builder.BuilderNode{
 		{Type: "condition", ComponentID: "buy_price", Params: map[string]any{"min": 10.5}},
@@ -106,8 +109,8 @@ func TestScreenConfigAndScan(t *testing.T) {
 		}},
 	}}
 	config.Strategies = append(config.Strategies,
-		screenStrategy{Name: "第二策略", Enabled: true, Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}},
-		screenStrategy{Name: "关闭策略", Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}})
+		screenStrategy{Name: "第二策略", Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}},
+		screenStrategy{Name: "第三策略", Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}})
 	origin := httptest.NewRequest("PUT", "/api/screen", nil)
 	origin.Header.Set("Origin", "https://other.example")
 	w := httptest.NewRecorder()
@@ -140,21 +143,23 @@ func TestScreenConfigAndScan(t *testing.T) {
 		t.Fatalf("manual scan progress = %v", status)
 	}
 	row := result.Matches[0]
-	if row.Code != "sh600000" || row.Price != 11 || len(row.Hits) != 2 ||
-		row.Hits[0].ID != saved.Config.Strategies[4].ID || row.Hits[1].ID != saved.Config.Strategies[5].ID {
+	if row.Code != "sh600000" || row.Price != 11 || len(row.Hits) != 3 ||
+		row.Hits[0].ID != saved.Config.Strategies[4].ID || row.Hits[1].ID != saved.Config.Strategies[5].ID ||
+		row.Hits[2].ID != saved.Config.Strategies[6].ID {
 		t.Fatalf("unexpected match: %+v", row)
 	}
 	reopened := newScreenService(filepath.Join(root, "screen.json"))
 	persisted, err := reopened.load()
-	if err != nil || persisted.Version != 2 || !persisted.Strategies[4].Enabled || persisted.Strategies[6].Enabled {
+	if err != nil || persisted.Version != 2 || len(persisted.Strategies) != 7 || persisted.Strategies[6].ID != saved.Config.Strategies[6].ID {
 		t.Fatalf("config did not persist: %+v, %v", persisted, err)
 	}
 	config = saved.Config
 	config.Strategies = config.Strategies[:4]
 	cleared := request("PUT", "/api/screen", config, http.StatusOK)
-	if cleared.Running || cleared.Result != nil {
+	if !cleared.Running || cleared.Result != nil {
 		t.Fatalf("removed strategy results still visible: %+v", cleared)
 	}
+	waitForScreen(t, s.screen)
 }
 
 func TestScreenSupersededScanAndClosePrice(t *testing.T) {
@@ -196,7 +201,7 @@ func TestScreenSupersededScanAndClosePrice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	config.Strategies = append(config.Strategies, screenStrategy{Name: "扫描一", Enabled: true,
+	config.Strategies = append(config.Strategies, screenStrategy{Name: "扫描一",
 		Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}})
 	config = save(config)
 	select {
@@ -205,7 +210,7 @@ func TestScreenSupersededScanAndClosePrice(t *testing.T) {
 		t.Fatal("scan did not start")
 	}
 	oldID := config.Strategies[4].ID
-	config.Strategies[4] = screenStrategy{Name: "扫描二", Enabled: true, Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}}
+	config.Strategies[4] = screenStrategy{Name: "扫描二", Buy: &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"}}
 	config = save(config)
 	close(release)
 	final := waitForScreen(t, s.screen)

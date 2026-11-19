@@ -2,13 +2,11 @@ package lab
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
-	"net/url"
-	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,13 +17,15 @@ import (
 	"github.com/injoyai/tdx/v2/protocol"
 )
 
-func (s *screenService) runHistory(ctx context.Context, market screener.HistoryMarket, config screenConfig, at time.Time, lookback int, progress screener.ScanProgress) error {
+var errScreenLedgerRead = errors.New("本地选股交易库读取失败")
+
+func (s *screenService) runHistory(ctx context.Context, market screener.HistoryMarket, config screenConfig, strategy screenStrategy, at time.Time, lookback int, progress screener.ScanProgress) error {
 	defer func() {
 		s.mu.Lock()
-		s.historyRunning = false
+		s.historyStrategy = ""
 		s.mu.Unlock()
 	}()
-	history, pending, err := s.replayScreenHistory(ctx, market, config, at, lookback, progress)
+	history, pending, err := s.replayScreenHistory(ctx, market, config, strategy.ID, at, lookback, progress)
 	if ctx.Err() != nil {
 		return errStopped
 	}
@@ -41,7 +41,7 @@ func (s *screenService) runHistory(ctx context.Context, market screener.HistoryM
 	if loadErr != nil || current.Version != config.Version {
 		return errors.New("选股策略配置已变化，请重新计算历史信号。")
 	}
-	if err := saveScreenReplay(ctx, s.ledgerPath(), config, history, lookback, pending); err != nil {
+	if err := saveScreenReplay(ctx, s.ledgerPath(), strategy, history, lookback, pending); err != nil {
 		if ctx.Err() != nil {
 			return errStopped
 		}
@@ -51,8 +51,8 @@ func (s *screenService) runHistory(ctx context.Context, market screener.HistoryM
 	return nil
 }
 
-func (s *screenService) replayScreenHistory(ctx context.Context, market screener.HistoryMarket, config screenConfig, at time.Time, lookback int, progress screener.ScanProgress) (screener.History, map[screener.SignalKey]screenPosition, error) {
-	trades, err := s.trackedScreenEntries()
+func (s *screenService) replayScreenHistory(ctx context.Context, market screener.HistoryMarket, config screenConfig, strategyID string, at time.Time, lookback int, progress screener.ScanProgress) (screener.History, map[screener.SignalKey]screenPosition, error) {
+	trades, err := s.trackedScreenEntries(strategyID)
 	if err != nil {
 		return screener.History{}, nil, err
 	}
@@ -79,9 +79,11 @@ func (s *screenService) replayScreenHistory(ctx context.Context, market screener
 		return screener.History{}, nil, err
 	}
 	for _, row := range legacy {
-		tracked[row.Key()] = true
+		if row.Strategy == strategyID {
+			tracked[row.Key()] = true
+		}
 	}
-	presets, custom, err := compileScreen(config)
+	custom, err := compileScreen(config)
 	if err != nil {
 		return screener.History{}, nil, err
 	}
@@ -89,7 +91,7 @@ func (s *screenService) replayScreenHistory(ctx context.Context, market screener
 	if at.Hour() < 15 {
 		end = at.AddDate(0, 0, -1)
 	}
-	rules, err := screener.BuildRules(market, at.AddDate(0, 0, -2*lookback), end, presets, custom)
+	rules, err := screener.BuildRules(market, at.AddDate(0, 0, -2*lookback), end, custom, strategyID)
 	if err != nil {
 		return screener.History{}, nil, err
 	}
@@ -98,17 +100,19 @@ func (s *screenService) replayScreenHistory(ctx context.Context, market screener
 }
 
 type screenHistoryPage struct {
-	Rows           []screener.Signal `json:"rows"`
-	Total          int               `json:"total"`
-	Page           int               `json:"page"`
-	Pages          int               `json:"pages"`
-	Through        string            `json:"through,omitempty"`
-	Running        bool              `json:"running"`
-	ArchiveError   string            `json:"archiveError,omitempty"`
-	FailedCodes    []string          `json:"failedCodes,omitempty"`
-	Lookback       int               `json:"lookback"`
-	AvgHoldingDays float64           `json:"avgHoldingDays"`
-	Stats          TradeStatsJSON    `json:"stats"`
+	Rows            []screener.Signal `json:"rows"`
+	Total           int               `json:"total"`
+	Page            int               `json:"page"`
+	Pages           int               `json:"pages"`
+	Through         string            `json:"through,omitempty"`
+	Running         bool              `json:"running"`
+	ArchiveError    string            `json:"archiveError,omitempty"`
+	PriceError      string            `json:"priceError,omitempty"`
+	FailedCodes     []string          `json:"failedCodes,omitempty"`
+	Lookback        int               `json:"lookback"`
+	DefaultLookback int               `json:"defaultLookback,omitempty"`
+	AvgHoldingDays  float64           `json:"avgHoldingDays"`
+	Stats           screenPerformance `json:"stats"`
 }
 
 func (s *Server) handleScreenHistory(w http.ResponseWriter, r *http.Request) {
@@ -133,12 +137,16 @@ func (s *Server) handleScreenHistory(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "无效的记录来源")
 		return
 	}
-	rows, config, out, err := s.screen.historySnapshot(mode == "sell" || tracked == "yes")
+	strategy := q.Get("strategy")
+	rows, config, out, err := s.screen.historySnapshot(mode == "sell" || tracked == "yes", strategy)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "无法读取选股配置")
+		message := "无法读取选股配置"
+		if errors.Is(err, errScreenLedgerRead) {
+			message = errScreenLedgerRead.Error()
+		}
+		writeErr(w, http.StatusInternalServerError, message)
 		return
 	}
-	strategy := q.Get("strategy")
 	code := strings.ToLower(strings.TrimSpace(q.Get("code")))
 	tag := q.Get("tag")
 	days, _ := strconv.Atoi(q.Get("days"))
@@ -148,8 +156,8 @@ func (s *Server) handleScreenHistory(w http.ResponseWriter, r *http.Request) {
 		cutoff = now.AddDate(0, 0, -min(days, 3650)+1).Format(time.DateOnly)
 	}
 	matches := make([]screener.Signal, 0)
-	closed := make([]core.Trade, 0)
 	var holdingDays int
+	var closed int
 	for _, row := range rows {
 		if tracked == "yes" && !row.Tracked || tracked == "no" && row.Tracked {
 			continue
@@ -160,7 +168,7 @@ func (s *Server) handleScreenHistory(w http.ResponseWriter, r *http.Request) {
 		if mode == "sell" && !strings.HasPrefix(row.SellTime, now.Format(time.DateOnly)) || cutoff != "" && row.BuyTime < cutoff {
 			continue
 		}
-		if status == "sold" && row.SellTime == "" || status == "open" && (row.SellTime != "" || row.Incomplete) {
+		if status == "sold" && row.SellTime == "" || status == "open" && row.SellTime != "" {
 			continue
 		}
 		if tag != "" && !containsScreenTag(row, tag) {
@@ -174,22 +182,26 @@ func (s *Server) handleScreenHistory(w http.ResponseWriter, r *http.Request) {
 			buy, buyErr := time.Parse(time.DateOnly, row.BuyTime[:10])
 			sell, sellErr := time.Parse(time.DateOnly, row.SellTime[:10])
 			trade := core.Trade{BuyPrice: row.BuyPrice, SellPrice: row.SellPrice, BuyTime: buy, SellTime: sell}
-			closed = append(closed, trade)
+			closed++
 			if buyErr == nil && sellErr == nil {
 				holdingDays += trade.HoldingDays()
 			}
 		}
 	}
-	out.Stats = newTradeStatsJSON(core.Stats(closed))
-	if len(closed) > 0 {
-		out.AvgHoldingDays = float64(holdingDays) / float64(len(closed))
+	out.PriceError = s.screen.markScreenPositions(r.Context(), matches, now)
+	out.Stats = summarizeScreenPerformance(matches)
+	if closed > 0 {
+		out.AvgHoldingDays = float64(holdingDays) / float64(closed)
 	}
 	out.Total = len(matches)
-	const pageSize = 30
-	out.Pages = max(1, (out.Total+pageSize-1)/pageSize)
-	out.Page = min(page, out.Pages)
-	from := (out.Page - 1) * pageSize
-	out.Rows = matches[from:min(from+pageSize, out.Total)]
+	out.Rows, out.Page, out.Pages = matches, 1, 1
+	if mode != "history" || q.Has("page") {
+		const pageSize = 30
+		out.Pages = max(1, (out.Total+pageSize-1)/pageSize)
+		out.Page = min(page, out.Pages)
+		from := (out.Page - 1) * pageSize
+		out.Rows = matches[from:min(from+pageSize, out.Total)]
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Screen-Config-Version", strconv.Itoa(config.Version))
 	writeJSON(w, out)
@@ -208,12 +220,35 @@ func (s *Server) handleScreenHistoryRun(w http.ResponseWriter, r *http.Request) 
 	screen := s.screen
 	screen.mu.Lock()
 	defer screen.mu.Unlock()
+	q := r.URL.Query()
+	lookback := screen.lookback
+	if q.Has("lookback") {
+		days, err := strconv.Atoi(q.Get("lookback"))
+		if err != nil || days < 1 || days > maxScreenHistoryLookback {
+			writeErr(w, http.StatusBadRequest, "回看天数须为 1 至 "+strconv.Itoa(maxScreenHistoryLookback)+" 个交易日")
+			return
+		}
+		lookback = days
+	}
+	strategyIDs := q["strategy"]
+	if len(strategyIDs) != 1 || strings.TrimSpace(strategyIDs[0]) == "" {
+		writeErr(w, http.StatusBadRequest, "请选择一套选股策略")
+		return
+	}
 	config, err := screen.load()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "无法读取选股配置")
 		return
 	}
-	if screen.historyRunning {
+	index := slices.IndexFunc(config.Strategies, func(strategy screenStrategy) bool {
+		return strategy.ID == strategyIDs[0]
+	})
+	if index < 0 {
+		writeErr(w, http.StatusBadRequest, "选股策略不存在，请重新选择")
+		return
+	}
+	strategy := config.Strategies[index]
+	if screen.historyStrategy != "" {
 		writeErr(w, http.StatusConflict, "历史信号正在计算")
 		return
 	}
@@ -226,61 +261,69 @@ func (s *Server) handleScreenHistoryRun(w http.ResponseWriter, r *http.Request) 
 		writeErr(w, http.StatusConflict, "已有批量任务在运行")
 		return
 	}
-	screen.historyRunning = true
-	at, lookback := screen.now().In(protocol.Location()), screen.lookback
+	screen.historyStrategy = strategy.ID
+	at := screen.now().In(protocol.Location())
 	const task = "screen_history"
 	ctl := s.runner.beginTask(taskStart{kind: task, phase: "preparing"})
 	s.runner.launchTask(ctl, "idle", func(stop chan struct{}) error {
 		ctx, cancel := screenTaskContext(stop)
 		defer cancel()
-		return screen.runHistory(ctx, market, config, at, lookback, s.runner.screenProgress(task))
+		return screen.runHistory(ctx, market, config, strategy, at, lookback, s.runner.screenProgress(task))
 	})
 	writeJSON(w, map[string]bool{"running": true})
 }
 
-func (s *screenService) historySnapshot(localOnly bool) ([]screener.Signal, screenConfig, screenHistoryPage, error) {
+func (s *screenService) historySnapshot(localOnly bool, strategyID string) ([]screener.Signal, screenConfig, screenHistoryPage, error) {
 	s.mu.Lock()
 	config, err := s.load()
 	out := screenHistoryPage{}
 	if !localOnly {
-		out.Running, out.Lookback = s.historyRunning, s.lookback
+		out.Running = s.historyStrategy != "" && (strategyID == "" || s.historyStrategy == strategyID)
+		out.Lookback, out.DefaultLookback = s.lookback, s.lookback
 	}
 	s.mu.Unlock()
 	if err != nil {
 		return nil, config, out, err
 	}
 
-	trades, err := s.trackedScreenEntries()
+	rows, archiveError, err := s.readScreenHistoryRows(localOnly)
+	if err != nil {
+		return nil, config, out, err
+	}
+	out.ArchiveError = archiveError
+	if !localOnly {
+		replay, err := readScreenReplay(s.ledgerPath(), strategyID)
+		if err != nil {
+			log.Printf("[screen] 读取历史回算结果失败: %v", err)
+			out.ArchiveError = strings.TrimSpace(out.ArchiveError + " 历史回算结果读取失败。")
+		} else if replay != nil {
+			out.Through, out.FailedCodes, out.Lookback = replay.Through, replay.FailedCodes, replay.Lookback
+		}
+	}
+	screener.SortSignals(rows)
+	return rows, config, out, nil
+}
+
+func (s *screenService) readScreenHistoryRows(localOnly bool) ([]screener.Signal, string, error) {
+	trades, err := s.trackedScreenEntries("")
 	if err != nil {
 		log.Printf("[screen] 读取本地交易库失败: %v", err)
-		out.ArchiveError = "本地选股交易库读取失败。"
+		return nil, "", errScreenLedgerRead
 	}
-	if localOnly {
-		rows := make([]screener.Signal, 0, len(trades))
-		for _, entry := range trades {
-			rows = append(rows, entry.Signal)
-		}
-		screener.SortSignals(rows)
-		return rows, config, out, nil
-	}
-	replay, err := readScreenReplay(s.ledgerPath())
-	if err != nil {
-		log.Printf("[screen] 读取历史回算结果失败: %v", err)
-		out.ArchiveError = strings.TrimSpace(out.ArchiveError + " 历史回算结果读取失败。")
-	} else if replay != nil {
-		out.Through, out.FailedCodes, out.Lookback = replay.Through, replay.FailedCodes, replay.Lookback
-	}
-	legacy, err := readLegacySignals(s.legacyPath)
-	if err != nil {
-		log.Printf("[screen] 读取旧交易库失败: %v", err)
-		out.ArchiveError = strings.TrimSpace(out.ArchiveError + " 原 Screen 历史库读取失败。")
-	}
-	rows := make([]screener.Signal, 0, len(legacy)+len(trades))
+	rows := make([]screener.Signal, 0, len(trades))
 	tracked := make(map[screener.SignalKey]bool, len(trades))
 	for _, entry := range trades {
 		row := entry.Signal
 		tracked[row.Key()] = true
 		rows = append(rows, row)
+	}
+	if localOnly {
+		return rows, "", nil
+	}
+	legacy, err := readLegacySignals(s.legacyPath)
+	if err != nil {
+		log.Printf("[screen] 读取旧交易库失败: %v", err)
+		return rows, "原 Screen 历史库读取失败。", nil
 	}
 	for _, row := range legacy {
 		key := row.Key()
@@ -289,23 +332,12 @@ func (s *screenService) historySnapshot(localOnly bool) ([]screener.Signal, scre
 		}
 		rows = append(rows, row)
 	}
-	screener.SortSignals(rows)
-	return rows, config, out, nil
+	return rows, "", nil
 }
 
 func readLegacySignals(path string) ([]screener.Signal, error) {
-	if path == "" {
-		return nil, nil
-	}
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	location := url.URL{Scheme: "file", Path: path, RawQuery: "mode=ro"}
-	db, err := sql.Open("sqlite", location.String())
-	if err != nil {
+	db, err := openExistingScreenDB(path)
+	if err != nil || db == nil {
 		return nil, err
 	}
 	defer db.Close()

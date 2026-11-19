@@ -649,31 +649,58 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 .training-report td{padding-top:6px;padding-bottom:6px}
 
 /* 选股工作区 */
-.screen-toolbar,.screen-result-head,.screen-actions,.screen-pagination{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.screen-toolbar,.screen-result-head{justify-content:space-between}
-.screen-toolbar{margin-bottom:8px;min-height:34px}
-.screen-status{display:flex;align-items:center;gap:4px 10px;flex-wrap:wrap;font-size:12px;color:var(--ink2)}
+.screen-result-head,.screen-actions,.screen-pagination{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.screen-result-head,.screen-library-head{justify-content:space-between}
+.screen-status{font-size:12px;color:var(--ink2)}
 .screen-status strong{color:var(--ink)}
+.screen-library-head,.screen-library-tools{display:flex;align-items:center;gap:6px}
+.screen-library-tools{flex:none}
+.screen-library .screen-icon-button{display:grid;place-items:center;width:32px;min-height:32px;padding:0;box-shadow:none}
+.screen-icon-button svg{width:17px;height:17px}
+.screen-library .screen-icon-button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.screen-library-status{display:flex;align-items:baseline;gap:2px 10px;flex-wrap:wrap;line-height:1.5}
+.screen-library-status time{font-variant-numeric:tabular-nums}
+@media(pointer:coarse){
+  .screen-library .screen-icon-button{width:44px;min-height:44px}
+}
 .screen-library,.screen-results{padding:10px}
-.screen-library{margin-bottom:8px;max-height:240px;overflow:auto}
+.screen-workspace{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;gap:10px}
+.screen-signal-workspace{min-width:0}
+.screen-library{display:flex;flex-direction:column;gap:6px;max-height:240px;min-width:0}
+@media(min-width:960px){
+  .screen-workspace{grid-template-columns:248px minmax(0,1fr)}
+}
+@media(min-width:960px) and (min-height:600px){
+  /* 筛选换行、提醒和任务栏留白都参与结果区的高度分配。 */
+  .screen-main{height:calc(100dvh - var(--masthead-height))}
+  .screen-main,#tab8,.screen-page,.screen-signal-workspace,#screen-signal-panel{
+    display:flex;flex-direction:column;min-height:0
+  }
+  #tab8,.screen-page,.screen-workspace,#screen-signal-panel{flex:1 1 0;min-height:0}
+  .screen-workspace{grid-template-rows:minmax(0,1fr);align-items:stretch}
+  .screen-library{align-self:start;max-height:100%}
+  .screen-results.has-rows{flex:1 0 0}
+}
 .screen-results{display:flex;flex-direction:column;gap:6px;overflow:visible}
-.screen-results.has-rows{height:max(350px,calc(100dvh - var(--masthead-height) - 112px))}
 .screen-results>*{flex:none}
-.screen-results h2,.screen-editor h2{font-size:15px;line-height:1.5;margin:0}
+.screen-library h2,.screen-results h2,.screen-editor h2{font-size:15px;line-height:1.5;margin:0}
 .screen-strategies,.screen-hits{list-style:none}
-.screen-strategies{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:6px}
-.screen-strategies>li{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;padding:4px 8px;border:1px solid var(--rule);border-radius:8px}
-.screen-strategy-label,.screen-enable{display:flex;align-items:center;gap:8px;min-height:32px;cursor:pointer}
-.screen-strategy-label{min-width:0;overflow-wrap:anywhere}
-.screen-strategy-label input,.screen-editor .screen-enable input{width:16px;height:16px;flex:none;accent-color:var(--accent)}
+.screen-strategies{min-height:0;overflow:auto;scrollbar-gutter:stable}
+.screen-strategies>li{min-width:0;border-top:1px solid var(--rule)}
+.screen-strategies>li.is-selected{background:var(--accent-soft);box-shadow:inset 2px 0 var(--accent)}
+.screen-strategy-item{display:grid;gap:5px;width:100%;min-height:40px;padding:8px 10px;border:0;background:transparent;color:var(--ink);text-align:start;overflow-wrap:anywhere;cursor:pointer}
+.screen-strategy-item:not([aria-current]):hover{background:var(--surface-soft)}
+.screen-strategy-item:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;box-shadow:none}
 .screen-table small,.screen-hits small{display:block;font-size:11px;color:var(--ink2);font-weight:400}
-.screen-strategy-label small{margin-left:6px;font-size:11px;color:var(--muted)}
-.screen-toolbar :is(button.primary,button.secondary),.screen-library button,.screen-results button.secondary,.screen-signal-tabs button.secondary{min-height:30px;padding:4px 9px}
-.screen-results button.trade-kline-button{min-height:25px;padding:2px 6px;font-family:inherit;font-size:12px;letter-spacing:0}
-.screen-toolbar input,.screen-results :is(input,select){height:30px;padding-inline:8px}
+.screen-strategy-item small{margin-left:6px;font-size:11px;color:var(--muted)}
+.screen-strategy-performance{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:12px;color:var(--ink2)}
+.screen-strategies>li>.screen-actions{padding:0 10px 8px}
+.screen-strategy-performance>span{white-space:nowrap}
+.screen-strategy-performance strong,.screen-history-performance strong{color:var(--ink);font-variant-numeric:tabular-nums}
+.screen-strategies button.secondary,.screen-results button.secondary,.screen-signal-tabs button.secondary{min-height:30px;padding:4px 9px}
+:is(.screen-results,.market-rank-scroll) button.trade-kline-button{min-height:25px;padding:2px 6px;font-family:inherit;font-size:12px;letter-spacing:0}
+.screen-results :is(input,select){height:30px;padding-inline:8px}
 .screen-page button.secondary:disabled{opacity:.45;cursor:not-allowed;transform:none;background:var(--surface-soft);color:var(--ink2);border-color:var(--rule)}
-.screen-result-filter{display:flex;align-items:center;gap:8px;font-size:12px}
-.screen-result-filter select{max-width:200px}
 .screen-results>.hint{margin:0}
 .screen-table-wrap,.screen-results .screen-signal-table{flex:1 1 0;min-height:160px;margin:0;border-radius:8px}
 .screen-table-wrap{overflow:auto;border:1px solid var(--rule)}
@@ -703,16 +730,18 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 .screen-import{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .screen-editor .screen-message,.screen-discard{margin:10px 0 0}
 .screen-editor-actions,.screen-discard .screen-actions{justify-content:flex-end;margin-top:14px}
-.screen-stock-lookup,.screen-history-filters,.screen-chart-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.screen-results-toolbar,.screen-stock-lookup,.screen-history-filters,.screen-chart-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.screen-results-toolbar{column-gap:14px}
 .screen-stock-lookup input{width:126px}
 .screen-stock-lookup .builder-field-error{flex-basis:100%}
 .screen-history-filters label,.screen-stock-lookup label{font-size:12px;color:var(--ink2)}
-.screen-history-filters label{display:inline-flex;align-items:center;gap:4px;max-width:100%}
+.screen-history-filters label,.screen-stock-lookup label{display:inline-flex;align-items:center;gap:4px;max-width:100%}
 .screen-history-filters select{max-width:160px}
 .screen-history-filters input{width:104px}
 .screen-rebuild{margin-inline-start:auto}
 .screen-summary{display:flex;align-items:baseline;gap:2px 16px;flex-wrap:wrap}
 .screen-summary .hint{margin:0}
+.screen-summary .screen-history-performance{margin-inline-start:auto;text-align:end}
 .screen-signal-tabs{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}
 .screen-signal-tabs button[aria-selected=true]{background:var(--accent-soft);border-color:var(--accent);color:var(--ink)}
 .screen-signal-table.tabulator .tabulator-row .tabulator-cell{padding:3px 6px}
@@ -720,10 +749,9 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 .screen-signal-table.tabulator .tabulator-row.tabulator-row-even{background:var(--surface)}
 .screen-signal-table.tabulator .tabulator-row:hover{background:var(--accent-soft)}
 .screen-signal-table.tabulator .tabulator-row .screen-wrap-cell,
-.screen-signal-table button.trade-kline-button{white-space:normal;overflow-wrap:anywhere}
+:is(.screen-signal-table,.market-rank-scroll) button.trade-kline-button{white-space:normal;overflow-wrap:anywhere}
 .screen-chart-tools{margin-bottom:10px}
-@media(max-width:760px){
-  .screen-results.has-rows{height:auto}
+@media(max-width:959px),(max-height:599px){
   .screen-results .screen-table-wrap,.screen-results .screen-signal-table{flex:none;--signal-table-height:clamp(240px,46dvh,460px)}
   .screen-table-wrap{height:var(--signal-table-height)}
 }
@@ -740,7 +768,6 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
 @media(max-width:560px){
   .screen-diagnosis,.stock-chart-dialog{padding:12px}
   .screen-kline{height:380px}
-  .screen-result-filter select{max-width:170px}
   .screen-history-filters input{width:82px}
 }
 

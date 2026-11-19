@@ -57,7 +57,7 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	strategy := screenStrategy{ID: "st_20261112T070000000Z_00000001", Name: "收盘策略", Enabled: true,
+	strategy := screenStrategy{ID: "st_20261112T070000000Z_00000001", Name: "收盘策略",
 		Buy:   &builder.BuilderNode{Type: "condition", ComponentID: "buy_all"},
 		Risks: []*builder.BuilderNode{{Type: "condition", ComponentID: "risk_fixed_tp", Params: map[string]any{"pct": 5.0}}}}
 	config.Strategies = append(config.Strategies, strategy)
@@ -75,7 +75,7 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	if err := persistScreenBuys(db, config, result); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := screenEntries(db, "")
+	rows, err := screenEntries(db, "", "")
 	if err != nil || len(rows) != 1 || rows[0].Signal.BuyTime != day.Format(time.DateTime) || rows[0].Signal.SellTime != "" {
 		t.Fatalf("entries = %+v, %v", rows, err)
 	}
@@ -95,7 +95,7 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	if err := scanScreenExits(context.Background(), db, market, failRead, next); err == nil {
 		t.Fatal("feed failure was ignored")
 	}
-	rows, err = screenEntries(db, next.Format(time.DateOnly))
+	rows, err = screenEntries(db, next.Format(time.DateOnly), "")
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("failed pass closed a trade: %+v %v", rows, err)
 	}
@@ -105,7 +105,7 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	if err := scanScreenExits(context.Background(), db, market, quiet, next.Add(-time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	rows, err = screenEntries(db, next.Format(time.DateOnly))
+	rows, err = screenEntries(db, next.Format(time.DateOnly), "")
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("non-matching price closed a trade: %+v %v", rows, err)
 	}
@@ -122,7 +122,7 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	if err := scanScreenExits(context.Background(), db, market, read, next.Add(time.Minute)); err != nil || readCount != 1 {
 		t.Fatalf("closed trade was evaluated again: reads %d, %v", readCount, err)
 	}
-	rows, err = screenEntries(db, "")
+	rows, err = screenEntries(db, "", "")
 	if err != nil || len(rows) != 1 || rows[0].Signal.SellPrice != 12 || rows[0].Signal.SellTime != next.Format(time.DateTime) {
 		t.Fatalf("completed entry = %+v, %v", rows, err)
 	}
@@ -151,10 +151,10 @@ func TestScreenLedgerCloseBuyAndSellSurviveRestart(t *testing.T) {
 	replay := rows[0].Signal
 	replay.Tracked, replay.SellPrice = false, 99
 	historyRun := screener.History{Rows: []screener.Signal{replay}}
-	if err := saveScreenReplay(context.Background(), service.ledgerPath(), config, historyRun, 60, map[screener.SignalKey]screenPosition{replay.Key(): rows[0]}); err != nil {
+	if err := saveScreenReplay(context.Background(), service.ledgerPath(), strategy, historyRun, 60, map[screener.SignalKey]screenPosition{replay.Key(): rows[0]}); err != nil {
 		t.Fatal(err)
 	}
-	history, _, _, err := service.historySnapshot(false)
+	history, _, _, err := service.historySnapshot(false, strategy.ID)
 	if err != nil || len(history) != 1 || !history[0].Tracked || history[0].SellPrice != 12 {
 		t.Fatalf("history = %+v, %v", history, err)
 	}
@@ -166,7 +166,7 @@ func TestScreenCloseRetryDoesNotDuplicateEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	config := screenConfig{Strategies: []screenStrategy{{ID: "macd-premium", Name: "MACD精选", Enabled: true}}}
+	config := screenConfig{Strategies: []screenStrategy{{ID: "macd-premium", Name: "MACD精选"}}}
 	result := screener.Result{AsOf: "2026-11-12 15:00:00", Matches: []screener.Match{{Code: "sh600000", Time: "2026-11-12 15:00:00", Price: 10, Hits: []screener.Hit{{ID: "macd-premium"}}}}}
 	if err := persistScreenBuys(db, config, result); err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestScreenCloseRetryDoesNotDuplicateEntries(t *testing.T) {
 	if err := persistScreenBuys(db, config, result); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := screenEntries(db, "")
+	rows, err := screenEntries(db, "", "")
 	if err != nil || len(rows) != 1 || rows[0].Signal.BuyPrice != 10 {
 		t.Fatalf("retries overwrote entry: %+v, %v", rows, err)
 	}

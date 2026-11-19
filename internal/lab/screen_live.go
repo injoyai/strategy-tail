@@ -83,7 +83,7 @@ type screenMinutes func(context.Context, string, time.Time) (protocol.Klines, er
 func scanScreenExits(ctx context.Context, db *sql.DB, market screener.Market, read screenMinutes, at time.Time) error {
 	at = at.In(protocol.Location())
 	day := core.DayOf(at)
-	entries, err := screenEntries(db, day.Format(time.DateOnly))
+	entries, err := screenEntries(db, day.Format(time.DateOnly), "")
 	if err != nil {
 		return err
 	}
@@ -227,7 +227,7 @@ func captureScreenClose(ctx context.Context, market screener.Market, feed screen
 	if err != nil {
 		return screener.Result{}, false, err
 	}
-	presets, custom, err := compileScreen(config)
+	custom, err := compileScreen(config)
 	if err != nil {
 		return screener.Result{}, false, err
 	}
@@ -236,7 +236,7 @@ func captureScreenClose(ctx context.Context, market screener.Market, feed screen
 	quotes, quoteErr := feed.quotes(ctx, codes, closeAt)
 	source := closeScreenMarket{Market: market, codes: codes, quotes: quotes, index: index, at: closeAt}
 	var scanner screener.Scanner
-	candidates, err := scanner.Scan(source, closeAt, presets, custom, 10)
+	candidates, err := scanner.Scan(source, closeAt, custom, 10)
 	if err != nil {
 		return screener.Result{}, false, errors.Join(quoteErr, err)
 	}
@@ -287,8 +287,8 @@ func persistScreenBuys(db *sql.DB, config screenConfig, result screener.Result) 
 			continue
 		}
 		for _, hit := range match.Hits {
-			strategy := byID[hit.ID]
-			if !strategy.Enabled {
+			strategy, exists := byID[hit.ID]
+			if !exists {
 				continue
 			}
 			rows = append(rows, screenPosition{Strategy: strategy, Signal: screener.Signal{Tracked: true, StrategyName: strategy.Name,
@@ -352,7 +352,7 @@ func (s *screenService) runLivePass(ctx context.Context, feed screenCloseFeed, a
 	s.mu.Lock()
 	config, err := s.load()
 	s.mu.Unlock()
-	if err != nil || !hasEnabledScreenStrategy(config) {
+	if err != nil {
 		return errors.Join(exitErr, err)
 	}
 	closeCtx, stopClose := context.WithTimeout(ctx, 90*time.Second)

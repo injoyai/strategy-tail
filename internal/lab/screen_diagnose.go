@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"regexp"
@@ -39,9 +40,14 @@ func (s *Server) handleScreenDiagnose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	screen := s.screen
-	signals, config, history, err := screen.historySnapshot(false)
+	selected := r.URL.Query().Get("strategy")
+	signals, config, history, err := screen.historySnapshot(false, selected)
 	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "无法读取选股配置")
+		if errors.Is(err, errScreenLedgerRead) {
+			writeErr(w, http.StatusInternalServerError, errScreenLedgerRead.Error())
+		} else {
+			writeErr(w, http.StatusInternalServerError, "无法读取选股配置")
+		}
 		return
 	}
 	at := screen.now().In(protocol.Location())
@@ -82,7 +88,6 @@ func (s *Server) handleScreenDiagnose(w http.ResponseWriter, r *http.Request) {
 	bars = screener.WithSessionBar(screen.market, code, at, bars, session)
 	out.Klines = klineSeries(bars)
 	out.AsOf = bars[len(bars)-1].Time.Format(time.DateTime)
-	selected := r.URL.Query().Get("strategy")
 	for _, row := range signals {
 		if row.Code == code && (selected == "" || row.Strategy == selected) {
 			out.Signals = append(out.Signals, row)
@@ -117,14 +122,10 @@ func (s *Server) handleScreenDiagnose(w http.ResponseWriter, r *http.Request) {
 		out.Warning = strings.TrimSpace(out.Warning + " 部分历史信号暂不可用。")
 	}
 
-	for i := range config.Strategies {
-		st := &config.Strategies[i]
-		st.Enabled = st.ID == selected || selected == "" && st.Enabled
-	}
-	presets, custom, err := compileScreen(config)
+	custom, err := compileScreen(config)
 	if err == nil {
 		var rules []screener.Rule
-		rules, err = screener.BuildRules(screen.market, at, end, presets, custom)
+		rules, err = screener.BuildRules(screen.market, at, end, custom, selected)
 		if err == nil {
 			for _, rule := range rules {
 				input := rule.Input(bars)

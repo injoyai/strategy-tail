@@ -61,8 +61,8 @@ func openScreenLedger(path string) (*sql.DB, error) {
 			trade_id INTEGER NOT NULL UNIQUE,
 			payload TEXT NOT NULL
 		);
-		CREATE TABLE IF NOT EXISTS screen_replay_status (
-			id INTEGER PRIMARY KEY CHECK (id = 1),
+		CREATE TABLE IF NOT EXISTS screen_strategy_replay_status (
+			strategy TEXT PRIMARY KEY NOT NULL,
 			payload BLOB NOT NULL
 		);
 	`); err != nil {
@@ -135,12 +135,16 @@ func closeScreenEntry(db *sql.DB, entry screenPosition, exit screener.Signal) er
 	return tx.Commit()
 }
 
-func screenEntries(db *sql.DB, beforeDay string) ([]screenPosition, error) {
-	query := `SELECT id, COALESCE(exit, entry), seller FROM screen_trades`
+func screenEntries(db *sql.DB, beforeDay, strategyID string) ([]screenPosition, error) {
+	query := `SELECT id, COALESCE(exit, entry), seller FROM screen_trades WHERE 1=1`
 	args := []any{}
 	if beforeDay != "" {
-		query += ` WHERE exit IS NULL AND buy_day < ?`
+		query += ` AND exit IS NULL AND buy_day < ?`
 		args = append(args, beforeDay)
+	}
+	if strategyID != "" {
+		query += ` AND strategy = ?`
+		args = append(args, strategyID)
 	}
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -194,16 +198,24 @@ func (s *screenService) ledgerPath() string {
 	return filepath.Join(filepath.Dir(s.path), "screen-trades.db")
 }
 
-func (s *screenService) trackedScreenEntries() ([]screenPosition, error) {
-	db, err := openExistingScreenLedger(s.ledgerPath())
+func (s *screenService) trackedScreenEntries(strategyID string) ([]screenPosition, error) {
+	db, err := openExistingScreenDB(s.ledgerPath())
 	if err != nil || db == nil {
 		return nil, err
 	}
 	defer db.Close()
-	return screenEntries(db, "")
+	return screenEntries(db, "", strategyID)
 }
 
-func openExistingScreenLedger(path string) (*sql.DB, error) {
+func openExistingScreenDB(path string) (*sql.DB, error) {
+	if path == "" {
+		return nil, nil
+	}
+	// A relative path in url.URL becomes file://directory/... (a URI with a host).
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(path); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -214,7 +226,7 @@ func openExistingScreenLedger(path string) (*sql.DB, error) {
 	return sql.Open("sqlite", location.String())
 }
 
-func saveScreenReplay(ctx context.Context, path string, config screenConfig, history screener.History, lookback int, pending map[screener.SignalKey]screenPosition) error {
+func saveScreenReplay(ctx context.Context, path string, strategy screenStrategy, history screener.History, lookback int, pending map[screener.SignalKey]screenPosition) error {
 	payload, err := json.Marshal(screenReplayStatus{Through: history.Through, Lookback: lookback, FailedCodes: history.FailedCodes})
 	if err != nil {
 		return err
@@ -244,11 +256,14 @@ func saveScreenReplay(ctx context.Context, path string, config screenConfig, his
 		return err
 	}
 	defer update.Close()
-	strategies := make(map[string]screenStrategy, len(config.Strategies))
-	for _, strategy := range config.Strategies {
-		strategies[strategy.ID] = strategy
+	seller, err := json.Marshal(strategy)
+	if err != nil {
+		return err
 	}
 	for _, row := range history.Rows {
+		if row.Strategy != strategy.ID {
+			return fmt.Errorf("回算结果包含其他策略 %q", row.Strategy)
+		}
 		var exit, sellTime any
 		if row.SellTime != "" {
 			data, err := json.Marshal(row)
@@ -271,38 +286,39 @@ func saveScreenReplay(ctx context.Context, path string, config screenConfig, his
 			}
 			continue
 		}
-		strategy := strategies[row.Strategy]
-		if !strategy.Enabled {
-			return fmt.Errorf("回算结果包含未启用的策略 %q", row.Strategy)
-		}
-		seller, err := json.Marshal(strategy)
-		if err != nil {
-			return err
-		}
 		if _, err := insert.ExecContext(ctx, row.Strategy, row.Code, key.Day, string(entry), string(seller), exit, sellTime); err != nil {
 			return err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO screen_replay_status (id, payload) VALUES (1, ?)
-		ON CONFLICT(id) DO UPDATE SET payload = excluded.payload`, payload); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO screen_strategy_replay_status (strategy, payload) VALUES (?, ?)
+		ON CONFLICT(strategy) DO UPDATE SET payload = excluded.payload`, strategy.ID, payload); err != nil {
 		return err
 	}
 	return tx.Commit()
 }
 
-func readScreenReplay(path string) (*screenReplayStatus, error) {
-	db, err := openExistingScreenLedger(path)
+func readScreenReplay(path, strategyID string) (*screenReplayStatus, error) {
+	db, err := openExistingScreenDB(path)
 	if err != nil || db == nil {
 		return nil, err
 	}
 	defer db.Close()
+	table := "screen_strategy_replay_status"
+	query := `SELECT payload FROM screen_strategy_replay_status WHERE strategy = ?`
+	args := []any{strategyID}
+	// Only unfiltered requests can use the legacy all-strategies snapshot.
+	if strategyID == "" {
+		table = "screen_replay_status"
+		query = `SELECT payload FROM screen_replay_status WHERE id = 1`
+		args = nil
+	}
 	var exists bool
 	// The ledger can predate the replay table. Read requests leave it untouched.
-	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='screen_replay_status')`).Scan(&exists); err != nil || !exists {
+	if err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?)`, table).Scan(&exists); err != nil || !exists {
 		return nil, err
 	}
 	var payload []byte
-	err = db.QueryRow(`SELECT payload FROM screen_replay_status WHERE id = 1`).Scan(&payload)
+	err = db.QueryRow(query, args...).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}

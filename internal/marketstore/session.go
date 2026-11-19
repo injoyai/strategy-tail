@@ -1,6 +1,8 @@
 package marketstore
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"slices"
 	"strings"
@@ -9,6 +11,52 @@ import (
 	"github.com/injoyai/tdx/v2/extend/model"
 	"github.com/injoyai/tdx/v2/protocol"
 )
+
+// StockLatestDayCloses returns the last positive close per requested stock.
+func (r *MySQLReader) StockLatestDayCloses(ctx context.Context, codes []string, through string) (map[string]*protocol.Kline, error) {
+	if err := timeRange("", through, time.DateOnly); err != nil {
+		return nil, err
+	}
+	out := make(map[string]*protocol.Kline, len(codes))
+	for batch := range slices.Chunk(codes, 250) {
+		query := "SELECT d.code, DATE_FORMAT(d.`time`,'%Y-%m-%d'), d.close FROM cn_stock_kline_day d " +
+			"JOIN (SELECT code, MAX(`time`) AS last_at FROM cn_stock_kline_day WHERE code IN (" +
+			strings.TrimSuffix(strings.Repeat("?,", len(batch)), ",") +
+			") AND `time` <= ? AND close > 0 GROUP BY code) a ON d.code=a.code AND d.`time`=a.last_at"
+		args := make([]any, 0, len(batch)+1)
+		for _, code := range batch {
+			args = append(args, code)
+		}
+		args = append(args, through)
+		rows, err := r.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return out, err
+		}
+		err = readLatestStockCloses(rows, out)
+		rows.Close()
+		if err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+func readLatestStockCloses(rows *sql.Rows, out map[string]*protocol.Kline) error {
+	for rows.Next() {
+		var code, date string
+		bar := new(protocol.Kline)
+		if err := rows.Scan(&code, &date, &bar.Close); err != nil {
+			return err
+		}
+		at, err := time.ParseInLocation(time.DateOnly, date, protocol.Location())
+		if err != nil {
+			return err
+		}
+		bar.Time = at.Add(15 * time.Hour)
+		out[code] = bar
+	}
+	return rows.Err()
+}
 
 // StockSessionBars aggregates the minutes already present for today's stock session.
 // The returned time is the last stored minute, and a stock with no minutes is absent.

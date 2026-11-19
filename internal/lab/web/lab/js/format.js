@@ -7,6 +7,13 @@ export function stockLabel(code, names = {}) {
   return name ? `${code} ${name}` : (code || '');
 }
 
+export function formatTradePerformance(stats) {
+  return {
+    winRate: stats?.total ? stats.winRate.toFixed(1) + '%' : '—',
+    profitFactor: stats?.total ? (stats.profitFactor == null ? '∞' : stats.profitFactor.toFixed(2)) : '—',
+  };
+}
+
 // 所有任务共用阶段口径；没有可度量工作量的阶段保持不定进度。
 export function taskProgress(s = {}, names) {
   const total = Number(s.total ?? s.totalCodes) || 0;

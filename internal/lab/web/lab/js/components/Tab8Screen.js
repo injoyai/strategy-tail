@@ -1,9 +1,11 @@
 import { Api } from '../api.js';
 import { state } from '../store.js';
 import { dlgMixin } from './dlgMixin.js';
+import { formatTradePerformance } from '../format.js';
 import { NodeEdit, treeErrors } from './Tab1Builder.js';
 import ScreenHistory from './ScreenHistory.js';
 import ScreenDiagnosis from './ScreenDiagnosis.js';
+import ScreenStockLookup from './ScreenStockLookup.js';
 
 const pageSize = 30;
 const clone = value => JSON.parse(JSON.stringify(value));
@@ -12,22 +14,22 @@ const newTree = () => ({type: 'group', op: 'and', children: []});
 export default {
   name: 'Tab8Screen',
   mixins: [dlgMixin],
-  components: {BuilderNodeEdit: NodeEdit, ScreenHistory, ScreenDiagnosis},
+  components: {BuilderNodeEdit: NodeEdit, ScreenHistory, ScreenDiagnosis, ScreenStockLookup},
   inject: ['startTask'],
   props: {active: {type: Boolean, required: true}, saleRevision: Number},
   data() {
     return {
       config: null, result: null, running: false, pending: false, loading: false, timer: null,
+      strategyStats: {}, strategyStatsError: '',
       loadError: '', runError: '', liveError: '', actionError: '', strategyFilter: '', page: 1,
       draft: null, baseline: '', draftVersion: 0, formError: '', nameError: '',
       catalogLoading: false, catalogError: '', sourceStrategies: [], sourceError: '', sourceID: '',
-      deleting: false, discard: false, mode: 'buy', stockCode: '', stockError: '', queuedSale: null, libraryOpen: false,
+      deleting: false, discard: false, mode: 'buy', stockCode: '', queuedSale: null,
     };
   },
   computed: {
     taskRunning() { return state.taskRunning; },
     strategies() { return this.config?.strategies || []; },
-    enabled() { return this.strategies.filter(strategy => strategy.enabled); },
     byID() { return new Map(this.strategies.map(strategy => [strategy.id, strategy.name])); },
     filtered() {
       const rows = this.result?.matches || [];
@@ -37,6 +39,9 @@ export default {
     shown() { return this.filtered.slice((this.page - 1) * pageSize, this.page * pageSize); },
     dirty() { return this.open && this.draft && !this.deleting && JSON.stringify(this.draft) !== this.baseline; },
     catalogReady() { return state.builderCatalog.length > 0; },
+    performanceByID() {
+      return Object.fromEntries(this.strategies.map(({id}) => [id, formatTradePerformance(this.strategyStats[id])]));
+    },
   },
   watch: {
     active: {immediate: true, handler(value) {
@@ -65,7 +70,9 @@ export default {
       this.liveError = liveError || '';
       this.loadError = '';
       if (this.queuedSale) this.$nextTick(() => this.openSale(this.queuedSale));
-      if (!this.enabled.some(strategy => strategy.id === this.strategyFilter)) this.strategyFilter = '';
+      if (this.strategyFilter && !this.byID.has(this.strategyFilter)) {
+        this.strategyFilter = '';
+      }
     },
     schedule() {
       clearTimeout(this.timer);
@@ -76,7 +83,7 @@ export default {
       this.loading = true;
       try {
         const response = await Api.screen();
-        if (!this.pending) this.receive(response);
+        if (!this.pending) this.receiveState(response);
       } catch (error) {
         this.loadError = '读取选股状态失败：' + error.message;
       } finally {
@@ -101,10 +108,18 @@ export default {
     async onTaskDone(task) {
       if (!this.active) return;
       if (task === 'screen_scan') {
-        this.receive(await Api.screen());
-      } else if (this.mode === 'history') {
-        await this.$refs.history?.load(true);
+        this.receiveState(await Api.screen());
+      } else {
+        await Promise.all([
+          Api.screen().then(this.receiveState),
+          this.mode === 'history' && this.$refs.history?.load(true),
+        ]);
       }
+    },
+    receiveState(response) {
+      this.receive(response);
+      this.strategyStats = response.strategyStats || {};
+      this.strategyStatsError = response.strategyStatsError || '';
     },
     async save(strategies, version) {
       if (this.pending || this.loading) return false;
@@ -120,12 +135,6 @@ export default {
         this.pending = false;
         this.schedule();
       }
-    },
-    toggle(strategy, event) {
-      const enabled = event.target.checked;
-      event.target.checked = strategy.enabled;
-      this.actionError = '';
-      this.save(this.strategies.map(item => item.id === strategy.id ? {...item, enabled} : item), this.config.version);
     },
     async loadCatalog() {
       if (this.catalogLoading) return;
@@ -144,7 +153,7 @@ export default {
       }
     },
     openEditor(strategy = null, deleting = false) {
-      this.draft = strategy ? clone(strategy) : {id: '', name: '', enabled: false, buy: newTree()};
+      this.draft = strategy ? clone(strategy) : {id: '', name: '', buy: newTree()};
       this.baseline = JSON.stringify(this.draft);
       this.draftVersion = this.config.version;
       this.formError = '';
@@ -174,6 +183,7 @@ export default {
     },
     openSale(row) {
       if (!row) return;
+      this.strategyFilter = this.byID.has(row.strategy) ? row.strategy : '';
       this.mode = 'sell';
       this.queuedSale = this.$refs.diagnosis ? null : row;
       this.$refs.diagnosis?.show(row.code, row.strategy, row.sellTime);
@@ -182,14 +192,7 @@ export default {
       this.$refs.diagnosis.show(row.code, row.strategy || this.strategyFilter,
         this.mode === 'sell' ? row.sellTime : row.buyTime || row.time);
     },
-    diagnoseCode() {
-      const code = this.stockCode.trim().toLowerCase();
-      if (!/^(sh|sz|bj)?[0-9]{6}$/.test(code)) {
-        this.stockError = '请输入六位股票代码，可带市场前缀';
-        this.$refs.stockCode.focus();
-        return;
-      }
-      this.stockError = '';
+    diagnoseCode(code) {
       this.$refs.diagnosis.show(code, this.strategyFilter);
     },
     requestClose() {
@@ -237,31 +240,7 @@ export default {
   },
   template: `
 <div class="screen-page">
-  <div class="screen-toolbar">
-    <div class="screen-status" aria-live="polite">
-      <span v-if="!config && !loadError">读取选股配置…</span>
-      <template v-else-if="config">
-        <strong>{{ enabled.length }} 套已启用</strong>
-        <span v-if="result">扫描时间 {{ result.asOf }}</span>
-      </template>
-    </div>
-    <form v-if="config" class="screen-stock-lookup" novalidate @submit.prevent="diagnoseCode">
-      <label for="screen-stock-code">股票代码</label>
-      <input id="screen-stock-code" ref="stockCode" v-model="stockCode" type="text" placeholder="如 sh600000" :aria-invalid="!!stockError"
-        :aria-describedby="stockError ? 'screen-stock-error' : undefined" @input="stockError = ''">
-      <button v-if="stockCode" type="button" class="secondary" aria-label="清除股票代码" @click="stockCode = ''; stockError = ''; $refs.stockCode.focus()">清除</button>
-      <button type="submit" class="secondary">查看K线</button>
-      <span v-if="stockError" id="screen-stock-error" class="builder-field-error" role="alert">{{ stockError }}</span>
-    </form>
-    <div class="screen-actions">
-      <button v-if="config" type="button" class="secondary" :aria-expanded="String(libraryOpen)" aria-controls="screen-library"
-        @click="libraryOpen = !libraryOpen">策略列表</button>
-      <button ref="addStrategy" type="button" class="secondary" :disabled="!config || pending" @click="openEditor()">新建策略</button>
-      <button type="button" class="primary" :disabled="!enabled.length || pending || loading || running || taskRunning"
-        :aria-busy="running" @click="run">立即选股</button>
-    </div>
-  </div>
-
+  <p v-if="!config && !loadError" class="screen-status screen-message" role="status">读取选股配置…</p>
   <p v-if="loadError" class="builder-field-error screen-message" role="alert">{{ loadError }}
     <button type="button" class="secondary" :disabled="loading || pending" @click="refresh">重试读取</button>
   </p>
@@ -269,14 +248,43 @@ export default {
   <p v-if="runError" class="builder-field-error screen-message" role="alert">{{ runError }}</p>
   <p v-if="liveError" class="builder-field-error screen-message" role="alert">{{ liveError }}</p>
 
-  <template v-if="config">
-    <section v-show="libraryOpen" id="screen-library" class="card screen-library" aria-label="策略列表">
+  <div v-if="config" class="screen-workspace">
+    <section class="card screen-library" aria-labelledby="screen-library-title">
+      <div class="screen-library-head">
+        <h2 id="screen-library-title">策略列表</h2>
+        <div class="screen-library-tools">
+          <button ref="addStrategy" type="button" class="secondary screen-icon-button" aria-label="新建策略" title="新建策略"
+            :disabled="pending" @click="openEditor()">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </button>
+          <button type="button" class="primary screen-icon-button" aria-label="立即选股" title="立即选股"
+            :disabled="pending || loading || running || taskRunning"
+            :aria-busy="running" @click="run">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+              <path d="M8 5.5v13a.5.5 0 0 0 .76.43l10-6.5a.5.5 0 0 0 0-.86l-10-6.5A.5.5 0 0 0 8 5.5Z" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="screen-status screen-library-status" role="status">
+        <span v-if="result?.asOf">扫描时间 <time :datetime="result.asOf.replace(' ', 'T') + '+08:00'">{{ result.asOf }}</time></span>
+      </div>
+      <p v-if="strategyStatsError" class="builder-field-error" role="status">{{ strategyStatsError }}</p>
       <ul class="screen-strategies">
-        <li v-for="strategy in strategies" :key="strategy.id">
-          <label class="screen-strategy-label">
-            <input type="checkbox" :checked="strategy.enabled" :disabled="pending || loading" @change="toggle(strategy, $event)">
+        <li v-for="(strategy, index) in strategies" :key="strategy.id" :class="{'is-selected': strategyFilter === strategy.id}">
+          <button type="button" class="screen-strategy-item" :aria-label="strategy.name" :aria-current="strategyFilter === strategy.id ? 'true' : undefined"
+            :aria-describedby="'screen-strategy-performance-' + index"
+            aria-controls="screen-signal-panel" @click="strategyFilter = strategy.id">
             <span>{{ strategy.name }}<small>{{ strategy.buy ? '自定义' : '内置' }}</small></span>
-          </label>
+            <span :id="'screen-strategy-performance-' + index" class="screen-strategy-performance">
+              <span>历史胜率 <strong>{{ performanceByID[strategy.id].winRate }}</strong></span>
+              <span>盈亏比 <strong>{{ performanceByID[strategy.id].profitFactor }}</strong></span>
+              <span v-if="strategyStats[strategy.id]?.marked">含持仓 {{ strategyStats[strategy.id].marked }} 笔</span>
+              <span v-if="strategyStats[strategy.id]?.unpriced">缺价 {{ strategyStats[strategy.id].unpriced }} 笔</span>
+            </span>
+          </button>
           <div v-if="strategy.buy" class="screen-actions">
             <button type="button" class="secondary" :aria-label="'编辑 ' + strategy.name" :disabled="pending" @click="openEditor(strategy)">编辑</button>
             <button type="button" class="secondary" :aria-label="'删除 ' + strategy.name" :disabled="pending" @click="openEditor(strategy, true)">删除</button>
@@ -285,65 +293,61 @@ export default {
       </ul>
     </section>
 
-    <div ref="signalTabs" class="screen-signal-tabs" role="tablist" aria-label="买卖信号" @keydown="onModeKey">
-      <button v-for="item in [{id:'buy',name:'当日买点'},{id:'sell',name:'当日卖点'},{id:'history',name:'历史买卖'}]" :key="item.id"
-        :id="'screen-mode-' + item.id" type="button" class="secondary" role="tab" :aria-selected="mode === item.id"
-        :tabindex="mode === item.id ? 0 : -1" aria-controls="screen-signal-panel" @click="mode = item.id">{{ item.name }}</button>
+    <div class="screen-signal-workspace">
+      <div ref="signalTabs" class="screen-signal-tabs" role="tablist" aria-label="买卖信号" @keydown="onModeKey">
+        <button v-for="item in [{id:'buy',name:'当日买点'},{id:'sell',name:'当日卖点'},{id:'history',name:'历史交易'}]" :key="item.id"
+          :id="'screen-mode-' + item.id" type="button" class="secondary" role="tab" :aria-selected="mode === item.id"
+          :tabindex="mode === item.id ? 0 : -1" aria-controls="screen-signal-panel" @click="mode = item.id">{{ item.name }}</button>
+      </div>
+      <div id="screen-signal-panel" role="tabpanel" :aria-labelledby="'screen-mode-' + mode">
+        <section v-show="mode === 'buy'" class="card screen-results" :class="{'has-rows': shown.length}" aria-labelledby="screen-results-title" :aria-busy="running">
+          <div class="screen-result-head">
+            <h2 id="screen-results-title">选股结果 <span v-if="result" class="hint">{{ filtered.length }} 只</span></h2>
+            <screen-stock-lookup v-if="mode === 'buy'" v-model="stockCode" @diagnose="diagnoseCode" />
+          </div>
+          <template v-if="result">
+            <p class="hint screen-coverage">已评估 {{ result.evaluated }} / {{ result.universe }} 只 · 无当日可用行情 {{ result.noSessionBars }} 只
+              <span v-if="result.failed"> · 日线读取失败 {{ result.failed }} 只</span>
+            </p>
+            <details v-if="result.failedCodes?.length" class="ui-help">
+              <summary>读取失败的股票</summary>
+              <p><template v-for="(code, index) in result.failedCodes" :key="code">{{ index ? '、' : '' }}<stock-chart-button :code="code" /></template></p>
+            </details>
+          </template>
+          <div v-if="shown.length" class="screen-table-wrap" tabindex="0" aria-label="选股结果表格">
+            <table class="screen-table" aria-labelledby="screen-results-title">
+              <thead><tr><th scope="col">股票</th><th scope="col">价格（元）</th><th scope="col">涨跌幅</th><th scope="col">行情时间</th><th scope="col">命中策略</th></tr></thead>
+              <tbody><tr v-for="row in shown" :key="row.code">
+                <th scope="row"><button type="button" class="secondary trade-kline-button" :aria-label="'查看 ' + row.code + (row.name ? ' ' + row.name : '') + ' K线'"
+                  aria-controls="screen-diagnosis" @click="diagnose(row)">{{ row.code }}{{ row.name ? ' ' + row.name : '' }} · K线</button></th>
+                <td>{{ row.price.toFixed(2) }}</td>
+                <td :class="{'num-up': row.rise > 0, 'num-down': row.rise < 0}">{{ riseText(row.rise) }}</td>
+                <td><time :datetime="row.time.replace(' ', 'T') + '+08:00'">{{ row.time }}</time></td>
+                <td><ul class="screen-hits"><li v-for="hit in row.hits.filter(hit => !strategyFilter || hit.id === strategyFilter)" :key="hit.id">{{ byID.get(hit.id) }}
+                  <small v-if="hit.tags?.length">{{ hit.tags.join(' · ') }}</small></li></ul></td>
+              </tr></tbody>
+            </table>
+          </div>
+          <div v-else class="screen-empty" role="status">
+            <span v-if="running">结果将在扫描完成后显示。</span>
+            <span v-else-if="result && !result.evaluated">今日暂无可用于选股的行情。</span>
+            <span v-else-if="result && strategyFilter">当前策略没有命中股票。</span>
+            <span v-else-if="result">本次扫描没有命中股票。</span>
+            <span v-else-if="runError">本次扫描未生成结果。</span>
+            <span v-else>点击「立即选股」扫描全部策略。</span>
+          </div>
+          <div v-if="pages > 1" class="screen-pagination">
+            <span>共 {{ filtered.length }} 只 · 第 {{ page }} / {{ pages }} 页</span>
+            <button type="button" class="secondary" :disabled="page <= 1" @click="page--">上一页</button>
+            <button type="button" class="secondary" :disabled="page >= pages" @click="page++">下一页</button>
+          </div>
+        </section>
+        <screen-history ref="history" :active="active && mode !== 'buy'" :mode="mode"
+          :strategy="strategyFilter" :strategies="strategies" :revision="config.version" :sale-revision="saleRevision" @diagnose="diagnose" />
+      </div>
     </div>
-    <div id="screen-signal-panel" role="tabpanel" :aria-labelledby="'screen-mode-' + mode">
-    <section v-show="mode === 'buy'" class="card screen-results" :class="{'has-rows': shown.length}" aria-labelledby="screen-results-title" :aria-busy="running">
-      <div class="screen-result-head">
-        <h2 id="screen-results-title">选股结果 <span v-if="result" class="hint">{{ result.matches.length }} 只</span></h2>
-        <label v-if="result" class="screen-result-filter">策略
-          <select v-model="strategyFilter">
-            <option value="">全部启用策略</option>
-            <option v-for="strategy in enabled" :key="strategy.id" :value="strategy.id">{{ strategy.name }}</option>
-          </select>
-        </label>
-      </div>
-      <template v-if="result">
-        <p class="hint screen-coverage">已评估 {{ result.evaluated }} / {{ result.universe }} 只 · 无当日可用行情 {{ result.noSessionBars }} 只
-          <span v-if="result.failed"> · 日线读取失败 {{ result.failed }} 只</span>
-        </p>
-        <details v-if="result.failedCodes?.length" class="ui-help">
-          <summary>读取失败的股票</summary>
-          <p><template v-for="(code, index) in result.failedCodes" :key="code">{{ index ? '、' : '' }}<stock-chart-button :code="code" /></template></p>
-        </details>
-      </template>
-      <div v-if="shown.length" class="screen-table-wrap" tabindex="0" aria-label="选股结果表格">
-        <table class="screen-table" aria-labelledby="screen-results-title">
-          <thead><tr><th scope="col">股票</th><th scope="col">价格（元）</th><th scope="col">涨跌幅</th><th scope="col">行情时间</th><th scope="col">命中策略</th></tr></thead>
-          <tbody><tr v-for="row in shown" :key="row.code">
-            <th scope="row"><button type="button" class="secondary trade-kline-button" :aria-label="'查看 ' + row.code + (row.name ? ' ' + row.name : '') + ' K线'"
-              aria-controls="screen-diagnosis" @click="diagnose(row)">{{ row.code }}{{ row.name ? ' ' + row.name : '' }} · K线</button></th>
-            <td>{{ row.price.toFixed(2) }}</td>
-            <td :class="{'num-up': row.rise > 0, 'num-down': row.rise < 0}">{{ riseText(row.rise) }}</td>
-            <td><time :datetime="row.time.replace(' ', 'T') + '+08:00'">{{ row.time }}</time></td>
-            <td><ul class="screen-hits"><li v-for="hit in row.hits" :key="hit.id">{{ byID.get(hit.id) }}
-              <small v-if="hit.tags?.length">{{ hit.tags.join(' · ') }}</small></li></ul></td>
-          </tr></tbody>
-        </table>
-      </div>
-      <div v-else class="screen-empty" role="status">
-        <span v-if="running">结果将在扫描完成后显示。</span>
-        <span v-else-if="!enabled.length">启用至少一套策略后开始选股。</span>
-        <span v-else-if="result && !result.evaluated">今日暂无可用于选股的行情。</span>
-        <span v-else-if="result && strategyFilter">当前策略没有命中股票。</span>
-        <span v-else-if="result">本次扫描没有命中股票。</span>
-        <span v-else-if="runError">本次扫描未生成结果。</span>
-        <span v-else>点击「立即选股」运行已启用策略。</span>
-      </div>
-      <div v-if="pages > 1" class="screen-pagination">
-        <span>共 {{ filtered.length }} 只 · 第 {{ page }} / {{ pages }} 页</span>
-        <button type="button" class="secondary" :disabled="page <= 1" @click="page--">上一页</button>
-        <button type="button" class="secondary" :disabled="page >= pages" @click="page++">下一页</button>
-      </div>
-    </section>
-    <screen-history ref="history" :active="active && mode !== 'buy'" :mode="mode"
-      :strategies="strategies" :revision="config.version" :sale-revision="saleRevision" @diagnose="diagnose" />
-    </div>
-    <screen-diagnosis ref="diagnosis" :strategies="strategies" />
-  </template>
+  </div>
+  <screen-diagnosis v-if="config" ref="diagnosis" :strategies="strategies" />
 
   <teleport to="body">
     <dialog ref="dlg" class="screen-editor" aria-labelledby="screen-editor-title" @cancel.prevent="requestClose">
@@ -355,7 +359,6 @@ export default {
             <input ref="name" v-model="draft.name" type="text" required maxlength="80" :aria-invalid="!!nameError" :aria-describedby="nameError ? 'screen-name-error' : undefined">
           </label>
           <p v-if="nameError" id="screen-name-error" class="builder-field-error">{{ nameError }}</p>
-          <label class="screen-enable"><input v-model="draft.enabled" type="checkbox">保存后启用</label>
           <div v-if="!draft.id && sourceStrategies.length" class="screen-import">
             <label>从回测策略复制条件
               <select v-model="sourceID">

@@ -368,7 +368,7 @@ const App = {
         :aria-expanded="String(navOpen)" @click="toggleNav">菜单</button>
       <h1>{{ pageTitle }}</h1>
     </header>
-<main :class="{'practice-page': state.activeTab === 7 && !taskDock, 'has-task-dock': taskDock}">
+<main :class="{'practice-page': state.activeTab === 7 && !taskDock, 'screen-main': state.activeTab === 8, 'has-task-dock': taskDock}">
   <data-update />
   <section v-if="sellEvents.length" class="screen-sale-notices card" aria-label="卖点提醒">
     <div class="screen-result-head">

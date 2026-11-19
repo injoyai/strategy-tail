@@ -137,6 +137,13 @@ func (r *MarketReader) LatestDayDate(code string) (string, error) {
 	return r.source.LastDayTime(c)
 }
 
+func (r *MarketReader) StockLatestDayCloses(ctx context.Context, codes []string, through string) (map[string]*protocol.Kline, error) {
+	if r.mysql == nil {
+		return nil, errors.New("最新日线收盘价需要 MySQL 行情源")
+	}
+	return r.mysql.StockLatestDayCloses(ctx, codes, through)
+}
+
 func (r *MarketReader) ReadDashboardDays(ctx context.Context, calendar string, indexes []string, through string) (marketstore.DashboardDays, error) {
 	if r.mysql == nil {
 		return marketstore.DashboardDays{}, errors.New("数据看板需要 MySQL 行情源")
