@@ -219,6 +219,10 @@ func (m closeScreenMarket) DayKlines(code string, start, end time.Time) (extend.
 }
 
 func captureScreenClose(ctx context.Context, market screener.Market, feed screenCloseFeed, config screenConfig, at time.Time) (screener.Result, bool, error) {
+	include, enabled := config.scanFilter()
+	if !enabled {
+		return screener.Result{}, false, nil
+	}
 	indexMinutes, err := feed.minutes(ctx, screener.BenchmarkCode, at)
 	if err != nil || !hasCloseMinute(indexMinutes, at) {
 		return screener.Result{}, false, err
@@ -236,7 +240,7 @@ func captureScreenClose(ctx context.Context, market screener.Market, feed screen
 	quotes, quoteErr := feed.quotes(ctx, codes, closeAt)
 	source := closeScreenMarket{Market: market, codes: codes, quotes: quotes, index: index, at: closeAt}
 	var scanner screener.Scanner
-	candidates, err := scanner.Scan(source, closeAt, custom, 10)
+	candidates, err := scanner.ScanWithFilter(ctx, source, closeAt, custom, 10, nil, include)
 	if err != nil {
 		return screener.Result{}, false, errors.Join(quoteErr, err)
 	}

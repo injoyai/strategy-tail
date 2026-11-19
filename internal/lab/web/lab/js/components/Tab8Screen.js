@@ -30,6 +30,8 @@ export default {
   computed: {
     taskRunning() { return state.taskRunning; },
     strategies() { return this.config?.strategies || []; },
+    hasEnabledStrategy() { return this.strategies.some(strategy => !strategy.disabled); },
+    selectedStrategyDisabled() { return this.strategies.some(strategy => strategy.id === this.strategyFilter && strategy.disabled); },
     byID() { return new Map(this.strategies.map(strategy => [strategy.id, strategy.name])); },
     filtered() {
       const rows = this.result?.matches || [];
@@ -92,7 +94,7 @@ export default {
       }
     },
     async run() {
-      if (this.pending || this.loading || this.running || this.taskRunning) return;
+      if (this.pending || this.loading || this.running || this.taskRunning || !this.hasEnabledStrategy) return;
       this.pending = true;
       this.actionError = '';
       try {
@@ -117,9 +119,18 @@ export default {
       }
     },
     receiveState(response) {
+      if (response.config.version < (this.config?.version || 0)) return;
       this.receive(response);
       this.strategyStats = response.strategyStats || {};
       this.strategyStatsError = response.strategyStatsError || '';
+    },
+    async toggleStrategy(strategy) {
+      if (this.pending || this.loading) return;
+      this.actionError = '';
+      const next = this.strategies.map(item => item.id === strategy.id
+        ? {...item, disabled: !item.disabled}
+        : item);
+      if (!await this.save(next, this.config.version)) await this.refresh();
     },
     async save(strategies, version) {
       if (this.pending || this.loading) return false;
@@ -260,7 +271,7 @@ export default {
             </svg>
           </button>
           <button type="button" class="primary screen-icon-button" aria-label="立即选股" title="立即选股"
-            :disabled="pending || loading || running || taskRunning"
+            :disabled="pending || loading || running || taskRunning || !hasEnabledStrategy"
             :aria-busy="running" @click="run">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
               <path d="M8 5.5v13a.5.5 0 0 0 .76.43l10-6.5a.5.5 0 0 0 0-.86l-10-6.5A.5.5 0 0 0 8 5.5Z" />
@@ -277,7 +288,7 @@ export default {
           <button type="button" class="screen-strategy-item" :aria-label="strategy.name" :aria-current="strategyFilter === strategy.id ? 'true' : undefined"
             :aria-describedby="'screen-strategy-performance-' + index"
             aria-controls="screen-signal-panel" @click="strategyFilter = strategy.id">
-            <span>{{ strategy.name }}<small>{{ strategy.buy ? '自定义' : '内置' }}</small></span>
+            <span class="screen-strategy-name">{{ strategy.name }}<small>{{ strategy.buy ? '自定义' : '内置' }}</small></span>
             <span :id="'screen-strategy-performance-' + index" class="screen-strategy-performance">
               <span>历史胜率 <strong>{{ performanceByID[strategy.id].winRate }}</strong></span>
               <span>盈亏比 <strong>{{ performanceByID[strategy.id].profitFactor }}</strong></span>
@@ -285,6 +296,10 @@ export default {
               <span v-if="strategyStats[strategy.id]?.unpriced">缺价 {{ strategyStats[strategy.id].unpriced }} 笔</span>
             </span>
           </button>
+          <button type="button" role="switch" class="screen-strategy-switch"
+            :aria-label="'启用策略 ' + strategy.name" :aria-checked="!strategy.disabled"
+            :aria-disabled="pending || loading" :title="strategy.disabled ? '已禁用，点击启用' : '已启用，点击禁用'"
+            @click="toggleStrategy(strategy)"><span aria-hidden="true"></span></button>
           <div v-if="strategy.buy" class="screen-actions">
             <button type="button" class="secondary" :aria-label="'编辑 ' + strategy.name" :disabled="pending" @click="openEditor(strategy)">编辑</button>
             <button type="button" class="secondary" :aria-label="'删除 ' + strategy.name" :disabled="pending" @click="openEditor(strategy, true)">删除</button>
@@ -329,12 +344,14 @@ export default {
             </table>
           </div>
           <div v-else class="screen-empty" role="status">
-            <span v-if="running">结果将在扫描完成后显示。</span>
+            <span v-if="!hasEnabledStrategy">请先启用至少一套选股策略。</span>
+            <span v-else-if="selectedStrategyDisabled">当前策略已禁用。</span>
+            <span v-else-if="running">结果将在扫描完成后显示。</span>
             <span v-else-if="result && !result.evaluated">今日暂无可用于选股的行情。</span>
             <span v-else-if="result && strategyFilter">当前策略没有命中股票。</span>
             <span v-else-if="result">本次扫描没有命中股票。</span>
             <span v-else-if="runError">本次扫描未生成结果。</span>
-            <span v-else>点击「立即选股」扫描全部策略。</span>
+            <span v-else>点击「立即选股」扫描已启用的策略。</span>
           </div>
           <div v-if="pages > 1" class="screen-pagination">
             <span>共 {{ filtered.length }} 只 · 第 {{ page }} / {{ pages }} 页</span>

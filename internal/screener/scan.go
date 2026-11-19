@@ -80,6 +80,11 @@ func (s *Scanner) Scan(m Market, at time.Time, custom []Rule, workers int) (Resu
 }
 
 func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, custom []Rule, workers int, progress ScanProgress) (Result, error) {
+	return s.ScanWithFilter(ctx, m, at, custom, workers, progress, nil)
+}
+
+// ScanWithFilter scans only rules accepted by include. A nil filter accepts every rule.
+func (s *Scanner) ScanWithFilter(ctx context.Context, m Market, at time.Time, custom []Rule, workers int, progress ScanProgress, include func(string) bool) (Result, error) {
 	at = at.In(protocol.Location())
 	date := at.Format(time.DateOnly)
 	result := Result{AsOf: at.Format(time.DateTime), Matches: []Match{}}
@@ -109,7 +114,7 @@ func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, 
 		return result, fmt.Errorf("读取当日分钟行情: %w", err)
 	}
 
-	rules, err := buildRules(m, at, dayEnd(at, daily), custom, "", daily || len(minutes) > 0)
+	rules, err := buildRules(m, at, dayEnd(at, daily), custom, "", daily || len(minutes) > 0, include)
 	if err != nil {
 		return result, err
 	}
@@ -184,12 +189,15 @@ func (s *Scanner) ScanWithProgress(ctx context.Context, m Market, at time.Time, 
 
 // BuildRules builds all preset and custom rules unless a strategy ID selects a single rule.
 func BuildRules(m Market, start, end time.Time, custom []Rule, strategyID string) ([]Rule, error) {
-	return buildRules(m, start, end, custom, strategyID, true)
+	return buildRules(m, start, end, custom, strategyID, true, nil)
 }
 
-func buildRules(m Market, start, end time.Time, custom []Rule, strategyID string, loadIndex bool) ([]Rule, error) {
+func buildRules(m Market, start, end time.Time, custom []Rule, strategyID string, loadIndex bool, include func(string) bool) ([]Rule, error) {
+	selected := func(id string) bool {
+		return (strategyID == "" || strategyID == id) && (include == nil || include(id))
+	}
 	var index extend.Klines
-	if loadIndex && (strategyID == "" || strategyID == IndexPreset) {
+	if loadIndex && selected(IndexPreset) {
 		var err error
 		index, err = m.DayKlines(BenchmarkCode, start.AddDate(0, -3, 0), end)
 		if err != nil {
@@ -202,12 +210,12 @@ func buildRules(m Market, start, end time.Time, custom []Rule, strategyID string
 	presets := Presets(index)
 	rules := make([]Rule, 0, len(presets)+len(custom))
 	for _, preset := range presets {
-		if strategyID == "" || preset.Key == strategyID {
+		if selected(preset.Key) {
 			rules = append(rules, Rule{ID: preset.Key, Name: preset.Name, Buyer: preset.Buyer, Seller: preset.Seller, Tags: preset.Tags, Builtin: true})
 		}
 	}
 	for _, rule := range custom {
-		if strategyID == "" || rule.ID == strategyID {
+		if selected(rule.ID) {
 			rules = append(rules, rule)
 		}
 	}

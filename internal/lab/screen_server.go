@@ -24,6 +24,7 @@ import (
 type screenStrategy struct {
 	ID         string                 `json:"id"`
 	Name       string                 `json:"name"`
+	Disabled   bool                   `json:"disabled,omitempty"`
 	Buy        *builder.BuilderNode   `json:"buy,omitempty"`
 	SellSignal *builder.BuilderNode   `json:"sellSignal,omitempty"`
 	Risks      []*builder.BuilderNode `json:"risks,omitempty"`
@@ -96,6 +97,17 @@ func (s *screenService) load() (screenConfig, error) {
 		return screenConfig{}, errors.New("选股配置格式无效")
 	}
 	return config, nil
+}
+
+// scanFilter describes the enabled strategies in this configuration snapshot.
+func (c screenConfig) scanFilter() (func(string) bool, bool) {
+	enabled := make(map[string]bool, len(c.Strategies))
+	for _, strategy := range c.Strategies {
+		if !strategy.Disabled {
+			enabled[strategy.ID] = true
+		}
+	}
+	return func(id string) bool { return enabled[id] }, len(enabled) > 0
 }
 
 func compileScreen(config screenConfig) ([]screener.Rule, error) {
@@ -184,7 +196,7 @@ func (s *screenService) state(config screenConfig) screenState {
 // start is called under mu. A configuration change during a scan queues the
 // newest version automatically and never exposes the superseded result.
 func (s *screenService) start(config screenConfig) {
-	if s.running {
+	if _, enabled := config.scanFilter(); s.running || !enabled {
 		return
 	}
 	s.running = true
@@ -199,10 +211,11 @@ func (s *screenService) start(config screenConfig) {
 }
 
 func (s *screenService) run(ctx context.Context, config screenConfig, progress screener.ScanProgress) error {
+	include, _ := config.scanFilter()
 	custom, err := compileScreen(config)
 	var result screener.Result
 	if err == nil {
-		result, err = s.scanner.ScanWithProgress(ctx, s.market, s.now(), custom, common.DefaultGoroutines, progress)
+		result, err = s.scanner.ScanWithFilter(ctx, s.market, s.now(), custom, common.DefaultGoroutines, progress, include)
 	}
 	if err != nil && ctx.Err() == nil {
 		log.Printf("[screen] 选股失败: %v", err)
@@ -287,7 +300,7 @@ func (s *screenService) startSaved(afterClose bool) {
 	alreadyScanned := s.version == config.Version && s.result != nil &&
 		s.result.DailyAvailable && strings.HasPrefix(s.result.AsOf, date)
 	s.mu.Unlock()
-	if alreadyScanned {
+	if _, enabled := config.scanFilter(); alreadyScanned || !enabled {
 		return
 	}
 	latest, err := s.market.LatestDayDate(screener.BenchmarkCode)
@@ -409,6 +422,10 @@ func (s *Server) handleScreenRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if screen.running {
 		writeErr(w, http.StatusConflict, "正在选股，请等待当前扫描完成")
+		return
+	}
+	if _, enabled := config.scanFilter(); !enabled {
+		writeErr(w, http.StatusBadRequest, "请先启用至少一套选股策略")
 		return
 	}
 	if !s.runner.mu.TryLock() {

@@ -154,6 +154,28 @@ func TestScreenConfigAndScan(t *testing.T) {
 		t.Fatalf("config did not persist: %+v, %v", persisted, err)
 	}
 	config = saved.Config
+	config.Strategies[4].Disabled = true
+	toggled := request("PUT", "/api/screen", config, http.StatusOK)
+	filtered := waitForScreen(t, s.screen).Result
+	if filtered == nil || len(filtered.Matches) != 1 || len(filtered.Matches[0].Hits) != 2 ||
+		filtered.Matches[0].Hits[0].ID != toggled.Config.Strategies[5].ID {
+		t.Fatalf("disabled strategy still contributes to the scan: %+v", filtered)
+	}
+	persisted, err = reopened.load()
+	if err != nil || !persisted.Strategies[4].Disabled {
+		t.Fatalf("disabled state did not persist: %+v, %v", persisted, err)
+	}
+	config = toggled.Config
+	for i := range config.Strategies {
+		config.Strategies[i].Disabled = true
+	}
+	allDisabled := request("PUT", "/api/screen", config, http.StatusOK)
+	if allDisabled.Running || allDisabled.Result != nil {
+		t.Fatalf("all-disabled configuration still scans or exposes old results: %+v", allDisabled)
+	}
+	request("POST", "/api/screen/run", nil, http.StatusBadRequest)
+	config = allDisabled.Config
+	config.Strategies[0].Disabled = false
 	config.Strategies = config.Strategies[:4]
 	cleared := request("PUT", "/api/screen", config, http.StatusOK)
 	if !cleared.Running || cleared.Result != nil {

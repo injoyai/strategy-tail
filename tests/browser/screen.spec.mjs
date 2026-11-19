@@ -37,7 +37,7 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
     if (route.request().method() !== 'GET') return route.continue();
     const response = await route.fetch();
     const payload = await response.json();
-    const custom = payload.config.strategies.filter(strategy => strategy.buy);
+    const custom = payload.config.strategies.filter(strategy => strategy.buy && !strategy.disabled);
     await route.fulfill({response, json: {...payload, running: false, error: '',
       result: {asOf: '2026-11-13 10:00:00', universe: 1, evaluated: 1, noSessionBars: 0, failed: 0,
         matches: custom.length ? [{code: 'sh600000', name: '浦发银行', price: 12, rise: 1.25, time: '2026-11-13 09:59:00',
@@ -54,6 +54,29 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
   await firstStrategy.click();
   await expect(table.getByRole('row')).toHaveCount(2);
   await expect(table).not.toContainText('价格筛选 B');
+
+  const strategySwitch = library.getByRole('switch', {name: '启用策略 价格筛选 A'});
+  await expect(strategySwitch).toBeChecked();
+  const screenURL = '**/api/screen';
+  const rejectSave = route => route.request().method() === 'PUT'
+    ? route.fulfill({status: 409, json: {error: '测试配置冲突'}})
+    : route.fallback();
+  await page.route(screenURL, rejectSave);
+  await strategySwitch.click();
+  await expect(page.getByRole('alert')).toHaveText('测试配置冲突');
+  await expect(strategySwitch).toBeChecked();
+  await page.unroute(screenURL, rejectSave);
+  await expect(strategySwitch).toBeEnabled();
+  await strategySwitch.focus();
+  await page.keyboard.press('Space');
+  await expect(strategySwitch).not.toBeChecked();
+  await expect(firstStrategy).toHaveAttribute('aria-current', 'true');
+  await expect(page.getByText('当前策略已禁用。')).toBeVisible();
+  await page.reload();
+  await expect(strategySwitch).not.toBeChecked();
+  await strategySwitch.click();
+  await expect(strategySwitch).toBeChecked();
+  await firstStrategy.click();
 
   await page.getByRole('button', {name: '编辑 价格筛选 A'}).click();
   let dlg = page.getByRole('dialog');
@@ -432,7 +455,7 @@ for (const width of [1440, 390]) {
     await page.getByRole('tab', {name: '当日卖点'}).click();
     await sellRequest;
     await page.getByRole('tab', {name: '当日买点'}).click();
-    await expect(page.getByText('点击「立即选股」扫描全部策略。')).toBeVisible();
+    await expect(page.getByText('点击「立即选股」扫描已启用的策略。')).toBeVisible();
     await expect(cards.nth(0)).toContainText('历史胜率 58.8%');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   });
