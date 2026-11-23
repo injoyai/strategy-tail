@@ -219,6 +219,14 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 
 		todayCopy := *dks[i]
 		today := &todayCopy
+		previousClose := today.Last
+		if previousClose == 0 {
+			if i > 0 {
+				previousClose = dks[i-1].Close
+			} else if len(his) > 0 {
+				previousClose = his[len(his)-1].Close
+			}
+		}
 		tradingDay := DayOf(today.Time)
 		full[len(his)+i] = today
 		// ls = his + dks[:i] + today，即截至今日（含）的全部K线
@@ -258,6 +266,15 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 				minuteKlines := todayMinuteKlines[:ii+1]
 				lastMinuteKline := todayMinuteKlines[ii]
 				today.Kline = minuteKlines.Kline(lastMinuteKline.Time, lastMinuteKline.Open)
+				// 盘中快照只携带当前分钟已知信息：时间对齐当前分钟，
+				// 换手率按累计成交量与流通股本重算，不能沿用全天字段。
+				today.Last = previousClose
+				today.Unix = lastMinuteKline.Time.Unix()
+				today.Turnover = 0
+				if today.FloatStock > 0 {
+					equity := protocol.Equity{Float: today.FloatStock}
+					today.Turnover = equity.Turnover(protocol.ToShares(today.Volume))
+				}
 
 				// lsSell 与买入阶段共享同一前缀（末元素即 today 指针，覆写实时可见）
 				lsSell := full[:len(his)+i+1]
