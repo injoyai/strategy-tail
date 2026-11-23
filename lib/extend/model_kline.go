@@ -112,7 +112,8 @@ func (ks Klines) MACD() (dif, dea, hist float64) {
 	return dif, dea, hist
 }
 
-// RSI 常用于超买超卖
+// RSI 常用于超买超卖。整数口径：窗口内只有上涨返回 100，只有下跌返回 0，
+// 完全横盘按整数实现约定返回 0；涨跌同时存在时截断为整数。
 func (ks Klines) RSI(n int) int64 {
 	if len(ks) == 0 || n <= 0 {
 		return 0
@@ -138,8 +139,15 @@ func (ks Klines) RSI(n int) int64 {
 			}
 		}
 
-		if i >= n && loss > 0 {
-			rsi = int64(100 * gain / (gain + loss))
+		if i >= n {
+			switch {
+			case gain+loss == 0:
+				rsi = 0
+			case loss == 0:
+				rsi = 100
+			default:
+				rsi = int64(100 * gain / (gain + loss))
+			}
 		}
 	}
 	return rsi

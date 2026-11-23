@@ -175,6 +175,20 @@ func TestP7RSI恢复快照(t *testing.T) {
 	}
 }
 
+// TestARSI恢复零跌幅回归 窗口内只有上涨时整数 RSI 必须为 100，不再沿用
+// 初值或前一窗口值；阈值 75 的卖出条件应触发。
+func TestARSI恢复零跌幅回归(t *testing.T) {
+	if !(ARSI恢复{Period: 2, Threshold: 75}).Sell("sh600000", p7Series([]float64{10, 11, 12}, 100), core.Buy{}) {
+		t.Fatal("窗口只有上涨：整数 RSI=100，应触发阈值 75")
+	}
+	if !(ARSI恢复{Period: 2, Threshold: 75}).Sell("sh600000", p7Series([]float64{10, 9, 10, 11}, 100), core.Buy{}) {
+		t.Fatal("末窗口只有上涨：整数 RSI=100，不残留 50")
+	}
+	if (ARSI恢复{Period: 2, Threshold: 75}).Sell("sh600000", p7Series([]float64{12, 11, 10}, 100), core.Buy{}) {
+		t.Fatal("窗口只有下跌：整数 RSI=0，不应触发")
+	}
+}
+
 // ---- A回到布林中轨（sell_back_to_boll_mid）----
 // 语义：MA>0 且 今收 >= 中轨（该周期均线）；len<p → false。
 
