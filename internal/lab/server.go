@@ -16,6 +16,7 @@ import (
 
 	common "github.com/injoyai/strategy-tail"
 	"github.com/injoyai/strategy-tail/internal/chartui"
+	"github.com/injoyai/strategy-tail/internal/lab/builder"
 	"github.com/injoyai/strategy-tail/lib/extend"
 	f "github.com/injoyai/strategy-tail/strategies/factor"
 )
@@ -90,6 +91,7 @@ func NewServer() *Server {
 		practiceStore:  NewPracticeStore(practiceDataDir),
 	}
 	s.screen.legacyPath = common.ResolveRuntimePath(filepath.Join("data", "database", "trade.db"))
+	builder.SetIndexLoader(indexDayKlines)
 	s.wirePortfolioStores()
 	// 恢复重启前中断的练习准备（标为 failed，可重练出题）。
 	if err := s.practiceStore.RecoverInterrupted(); err != nil {
@@ -126,6 +128,7 @@ func newServerWithStores(analyses *AnalysisStore, candidates *CandidateStore) *S
 		builderStore:   NewBuilderStore(builderDataDir),                              // 搭建器测试按需覆盖
 		practiceStore:  NewPracticeStore(filepath.Join(candidates.root, "practice")), // 练习测试按需覆盖
 	}
+	builder.SetIndexLoader(indexDayKlines)
 	s.wirePortfolioStores()
 	s.wirePracticeStores()
 	s.registerRoutes()
@@ -157,6 +160,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/screen", s.handleScreenState)
 	s.mux.HandleFunc("GET /api/screen/history", s.handleScreenHistory)
 	s.mux.HandleFunc("GET /api/screen/events", s.handleScreenEvents)
+	s.mux.HandleFunc("GET /api/notify/tool", s.handleNotifyDownload)
 	s.mux.HandleFunc("POST /api/screen/history", withSameOrigin(s.handleScreenHistoryRun))
 	s.mux.HandleFunc("GET /api/screen/diagnose/{code}", s.handleScreenDiagnose)
 	s.mux.HandleFunc("PUT /api/screen", withSameOrigin(s.handleScreenSave))
@@ -772,5 +776,13 @@ func writeErr(w http.ResponseWriter, code int, msg string) {
 
 // commonPullDayKlines 日K数据源（委托 common.Pull，与回测循环同源）。
 func commonPullDayKlines(code string, start, end time.Time) (extend.Klines, error) {
+	return common.Pull.DayKlines(code, start, end)
+}
+
+// indexDayKlines 指数条件数据源；行情未初始化时返回错误而不是崩溃。
+func indexDayKlines(code string, start, end time.Time) (extend.Klines, error) {
+	if common.Pull == nil {
+		return nil, errors.New("行情数据源未初始化")
+	}
 	return common.Pull.DayKlines(code, start, end)
 }

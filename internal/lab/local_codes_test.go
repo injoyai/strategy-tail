@@ -23,6 +23,11 @@ func TestResolveCodesUsesStoredDayCodes(t *testing.T) {
 	if err != nil || !slices.Equal(got, want) {
 		t.Fatalf("全量本地代码 = %v, %v; want %v", got, err, want)
 	}
+	wantAll := []string{"sh600000", "sz000003", "sz300001"}
+	got, err = r.resolveCodes(RunConfig{SampleMode: "all_stocks"}, nil)
+	if err != nil || !slices.Equal(got, wantAll) {
+		t.Fatalf("全部股票代码 = %v, %v; want %v", got, err, wantAll)
+	}
 	for _, size := range []int{1, 10} {
 		got, err := r.resolveCodes(RunConfig{SampleMode: "random", SampleSize: size}, nil)
 		if err != nil || len(got) != min(size, len(want)) {

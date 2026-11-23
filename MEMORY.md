@@ -106,7 +106,7 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **用途**：浏览器内编写/校验策略脚本（Yaegi 解释执行），提交回测（年份+样本池），单页三 Tab（脚本编辑 / 运行进度 / 组合对比+K线明细）。设计文档：`docs/specs/2026-09-05-strategy-lab-design.md`。
 - **结构**：`internal/lab/`——`script/interp.go`（解释器实现；父包保留 LoadScript/CheckScript 入口，脚本契约 `core.Variant{Name, Buyer} 切片`）、`script/symbols.go`（ProjectSymbols：用 `reflect.ValueOf((*T)(nil))` 注册 core/buy/sell/factor 包类型符号（factor 段仅可导出的 6 个因子类型+Build，见上），映射 `<包路径>/<包名>`）、`runner.go`（单任务互斥 `sync.Mutex`+`atomic.Bool`、进度 atomic 上报、cloneKlines 隔离多变体、报告落盘）、`server.go`（REST API + `//go:embed web`，前端零构建链嵌入二进制）、`web/lab/index.html`（三 Tab 单页，ECharts CDN）。
 - **脚本格式**：Go 语法 `package main` + `func Strategy() []core.Variant`；Buyer 用 `&buy.A价格{...}` 等组件字面量组合（And/Or 嵌套）。示例脚本 `strategies/script/matrix.go`（`//go:build ignore`，勿去掉 tag——package main 无 main() 会破坏 `go build ./...`）。
-- **API**：`GET/PUT /api/script`、`POST /api/script/check`、`POST /api/run`（RunConfig：startYear/endYear/sampleMode(all|random|codes)/sampleSize/holdingDays/takeProfit/stopLoss/scriptName）、`GET /api/status`、`POST /api/stop`、`GET /api/reports`、`GET /api/report/{id|latest}`、`GET /api/kline/{code}`。默认 `0.0.0.0:8765`。
+- **API**：`GET/PUT /api/script`、`POST /api/script/check`、`POST /api/run`（RunConfig：startYear/endYear/sampleMode(all|all_stocks|random|codes)/sampleSize/holdingDays/takeProfit/stopLoss/scriptName）、`GET /api/status`、`POST /api/stop`、`GET /api/reports`、`GET /api/report/{id|latest}`、`GET /api/kline/{code}`。默认 `0.0.0.0:8765`。
 - **落盘**（AGENTS.md 6.1）：`output/trades/<时间戳_脚本名>/report.json`（临时文件+rename 原子写，含 stats+trades），每变体 CSV 与汇总 HTML 经 `core.ExportTradesCSV/HTML` 落 `output/trades/<脚本名>/`。
 - **测试**：`interp_test.go`（LoadScript/买点等价性/契约错误）、`server_test.go`（脚本 API/完整 run 生命周期/互斥/配置校验）。`t.Chdir(t.TempDir())` 隔离相对路径。
 - **坑点**：
@@ -221,3 +221,16 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - **整数 RSI 口径**：`lib/extend.Klines.RSI` 在完整窗口内只有上涨返回 100、只有下跌返回 0、完全横盘按整数约定返回 0，不能停留在初值或前一窗口；`strategies/sell.ARSI恢复` 等阈值策略依赖此口径。
 - **旧引擎盘中快照**：`core.Backtest.Do` 使用分钟数据的交易日，`today.Time`/`Unix` 对齐当前分钟；`Turnover` 以截至当前的累计成交量与流通股本重算，缺少股本时为 0，不能沿用日线全天换手率；`Last` 使用日线前收（零值时回退历史收盘），不能取当前分钟开盘价。原始日线切片不得被改写。
 - **正常空年份**：`researchrun.loadYear` 查询成功但目标年无行情返回 `Stage "empty"`，查询错误仍为 `day`/`minute` 等明确失败。`Run` 跳过空年份并保留同票其他年份，全空年份才计 Skipped 并披露原因；账户回测改用 `ForEachCodeYearData`，只取最早有效年份的一份 `His` 预热，再按年份拼接 `Dks`，`ForEachCodeData` 的整票全有或全无语义保持不变。
+
+## 选股内置策略转策略库与指数条件（2026-11-23）
+- 四套 Screen 内置规则已复制为 `data/lab/strategies/` 下的独立策略库文件（MACD精选 `st_20261123T102000001Z_1a2b3c4d`、MACD基础(测试) `...002Z_2b3c4d5e`、布林+RSI(测试) `...003Z_3c4d5e6f`、MACD精选2 `...004Z_4d5e6f70`），参数与 `screener.Presets` 逐项对齐并用临时等价测试对拍通过；副本独立于内置规则，内置规则仍是选股页唯一入口，两边后续可各自修改。
+- 搭建器新增 `buy_index_bull`、`buy_index_above_ma`（目录分组「指数」，参数 `indexCode` 默认 `sh000001`，另有 `periods`／`period`），并移出不可用清单。指数日线读取器由 `builder.SetIndexLoader` 注入，Lab 构造时指向 `common.Pull`；首次求值按个股 K 线起点前推 `2×最大周期+30` 天、终点取当前时间懒加载一次并缓存。
+- 懒加载在 `dks` 为空时不能置 `loaded=true`，否则第一次空切片调用会永久缓存 nil；loader 未注入或读取失败时指数条件保守返回 false。
+- `internal/lab/testdata/condition_baseline_v2.json` 已追加两个新组件的等价基线哈希；等价测试固定注入指数序列，避免依赖外部行情或测试执行顺序。
+
+## 回测期间容器重启（OOM，2026-11-23）
+- 现象：运行回测后前端提示失败，容器自动重启且日志无 panic。根因是 Docker Desktop VM 内存耗尽触发 OOM kill，`--restart unless-stopped` 随即拉起进程，内存中的任务状态（`Runner.errMsg`）随之丢失，页面显示失败/中断。
+- 证据：Docker Desktop 后端日志在三次重启时刻（12:18:09Z、12:19:20Z、12:26:24Z）记录 `POST /analytics/track/oom-kills` 计数 1/2/3，与 `RestartCount=3` 完全对应；容器 `OOMKilled=false`（OOM 发生在 VM 层），无 panic 输出。
+- 内存实测（容器内 `/proc/1/status`）：空闲约 0.6GB；全市场账户回测（3487 只、2025-2026）峰值约 1.9GB；2024-2026 三年峰值约 2.26GB。VM 仅 3.824GiB，且 `tsp` 0.52GB、`market-data` 0.05GB 共用，连续运行或叠加其他负载即触顶。主机内存 16GB，建议把 Docker Desktop 内存上调到 8GB。
+- 缓解：`Runner.launchTask` 在每个任务（回测/分析等）结束时执行 `debug.FreeOSMemory()`，把空闲堆归还操作系统，避免下一次任务在已闲置堆上继续抬高 RSS 峰值。
+- 排查注意：`docker inspect` 的 `State.ExitCode=0` 不能作为“正常退出”依据；Docker Desktop 的 VM 级 OOM 不会在容器日志或 `OOMKilled` 中留下痕迹，需结合 `oom-kills` 埋点与 `RestartCount` 判断。

@@ -36,7 +36,7 @@ import (
 type RunConfig struct {
 	StartYear   int      `json:"startYear"`   // 回测起始年（含）
 	EndYear     int      `json:"endYear"`     // 回测结束年（含）
-	SampleMode  string   `json:"sampleMode"`  // all=全部 | random=随机N只 | codes=指定代码
+	SampleMode  string   `json:"sampleMode"`  // all=沪深主板 | all_stocks=全部股票 | random=随机N只 | codes=指定代码
 	SampleSize  int      `json:"sampleSize"`  // random 模式的 N
 	SampleCodes []string `json:"sampleCodes"` // codes 模式的代码列表
 	// 卖出规则（页面表单 → sell.Or 组合）
@@ -122,7 +122,7 @@ func (c RunConfig) validateYears() error {
 // validateSample 样本配置检查（回测/因子分析共用）。
 func (c RunConfig) validateSample() error {
 	switch c.SampleMode {
-	case "all":
+	case "all", "all_stocks":
 	case "random":
 		if c.SampleSize <= 0 {
 			return fmt.Errorf("随机样本数无效: %d", c.SampleSize)
@@ -855,6 +855,15 @@ func (r *Runner) resolveCodes(cfg RunConfig, stop chan struct{}) ([]string, erro
 	switch cfg.SampleMode {
 	case "codes":
 		return cfg.SampleCodes, nil
+	case "all_stocks":
+		all, err := common.MarketAll.LocalCodes()
+		if err != nil {
+			return nil, err
+		}
+		if len(all) == 0 {
+			return nil, fmt.Errorf("本地日线库没有股票数据")
+		}
+		return all, nil
 	case "all", "random":
 		all, err := common.Market沪深主板.LocalCodes()
 		if err != nil {

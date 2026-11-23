@@ -212,7 +212,7 @@ export default {
       const gn = (g && g.groups && g.groups.length) ? g.groups.length : (g ? (g.n || gp.groups || 5) : 5);
       items.push({label: '分组：', value: gp.mode === 'bins' ? '固定区间' : `${gn} 组等频`});
       const all = rep.protocol?.universe?.mode === 'historical_membership' ? '历史成员股票池' : '沪深主板日线库';
-      const MODE = {all, random: '沪深主板随机抽样', codes: '指定代码'};
+      const MODE = {all, all_stocks: '全部股票日线库', random: '沪深主板随机抽样', codes: '指定代码'};
       if (r.sampleMode) {
         items.push({label: '样本：', value: (MODE[r.sampleMode] || r.sampleMode) + (r.sampleSize > 0 ? ` · ${r.sampleSize} 只` : '')});
       }
@@ -580,7 +580,7 @@ export default {
           </tbody>
         </table>
       </div>
-      <details class="ui-help" v-if="rep.range?.sampleMode !== 'codes'"><summary>样本口径</summary><p class="hint" id="yearBias">{{ rep.protocol?.universe?.mode === 'historical_membership' ? '按信号日历史成员关系纳入股票。' : '从沪深主板日线库选样，包含库中保留的退市代码。逐日成员关系与退市覆盖未验证。' }}</p></details>
+      <details class="ui-help" v-if="rep.range?.sampleMode !== 'codes'"><summary>样本口径</summary><p class="hint" id="yearBias">{{ rep.protocol?.universe?.mode === 'historical_membership' ? '按信号日历史成员关系纳入股票。' : (rep.range?.sampleMode === 'all_stocks' ? '从本地全部股票日线库选样，含创业板、科创板和库中保留的退市代码。逐日成员关系与退市覆盖未验证。' : '从沪深主板日线库选样，包含库中保留的退市代码。逐日成员关系与退市覆盖未验证。') }}</p></details>
     </template>
     <div class="empty" v-show="!hasYears" id="yearNA">{{ yearNA }}</div>
 

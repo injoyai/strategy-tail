@@ -19,6 +19,12 @@ import (
 
 // 基线来自拆分因子前的组件；逐前缀覆盖预热期、默认参数、零量与平价窗口。
 func TestConditionFactorEquivalence(t *testing.T) {
+	// 指数条件的基线使用固定指数序列，避免依赖外部行情或测试执行顺序。
+	builder.SetIndexLoader(func(string, time.Time, time.Time) (extend.Klines, error) {
+		return conditionBaselineBars(false), nil
+	})
+	t.Cleanup(func() { builder.SetIndexLoader(nil) })
+
 	raw, err := os.ReadFile("testdata/condition_baseline_v2.json")
 	if err != nil {
 		t.Fatal(err)

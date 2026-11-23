@@ -24,7 +24,7 @@ export default {
       loadError: '', runError: '', liveError: '', actionError: '', strategyFilter: '', page: 1,
       draft: null, baseline: '', draftVersion: 0, formError: '', nameError: '',
       catalogLoading: false, catalogError: '', sourceStrategies: [], sourceError: '', sourceID: '',
-      deleting: false, discard: false, mode: 'buy', stockCode: '', queuedSale: null,
+      deleting: false, discard: false, mode: 'buy', stockCode: '',
     };
   },
   computed: {
@@ -63,6 +63,7 @@ export default {
   },
   methods: {
     warnBeforeUnload(event) { event.preventDefault(); event.returnValue = ''; },
+    downloadNotifier() { window.location.href = '/api/notify/tool'; },
     receive({config, result, running, preview, error, liveError}) {
       this.config = config;
       this.result = result || null;
@@ -71,7 +72,6 @@ export default {
       this.runError = error || '';
       this.liveError = liveError || '';
       this.loadError = '';
-      if (this.queuedSale) this.$nextTick(() => this.openSale(this.queuedSale));
       if (this.strategyFilter && !this.byID.has(this.strategyFilter)) {
         this.strategyFilter = '';
       }
@@ -192,13 +192,6 @@ export default {
       const params = Object.fromEntries((entry.params || []).filter(param => param.default != null).map(param => [param.key, param.default]));
       (this.draft.risks ||= []).push({type: 'condition', componentId: entry.id, params});
     },
-    openSale(row) {
-      if (!row) return;
-      this.strategyFilter = this.byID.has(row.strategy) ? row.strategy : '';
-      this.mode = 'sell';
-      this.queuedSale = this.$refs.diagnosis ? null : row;
-      this.$refs.diagnosis?.show(row.code, row.strategy, row.sellTime);
-    },
     diagnose(row) {
       this.$refs.diagnosis.show(row.code, row.strategy || this.strategyFilter,
         this.mode === 'sell' ? row.sellTime : row.buyTime || row.time);
@@ -264,6 +257,8 @@ export default {
       <div class="screen-library-head">
         <h2 id="screen-library-title">策略列表</h2>
         <div class="screen-library-tools">
+          <button type="button" class="secondary" title="下载 Windows 桌面提醒工具"
+            @click="downloadNotifier">下载提醒工具</button>
           <button ref="addStrategy" type="button" class="secondary screen-icon-button" aria-label="新建策略" title="新建策略"
             :disabled="pending" @click="openEditor()">
             <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">

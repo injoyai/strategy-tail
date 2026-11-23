@@ -126,11 +126,6 @@ const App = {
       this.sellEvents = [];
       this.$refs.pageTitle.focus();
     },
-    openScreenSale(event) {
-      this.closeSellNotices();
-      this.switchTab(8);
-      this.$nextTick(() => this.$refs.screen?.openSale(event.signal));
-    },
     setTaskRef(name, el) {
       this.$refs[name] = el;
     },
@@ -400,7 +395,6 @@ const App = {
               <stock-chart-button :code="event.signal.code" :name="event.signal.name" @click.capture="closeSellNotices" />
               · {{ event.strategyName }} · {{ event.signal.sellTime }} · {{ event.signal.sellPrice.toFixed(2) }} 元
             </span>
-            <button type="button" class="secondary" @click="openScreenSale(event)">查看K线</button>
           </li>
         </ul>
       </section>

@@ -17,7 +17,7 @@ export const state = reactive({
   runCfg: {              // 运行配置（02 右侧卡片；01 因子分析复用样本配置，仅覆盖年份）
     startYear: 2025,
     endYear: 2026,
-    sampleMode: 'all',   // all | random | codes
+    sampleMode: 'all',   // all | all_stocks | random | codes
     sampleSize: 50,
     sampleCodes: '',
     holdingOn: true,

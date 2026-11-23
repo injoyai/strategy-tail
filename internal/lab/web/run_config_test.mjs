@@ -131,9 +131,10 @@ test('单只红利股与自选代码、随机和全部范围互相切换，不�
   }
   await ctx.confirm(); ctx.openDlg('builder', async () => true);
   assert.equal(ctx.sampleChoice, 'sh601728');
-  for (const choice of ['random', 'all', 'codes']) {
+  for (const choice of ['random', 'all', 'all_stocks', 'codes']) {
     ctx.sampleChoice = choice; ctx.selectSample();
     assert.equal(ctx.cfg.sampleMode, choice);
+    assert.equal(ctx.validate(), true);
   }
   assert.equal(ctx.cfg.sampleCodes, 'sh601728');
 });

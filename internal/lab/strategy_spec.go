@@ -36,7 +36,7 @@ type ExitSpec struct {
 type StrategyRunSpec struct {
 	StartYear   int            `json:"startYear"`
 	EndYear     int            `json:"endYear"`
-	SampleMode  string         `json:"sampleMode"`            // all|random|codes
+	SampleMode  string         `json:"sampleMode"`            // all|all_stocks|random|codes
 	SampleSize  int            `json:"sampleSize,omitempty"`  // random 模式
 	SampleCodes []string       `json:"sampleCodes,omitempty"` // codes 模式
 	Account     *AccountConfig `json:"account,omitempty"`

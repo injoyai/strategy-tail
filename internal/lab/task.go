@@ -2,6 +2,7 @@ package lab
 
 import (
 	"errors"
+	"runtime/debug"
 
 	"github.com/injoyai/strategy-tail/internal/researchrun"
 )
@@ -42,6 +43,11 @@ func (r *Runner) beginTask(start taskStart) *runControl {
 // stoppedState 保留旧契约：回测/分析停止为 idle，组合取消为 done。
 func (r *Runner) launchTask(ctl *runControl, stoppedState string, run func(chan struct{}) error) {
 	go func() {
+		// 全市场回测/分析的瞬时堆可达 1GB 以上；Go 默认把空闲页留在 RSS 里，
+		// 容器内存长期不回落，Docker Desktop 等受限环境会把它当成内存大户
+		// 先被 OOM 杀掉（进程无 panic、任务只剩“失败/中断”）。任务结束即归还
+		// 物理页，避免下一次任务叠加在已闲置的堆上继续抬高峰值。
+		defer debug.FreeOSMemory()
 		defer r.mu.Unlock()
 		defer r.running.Store(false)
 		defer r.recoverTaskPanic()

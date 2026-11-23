@@ -428,7 +428,7 @@ func summarizeFromStats(stats []FactorGroupStats, g int) ([]float64, QuintileSum
 type AnalysisRange struct {
 	StartYear   int      `json:"startYear"`
 	EndYear     int      `json:"endYear"`
-	SampleMode  string   `json:"sampleMode"`            // all | random | codes
+	SampleMode  string   `json:"sampleMode"`            // all | all_stocks | random | codes
 	SampleSize  int      `json:"sampleSize,omitempty"`  // 实际请求代码数
 	SampleCodes []string `json:"sampleCodes,omitempty"` // 本次实际加载的代码清单
 }

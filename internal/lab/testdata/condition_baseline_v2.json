@@ -17,6 +17,8 @@
   "buy_donchian_lower": "6a719e18078479f5c29cc103de82cfee72ca50973edbf471dc2e72076117fd8d",
   "buy_etf": "9b1bbc561370e5f94c067f5b3a733d2f564defc7d613461d1f4836230782c838",
   "buy_filter_limit_up": "15fe0abadcd43b76965d610963164669d0ff7cc56b7ec3353625aff39c919b82",
+  "buy_index_above_ma": "1a4ddc1a5451ff4751d1996ef50fc2367c08fb7eb998bc46eb51af16a3f33d7d",
+  "buy_index_bull": "6aec20e9512e51f34c15b131fe3d29bb9f672f59741b0420cf68ee6d2d48c5da",
   "buy_limit_up_hit": "c6ebfebd7fb862dd6d3a201ded70b200c0ea9c2adc2a6bc7f13a49037c6935dc",
   "buy_ma_bull": "f005adee6289ab8233286f98df498d2a0b192f54c64ad83ee7edffeacd058369",
   "buy_ma_up": "dae210e01439eab29039d6e20e74e6ac80d26a102e8665cae7d385ded3a0bb0d",

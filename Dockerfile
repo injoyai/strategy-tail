@@ -25,6 +25,8 @@ COPY . .
 ARG APP_REVISION=unknown
 ARG TDX_REVISION=unknown
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/injoyai/strategy-tail/internal/lab.appRevision=${APP_REVISION} -X github.com/injoyai/strategy-tail/internal/lab.tdxRevision=${TDX_REVISION}" -o /out/lab ./cmd/lab
+# 同时生成 Windows 提醒客户端，供页面下载；与当前服务版本保持一致
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w -H windowsgui" -o /out/strategy-notify.exe ./cmd/notify
 
 ###############################################################################
 #                                  运行阶段
@@ -43,6 +45,7 @@ ENV LAB_ADDR=0.0.0.0:8765
 
 WORKDIR /app
 COPY --from=builder /out/lab ./lab
+COPY --from=builder /out/strategy-notify.exe ./strategy-notify.exe
 # 时区数据与 CA 证书直接取自构建阶段，避免运行阶段 apk 联网安装
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

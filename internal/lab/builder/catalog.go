@@ -171,6 +171,21 @@ func builderCatalog() []ComponentEntry {
 				intParam("minTouchDays", "最少触碰天数", 3, 1, 100, ""),
 			}},
 
+		// ---- 买入：指数环境 ----
+		{ID: "buy_index_bull", Name: "指数多头排列", Role: roleBuy, Category: "指数",
+			Desc: "基准指数指定周期均线按从短到长依次向上排列（需要指数日线）",
+			Params: []ParamDef{
+				indexCodeParam(),
+				{Key: "periods", Label: "均线周期", Type: "intList",
+					Default: []int{20, 60, 120}, Min: pf(1), Max: pf(1000), Desc: "逗号分隔，从短到长；留空使用组件默认"},
+			}},
+		{ID: "buy_index_above_ma", Name: "指数站上MA", Role: roleBuy, Category: "指数",
+			Desc: "基准指数收盘价站上指定周期均线（需要指数日线）",
+			Params: []ParamDef{
+				indexCodeParam(),
+				intParam("period", "均线周期", 60, 1, 1000, ""),
+			}},
+
 		// ---- 买入：MACD ----
 		{ID: "buy_macd_negative", Name: "MACD连续负数", Role: roleBuy, Category: "MACD",
 			Desc: "MACD 柱连续 MinDays 天为负；MaxDays 0=不限",
@@ -495,9 +510,7 @@ func builderUnavailable() []UnavailableComponent {
 		{ID: "buy.MACD顺滑", Name: "MACD顺滑", Role: roleBuy, Reason: "本次未接入"},
 		{ID: "buy.MACD转红", Name: "MACD转红", Role: roleBuy, Reason: "本次未接入；可用「MACD金叉」表达类似形态"},
 		{ID: "buy.MACD负柱缩短", Name: "MACD负柱缩短", Role: roleBuy, Reason: "本次未接入"},
-		{ID: "buy.A上证N日均线向上", Name: "上证N日均线向上", Role: roleBuy, Reason: "需要指数行情数据，Lab 样本回测暂不提供"},
-		{ID: "buy.A指数多头排列", Name: "指数多头排列", Role: roleBuy, Reason: "需要指数行情数据，Lab 样本回测暂不提供"},
-		{ID: "buy.A指数站上MA", Name: "指数站上MA", Role: roleBuy, Reason: "需要指数行情数据，Lab 样本回测暂不提供"},
+		{ID: "buy.A上证N日均线向上", Name: "上证N日均线向上", Role: roleBuy, Reason: "本次未接入；指数行情已支持「指数多头排列」「指数站上MA」"},
 		{ID: "buy.N天前符合", Name: "N天前符合", Role: roleBuy, Reason: "嵌套 Buyer 包装组件；条件树已原生支持分组，无需该包装"},
 		{ID: "buy.A因子过滤", Name: "因子过滤（旧组件）", Role: roleBuy, Reason: "请使用「因子条件」节点，买入与卖出共用同一份因子定义"},
 		{ID: "buy.A因子TopN", Name: "因子TopN", Role: roleBuy, Reason: "属于「组合研究」模式，不在条件树接入"},
@@ -841,6 +854,8 @@ var buyFactories = map[string]func(map[string]any) (core.Buyer, error){
 		v, err := intArg(p, "period")
 		return sb.A唐奇安下沿{Period: v}, err
 	},
+	"buy_index_bull":     newIndexBullBuyer,
+	"buy_index_above_ma": newIndexAboveMABuyer,
 }
 
 // sellFactories 组件 ID → 卖出组件工厂（策略卖出信号与独立风控共用）。

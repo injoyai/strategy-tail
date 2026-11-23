@@ -69,7 +69,7 @@ export default {
       const minYear = this.mode === 'builder' ? 1990 : 1;
       if (!Number.isInteger(c.startYear) || c.startYear < minYear) return this.invalid('startYear', `开始年份需为不小于 ${minYear} 的整数`);
       if (!Number.isInteger(c.endYear) || c.endYear < c.startYear || c.endYear > new Date().getFullYear()) return this.invalid('endYear', '结束年份需为整数，不早于开始年份且不超过当前年份');
-      if (!['all', 'random', 'codes'].includes(c.sampleMode)) return this.invalid('sampleMode', '请选择股票范围');
+      if (!['all', 'all_stocks', 'random', 'codes'].includes(c.sampleMode)) return this.invalid('sampleMode', '请选择股票范围');
       if (c.sampleMode === 'random' && (!Number.isInteger(c.sampleSize) || c.sampleSize <= 0)) return this.invalid('sampleSize', '随机样本数需为正整数');
       if (c.sampleMode === 'codes' && !c.sampleCodes.split(',').some(s => s.trim())) return this.invalid('sampleCodes', '请填写股票代码，用英文逗号分隔');
       if (this.mode !== 'builder') {
@@ -113,7 +113,7 @@ export default {
       </div>
       <div class="form-row"><label for="run-sampleMode">股票范围</label>
         <select id="run-sampleMode" v-model="sampleChoice" @change="selectSample" :aria-invalid="String(errorKey==='sampleMode')" :aria-describedby="errorKey==='sampleMode' ? 'runConfigError' : undefined">
-          <option value="all">全部沪深主板</option><option value="random">随机样本</option><option value="codes">指定代码</option>
+          <option value="all">全部沪深主板</option><option value="all_stocks">全部股票</option><option value="random">随机样本</option><option value="codes">指定代码</option>
           <optgroup label="红利参考股">
             <option value="dividend">红利参考股（20只）</option>
             <option v-for="s in dividendStocks" :key="s.code" :value="s.code">{{ s.code.slice(2) }} {{ s.name }}</option>

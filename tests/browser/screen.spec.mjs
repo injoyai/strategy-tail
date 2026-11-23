@@ -13,6 +13,7 @@ test('配置多套策略、合并命中、按策略查看并保留配置', async
   await expect(library.locator('input')).toHaveCount(0);
   await expect(library.getByRole('button', {name: /^(运行|已启用|未启用)/})).toHaveCount(0);
   await expect(library.getByRole('button', {name: '立即选股'})).toBeEnabled();
+  await expect(library.getByRole('button', {name: '下载提醒工具'})).toBeVisible();
 
   // Keep the actual service for config writes. The browser fixture has no market
   // attached, so inject two synthetic hits for the results presentation.
@@ -232,7 +233,7 @@ for (const width of [1440, 390]) {
 }
 
 for (const width of [1440, 390]) {
-  test(`卖点提醒浮层不移动正文，支持关闭、重开及查看 K 线（${width}px）`, async ({page}) => {
+  test(`卖点提醒浮层不移动正文，支持关闭、重开及点击代码查看 K 线（${width}px）`, async ({page}) => {
     await page.setViewportSize({width, height: 844});
     const strategy = {id: 'macd-premium', name: 'MACD精选'};
     const signal = {code: 'sh600000', name: '浦发银行', strategy: strategy.id,
@@ -293,24 +294,15 @@ for (const width of [1440, 390]) {
     await expect(trigger).toBeFocused();
     await expect(page).toHaveURL(/tab=trades$/);
     await trigger.press('Enter');
-    await notices.getByRole('button',{name:'查看K线'}).click();
-    const diagnosis = page.getByRole('dialog');
-    await expect(diagnosis.locator('.screen-kline canvas').first()).toBeVisible();
+    await expect(notices.getByRole('button', {name: '查看K线'})).toHaveCount(0);
+    await expect(notices.locator('button.stock-chart-button')).toHaveCount(1);
     socket.send(message(2));
     await expect(trigger).toHaveText('卖点提醒（2）');
-    await expect(diagnosis).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(notices).toBeHidden();
-    await expect(trigger).toBeFocused();
-    await expect(page.getByRole('tab',{name:'当日卖点'})).toHaveAttribute('aria-selected','true');
-    await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
-    await trigger.press('Enter');
     await expect(notices.getByRole('listitem')).toHaveCount(2);
     await notices.getByRole('button', {name: '清除提醒'}).click();
     await expect(notices).toBeHidden();
     await expect(trigger).toHaveCount(0);
     await expect(heading).toBeFocused();
-    await expect(page.locator('.screen-signal-table')).toContainText('本地交易');
   });
 }
 
