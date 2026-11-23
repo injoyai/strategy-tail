@@ -96,6 +96,12 @@ type accountMinutes struct {
 	days map[string]protocol.Klines
 }
 
+// loadedYear 为账户回测收集阶段的一只股票单年数据，按年份排序后拼接。
+type loadedYear struct {
+	year int
+	data researchrun.YearData
+}
+
 // runAccountBacktest 将信号和成交分开执行，账户在每日收盘估值。
 // 复用 Buyer/Seller 和 Cost；不会把逐笔结果排序后冒充资金约束回测。
 // contexts 按变体顺序提供原因记录上下文（可变参，缺省即不记录）；
@@ -162,6 +168,7 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 	codes = unique
 	result.Coverage.Requested = len(codes)
 	data := map[string]extend.Klines{}
+	loaded := map[string][]loadedYear{}
 	var mu sync.Mutex
 	loadCfg := cfg
 	loadCfg.Codes, loadCfg.Years, loadCfg.DataMode = codes, years, researchrun.DailyClose
@@ -169,25 +176,33 @@ func runAccountBacktest(ctx context.Context, cfg researchrun.Config, account Acc
 		cfg.OnCodeDone(researchrun.Progress{Phase: "loading", Total: len(codes)})
 	}
 	loadCfg.OnCodeDone = func(p researchrun.Progress) {
-		if p.Failure != nil {
-			result.Coverage.Failures = append(result.Coverage.Failures, *p.Failure)
-		}
 		if cfg.OnCodeDone != nil {
 			p.Phase = "loading"
 			cfg.OnCodeDone(p)
 		}
 	}
-	err = researchrun.ForEachCodeData(ctx, loadCfg, func(code string, datas []researchrun.YearData) {
-		full := append(extend.Klines(nil), datas[0].His...)
-		for _, d := range datas {
-			full = append(full, d.Dks...)
-		}
+	yearCoverage, err := researchrun.ForEachCodeYearData(ctx, loadCfg, func(code string, year int, d researchrun.YearData) {
 		mu.Lock()
-		data[code] = full
+		loaded[code] = append(loaded[code], loadedYear{year: year, data: d})
 		mu.Unlock()
 	})
 	if err != nil {
 		return result, nil, nil, nil, nil, err
+	}
+	result.Coverage.Failures = append(result.Coverage.Failures, yearCoverage.Failures...)
+	// 某年正常查询但没有行情时只跳过该年，其余有效年份仍参与回测。
+	// 预热只取最早有效年份的一份历史，避免逐年 His 追加造成重复日线。
+	for _, code := range codes {
+		yearsData := loaded[code]
+		if len(yearsData) == 0 {
+			continue
+		}
+		sort.Slice(yearsData, func(i, j int) bool { return yearsData[i].year < yearsData[j].year })
+		full := append(extend.Klines(nil), yearsData[0].data.His...)
+		for _, d := range yearsData {
+			full = append(full, d.data.Dks...)
+		}
+		data[code] = full
 	}
 	for _, code := range codes {
 		ks, ok := data[code]

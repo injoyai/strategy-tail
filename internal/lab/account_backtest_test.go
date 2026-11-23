@@ -102,6 +102,98 @@ func TestAccountCloseSignalBuysAtNextOpen(t *testing.T) {
 	nearAccount(t, accounts[0].Points[0].Cash, 100000)
 }
 
+// TestAccountBacktestKeepsEarlyYearWhenLaterYearEmpty 后续年份无行情时，
+// 账户回测仍使用早年有效样本，且不重复拼接预热日线。
+func TestAccountBacktestKeepsEarlyYearWhenLaterYearEmpty(t *testing.T) {
+	dates := []string{"2024-01-02", "2024-01-03", "2024-01-04"}
+	cfg := accountTestConfig(map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101, 102),
+		"sh600001": accountBars(dates, 10, 10.5, 11),
+	}, accountBuyer{onlyDate: dates[1]}, accountNeverSell{})
+	cfg.Years = []int{2024, 2025}
+	r, _, _, _, loaded, err := runAccountBacktest(context.Background(), cfg, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Results[0].Trades) == 0 {
+		t.Fatal("2024 年有效样本应产生交易")
+	}
+	if r.Coverage.Completed != 1 || r.Coverage.Skipped != 0 {
+		t.Fatalf("2024 样本不得因 2025 无行情被排除: %+v", r.Coverage)
+	}
+	if len(r.Coverage.Failures) != 1 || r.Coverage.Failures[0].Year != 2025 ||
+		r.Coverage.Failures[0].Stage != "empty" {
+		t.Fatalf("空年份未披露: %+v", r.Coverage.Failures)
+	}
+	ks := loaded["sh600001"]
+	if len(ks) != len(dates) {
+		t.Fatalf("加载日线数 = %d, want %d", len(ks), len(dates))
+	}
+	for i := 1; i < len(ks); i++ {
+		if !ks[i].Time.After(ks[i-1].Time) {
+			t.Fatalf("日线重复或乱序: %v -> %v", ks[i-1].Time, ks[i].Time)
+		}
+	}
+}
+
+// TestAccountBacktestCrossYearKeepsPositionsAndStableTrades 多年数据只使用
+// 最早有效年份的预热，日线不重复；跨年持仓和现金连续；延长结束年份不得
+// 改写原区间内已发生的实际成交。
+func TestAccountBacktestCrossYearKeepsPositionsAndStableTrades(t *testing.T) {
+	dates := []string{
+		"2024-01-02", "2024-01-03", "2024-01-04",
+		"2025-01-02", "2025-01-03",
+	}
+	base := accountTestConfig(map[string]extend.Klines{
+		"sh000001": accountBars(dates, 100, 101, 102, 103, 104),
+		"sh600001": accountBars(dates, 10, 10.5, 11, 11.5, 12),
+	}, accountBuyer{onlyDate: dates[0]}, accountNeverSell{})
+	base.Years = []int{2024, 2025}
+	r, reports, _, _, loaded, err := runAccountBacktest(context.Background(), base, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ks := loaded["sh600001"]
+	if len(ks) != len(dates) {
+		t.Fatalf("多年加载日线数 = %d, want %d", len(ks), len(dates))
+	}
+	for i := 1; i < len(ks); i++ {
+		if !ks[i].Time.After(ks[i-1].Time) {
+			t.Fatalf("多年日线重复或乱序: %v -> %v", ks[i-1].Time, ks[i].Time)
+		}
+	}
+	points := reports[0].Points
+	if len(points) != len(dates) {
+		t.Fatalf("账户点数 = %d, want %d", len(points), len(dates))
+	}
+	for i := 1; i < len(points); i++ {
+		if points[i].Holdings != 1 {
+			t.Fatalf("%s 跨年持仓丢失: %+v", points[i].Date, points[i])
+		}
+	}
+	nearAccount(t, points[1].Cash, points[3].Cash)
+
+	// 原区间运行（只请求 2024）应产生同一笔实际买入；终点虚拟平仓不计入比较。
+	short := base
+	short.Years = []int{2024}
+	shortReport, _, _, _, _, err := runAccountBacktest(context.Background(), short, AccountConfig{100000, 5, 20000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actual := func(trades []core.Trade) []core.Trade {
+		var out []core.Trade
+		for _, trade := range trades {
+			if !trade.Virtual {
+				out = append(out, trade)
+			}
+		}
+		return out
+	}
+	if !reflect.DeepEqual(actual(r.Results[0].Trades), actual(shortReport.Results[0].Trades)) {
+		t.Fatalf("延长结束年份改写了原区间成交: %+v vs %+v", actual(r.Results[0].Trades), actual(shortReport.Results[0].Trades))
+	}
+}
+
 func TestAccountOpeningBuySkipsSuspensionAndLimit(t *testing.T) {
 	dates := []string{"2025-01-02", "2025-01-03", "2025-01-06"}
 	data := map[string]extend.Klines{

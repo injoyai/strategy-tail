@@ -215,3 +215,9 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - MySQL 并发写入死锁（2026-11-04）：并发迁移不同代码时，空范围 `DELETE ... time>=?` 的间隙锁与相邻代码的插入意向锁成环（Error 1213），首批 8 并发仅完成 9 个代码。修复：`mysqlDeleteTail` 先做不加锁的 `SELECT 1 ... LIMIT 1`，无匹配行直接跳过 DELETE；`mysqlRunTx` 对 1213/1205 最多重试 3 次（50/100ms 退避）。全量 3210 库复跑 0 失败，`pull` 包测试通过。
 - 旧分钟线迁移（2026-11-04）：`cmd/migrate-legacy-minute` + `lib/extend/legacy_minute_source.go` 读取旧 `min-kline/{code}/{code}-{year}.db`（`Kline` 表或 KLM1/KLM2 压缩块）。时间按东八区取 `YYYY-MM-DD HH:MM`，股票 `Volume`（手）×100 转股、指数保持原值，同分钟重复保留最后一条，负价格/非有限值丢弃；整库丢弃比例 >20% 判定历史压缩损坏，跳过且不写目标库。实测 27,124 文件 / 15.29 亿行，4 并发写入 1,528,456,176 行、耗时 6h42m（首轮 870,799,054 行后断连，续跑 657,657,122 行），`sh600000` 2024 年 58,322 行，`2024-01-02` 分钟成交量合计 22,066,700 股（与旧日线 220,667 手一致）。4 个无效文件为 `sh000001`/`sh000300` 的 2025–2026 指数库（2026-10-19 压缩时损坏），目标库无指数分钟数据。
 - 长事务断连（2026-11-04）：大批量写入数亿行后远程 MySQL 刷盘变慢，默认 `readTimeout=30s` 导致 4 条连接同时 `i/o timeout`（`invalid connection`），事务回滚但已提交文件完整。修复：`mysqlRetryable` 增加 `mysql.ErrInvalidConn`/`driver.ErrBadConn`（连接中断时事务已回滚，重放安全）；迁移工具 `-read-timeout` 默认 5 分钟。续跑判据改为「目标端首根与末根都存在」才跳过，避免对已完成部分删除重插。
+
+## 审查修复（2026-11-23）
+- **SDK 固定提交**：根目录 `tdx.rev` 记录兼容提交 `df1ef9f455b15544028585998e366dc921817a22`；`deploy.sh` 在依赖检查后、任何 Docker 操作前比较同级 `../tdx` 的 `rev-parse HEAD`，缺失目录或提交不一致时只提示期望/实际并退出，不得自动 checkout 或清理 SDK 工作区。SDK 升级需同步 `tdx.rev` 与 `tests/deploy_test.py`。
+- **整数 RSI 口径**：`lib/extend.Klines.RSI` 在完整窗口内只有上涨返回 100、只有下跌返回 0、完全横盘按整数约定返回 0，不能停留在初值或前一窗口；`strategies/sell.ARSI恢复` 等阈值策略依赖此口径。
+- **旧引擎盘中快照**：`core.Backtest.Do` 使用分钟数据的交易日，`today.Time`/`Unix` 对齐当前分钟；`Turnover` 以截至当前的累计成交量与流通股本重算，缺少股本时为 0，不能沿用日线全天换手率；`Last` 使用日线前收（零值时回退历史收盘），不能取当前分钟开盘价。原始日线切片不得被改写。
+- **正常空年份**：`researchrun.loadYear` 查询成功但目标年无行情返回 `Stage "empty"`，查询错误仍为 `day`/`minute` 等明确失败。`Run` 跳过空年份并保留同票其他年份，全空年份才计 Skipped 并披露原因；账户回测改用 `ForEachCodeYearData`，只取最早有效年份的一份 `His` 预热，再按年份拼接 `Dks`，`ForEachCodeData` 的整票全有或全无语义保持不变。

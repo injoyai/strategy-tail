@@ -52,7 +52,9 @@ type Config struct {
 	ForwardDays int
 }
 
-// Failure records why a requested code was excluded from all matrix results.
+// Failure records a code-year that could not contribute data: a loading error
+// excludes the whole code, while Stage "empty" means the query succeeded but
+// that year had no K-lines and other years of the same code may still run.
 type Failure struct {
 	Code    string `json:"code"`
 	Year    int    `json:"year"`
@@ -68,10 +70,10 @@ type Coverage struct {
 	Failures  []Failure `json:"failures"`
 }
 
-// YearCoverage披露逐“股票×年份”的加载结果。回测按整票判定，任一请求年份
-// 缺失即排除该票；因子分析要保留同一股票其他可用年份，因此需要这一层计数：
-// CompletedCodes 为至少有一个成功年份的股票数，SkippedCodeYears 为逐年缺失
-// 的代码年份数，Failures 携带每一次代码年份失败（Code/Year/Stage/Message）。
+// YearCoverage披露逐“股票×年份”的加载结果。CompletedCodes 为至少有一个
+// 成功年份的股票数，SkippedCodeYears 为逐年缺失的代码年份数（含正常空年份），
+// Failures 携带每一次代码年份失败（Code/Year/Stage/Message）。账户回测与因子
+// 分析使用这一层口径保留同一股票的其他可用年份。
 type YearCoverage struct {
 	RequestedCodes     int       `json:"requestedCodes"`
 	CompletedCodes     int       `json:"completedCodes"`
@@ -122,12 +124,14 @@ type codeResult struct {
 	code     string
 	trades   [][]core.Trade
 	failure  *Failure
+	empty    []Failure
 	panicErr error
 }
 
 // Run executes all variants against every requested code. A code is excluded
-// from every variant if any requested year cannot be loaded, matching the
-// previous command behavior while making the exclusion observable.
+// from every variant only when a requested year fails to load (query error,
+// invalid data or panic); a year that loads successfully with no K-lines is
+// recorded as an empty year and the remaining years still run.
 func Run(ctx context.Context, cfg Config) (Report, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -205,9 +209,11 @@ func Run(ctx context.Context, cfg Config) (Report, error) {
 		}
 		if result.failure != nil {
 			report.Coverage.Skipped++
+			report.Coverage.Failures = append(report.Coverage.Failures, result.empty...)
 			report.Coverage.Failures = append(report.Coverage.Failures, *result.failure)
 		} else {
 			report.Coverage.Completed++
+			report.Coverage.Failures = append(report.Coverage.Failures, result.empty...)
 			for i, trades := range result.trades {
 				report.Results[i].Trades = append(report.Results[i].Trades, trades...)
 			}
@@ -311,9 +317,9 @@ func ForEachCodeData(ctx context.Context, cfg Config, fn func(code string, datas
 }
 
 // ForEachCodeYearData 逐“股票×年份”加载数据，与 ForEachCodeData 的整票
-// 全有或全无语义不同：某年加载失败只记录该代码年份，继续处理同一股票的
-// 其他年份，因此 2018 年后上市的股票不会因为早期年份无数据而整体退出分析。
-// 回测继续使用 ForEachCodeData（整票一致性），不受本入口影响。
+// 全有或全无语义不同：某年加载失败或无行情只记录该代码年份，继续处理同一
+// 股票的其他年份，因此 2018 年后上市的股票不会因为早期年份无数据而整体退出
+// 分析。账户回测使用本入口保留跨年有效样本；ForEachCodeData 整票回调契约不变。
 //
 // fn 在 worker 协程并发执行，调用方须自行同步共享状态；His/Dks 与 provider
 // 返回的切片同源，fn 内修改可能污染 provider 缓存。取消任务时立即停止，
@@ -455,15 +461,28 @@ func validate(cfg Config) error {
 
 func runCode(ctx context.Context, cfg Config, code string) codeResult {
 	datas := make([]YearData, 0, len(cfg.Years))
+	empties := make([]Failure, 0)
 	for _, year := range cfg.Years {
 		if ctx.Err() != nil {
-			return codeResult{code: code}
+			return codeResult{code: code, empty: empties}
 		}
 		data, failure := loadYear(cfg, code, year)
 		if failure != nil {
-			return codeResult{code: code, failure: failure}
+			if isEmptyYear(failure) {
+				empties = append(empties, *failure)
+				continue
+			}
+			return codeResult{code: code, failure: failure, empty: empties}
 		}
 		datas = append(datas, data)
+	}
+	if len(datas) == 0 {
+		var failure *Failure
+		if len(empties) > 0 {
+			failure = &empties[0]
+			empties = empties[1:]
+		}
+		return codeResult{code: code, failure: failure, empty: empties}
 	}
 
 	variantTrades := make([][]core.Trade, len(cfg.Variants))
@@ -489,7 +508,7 @@ func runCode(ctx context.Context, cfg Config, code string) codeResult {
 			)...)
 		}
 	}
-	return codeResult{code: code, trades: variantTrades}
+	return codeResult{code: code, trades: variantTrades, empty: empties}
 }
 
 // runCodeSafe 在 worker 协程边界执行 runCode。策略回调（Buyer/Seller）或数据
@@ -595,7 +614,7 @@ func loadYear(cfg Config, code string, year int) (YearData, *Failure) {
 		return YearData{}, failure(code, year, "day", err.Error())
 	}
 	if len(all) == 0 {
-		return YearData{}, failure(code, year, "day", "no day K-line data")
+		return YearData{}, failure(code, year, failureStageEmpty, "no day K-line data in requested year")
 	}
 
 	split := -1
@@ -606,7 +625,7 @@ func loadYear(cfg Config, code string, year int) (YearData, *Failure) {
 		}
 	}
 	if split < 0 {
-		return YearData{}, failure(code, year, "period", "no K-line data in requested year")
+		return YearData{}, failure(code, year, failureStageEmpty, "no K-line data in requested year")
 	}
 
 	data := YearData{His: all[:split], Dks: all[split:]}
@@ -634,8 +653,16 @@ func loadYear(cfg Config, code string, year int) (YearData, *Failure) {
 	return data, nil
 }
 
+// failureStageEmpty 表示行情查询成功但目标年份没有有效数据；与查询错误的
+// Stage "day" 不同，调用方据此保留同票其他有效年份。
+const failureStageEmpty = "empty"
+
 func failure(code string, year int, stage, message string) *Failure {
 	return &Failure{Code: code, Year: year, Stage: stage, Message: message}
+}
+
+func isEmptyYear(f *Failure) bool {
+	return f != nil && f.Stage == failureStageEmpty
 }
 
 // cloneKlines isolates market data between variants and strategy callbacks.

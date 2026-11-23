@@ -331,12 +331,138 @@ func klinesInYear(year int) extend.Klines {
 	return result
 }
 
+// TestRunKeepsValidYearsWhenOtherYearEmpty 后续年份查询成功但无行情时，
+// 不得排除该股票早年的有效样本；空年份仍以 Stage "empty" 披露。
+func TestRunKeepsValidYearsWhenOtherYearEmpty(t *testing.T) {
+	store := &dayStore{all: klinesInYear(2024)}
+	report, err := Run(context.Background(), Config{
+		Codes:         []string{"sh600000"},
+		Years:         []int{2024, 2025},
+		Variants:      []Variant{{Name: "test", Buyer: alwaysBuyer{}}},
+		DefaultSeller: nextDaySeller{},
+		Position:      core.DefaultPositionConfig(),
+		Workers:       1,
+		DataMode:      DailyClose,
+		GetDayKlines:  store.get,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Coverage.Completed != 1 || report.Coverage.Skipped != 0 {
+		t.Fatalf("2024 有效样本必须保留: %+v", report.Coverage)
+	}
+	if len(report.Results[0].Trades) == 0 {
+		t.Fatal("2024 年应产生交易")
+	}
+	if len(report.Coverage.Failures) != 1 || report.Coverage.Failures[0].Year != 2025 ||
+		report.Coverage.Failures[0].Stage != "empty" {
+		t.Fatalf("空年份未按 empty 披露: %+v", report.Coverage.Failures)
+	}
+}
+
+// TestRunAllEmptyYearsHasNoTradesAndKeepsReason 全部请求年份无行情时不创建
+// 可交易数据，股票被跳过但原因可见。
+func TestRunAllEmptyYearsHasNoTradesAndKeepsReason(t *testing.T) {
+	report, err := Run(context.Background(), Config{
+		Codes:         []string{"sh600000"},
+		Years:         []int{2024, 2025},
+		Variants:      []Variant{{Name: "test", Buyer: alwaysBuyer{}}},
+		DefaultSeller: nextDaySeller{},
+		Position:      core.DefaultPositionConfig(),
+		Workers:       1,
+		DataMode:      DailyClose,
+		GetDayKlines: func(string, time.Time, time.Time) (extend.Klines, error) {
+			return nil, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Coverage.Completed != 0 || report.Coverage.Skipped != 1 {
+		t.Fatalf("全空年份应跳过该股票: %+v", report.Coverage)
+	}
+	if len(report.Results[0].Trades) != 0 {
+		t.Fatalf("空年份不得产生交易: %+v", report.Results[0].Trades)
+	}
+	if len(report.Coverage.Failures) != 2 {
+		t.Fatalf("应披露两个空年份: %+v", report.Coverage.Failures)
+	}
+	for _, f := range report.Coverage.Failures {
+		if f.Stage != "empty" {
+			t.Fatalf("空年份 Stage 应为 empty: %+v", f)
+		}
+	}
+}
+
+// TestRunKeepsYearsAroundEmptyMiddleYear 中间年份为空、后续恢复行情时，
+// 前后有效年份都保留，且不填充缺口。
+func TestRunKeepsYearsAroundEmptyMiddleYear(t *testing.T) {
+	all := append(klinesInYear(2024), klinesInYear(2026)...)
+	store := &dayStore{all: all}
+	report, err := Run(context.Background(), Config{
+		Codes:         []string{"sh600000"},
+		Years:         []int{2024, 2025, 2026},
+		Variants:      []Variant{{Name: "test", Buyer: alwaysBuyer{}}},
+		DefaultSeller: nextDaySeller{},
+		Position:      core.DefaultPositionConfig(),
+		Workers:       1,
+		DataMode:      DailyClose,
+		GetDayKlines:  store.get,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Coverage.Completed != 1 || report.Coverage.Skipped != 0 {
+		t.Fatalf("前后有效年份必须保留: %+v", report.Coverage)
+	}
+	if len(report.Coverage.Failures) != 1 || report.Coverage.Failures[0].Year != 2025 ||
+		report.Coverage.Failures[0].Stage != "empty" {
+		t.Fatalf("空中间年份未披露: %+v", report.Coverage.Failures)
+	}
+	years := map[int]bool{}
+	for _, trade := range report.Results[0].Trades {
+		years[trade.BuyTime.Year()] = true
+	}
+	if !years[2024] || !years[2026] || years[2025] {
+		t.Fatalf("交易年份不符: %+v", years)
+	}
+}
+
+// TestRunKeepsLaterYearWhenEarlierYearEmpty 早期请求年份无行情时，
+// 后续年份仍参与，预热不足按策略原有规则处理。
+func TestRunKeepsLaterYearWhenEarlierYearEmpty(t *testing.T) {
+	store := &dayStore{all: klinesInYear(2025)}
+	report, err := Run(context.Background(), Config{
+		Codes:         []string{"sh600000"},
+		Years:         []int{2024, 2025},
+		Variants:      []Variant{{Name: "test", Buyer: alwaysBuyer{}}},
+		DefaultSeller: nextDaySeller{},
+		Position:      core.DefaultPositionConfig(),
+		Workers:       1,
+		DataMode:      DailyClose,
+		GetDayKlines:  store.get,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Coverage.Completed != 1 || report.Coverage.Skipped != 0 {
+		t.Fatalf("2025 年有效样本必须保留: %+v", report.Coverage)
+	}
+	if len(report.Results[0].Trades) == 0 {
+		t.Fatal("2025 年应产生交易")
+	}
+	if len(report.Coverage.Failures) != 1 || report.Coverage.Failures[0].Year != 2024 ||
+		report.Coverage.Failures[0].Stage != "empty" {
+		t.Fatalf("2024 空年份未披露: %+v", report.Coverage.Failures)
+	}
+}
+
 // TestForEachCodeYearDataKeepsPartialYears 单年缺失不得作废该股票其他年份：
-// 缺失年份进入失败明细与 SkippedCodeYears，成功年份照常回调。
+// 空年份进入失败明细与 SkippedCodeYears，成功年份照常回调。
 func TestForEachCodeYearDataKeepsPartialYears(t *testing.T) {
 	day := func(_ string, _, end time.Time) (extend.Klines, error) {
 		if end.Year() != 2024 {
-			return nil, nil // 2023 年无数据 → loadYear 报 no day K-line data
+			return nil, nil // 2023 年查询成功但无数据 → Stage "empty"
 		}
 		return klinesInYear(2024), nil
 	}
@@ -373,7 +499,7 @@ func TestForEachCodeYearDataKeepsPartialYears(t *testing.T) {
 		t.Fatalf("unexpected code-year coverage: %+v", coverage)
 	}
 	if len(coverage.Failures) != 1 || coverage.Failures[0].Code != "sh600000" ||
-		coverage.Failures[0].Year != 2023 || coverage.Failures[0].Stage != "day" {
+		coverage.Failures[0].Year != 2023 || coverage.Failures[0].Stage != "empty" {
 		t.Fatalf("unexpected failures: %+v", coverage.Failures)
 	}
 	// 部分年份成功时该票仍算完成，进度不得报整票失败
