@@ -2,6 +2,7 @@ package lab
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -358,6 +359,30 @@ func TestBuilderStoreCRUD(t *testing.T) {
 	}
 }
 
+// TestBuilderStoreDelete 删除策略文件；非法或不存在 ID 统一返回 NotFound 语义。
+func TestBuilderStoreDelete(t *testing.T) {
+	st := NewBuilderStore(t.TempDir())
+	created, err := st.Create(baseSpec())
+	if err != nil {
+		t.Fatalf("创建失败: %v", err)
+	}
+	if err := st.Delete(created.ID); err != nil {
+		t.Fatalf("删除失败: %v", err)
+	}
+	if _, err := st.Get(created.ID); !errors.Is(err, errBuilderNotFound) {
+		t.Fatalf("删除后读取应返回 NotFound: %v", err)
+	}
+	if err := st.Delete(created.ID); !errors.Is(err, errBuilderNotFound) {
+		t.Fatalf("重复删除应返回 NotFound: %v", err)
+	}
+	if err := st.Delete("../../etc/passwd"); !errors.Is(err, errBuilderNotFound) {
+		t.Fatalf("非法 ID 删除应返回 NotFound: %v", err)
+	}
+	if list, err := st.List(); err != nil || len(list) != 0 {
+		t.Fatalf("删除后列表应为空: %v %d", err, len(list))
+	}
+}
+
 // TestBuilderStoreFailClosed 损坏文件与未知版本 fail closed。
 func TestBuilderStoreFailClosed(t *testing.T) {
 	root := t.TempDir()
@@ -459,6 +484,11 @@ func TestBuilderAPI(t *testing.T) {
 	if len(list.Strategies) != 2 {
 		t.Fatalf("策略库应含 2 条: %d", len(list.Strategies))
 	}
+
+	// 删除：成功后读取与再次删除均为 404
+	doReq(t, h, http.MethodDelete, "/api/builder/strategies/"+id, nil, http.StatusOK)
+	doReq(t, h, http.MethodGet, "/api/builder/strategies/"+id, nil, http.StatusNotFound)
+	doReq(t, h, http.MethodDelete, "/api/builder/strategies/"+id, nil, http.StatusNotFound)
 
 	// run 校验：风控组件放进策略卖出信号树 → 400
 	bad := baseSpec()

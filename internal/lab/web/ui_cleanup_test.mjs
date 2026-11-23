@@ -101,7 +101,7 @@ function navigationContext() {
 
 test('左侧各组页签始终在自己的主入口下，只选中当前页', () => {
   const ctx = navigationContext();
-  assert.deepEqual(ctx.groups.map(g => g.title), ['数据看板', '策略回测', '因子研究', '指数研究', '盘感练习', '选股策略']);
+  assert.deepEqual(ctx.groups.map(g => g.title), ['数据看板', '策略回测', '策略库', '因子研究', '指数研究', '盘感练习', '选股策略']);
   assert.deepEqual(ctx.groups.flatMap(g => g.tabs).sort((a, b) => a - b), constants.TABS.map(t => t.n));
   const previous = state.activeTab;
   try {

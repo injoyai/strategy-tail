@@ -72,6 +72,7 @@ export const Api = {
   createBuilderStrategy: spec => api('POST', '/api/builder/strategies', {spec}),
   updateBuilderStrategy: (id, spec, expectedVersion) =>
     api('PUT', '/api/builder/strategies/' + encodeURIComponent(id), {spec, expectedVersion}),
+  deleteBuilderStrategy: id => api('DELETE', '/api/builder/strategies/' + encodeURIComponent(id)),
   runBuilder: cfg => api('POST', '/api/builder/run', cfg),
   // 候选因子
   candidates: includeArchived => api('GET', '/api/factor-candidates' + (includeArchived ? '?includeArchived=true' : '')),

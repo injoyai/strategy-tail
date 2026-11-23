@@ -19,6 +19,7 @@ import Tab5Candidates from './components/Tab5Candidates.js';
 import Tab6Portfolio from './components/Tab6Portfolio.js';
 import Tab7Practice from './components/Tab7Training.js';
 import Tab8Screen from './components/Tab8Screen.js';
+import StrategyLibrary from './components/StrategyLibrary.js';
 import IndexResearch from './components/IndexResearch.js';
 import MarketDashboard from './components/MarketDashboard.js';
 import CandidateSaveDlg from './components/CandidateSaveDlg.js';
@@ -34,7 +35,7 @@ const App = {
   name: 'App',
   components: {
     Tab1Run, DataUpdate, RunConfigDlg, Tab2Compare, Tab3Trades, Tab4Factor, Tab5Candidates, Tab6Portfolio,
-    Tab7Practice, Tab8Screen, IndexResearch, MarketDashboard, StockChartDialog,
+    Tab7Practice, Tab8Screen, IndexResearch, MarketDashboard, StockChartDialog, StrategyLibrary,
     CandidateSaveDlg, CandidateEditDlg, CandidateEvidenceDlg, FactorValidationDlg, PfExperimentDlg, PfValidationDlg,
   },
   data() {
@@ -447,6 +448,7 @@ const App = {
     <tab1-run v-if="t.n === 1" />
     <tab2-compare v-if="t.n === 2" />
     <tab3-trades v-if="t.n === 3" />
+    <strategy-library v-if="t.n === 11" />
     <tab4-factor v-if="t.n === 4" />
     <tab5-candidates v-if="t.n === 5" />
     <tab6-portfolio :ref="el => setTaskRef('tab6', el)" v-if="t.n === 6" />

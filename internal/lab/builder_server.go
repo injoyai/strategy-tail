@@ -16,6 +16,7 @@ import (
 //	POST /api/builder/strategies              创建策略（201）
 //	GET  /api/builder/strategies/{id}         读取策略
 //	PUT  /api/builder/strategies/{id}         覆盖保存（expectedVersion 冲突 409）
+//	DELETE /api/builder/strategies/{id}       删除策略（不可恢复）
 //	POST /api/builder/run                     启动搭建器回测（请求问题 400，任务互斥 409）
 
 // builderDataDir 策略库存储目录（沿用 data/lab/* 布局，相对工作目录解析）。
@@ -107,6 +108,22 @@ func (s *Server) handleBuilderUpdateStrategy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, map[string]any{"strategy": st})
+}
+
+// handleBuilderDeleteStrategy 删除策略：删除后不可恢复，仅接受同源请求。
+func (s *Server) handleBuilderDeleteStrategy(w http.ResponseWriter, r *http.Request) {
+	if !requireSameOrigin(w, r) {
+		return
+	}
+	if err := s.builderStore.Delete(r.PathValue("id")); err != nil {
+		if errors.Is(err, errBuilderNotFound) {
+			writeErr(w, http.StatusNotFound, "策略不存在")
+			return
+		}
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, map[string]any{"ok": true})
 }
 
 // handleBuilderRun 启动搭建器回测：条件树校验（mode=run）→ 构建买入变体

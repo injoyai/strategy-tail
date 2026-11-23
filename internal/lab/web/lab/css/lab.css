@@ -99,9 +99,9 @@ button.danger:active{transform:translateY(0)}
 .msg:empty{display:none}.msg.ok{color:var(--ok)}.msg.err{color:#ff8080}
 .form-row{display:flex;gap:9px;align-items:center;margin-bottom:11px;flex-wrap:wrap}
 .form-row label{width:88px;font-size:12px;color:var(--muted);flex-shrink:0;font-weight:600;letter-spacing:.03em}
-:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor) :is(input,select){min-width:0;height:36px;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:0 10px;font-size:13px;background:rgba(255,255,255,.045);color:var(--ink);transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease}
-:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor) :is(input,select):hover{border-color:rgba(255,255,255,.24)}
-:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor) :is(input,select):focus{background:rgba(255,255,255,.07)}
+:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor,.strategy-library-tools) :is(input,select){min-width:0;height:36px;border:1px solid var(--rule2);border-radius:var(--control-radius);padding:0 10px;font-size:13px;background:rgba(255,255,255,.045);color:var(--ink);transition:border-color .16s ease,box-shadow .16s ease,background-color .16s ease}
+:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor,.strategy-library-tools) :is(input,select):hover{border-color:rgba(255,255,255,.24)}
+:is(.form-row,.filters,.bnode,.screen-stock-lookup,.screen-results,.screen-editor,.strategy-library-tools) :is(input,select):focus{background:rgba(255,255,255,.07)}
 .form-row input,.form-row select{flex:1}
 .form-row input[type=checkbox]{flex:none;width:16px;height:16px;accent-color:var(--gold);box-shadow:none}
 .index-research-controls,.index-research-result{padding:14px 16px}
@@ -1067,4 +1067,25 @@ dialog .dlg-close:hover{color:#fff;background:rgba(255,255,255,.06)}
   .market-distribution {grid-template-columns:repeat(4,minmax(0,1fr));row-gap:20px}
   .market-table-wrap :is(td, th) {padding-inline:4px}
   .market-rank-scroll thead th:first-child {width:2.5em}
+}
+
+/* ===== 11 策略库（复用 .card/.empty/.msg/.builder-field-error） ===== */
+.strategy-library{display:flex;flex-direction:column;gap:10px}
+.strategy-library-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.strategy-library-tools label{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.03em}
+.strategy-library-tools input{flex:1 1 220px;max-width:340px}
+.strategy-library-tools .hint{margin:0}
+.strategy-library-table-wrap{max-height:calc(100dvh - 260px);overflow:auto;border:1px solid var(--rule);border-radius:12px;background:rgba(0,0,0,.18)}
+.strategy-library-table th,.strategy-library-table td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+.strategy-library-table th{position:sticky;top:0;z-index:1;background:var(--surface);color:var(--ink2);font-weight:500}
+.strategy-library-table tr:last-child td{border-bottom:0}
+.strategy-library-table tr.is-busy{opacity:.55}
+.strategy-library-name{display:block;color:var(--ink);font-weight:600;overflow-wrap:anywhere}
+.strategy-library-id{display:block;margin-top:2px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.strategy-library-actions{display:flex;gap:6px;flex-wrap:wrap}
+.strategy-library-actions button{min-height:30px;padding:4px 10px}
+.strategy-library .msg{margin-top:0}
+@media(max-width:600px){
+  .strategy-library-tools input{max-width:none}
+  .strategy-library-table-wrap{max-height:none}
 }

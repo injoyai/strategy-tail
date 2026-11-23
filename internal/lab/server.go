@@ -47,6 +47,7 @@ import (
 //	GET      /api/builder/components 搭建器组件目录（可运行 + 不可用及原因）
 //	GET/POST /api/builder/strategies 策略库列表 / 新建（201）
 //	GET/PUT  /api/builder/strategies/{id} 读取 / 覆盖保存（expectedVersion 冲突 409）
+//	DELETE   /api/builder/strategies/{id} 删除策略（不可恢复）
 //	POST     /api/builder/run 启动搭建器回测（请求问题 400，任务互斥 409）
 
 // Server lab 服务。
@@ -194,6 +195,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/builder/strategies", s.handleBuilderCreateStrategy)
 	s.mux.HandleFunc("GET /api/builder/strategies/{id}", s.handleBuilderGetStrategy)
 	s.mux.HandleFunc("PUT /api/builder/strategies/{id}", s.handleBuilderUpdateStrategy)
+	s.mux.HandleFunc("DELETE /api/builder/strategies/{id}", s.handleBuilderDeleteStrategy)
 	s.mux.HandleFunc("POST /api/builder/run", s.handleBuilderRun)
 
 	// 盘感练习（实施文档 §4）。写端点已在 handler 内校验同源。

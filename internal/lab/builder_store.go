@@ -191,6 +191,26 @@ func (s *BuilderStore) Create(spec BuilderSpec) (*BuilderStrategy, error) {
 	return st, nil
 }
 
+// Delete 删除策略文件；不存在返回 errBuilderNotFound（删除不可恢复）。
+func (s *BuilderStore) Delete(id string) error {
+	if !builderStrategyIDRe.MatchString(id) {
+		return fmt.Errorf("%w（非法策略 ID）", errBuilderNotFound)
+	}
+	p, err := s.strategyPath(id)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := os.Remove(p); err != nil {
+		if os.IsNotExist(err) {
+			return errBuilderNotFound
+		}
+		return err
+	}
+	return nil
+}
+
 // Update 覆盖保存已有策略：expectedVersion 不匹配时拒绝（多页编辑不得悄悄覆盖新版本）。
 func (s *BuilderStore) Update(id string, spec BuilderSpec, expectedVersion int) (*BuilderStrategy, error) {
 	if err := spec.Validate("save"); err != nil {
