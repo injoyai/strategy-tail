@@ -97,7 +97,7 @@ macOS / Linux：
 
 - `deploy.sh` 在构建前和切换前检查 `/api/status`。回测运行中或状态不可读时停止部署。切换时停止并重命名旧容器为 `strategy-lab-previous-<时间>-<进程号>`，保留原数据挂载。新容器通过组件接口及 `/api/market-data/status` 的 MySQL 读取检查后就绪，启动失败或 30 秒内未就绪时恢复旧容器。旧容器和失败容器保留，不自动清理。部署期间请勿启动新任务。
 - `deploy.sh` 默认绑定 `0.0.0.0`，绑定地址可通过 `BIND` 覆盖。
-- `--verify` 在构建前运行 Go 测试、`go vet`、前端单测和部署替身回归，需要本机有 Go 和 Node.js。`./deploy.sh` 可直接构建。构建记录 Lab 和同级 TDX 的提交号及工作区修改标记，容器以本次构建的镜像 ID 启动。
+- `--verify` 在构建前运行 Go 测试、`go vet`、前端单测和部署替身回归，需要本机有 Go 和 Node.js。`./deploy.sh` 可直接构建。构建前核对同级 TDX 的 HEAD 与根目录 `tdx.rev`，目录缺失或提交不一致时提示期望和实际提交并停止，不切换或清理 SDK 工作区。构建记录 Lab 和同级 TDX 的提交号及工作区修改标记，容器以本次构建的镜像 ID 启动。
 - Docker 默认映射宿主机 `80` 到容器 `8765`，本机访问 `http://localhost/`；可用 `PORT=8765 ./deploy.sh` 指定其他宿主机端口。本地 `go run ./cmd/lab` 仍默认使用 8765。
 - `./data`、`./output` 与 `./config`（只读）通过卷挂载进容器，容器重建后数据不丢。
 
@@ -182,7 +182,7 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 ```bash
 node --test internal/lab/web/*.mjs
 python3 tests/deploy_test.py
-# macOS / Linux，Go 1.25.4+；同级 ../tdx 必须是配套的 tdx/v2 工作区
+# macOS / Linux，Go 1.25.4+；同级 ../tdx 必须是 tdx.rev 记录的 tdx/v2 工作区
 TZ=Asia/Shanghai go test ./internal/lab/... ./strategies/buy ./strategies/sell ./internal/researchrun
 go build ./...
 go vet ./internal/lab/...
@@ -301,7 +301,15 @@ git diff --check
 
 ### 本地 tdx v2 依赖
 
-当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值。历史策略均线精度变化见 [tdx v2 迁移记录](docs/guides/tdx-v2-migration.md)。
+当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。兼容提交记录在根目录 [tdx.rev](tdx.rev)，当前为 `df1ef9f455b15544028585998e366dc921817a22`。首次准备或切换 SDK 后执行：
+
+```bash
+git -C ../tdx rev-parse HEAD        # 应与 tdx.rev 一致
+git -C ../tdx checkout df1ef9f455b15544028585998e366dc921817a22
+go list -m github.com/injoyai/tdx/v2
+```
+
+`./deploy.sh` 在构建前自动核对同一提交；SDK 升级时同步更新 `tdx.rev` 并运行相关回归测试。价格与金额使用浮点元值。历史策略均线精度变化见 [tdx v2 迁移记录](docs/guides/tdx-v2-migration.md)。
 
 `./deploy.sh` 会将本地 SDK 作为 Docker 命名构建上下文传入；手动构建使用 `docker build --build-context tdx=../tdx -t strategy-lab .`。
 
