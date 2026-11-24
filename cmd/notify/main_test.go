@@ -74,19 +74,19 @@ func TestSaleEventTextWithoutName(t *testing.T) {
 
 func TestCursorRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "cursor")
-	if got := readCursor(path); got != 0 {
+	if got, _ := readServerCursor(path, "http://a"); got != 0 {
 		t.Fatalf("文件不存在时 readCursor = %d，期望 0", got)
 	}
-	if err := writeCursor(path, 123); err != nil {
+	if err := writeServerCursor(path, "http://a", 123); err != nil {
 		t.Fatalf("writeCursor 失败: %v", err)
 	}
-	if got := readCursor(path); got != 123 {
+	if got, _ := readServerCursor(path, "http://a"); got != 123 {
 		t.Fatalf("readCursor = %d，期望 123", got)
 	}
-	if err := writeCursor(path, 456); err != nil {
+	if err := writeServerCursor(path, "http://a", 456); err != nil {
 		t.Fatalf("覆盖写入失败: %v", err)
 	}
-	if got := readCursor(path); got != 456 {
+	if got, _ := readServerCursor(path, "http://a"); got != 456 {
 		t.Fatalf("覆盖后 readCursor = %d，期望 456", got)
 	}
 }
@@ -117,7 +117,7 @@ func TestReadCursorInvalidContent(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not-a-number"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if got := readCursor(path); got != 0 {
+	if got, _ := readServerCursor(path, "http://a"); got != 0 {
 		t.Fatalf("非法内容时 readCursor = %d，期望 0", got)
 	}
 }

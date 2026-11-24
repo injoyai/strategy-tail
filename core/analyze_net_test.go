@@ -208,3 +208,24 @@ func TestAnalyzeCalmarInfiniteWithoutDrawdown(t *testing.T) {
 		t.Fatalf("无回撤且有正收益时 Calmar = %v, 期望 +Inf", r.Calmar)
 	}
 }
+
+func TestUnderwaterDepthIncludesCapital(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		profit        []float64
+		capital, want float64
+	}{
+		{"initial_loss", []float64{0, -100}, 1000, 10},
+		{"profit_then_loss", []float64{0, 100, -100}, 1000, 200.0 / 1100 * 100},
+		{"all_profit", []float64{0, 100, 200}, 1000, 0},
+		{"no_capital", []float64{0, -100}, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dates := make([]time.Time, len(tc.profit))
+			_, _, _, got := drawdownMetrics(tc.profit, dates, tc.capital)
+			if math.Abs(got-tc.want) > 1e-9 {
+				t.Fatalf("underwater=%v want %v", got, tc.want)
+			}
+		})
+	}
+}

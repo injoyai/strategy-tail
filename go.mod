@@ -2,9 +2,6 @@ module github.com/injoyai/strategy-tail
 
 go 1.25.4
 
-// Use the local v2 SDK; MySQL storage adapters live in this application.
-replace github.com/injoyai/tdx/v2 => ../tdx
-
 require (
 	github.com/fasthttp/websocket v1.5.12
 	github.com/glebarez/go-sqlite v1.22.0
@@ -13,7 +10,7 @@ require (
 	github.com/injoyai/conv v1.2.8
 	github.com/injoyai/goutil v1.2.34
 	github.com/injoyai/logs v1.0.12
-	github.com/injoyai/tdx/v2 v2.0.0
+	github.com/injoyai/tdx/v2 v2.0.0-beta.1.0.20261118112121-df1ef9f455b1
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/sys v0.46.0
 )

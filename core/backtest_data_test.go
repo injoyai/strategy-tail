@@ -67,9 +67,8 @@ func TestBacktestNilDataProvider(t *testing.T) {
 	}
 }
 
-// TestBacktestProviderErrorSkipsCode 行情读取失败逐票跳过（记录后继续），
-// nil 切片不算错误、不产生交易。
-func TestBacktestProviderErrorSkipsCode(t *testing.T) {
+// 行情读取错误应传播给调用方，避免把不完整数据计入年度结果。
+func TestBacktestProviderErrorPropagates(t *testing.T) {
 	providerErr := errors.New("missing db")
 	bt := Backtest{
 		Buyer:    dataBuyer{},
@@ -85,8 +84,8 @@ func TestBacktestProviderErrorSkipsCode(t *testing.T) {
 		Goroutines: 2,
 	}
 	trades, err := bt._backtest([]string{"bad", "good"}, 2024)
-	if err != nil {
-		t.Fatalf("单票读取失败不应使整年失败: %v", err)
+	if !errors.Is(err, providerErr) {
+		t.Fatalf("应返回读取错误: %v", err)
 	}
 	if len(trades) != 0 {
 		t.Fatalf("无数据不应产生交易: %d", len(trades))

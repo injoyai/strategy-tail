@@ -745,12 +745,14 @@ func (r *Runner) transformFactors(m portfolioresearch.FactorModel, data *portfol
 				return nil, errStopped
 			}
 			vals := data.values[key][date]
-			rows := make([]portfolioresearch.CrossSectionRow, 0, len(vals))
+			rows := make([]portfolioresearch.CrossSectionRow, 0, len(data.codes))
 			for _, code := range data.codes {
-				v, ok := vals[code]
-				if !ok || math.IsNaN(v) || math.IsInf(v, 0) {
+				// Missing factors can be filled only for stocks with a session bar.
+				if _, hasBar := data.close[date][code]; !hasBar {
 					continue
 				}
+				v, ok := vals[code]
+				valid := ok && !math.IsNaN(v) && !math.IsInf(v, 0)
 				tradable := true
 				if r.universe != nil {
 					day, _ := time.Parse(time.DateOnly, date)
@@ -761,7 +763,7 @@ func (r *Runner) transformFactors(m portfolioresearch.FactorModel, data *portfol
 					tradable = okMember
 				}
 				rows = append(rows, portfolioresearch.CrossSectionRow{
-					Date: date, Code: code, Value: v, Valid: true, Tradable: tradable,
+					Date: date, Code: code, Value: v, Valid: valid, Tradable: tradable,
 				})
 			}
 			if len(rows) == 0 {
@@ -868,6 +870,10 @@ func combinePortfolio(factors []portfolioresearch.FactorSeries, missing string, 
 func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[string]float64, data *portfolioRunData, dates []string, notional float64, stop chan struct{}, onDay func(done, total int)) ([]portfolioresearch.DailyLedger, map[string]portfolioresearch.TargetPortfolio, error) {
 	exec := m.Execution
 	policy := m.PortfolioPolicy
+	rebalanceDays, err := portfolioRebalanceDays(exec.Rebalance, dates)
+	if err != nil {
+		return nil, nil, err
+	}
 	state := portfolioresearch.PortfolioState{Cash: notional}
 	ledgers := make([]portfolioresearch.DailyLedger, 0, len(dates))
 	usedTargets := make(map[string]portfolioresearch.TargetPortfolio, len(dates))
@@ -881,8 +887,15 @@ func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[str
 		var signalScores map[string]float64
 		if i > 0 {
 			prev := dates[i-1]
-			target = targets[prev]
-			signalScores = scores[prev]
+			var scheduled bool
+			target, scheduled = targets[prev]
+			if scheduled {
+				signalScores = scores[prev]
+			} else {
+				// Expired orders are not retried on non-rebalance days. ExecuteDay
+				// can still carry pending buys when CarryUnfilled is enabled.
+				target = portfolioHoldingTarget(state, data.prevClose[date], prev)
+			}
 		}
 		ledger, next, err := portfolioresearch.ExecuteDay(state, portfolioresearch.DayInput{
 			Target: target,
@@ -900,9 +913,10 @@ func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[str
 		}
 
 		// 收盘后形成当日目标（供下一交易日执行；末日无需形成）。
-		if i == len(dates)-1 {
+		if i == len(dates)-1 || !rebalanceDays[date] {
 			continue
 		}
+		targets[date] = portfolioresearch.TargetPortfolio{Date: date}
 		scoresAt := scores[date]
 		if len(scoresAt) == 0 {
 			continue // 空选日：无目标 → 下一交易日空目标（全现金跳过）
@@ -935,6 +949,44 @@ func runPortfolioDays(m portfolioresearch.FactorModel, scores map[string]map[str
 		targets[date] = tgt
 	}
 	return ledgers, usedTargets, nil
+}
+
+// portfolioRebalanceDays selects the first observed signal session of each
+// ISO week or calendar month. The first session starts the requested simulation.
+func portfolioRebalanceDays(frequency string, dates []string) (map[string]bool, error) {
+	days := make(map[string]bool)
+	previousPeriod := ""
+	for _, date := range dates {
+		at, err := time.Parse(time.DateOnly, date)
+		if err != nil {
+			return nil, fmt.Errorf("调仓信号日期无效 %q: %w", date, err)
+		}
+		period := date
+		switch frequency {
+		case portfolioresearch.RebalanceWeekly:
+			year, week := at.ISOWeek()
+			period = fmt.Sprintf("%04d-%02d", year, week)
+		case portfolioresearch.RebalanceMonthly:
+			period = at.Format("2006-01")
+		}
+		if period != previousPeriod {
+			days[date] = true
+		}
+		previousPeriod = period
+	}
+	return days, nil
+}
+
+// portfolioHoldingTarget preserves actual shares while daily valuation and the
+// existing pending-buy policy continue through the common execution engine.
+func portfolioHoldingTarget(state portfolioresearch.PortfolioState, marks map[string]float64, date string) portfolioresearch.TargetPortfolio {
+	weights, cash := weightsFromState(state, marks)
+	shares := make(map[string]int)
+	for _, lot := range state.Lots {
+		shares[lot.Code] += lot.Shares
+	}
+	holdings := portfolioresearch.PortfolioWeights{Shares: shares, Weights: weights, Effective: weights, Cash: cash}
+	return portfolioresearch.TargetPortfolio{Date: date, Ideal: holdings, Constrained: holdings}
 }
 
 // dayMarketFor projects the daily bars to the opening execution model.

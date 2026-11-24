@@ -11,7 +11,7 @@ import (
 	"fyne.io/systray"
 )
 
-func runDesktop(ctx context.Context, cancel context.CancelFunc, cfg config, cursor int64) {
+func runDesktop(ctx context.Context, cancel context.CancelFunc, cfg config, server string, cursor int64) {
 	systray.Run(func() {
 		systray.SetIcon(trayIcon())
 		systray.SetTooltip("策略卖点提醒 · 连接中")
@@ -28,7 +28,7 @@ func runDesktop(ctx context.Context, cancel context.CancelFunc, cfg config, curs
 			status.SetTitle("状态：" + text)
 			systray.SetTooltip("策略卖点提醒 · " + text)
 		}
-		go run(ctx, cfg, cursor)
+		go run(ctx, cfg, server, cursor)
 		go func() {
 			for {
 				select {

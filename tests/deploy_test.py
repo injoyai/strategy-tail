@@ -51,18 +51,16 @@ def init_repo(path):
 
 
 class DeployTest(unittest.TestCase):
-    def scenario(self, case, bind=None, port=None, sdk='ok'):
+    def scenario(self, case, bind=None, port=None, sdk=True):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             app = root / 'app'
             app.mkdir()
             shutil.copy2(ROOT / 'deploy.sh', app / 'deploy.sh')
-            if sdk == 'missing':
-                sdk_rev = '0' * 40
-            else:
-                actual = init_repo(root / 'tdx')
-                sdk_rev = 'a' * 40 if sdk == 'mismatch' else actual
-            (app / 'tdx.rev').write_text(sdk_rev + '\n')
+            go_mod = 'module example.com/app\n'
+            if sdk:
+                go_mod += 'require (\n\tgithub.com/injoyai/tdx/v2 v2.0.1-beta.1\n)\n'
+            (app / 'go.mod').write_text(go_mod)
             init_repo(app)
             (root / 'docker').write_text(DOCKER)
             (root / 'sleep').write_text('#!/bin/sh\nexit 0\n')
@@ -95,12 +93,9 @@ class DeployTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(sum(call[0] == 'rename' for call in calls), 1)
         build = next(call for call in calls if call[0] == 'build')
-        self.assertIn('--build-context', build)
-        self.assertTrue(any(arg.startswith('tdx=') and
-                            os.path.normpath(arg[4:]) == os.path.normpath(str(root / 'tdx'))
-                            for arg in build))
+        self.assertNotIn('--build-context', build)
         self.assertTrue(any(arg.startswith('APP_REVISION=') for arg in build))
-        self.assertTrue(any(arg.startswith('TDX_REVISION=') for arg in build))
+        self.assertIn('TDX_REVISION=v2.0.1-beta.1', build)
         self.assertFalse(any(call[0] == 'rm' for call in calls))
         run = next(call for call in calls if call[0] == 'run')
         self.assertIn(str(root / 'app' / 'data') + ':/app/data', run)
@@ -135,16 +130,11 @@ class DeployTest(unittest.TestCase):
                 self.assertTrue(any(call[0] == 'rename' and call[1].startswith('strategy-lab-previous-') and call[2] == 'strategy-lab' for call in calls))
                 self.assertFalse(any(call[0] == 'rm' for call in calls))
 
-    def test_missing_or_mismatched_sdk_stops_before_build(self):
-        for sdk in ('missing', 'mismatch'):
-            with self.subTest(sdk=sdk):
-                code, calls, stderr, _ = self.scenario('success', sdk=sdk)
-                self.assertNotEqual(code, 0)
-                self.assertFalse(any(call[0] in ('build', 'stop', 'rename', 'run') for call in calls))
-                self.assertIn('相邻 SDK', stderr)
-                if sdk == 'mismatch':
-                    self.assertIn('期望', stderr)
-                    self.assertIn('实际', stderr)
+    def test_missing_sdk_version_stops_before_build(self):
+        code, calls, stderr, _ = self.scenario('success', sdk=False)
+        self.assertNotEqual(code, 0)
+        self.assertFalse(any(call[0] in ('build', 'stop', 'rename', 'run') for call in calls))
+        self.assertIn('go.mod 缺少 TDX SDK 版本', stderr)
 
 
 if __name__ == '__main__':

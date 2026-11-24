@@ -29,28 +29,6 @@ for dependency in docker python3 git; do
     fi
 done
 
-# 相邻 SDK 必须是 tdx.rev 记录的兼容提交。只核对和提示，不切换或清理 SDK 工作区。
-SDK_DIR="${ROOT}/../tdx"
-if [ ! -f "${ROOT}/tdx.rev" ]; then
-    echo "错误: 缺少 SDK 版本记录 ${ROOT}/tdx.rev" >&2
-    exit 1
-fi
-SDK_REV=$(tr -d '[:space:]' < "${ROOT}/tdx.rev")
-if [ -z "${SDK_REV}" ]; then
-    echo "错误: SDK 版本记录 ${ROOT}/tdx.rev 为空" >&2
-    exit 1
-fi
-if [ ! -d "${SDK_DIR}/.git" ]; then
-    echo "错误: 未找到相邻 SDK 目录 ${SDK_DIR}（期望提交 ${SDK_REV}）" >&2
-    exit 1
-fi
-SDK_ACTUAL=$(git -C "${SDK_DIR}" rev-parse HEAD)
-if [ "${SDK_ACTUAL}" != "${SDK_REV}" ]; then
-    echo "错误: 相邻 SDK 提交不匹配" >&2
-    echo "  期望: ${SDK_REV}（tdx.rev）" >&2
-    echo "  实际: ${SDK_ACTUAL}（${SDK_DIR}）" >&2
-    exit 1
-fi
 if docker container inspect "${CONTAINER}" >/dev/null 2>&1; then
     old_exists=1
     old_running=$(docker inspect --format '{{.State.Running}}' "${CONTAINER}")
@@ -96,11 +74,15 @@ repository_revision() {
     echo "${revision}"
 }
 APP_REVISION=$(repository_revision "${ROOT}")
-TDX_REVISION=$(repository_revision "${SDK_DIR}")
-image_tag="${IMAGE}:${APP_REVISION:0:12}-${TDX_REVISION:0:12}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+TDX_REVISION=$(awk '$1 == "github.com/injoyai/tdx/v2" { print $2 }' "${ROOT}/go.mod")
+if [ -z "${TDX_REVISION}" ]; then
+    echo "错误: go.mod 缺少 TDX SDK 版本" >&2
+    exit 1
+fi
+image_tag="${IMAGE}:${APP_REVISION:0:12}-${TDX_REVISION}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 image_receipt=$(mktemp)
 echo "==> 构建镜像 ${image_tag}（Lab ${APP_REVISION}，TDX ${TDX_REVISION}）"
-docker build --build-context "tdx=${SDK_DIR}" --iidfile "${image_receipt}" \
+docker build --iidfile "${image_receipt}" \
     --build-arg "APP_REVISION=${APP_REVISION}" --build-arg "TDX_REVISION=${TDX_REVISION}" -t "${image_tag}" "${ROOT}"
 image_id=$(cat "${image_receipt}")
 if [[ ! "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]]; then

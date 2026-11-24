@@ -76,10 +76,12 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 		var trainReturnSum, trainSharpeSum, trainWinRateSum float64
 		trainTradesTotal := 0
 		trainN := 0
+		trainFailed := false
 		for _, y := range trainWindow {
 			trades, err := bt._backtest(bt.Codes, y)
 			if err != nil {
-				continue
+				trainFailed = true
+				break
 			}
 			trainN++
 			ar := Analyze(y, trades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
@@ -89,7 +91,11 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 			trainTradesTotal += ar.TotalTrades
 		}
 
-		// 训练期指标取均值（分母为成功完成回测的年份数，失败年份不计入）
+		if trainFailed {
+			continue
+		}
+
+		// 数据读取失败的窗口已跳过；训练期按完整年份取均值。
 		trainReturn := 0.0
 		trainSharpe := 0.0
 		trainWinRate := 0.0
@@ -100,19 +106,15 @@ func WalkForward(bt Backtest, trainYears []int, testYears []int) []WalkForwardRe
 		}
 
 		// ---- 测试期回测（样本外）----
-		testReturn := 0.0
-		testSharpe := 0.0
-		testWinRate := 0.0
-		testTradesCount := 0
-
 		testTrades, err := bt._backtest(bt.Codes, testYear)
-		if err == nil {
-			ar := Analyze(testYear, testTrades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
-			testReturn = ar.AnnualReturn
-			testSharpe = ar.Sharpe
-			testWinRate = ar.WinRate
-			testTradesCount = ar.TotalTrades
+		if err != nil {
+			continue
 		}
+		ar := Analyze(testYear, testTrades, bt.GetDayKlines, nil, bt.Cost, bt.Position)
+		testReturn := ar.AnnualReturn
+		testSharpe := ar.Sharpe
+		testWinRate := ar.WinRate
+		testTradesCount := ar.TotalTrades
 
 		// ---- 过拟合得分 ----
 		// = 训练期年均收益 / 测试期年化收益

@@ -6,24 +6,14 @@
 
 ## 开发与构建
 
-目录需要保持同级：
-
-```text
-项目/
-  strategy-tail/
-  tdx/                 # module github.com/injoyai/tdx/v2
-```
-
-`go.work` 同时使用这两个模块；`go.mod` 的相对 `replace` 保证关闭工作区时也使用同一份本地 SDK。清单中的 `v2.0.0` 不代表已验证同名远程发布可用。当前构建依赖本地 SDK 的实际源码，单独复制 strategy-tail 不能构建。`github.com/injoyai/base` 使用包含并发回调修复的发布版 `v1.2.24`。
+当前构建由 `go.mod` 固定 GitHub 上的 SDK 版本，`go.sum` 记录模块校验和。`github.com/injoyai/base` 使用包含并发回调修复的发布版 `v1.2.24`。
 
 ```sh
 go list -m github.com/injoyai/tdx/v2
 TZ=Asia/Shanghai CGO_ENABLED=0 go test ./core ./lib/... ./strategies/... ./internal/... ./cmd/... ./researchdata/... .
 go vet . ./core/... ./lib/... ./strategies/... ./internal/... ./cmd/... ./researchdata/...
-docker build --build-context tdx=../tdx --build-arg GOPROXY=https://proxy.golang.org -t strategy-lab .
+docker build --build-arg GOPROXY=https://proxy.golang.org -t strategy-lab .
 ```
-
-`deploy.sh` 已传入命名构建上下文，但本次未执行部署。测试命令显式列出维护中的源码目录：`output/` 下用户保留的历史 Go 实验程序不属于本次业务回归范围。
 
 ## 价格、时间和成交量
 

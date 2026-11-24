@@ -48,6 +48,7 @@ type config struct {
 	server         *serverStore
 	statePath      string
 	retry          time.Duration
+	replay         bool
 	notify         bool
 	suppressBefore string
 	onStatus       func(string)
@@ -82,9 +83,15 @@ func (s *serverStore) Set(value string) {
 }
 
 func (s *serverStore) Changed() <-chan struct{} {
+	_, changed := s.snapshot()
+	return changed
+}
+
+// Keep the address and its cancellation signal from the same configuration.
+func (s *serverStore) snapshot() (string, <-chan struct{}) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.changed
+	return s.value, s.changed
 }
 
 func (c config) status(text string) {
@@ -104,9 +111,10 @@ func main() {
 	flag.Parse()
 	setupFileLog(*state)
 
+	savedServer := loadServer(*state)
 	serverAddr := strings.TrimSpace(*server)
 	if serverAddr == "" {
-		serverAddr = loadServer(*state)
+		serverAddr = savedServer
 	}
 	if _, err := eventsURL(serverAddr, 0); err != nil {
 		if runtime.GOOS != "windows" {
@@ -126,26 +134,29 @@ func main() {
 		}
 	}
 
-	cursor := readCursor(*state)
+	if err := migrateCursor(*state, savedServer, serverAddr); err != nil {
+		startupFailed("迁移提醒进度失败: " + err.Error())
+	}
+	cursor, known := readServerCursor(*state, serverAddr)
 	suppressBefore := ""
 	if *after >= 0 {
 		cursor = *after
 	} else if !*replay {
-		if _, err := os.Stat(*state); errors.Is(err, os.ErrNotExist) {
+		if !known {
 			suppressBefore = time.Now().In(shanghaiZone()).Add(-time.Minute).Format(time.DateTime)
 			log.Print(firstRunLogHint)
 		}
 	}
 
-	cfg := config{server: newServerStore(serverAddr), statePath: *state, retry: *retry, notify: *notify, suppressBefore: suppressBefore}
+	cfg := config{server: newServerStore(serverAddr), statePath: *state, retry: *retry, replay: *replay, notify: *notify, suppressBefore: suppressBefore}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	log.Printf("监听 %s，当前事件位置 %d", cfg.server.Get(), cursor)
 	if *tray && runtime.GOOS == "windows" {
-		runDesktop(ctx, stop, cfg, cursor)
+		runDesktop(ctx, stop, cfg, serverAddr, cursor)
 		return
 	}
-	run(ctx, cfg, cursor)
+	run(ctx, cfg, serverAddr, cursor)
 }
 
 // startupFailed 在 GUI 模式没有控制台时，用桌面通知告知启动失败原因。
@@ -178,9 +189,19 @@ func logFilePath(statePath string) string {
 	return filepath.Join(filepath.Dir(statePath), "notify.log")
 }
 
-func run(ctx context.Context, cfg config, cursor int64) {
+func run(ctx context.Context, cfg config, activeServer string, cursor int64) {
 	for {
-		err := listen(ctx, cfg, &cursor)
+		server, changed := cfg.server.snapshot()
+		if server != activeServer {
+			var known bool
+			cursor, known = readServerCursor(cfg.statePath, server)
+			cfg.suppressBefore = ""
+			if !known && !cfg.replay {
+				cfg.suppressBefore = time.Now().In(shanghaiZone()).Add(-time.Minute).Format(time.DateTime)
+			}
+			activeServer = server
+		}
+		err := listen(ctx, cfg, server, changed, &cursor)
 		if errors.Is(err, errServerChanged) {
 			cfg.status("正在切换服务器")
 			continue
@@ -199,13 +220,13 @@ func run(ctx context.Context, cfg config, cursor int64) {
 	}
 }
 
-func listen(ctx context.Context, cfg config, cursor *int64) error {
+func listen(ctx context.Context, cfg config, server string, changed <-chan struct{}, cursor *int64) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
 	}
-	target, err := eventsURL(cfg.server.Get(), *cursor)
+	target, err := eventsURL(server, *cursor)
 	if err != nil {
 		return err
 	}
@@ -221,7 +242,6 @@ func listen(ctx context.Context, cfg config, cursor *int64) error {
 	cfg.status("已连接")
 	log.Printf("已连接 %s", target)
 
-	changed := cfg.server.Changed()
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
@@ -248,7 +268,7 @@ func listen(ctx context.Context, cfg config, cursor *int64) error {
 			continue
 		}
 		*cursor = event.ID
-		if err := writeCursor(cfg.statePath, event.ID); err != nil {
+		if err := writeServerCursor(cfg.statePath, server, event.ID); err != nil {
 			log.Printf("保存进度失败: %v", err)
 		}
 		if cfg.suppressBefore != "" && event.Signal.SellTime <= cfg.suppressBefore {
@@ -324,29 +344,6 @@ func defaultStatePath() string {
 		return "notify-cursor"
 	}
 	return filepath.Join(dir, "strategy-notify", "cursor")
-}
-
-func readCursor(path string) int64 {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	value, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64)
-	if err != nil || value < 0 {
-		return 0
-	}
-	return value
-}
-
-func writeCursor(path string, id int64) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strconv.FormatInt(id, 10)), 0644); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
 }
 
 func shanghaiZone() *time.Location {

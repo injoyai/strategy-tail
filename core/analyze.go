@@ -264,13 +264,14 @@ func drawdownMetrics(equityCurve []float64, sellDates []time.Time, requiredCapit
 		}
 	}
 
-	// 水下曲线最大深度
-	peak := 0.0
-	for _, eq := range equityCurve {
+	// 水下深度以含本金的权益峰值为分母。equityCurve 仅包含累计净利润。
+	peak := requiredCapital
+	for _, profit := range equityCurve {
+		eq := requiredCapital + profit
 		if eq > peak {
 			peak = eq
 		}
-		if peak > 0 {
+		if requiredCapital > 0 && peak > 0 {
 			depth := (peak - eq) / peak * 100
 			if depth > underwaterMax {
 				underwaterMax = depth

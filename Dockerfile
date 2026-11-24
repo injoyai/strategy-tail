@@ -9,18 +9,11 @@ WORKDIR /build
 ARG GOPROXY=https://goproxy.cn,direct
 ENV GOPROXY=${GOPROXY}
 
-# 先复制工作区和依赖清单；编译时只下载实际使用的模块
-COPY go.mod go.sum go.work go.work.sum ./
-COPY --from=tdx /go.mod /go.sum /tdx/
+COPY go.mod go.sum ./
 
 # golang:alpine 基础镜像不含 tzdata，运行阶段从这里拷贝时区数据
 RUN apk add --no-cache tzdata
 
-COPY --from=tdx /*.go /tdx/
-COPY --from=tdx /protocol /tdx/protocol
-COPY --from=tdx /internal /tdx/internal
-COPY --from=tdx /lib /tdx/lib
-COPY --from=tdx /extend /tdx/extend
 COPY . .
 ARG APP_REVISION=unknown
 ARG TDX_REVISION=unknown

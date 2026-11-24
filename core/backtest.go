@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -138,7 +139,7 @@ func (this Backtest) Run() error {
 func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 
 	// 空数据源在入口统一拦截：无 GetDayKlines 时无法回测，直接报错，
-	// 避免协程内调用 nil 函数 panic（行情读取返回错误由下方逐票跳过，nil 切片不是错误）
+	// 避免协程内调用 nil 函数 panic（nil 切片不是错误）
 	if this.GetDayKlines == nil {
 		return nil, fmt.Errorf("回测 %d 年失败: 未设置 GetDayKlines 数据源", year)
 	}
@@ -149,6 +150,7 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 
 	// 每个代码槽位独立写入，避免互斥锁和 append 竞争；合并顺序与代码顺序一致，结果稳定可复现
 	result := make([][]Trade, len(codes))
+	failures := make([]error, len(codes))
 	b := bar.NewCoroutine(
 		len(codes),
 		this.Goroutines,
@@ -160,6 +162,7 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 		b.Go(func() {
 			dks, err := this.GetDayKlines(code, hisStart, end)
 			if err != nil {
+				failures[i] = fmt.Errorf("%s 日线读取失败: %w", code, err)
 				b.Logf("[错误][%s] %s", code, err)
 				b.Flush()
 				return
@@ -186,6 +189,7 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 			if this.GetMinKlines != nil {
 				mks, err = this.GetMinKlines(code, start, end)
 				if err != nil {
+					failures[i] = fmt.Errorf("%s 分钟线读取失败: %w", code, err)
 					b.Logf("[错误][%s] %s", code, err)
 					b.Flush()
 					return
@@ -197,6 +201,9 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 
 	}
 	b.Wait()
+	if err := errors.Join(failures...); err != nil {
+		return nil, fmt.Errorf("回测 %d 年数据读取失败: %w", year, err)
+	}
 
 	var allTrades []Trade
 	for _, ts := range result {

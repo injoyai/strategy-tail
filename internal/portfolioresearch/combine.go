@@ -312,14 +312,19 @@ func finalFinite(r TransformedRow) bool {
 // renormalize_available：按该股可用因子把名义权重重归一化，输出实际权重分布与漂移。
 func combineDay(date string, factors []dayFactor, missing string, weights map[string]float64) (CombineResult, error) {
 	codeSet := make(map[string]bool)
+	masked := make(map[string]bool)
 	for _, f := range factors {
-		for c := range f.rows {
+		for c, row := range f.rows {
 			codeSet[c] = true
+			masked[c] = masked[c] || row.Masked
 		}
 	}
 	codes := make([]string, 0, len(codeSet))
 	for c := range codeSet {
-		codes = append(codes, c)
+		// A tradability/universe mask must survive every missing-value policy.
+		if !masked[c] {
+			codes = append(codes, c)
+		}
 	}
 	sort.Strings(codes)
 

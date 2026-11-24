@@ -154,6 +154,10 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 
 账户结果和资金规则随 `report.json` 保存，CSV/HTML 继续导出逐笔成交统计。历史报告没有账户数据时保留原逐笔累计图并提示重新回测；旧 API 请求缺少 `account` 时继续使用原逐笔回测。分钟行情缺失时沿用原日线收盘卖出判断并披露数量；持仓日线缺失时沿用上一收盘价估值并披露数量，指数缺少股票交易日时拒绝生成对比。未新增分红现金流、涨跌停排队和容量模型。
 
+组合研究的每日调仓在每个信号日收盘生成目标，周调仓和月调仓分别在每个 ISO 自然周、自然月的首个可用信号日收盘生成目标，均在下一可用交易日开盘执行。区间首日作为首次信号日，非调仓日维持持仓；未成交买单是否跨日重试由 `carryUnfilled` 控制。中位数缺失填充在截面标准化之前执行，股票池外及缺少当日行情的股票继续被掩码排除。
+
+独立逐笔回测 `core.Backtest.Run` 的日线或分钟线读取错误会中止运行并返回错误；网格搜索跳过失败年份，Walk-Forward 跳过含失败年份的窗口。水下最大深度以所需本金加累计净利润构成的权益峰值计算。
+
 ### 回测逐日回放与盘感练习
 
 有完整过程记录的账户报告，在“回测结果”点击“逐日回放”，按交易日查看账户、持仓、收益图、实际成交及命中原因。支持暂停、前后步进、日期滑块与调速；点击持仓或成交会暂停，切换页签也会暂停。回放隐藏当前日期之后的信息，期末未平仓只显示估值；历史报告没有过程记录时须重新回测。行情和原因随本次报告保存，之后更新行情或策略不重新解释旧结果。
@@ -171,7 +175,7 @@ Web 的自由搭建与因子组合回测统一使用账户资金约束：初始�
 ```bash
 node --test internal/lab/web/*.mjs
 python3 tests/deploy_test.py
-# macOS / Linux，Go 1.25.4+；同级 ../tdx 必须是配套的 tdx/v2 工作区
+# macOS / Linux，Go 1.25.4+
 TZ=Asia/Shanghai go test ./internal/lab/... ./strategies/buy ./strategies/sell ./internal/researchrun
 go build ./...
 go vet ./internal/lab/...
@@ -313,10 +317,10 @@ git diff --check
 
 盘感练习以题库组织：选择策略和年份先建立固定快照题库，再开始一次训练。训练内“开始下一题”直接复用题库且不重复；“结束本题”保留训练，“结束训练并生成报告”统计本次正式作答。最后一题结束自动生成报告，支持下载与逐题复盘。旧记录在“历史单题 / 重练”中保留，不自动归入训练。详见[题库训练约定](docs/plans/2026-10-19-practice-training.md)。
 
-### 本地 tdx v2 依赖
+### tdx v2 模块依赖
 
-当前版本通过仓库内 `go.work` 使用同级 `../tdx` 的 v2 源码。运行前确认该目录的模块路径为 `github.com/injoyai/tdx/v2`，并执行 `go list -m github.com/injoyai/tdx/v2` 检查工作区解析。价格与金额使用浮点元值；旧 SQLite 数据保留原格式，由读取边界转换。策略均线精度变化及兼容边界见 [v2 迁移说明](docs/guides/tdx-v2-migration.md)。
+Go 从模块代理或 GitHub 获取 `go.mod` 固定的 `github.com/injoyai/tdx/v2` 版本。可运行 `go list -m github.com/injoyai/tdx/v2` 核对解析结果。价格与金额使用浮点元值；旧 SQLite 数据保留原格式，由读取边界转换。策略均线精度变化及兼容边界见 [v2 迁移说明](docs/guides/tdx-v2-migration.md)。
 
-`./deploy.sh` 会将本地 SDK 作为 Docker 命名构建上下文传入；手动构建使用 `docker build --build-context tdx=../tdx -t strategy-lab .`。
+部署脚本与本地构建使用同一份模块清单。手动构建使用 `docker build -t strategy-lab .`。
 
 新行情由 SDK 拉取并写入 `pull.database/source/`，只保存源日期／日期时分，不附加时区或 Unix 时间戳；查询合并旧历史和新记录，重叠时使用新记录。详见 [源时间与数据层约定](docs/guides/source-time-storage.md)。
