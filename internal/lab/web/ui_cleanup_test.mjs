@@ -196,8 +196,9 @@ test('出题所有阶段跨页复用唯一全局任务栏及停止、重试和�
         assert.equal(docks[0].props.class, 'statusbar', '出题与其他任务使用相同布局类');
         assert.equal(elements(tree, 'progress').length, 1, '页面只渲染一个全局任务进度条');
         const [main] = elements(tree, 'main');
-        assert.ok(main.props.class.includes('has-task-dock'));
-        assert.ok(!main.props.class.includes('practice-page'), '全局浮层出现时沿用内容避让间距');
+        assert.ok(main.props.class.includes('has-task-dock'), '全局浮层出现时标记任务状态');
+        assert.equal(main.props.class.includes('practice-page'), state.activeTab === 7,
+          '练习页布局类不随浮层出现而切换，避免内容区被压缩');
         const actions = elements(docks[0], 'button').map(v => v.children);
         assert.equal(actions.includes('停止任务'), snapshot.state === 'running');
         assert.equal(actions.includes('重试读取'), snapshot.state === 'connection-error');

@@ -72,7 +72,6 @@ button.workspace-toggle{display:none}
   button.workspace-toggle{display:inline-flex;align-items:center;padding:5px 10px;min-height:32px}
 }
 main{padding:12px var(--workspace-gutter) 16px}
-main.has-task-dock{padding-bottom:160px}
 @media(max-width:760px){main{padding-bottom:72px}}
 .tab-panel[hidden]{display:none}
 .tab-panel:focus{outline:none}
@@ -150,9 +149,9 @@ button.danger:active{transform:translateY(0)}
 .data-update-time time{color:var(--ink2);font-variant-numeric:tabular-nums}
 .checkbox-label{display:flex;align-items:center;gap:6px;cursor:pointer}
 @media(max-width:560px){.data-update-bubble{left:12px;bottom:max(12px,env(safe-area-inset-bottom))}.data-update{left:12px;bottom:calc(max(12px,env(safe-area-inset-bottom)) + 48px);width:calc(100% - 24px);max-height:calc(100dvh - 84px - env(safe-area-inset-bottom))}}
-/* 任务坞：固定右下角浮层，出现/消失不挤占内容流（所有 Tab 共用） */
+/* 任务坞：固定右下角浮层，出现/消失不挤占内容流（所有 Tab 共用，不预留 padding） */
 .statusbar{position:fixed;right:22px;bottom:22px;z-index:var(--z-float);width:min(430px,calc(100vw - 44px));padding:13px 16px 12px;background:linear-gradient(150deg,rgba(34,37,41,.94),rgba(25,27,31,.97));border:1px solid rgba(237,153,104,.32);border-radius:14px;overflow:hidden;box-shadow:0 26px 60px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.06);backdrop-filter:blur(16px) saturate(140%)}
-@media(max-width:640px){.statusbar{bottom:70px}main.has-task-dock{padding-bottom:240px}}
+@media(max-width:640px){.statusbar{bottom:70px}}
 .statusbar:before{content:"";position:absolute;inset:0 0 auto;height:1px;background:linear-gradient(90deg,transparent,rgba(237,153,104,.4),transparent);pointer-events:none}
 .statusbar[data-state=done]{border-color:rgba(52,211,153,.34);background:linear-gradient(135deg,rgba(52,211,153,.10),rgba(237,153,104,.05))}
 .statusbar[data-state=error],.statusbar[data-state=stopped]{border-color:rgba(239,68,68,.34);background:linear-gradient(135deg,rgba(239,68,68,.09),rgba(255,255,255,.025))}

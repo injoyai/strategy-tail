@@ -399,7 +399,7 @@ const App = {
         </ul>
       </section>
     </header>
-<main :class="{'practice-page': state.activeTab === 7 && !taskDock, 'screen-main': state.activeTab === 8, 'has-task-dock': taskDock}">
+<main :class="{'practice-page': state.activeTab === 7, 'screen-main': state.activeTab === 8, 'has-task-dock': taskDock}">
   <data-update />
   <section class="statusbar" ref="statusbar" v-show="!!taskDock" :data-state="taskDock ? taskDock.state : 'idle'"
     aria-live="polite" aria-atomic="true" aria-labelledby="statusState">
