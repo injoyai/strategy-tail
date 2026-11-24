@@ -172,7 +172,7 @@ func buildTradeVisualHTML(charts []map[string]any, results []AnalyzeResult, year
 			"annualReturn":    fmt.Sprintf("%.2f", r.AnnualReturn),
 			"sharpe":          fmt.Sprintf("%.2f", r.Sharpe),
 			"sortino":         fmt.Sprintf("%.2f", r.Sortino),
-			"calmar":          fmt.Sprintf("%.2f", r.Calmar),
+			"calmar":          formatRatio(r.Calmar),
 			"maxDrawdown":     fmt.Sprintf("%.2f", r.MaxDrawdownPct),
 			"drawdownDays":    r.DrawdownDuration,
 			"winStreak":       r.WinStreakMax,

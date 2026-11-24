@@ -6,7 +6,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/injoyai/goutil/g"
 	"github.com/injoyai/strategy-tail/lib/extend"
 )
 
@@ -73,11 +72,11 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 	fmt.Printf("%5s \t%8s \t%8s \t%8s \t%10s \t%8s \t%8s\n",
 		"年份", "Sharpe", "Sortino", "Calmar", "基准收益", "Alpha", "Beta")
 	for _, r := range results {
-		fmt.Printf("%6d \t%10.2f \t%8.2f \t%8.2f \t%12s \t%8s \t%8.2f\n",
+		fmt.Printf("%6d \t%10.2f \t%8.2f \t%8s \t%12s \t%8s \t%8.2f\n",
 			r.Year,
 			r.Sharpe,
 			r.Sortino,
-			r.Calmar,
+			formatRatio(r.Calmar),
 			formatPercent(r.BenchReturn),
 			formatPercent(r.Alpha),
 			r.Beta,
@@ -105,6 +104,17 @@ func PrintAnalyzeResults(results []AnalyzeResult) {
 
 func formatPercent(v float64) string {
 	return fmt.Sprintf("%.2f%%", v)
+}
+
+// formatRatio 将比率格式化为两位小数；无回撤的 Calmar 为 +Inf，统一显示为 ∞。
+func formatRatio(v float64) string {
+	if math.IsInf(v, 1) {
+		return "∞"
+	}
+	if math.IsInf(v, -1) {
+		return "-∞"
+	}
+	return fmt.Sprintf("%.2f", v)
 }
 
 // settledTrades 为同一结算时刻补充确定性顺序，避免并发收集顺序改变回撤与连胜连亏。
@@ -136,15 +146,74 @@ func settledTrades(all []Trade) []Trade {
 func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend.Klines, _ Cost, pos PositionConfig) AnalyzeResult {
 
 	trades := settledTrades(allTrades)
-
 	stats := Stats(trades)
-	totalTrades := stats.Total
-	var totalProfit float64
 
-	// 资金曲线（按实际成本口径；旧记录缺成本字段时兼容回退价格差）
-	var equityCurve []float64
-	// sellDates[i] 为资金曲线第 i 个点的卖出日期：首元素无对应交易日，为零值
-	var sellDates []time.Time
+	equityCurve, sellDates, totalProfit := buildEquityCurve(trades)
+	requiredCapital := calculateRequiredCapital(trades, pos)
+
+	annualReturn := 0.0
+	if requiredCapital > 0 {
+		// 年度总收益率(%) = 总利润 / 峰值并发本金 × 100
+		annualReturn = totalProfit / requiredCapital * 100
+	}
+
+	// 回撤口径统一为小数比例：百分比展示由 ratio*100 派生，Calmar 直接使用小数
+	maxDrawdown, maxDrawdownRatio, drawdownDuration, underwaterMax := drawdownMetrics(equityCurve, sellDates, requiredCapital)
+
+	tradeReturns := make([]float64, 0, len(trades))
+	for _, t := range trades {
+		tradeReturns = append(tradeReturns, tradeReturnRate(t)/100)
+	}
+	sharpe, sortino, calmar := riskAdjustedMetrics(trades, tradeReturns, annualReturn, maxDrawdownRatio)
+
+	// 基准对比
+	benchReturn := BenchmarkReturn(benchmarkKlines)
+	alpha, beta := computeTradeAlphaBeta(trades, benchmarkKlines)
+
+	// 连胜连亏分析
+	winStreak, lossStreak := calculateStreaks(trades)
+	avgHoldingDays := averageHoldingDays(trades)
+
+	// 收益分布偏度/峰度
+	skewness, kurtosis := skewKurtosis(tradeReturns)
+
+	// VaR / CVaR（95%）
+	var95, cvar95 := varCVaR(tradeReturns, 0.05)
+
+	return AnalyzeResult{
+		Year:             year,
+		TotalTrades:      stats.Total,
+		WinRate:          stats.WinRate,
+		TotalProfit:      totalProfit,
+		AvgProfit:        stats.AvgProfit,
+		MaxProfit:        stats.MaxProfit,
+		MaxLoss:          stats.MaxLoss,
+		ProfitFactor:     stats.ProfitFactor,
+		MaxDrawdown:      maxDrawdown,
+		RequiredCapital:  requiredCapital,
+		AnnualReturn:     annualReturn,
+		Sharpe:           sharpe,
+		Sortino:          sortino,
+		Calmar:           calmar,
+		BenchReturn:      benchReturn * 100,
+		Alpha:            alpha * 100,
+		Beta:             beta,
+		MaxDrawdownPct:   maxDrawdownRatio * 100,
+		DrawdownDuration: drawdownDuration,
+		UnderwaterMax:    underwaterMax,
+		WinStreakMax:     winStreak,
+		LossStreakMax:    lossStreak,
+		AvgHoldingDays:   avgHoldingDays,
+		ProfitSkewness:   skewness,
+		ProfitKurtosis:   kurtosis,
+		VaR95:            var95 * 100,
+		CVaR95:           cvar95 * 100,
+	}
+}
+
+// buildEquityCurve 构造按卖出结算的资金曲线。
+// 返回曲线（首点为 0 初始权益）、逐点卖出日期（首点为零值）和累计净盈亏。
+func buildEquityCurve(trades []Trade) (equityCurve []float64, sellDates []time.Time, totalProfit float64) {
 	currentEquity := 0.0
 	equityCurve = append(equityCurve, currentEquity)
 	sellDates = append(sellDates, time.Time{})
@@ -156,9 +225,12 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 		equityCurve = append(equityCurve, currentEquity)
 		sellDates = append(sellDates, t.SellTime)
 	}
+	return
+}
 
-	// 计算最大回撤
-	var maxDrawdown float64
+// drawdownMetrics 计算最大回撤（元/小数比例）、回撤持续天数和水下最大深度。
+// requiredCapital <= 0 时回撤比例按 0 处理。
+func drawdownMetrics(equityCurve []float64, sellDates []time.Time, requiredCapital float64) (maxDrawdown, maxDrawdownRatio float64, duration int, underwaterMax float64) {
 	var peakEquity float64 = -math.MaxFloat64
 	var peakIdx, maxDDStartIdx, maxDDEndIdx int
 
@@ -175,8 +247,11 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 		}
 	}
 
+	if requiredCapital > 0 {
+		maxDrawdownRatio = maxDrawdown / requiredCapital
+	}
+
 	// 回撤时长按卖出日之间的日历天数计，而非回撤覆盖的笔数
-	drawdownDuration := 0
 	if maxDDEndIdx > 0 && maxDDStartIdx < len(sellDates) {
 		startDate := sellDates[maxDDStartIdx]
 		if startDate.IsZero() {
@@ -185,25 +260,11 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 		}
 		endDate := sellDates[maxDDEndIdx]
 		if !startDate.IsZero() && !endDate.IsZero() && endDate.After(startDate) {
-			drawdownDuration = int(math.Round(endDate.Sub(startDate).Hours() / 24))
+			duration = int(math.Round(endDate.Sub(startDate).Hours() / 24))
 		}
 	}
 
-	requiredCapital := calculateRequiredCapital(trades, pos)
-	annualReturn := 0.0
-	if requiredCapital > 0 {
-		// 年度总收益率(%) = 总利润 / 峰值并发本金 × 100
-		annualReturn = totalProfit / requiredCapital * 100
-	}
-
-	// 最大回撤率
-	maxDrawdownPct := 0.0
-	if requiredCapital > 0 {
-		maxDrawdownPct = maxDrawdown * 100 / requiredCapital
-	}
-
 	// 水下曲线最大深度
-	underwaterMax := 0.0
 	peak := 0.0
 	for _, eq := range equityCurve {
 		if eq > peak {
@@ -216,79 +277,61 @@ func Analyze(year int, allTrades []Trade, _ GetDayKlines, benchmarkKlines extend
 			}
 		}
 	}
+	return
+}
 
-	// 风险调整指标：用每笔交易收益率（小数）计算，年化系数取交易笔数
-	tradeReturns := make([]float64, 0, len(trades))
-	for _, t := range trades {
-		r := tradeReturnRate(t) / 100
-		tradeReturns = append(tradeReturns, r)
+// riskAdjustedMetrics 计算年化 Sharpe/Sortino 与 Calmar。
+// 每笔交易视为一个收益期，年化期数按实际回测跨度折算（见 annualizationPeriods）。
+func riskAdjustedMetrics(trades []Trade, tradeReturns []float64, annualReturn, maxDrawdownRatio float64) (sharpe, sortino, calmar float64) {
+	periodsPerYear := annualizationPeriods(trades)
+	sharpe = SharpeRatio(tradeReturns, periodsPerYear)
+	sortino = SortinoRatio(tradeReturns, periodsPerYear)
+	calmar = CalmarRatio(annualReturn/100, maxDrawdownRatio)
+	return
+}
+
+// annualizationPeriods 按实际时间跨度折算年化期数：交易笔数 / 跨度年数。
+// 直接用交易笔数作年化系数会默认全部交易恰好落在一年内，跨年度或多频交易会失真。
+// 跨度不足 1 天按 1 天计，最少 1 期。
+func annualizationPeriods(trades []Trade) int {
+	n := len(trades)
+	if n == 0 {
+		return 0
 	}
-	sharpe := SharpeRatio(tradeReturns, len(tradeReturns))
-	sortino := SortinoRatio(tradeReturns, len(tradeReturns))
-	maxDrawdownRatio := 0.0
-	if requiredCapital > 0 {
-		maxDrawdownRatio = maxDrawdown * 100 / requiredCapital
-	}
-	calmar := CalmarRatio(annualReturn/100, maxDrawdownRatio)
-
-	// 基准对比
-	benchReturn := BenchmarkReturn(benchmarkKlines)
-	alpha, beta := computeTradeAlphaBeta(trades, benchmarkKlines)
-
-	// 连胜连亏分析
-	winStreak, lossStreak := calculateStreaks(trades)
-
-	// 持仓天数
-	var totalHoldingDays float64
-	validTrades := 0
+	start, end := trades[0].BuyTime, trades[0].SellTime
 	for _, t := range trades {
-		if !t.Virtual {
-			totalHoldingDays += float64(t.HoldingDays())
-			validTrades++
+		if t.BuyTime.Before(start) {
+			start = t.BuyTime
+		}
+		if t.SellTime.After(end) {
+			end = t.SellTime
 		}
 	}
-	avgHoldingDays := 0.0
-	if validTrades > 0 {
-		avgHoldingDays = totalHoldingDays / float64(validTrades)
+	days := end.Sub(start).Hours() / 24
+	if days < 1 {
+		days = 1
 	}
-
-	// 收益分布偏度/峰度
-	skewness, kurtosis := skewKurtosis(tradeReturns)
-
-	// VaR / CVaR（95%）
-	var95, cvar95 := varCVaR(tradeReturns, 0.05)
-
-	result := AnalyzeResult{
-		Year:             year,
-		TotalTrades:      totalTrades,
-		WinRate:          stats.WinRate,
-		TotalProfit:      totalProfit,
-		AvgProfit:        stats.AvgProfit,
-		MaxProfit:        stats.MaxProfit,
-		MaxLoss:          stats.MaxLoss,
-		ProfitFactor:     stats.ProfitFactor,
-		MaxDrawdown:      maxDrawdown,
-		RequiredCapital:  requiredCapital,
-		AnnualReturn:     annualReturn,
-		Sharpe:           sharpe,
-		Sortino:          sortino,
-		Calmar:           calmar,
-		BenchReturn:      benchReturn * 100,
-		Alpha:            alpha * 100,
-		Beta:             beta,
-		MaxDrawdownPct:   maxDrawdownPct,
-		DrawdownDuration: drawdownDuration,
-		UnderwaterMax:    underwaterMax,
-		WinStreakMax:     winStreak,
-		LossStreakMax:    lossStreak,
-		AvgHoldingDays:   avgHoldingDays,
-		ProfitSkewness:   skewness,
-		ProfitKurtosis:   kurtosis,
-		VaR95:            var95 * 100,
-		CVaR95:           cvar95 * 100,
+	periods := int(math.Round(float64(n) * 365.25 / days))
+	if periods < 1 {
+		periods = 1
 	}
+	return periods
+}
 
-	return result
+// averageHoldingDays 计算非虚拟成交的平均持仓天数。
+func averageHoldingDays(trades []Trade) float64 {
+	var total float64
+	valid := 0
+	for _, t := range trades {
+		if !t.Virtual {
+			total += float64(t.HoldingDays())
+			valid++
+		}
+	}
+	if valid == 0 {
+		return 0
+	}
+	return total / float64(valid)
 }
 
 // calculateStreaks 计算最大连胜和最大连亏笔数。
@@ -389,9 +432,13 @@ func calculateRequiredCapital(allTrades []Trade, pos PositionConfig) float64 {
 		sharesPerLot = SharesPerLot
 	}
 
-	// 按日期记录每日的持仓投入
-	// 遍历每笔交易，在买入日到卖出日之间累加该笔的买入成本
-	dailyExposure := make(map[string]float64)
+	// 事件扫描：买入日加入暴露，卖出日收盘后才释放（卖出当日仍持仓）。
+	// 与逐日累加等价，但复杂度从 O(交易×持仓天数) 降为 O(交易 log 交易)。
+	type capitalDay struct{ buys, sells float64 }
+	byDay := make(map[time.Time]*capitalDay, len(allTrades)*2)
+	dayOf := func(t time.Time) time.Time {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	}
 
 	for _, t := range allTrades {
 		buyCost := t.BuyCost
@@ -400,27 +447,40 @@ func calculateRequiredCapital(allTrades []Trade, pos PositionConfig) float64 {
 			buyCost = t.BuyPrice * float64(sharesPerLot)
 		}
 
-		// 从买入日到卖出日（含），每日都在持仓
-		cur := t.BuyTime
-		end := t.SellTime
-		for !cur.After(end) {
-			key := cur.Format(time.DateOnly)
-			dailyExposure[key] += buyCost
-			cur = cur.AddDate(0, 0, 1)
+		buyDay, sellDay := dayOf(t.BuyTime), dayOf(t.SellTime)
+		if sellDay.Before(buyDay) {
+			// 卖出早于买入的异常记录不产生持仓，与逐日循环口径一致
+			continue
+		}
+		if d, ok := byDay[buyDay]; ok {
+			d.buys += buyCost
+		} else {
+			byDay[buyDay] = &capitalDay{buys: buyCost}
+		}
+		if d, ok := byDay[sellDay]; ok {
+			d.sells += buyCost
+		} else {
+			byDay[sellDay] = &capitalDay{sells: buyCost}
 		}
 	}
 
-	if len(dailyExposure) == 0 {
+	if len(byDay) == 0 {
 		return 0
 	}
 
-	// 取所有日期中最大的日度暴露作为所需本金
-	maxExposure := 0.0
-	for _, v := range dailyExposure {
-		if v > maxExposure {
-			maxExposure = v
-		}
+	days := make([]time.Time, 0, len(byDay))
+	for day := range byDay {
+		days = append(days, day)
 	}
+	sort.Slice(days, func(i, j int) bool { return days[i].Before(days[j]) })
 
-	return g.Max(0., maxExposure)
+	exposure, maxExposure := 0.0, 0.0
+	for _, day := range days {
+		exposure += byDay[day].buys
+		if exposure > maxExposure {
+			maxExposure = exposure
+		}
+		exposure -= byDay[day].sells
+	}
+	return maxExposure
 }

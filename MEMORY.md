@@ -234,3 +234,9 @@ Go 股票策略回测系统（A 股，tdx 数据源）。组合式策略组件�
 - 内存实测（容器内 `/proc/1/status`）：空闲约 0.6GB；全市场账户回测（3487 只、2025-2026）峰值约 1.9GB；2024-2026 三年峰值约 2.26GB。VM 仅 3.824GiB，且 `tsp` 0.52GB、`market-data` 0.05GB 共用，连续运行或叠加其他负载即触顶。主机内存 16GB，建议把 Docker Desktop 内存上调到 8GB。
 - 缓解：`Runner.launchTask` 在每个任务（回测/分析等）结束时执行 `debug.FreeOSMemory()`，把空闲堆归还操作系统，避免下一次任务在已闲置堆上继续抬高 RSS 峰值。
 - 排查注意：`docker inspect` 的 `State.ExitCode=0` 不能作为“正常退出”依据；Docker Desktop 的 VM 级 OOM 不会在容器日志或 `OOMKilled` 中留下痕迹，需结合 `oom-kills` 埋点与 `RestartCount` 判断。
+
+## 指标口径与回测引擎优化（2026-11-24）
+- 年化 Sharpe/Sortino 不再直接把交易笔数当作年化期数：`annualizationPeriods` 按「笔数 / 首笔买入到末笔卖出的实际年跨度」折算，跨度不足 1 天按 1 天、最少 1 期。同一批交易在一年内越集中，年化系数越高；年度报告的 Sharpe/Sortino 数值会因此变化。
+- `CalmarRatio` 的 maxDrawdown 参数必须传小数比例（如 0.025），不能传百分数；此前 `Analyze` 传百分数导致 Calmar 被缩小 100 倍。无回撤且正收益返回 +Inf，终端与 HTML 统一显示「∞」；无回撤且零收益仍返回 0。
+- `Backtest.Run` 改为返回 error：数据源、年度 CSV、HTML 报告导出失败直接返回，不再 `logs.PanicErr`；入口先校验 Buyer/Seller 非 nil。外部调用方需检查返回值。
+- `calculateRequiredCapital` 改为买入/卖出事件排序扫描（卖出日收盘后释放），与逐日累加口径一致，复杂度降为 O(交易 log 交易)；`_backtest` 按代码槽位预分配结果，合并顺序固定；分钟线分组键改为整型 `dayKey`（yyyymmdd）。

@@ -110,8 +110,16 @@ func TestCalmar比率计算(t *testing.T) {
 	}
 }
 
-func TestCalmar零回撤返回0(t *testing.T) {
-	if r := CalmarRatio(0.20, 0); r != 0 {
-		t.Fatalf("零回撤 Calmar 期望 0, 实际 %v", r)
+func TestCalmar零回撤正收益返回正无穷(t *testing.T) {
+	// 无回撤且有正收益：Calmar 理论值为 +∞，与 ProfitFactor 无亏损时的约定一致
+	if r := CalmarRatio(0.20, 0); !math.IsInf(r, 1) {
+		t.Fatalf("零回撤正收益 Calmar 期望 +Inf, 实际 %v", r)
+	}
+}
+
+func TestCalmar零回撤零收益返回0(t *testing.T) {
+	// 无回撤也无收益（无交易/零盈亏）：不把 undefined 显示为无穷大
+	if r := CalmarRatio(0, 0); r != 0 {
+		t.Fatalf("零回撤零收益 Calmar 期望 0, 实际 %v", r)
 	}
 }

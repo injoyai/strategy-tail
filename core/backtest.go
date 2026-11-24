@@ -2,7 +2,6 @@ package core
 
 import (
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/injoyai/bar"
@@ -40,7 +39,16 @@ type Backtest struct {
 }
 
 // Run 执行多年份回测，打印结果并导出可视化。
-func (this Backtest) Run() {
+// 数据源、交易明细导出或报告导出失败时返回错误，由调用方决定是否中断。
+func (this Backtest) Run() error {
+
+	// 前置校验：缺失 Buyer/Seller 时立即返回错误，而不是在回测中途 panic
+	if this.Buyer == nil {
+		return fmt.Errorf("回测未设置 Buyer")
+	}
+	if this.Seller == nil {
+		return fmt.Errorf("回测未设置 Seller")
+	}
 
 	// Cost 零值回退默认值，防止调用方漏设成本导致零佣金零滑点回测
 	if this.Cost == (Cost{}) {
@@ -65,7 +73,9 @@ func (this Backtest) Run() {
 	for _, year := range this.Years {
 
 		ls, err := this._backtest(this.Codes, year)
-		logs.PanicErr(err)
+		if err != nil {
+			return err
+		}
 		tradeResults[year] = ls
 
 		// 拉取当年基准日线
@@ -88,11 +98,14 @@ func (this Backtest) Run() {
 
 		result := Analyze(year, ls, this.GetDayKlines, benchKlines, this.Cost, this.Position)
 		results = append(results, result)
-		_, err = ExportYearTradesCSV(year, ls)
-		logs.PanicErr(err)
+		if _, err = ExportYearTradesCSV(year, ls); err != nil {
+			return fmt.Errorf("导出 %d 年交易明细失败: %w", year, err)
+		}
 	}
 	PrintAnalyzeResults(results)
-	logs.PanicErr(ExportTradeVisualHTML(this.Years, tradeResults, this.GetDayKlines, results))
+	if err := ExportTradeVisualHTML(this.Years, tradeResults, this.GetDayKlines, results); err != nil {
+		return fmt.Errorf("导出回测报告失败: %w", err)
+	}
 
 	// ---- 阶段二：蒙特卡洛模拟（跨年度全部交易）----
 	allTrades := make([]Trade, 0)
@@ -119,6 +132,7 @@ func (this Backtest) Run() {
 			}
 		}
 	}
+	return nil
 }
 
 func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
@@ -133,15 +147,16 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 	start := time.Date(year, 1, 1, 0, 0, 0, 0, time.Local)
 	end := time.Date(year, 12, 31, 23, 0, 0, 0, time.Local)
 
-	result := []Trade(nil)
-	mu := sync.Mutex{}
+	// 每个代码槽位独立写入，避免互斥锁和 append 竞争；合并顺序与代码顺序一致，结果稳定可复现
+	result := make([][]Trade, len(codes))
 	b := bar.NewCoroutine(
 		len(codes),
 		this.Goroutines,
 		bar.WithPrefix(fmt.Sprintf("[%d]", year)),
 	)
 	defer b.Close()
-	for _, code := range codes {
+	for i, code := range codes {
+		i, code := i, code
 		b.Go(func() {
 			dks, err := this.GetDayKlines(code, hisStart, end)
 			if err != nil {
@@ -177,15 +192,22 @@ func (this Backtest) _backtest(codes []string, year int) ([]Trade, error) {
 				}
 			}
 
-			ts := this.Do(code, his, dks, mks)
-			mu.Lock()
-			defer mu.Unlock()
-			result = append(result, ts...)
+			result[i] = this.Do(code, his, dks, mks)
 		})
 
 	}
 	b.Wait()
-	return result, nil
+
+	var allTrades []Trade
+	for _, ts := range result {
+		allTrades = append(allTrades, ts...)
+	}
+	return allTrades, nil
+}
+
+// dayKey 返回自然日的紧凑整型键（yyyymmdd），月日范围保证不同日期不碰撞。
+func dayKey(t time.Time) int {
+	return t.Year()*10000 + int(t.Month())*100 + t.Day()
 }
 
 // Do 对单只股票执行回测。
@@ -197,12 +219,13 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 	pos := this.Position
 
 	// 分钟线按日期分组（跳过Close=0的无效数据，通常是开盘集合竞价前的空记录）
-	m := map[string]protocol.Klines{}
+	// 用整型日期键避免逐条 Format 字符串的开销
+	m := map[int]protocol.Klines{}
 	for _, mk := range mks {
 		if mk.Close == 0.0 {
 			continue
 		}
-		key := mk.Time.Format(time.DateOnly)
+		key := dayKey(mk.Time)
 		m[key] = append(m[key], mk)
 	}
 
@@ -249,7 +272,7 @@ func (this Backtest) Do(code string, his, dks extend.Klines, mks protocol.Klines
 		}
 
 		// ---- 2. 卖出信号（分钟级精度；风控 Seller 在前由 sell.Or 保证优先）----
-		todayMinuteKlines, ok := m[today.Time.Format(time.DateOnly)]
+		todayMinuteKlines, ok := m[dayKey(today.Time)]
 		if !ok || len(todayMinuteKlines) == 0 {
 			todayMinuteKlines = protocol.Klines{today.Kline}
 		}

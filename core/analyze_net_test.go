@@ -130,3 +130,81 @@ func TestExportTradeVisualHTMLRejectsMissingLoader(t *testing.T) {
 		t.Fatalf("ExportTradeVisualHTML() error = %v", err)
 	}
 }
+
+func TestCalculateRequiredCapitalMatchesDailyExposure(t *testing.T) {
+	d := func(day int) time.Time { return time.Date(2025, 1, day, 15, 0, 0, 0, time.Local) }
+	trades := []Trade{
+		{BuyTime: d(1), SellTime: d(10), BuyCost: 1000}, // 跨两个周末
+		{BuyTime: d(5), SellTime: d(20), BuyCost: 2000},
+		{BuyTime: d(10), SellTime: d(15), BuyCost: 500}, // 与首笔卖出同日，卖出当日仍持仓
+	}
+
+	// 逐日累加作为基准，验证事件扫描口径完全一致
+	daily := map[string]float64{}
+	for _, tr := range trades {
+		for cur := tr.BuyTime; !cur.After(tr.SellTime); cur = cur.AddDate(0, 0, 1) {
+			daily[cur.Format(time.DateOnly)] += tr.BuyCost
+		}
+	}
+	want := 0.0
+	for _, v := range daily {
+		if v > want {
+			want = v
+		}
+	}
+
+	if got := calculateRequiredCapital(trades, DefaultPositionConfig()); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("事件扫描所需本金 = %v, 逐日累加 = %v", got, want)
+	}
+}
+
+func TestAnnualizationPeriodsUsesElapsedSpan(t *testing.T) {
+	start := time.Date(2025, 1, 1, 15, 0, 0, 0, time.Local)
+
+	// 40 笔交易分散在约一年内：年化期数应接近交易笔数
+	var yearly []Trade
+	for i := 0; i < 40; i++ {
+		buy := start.AddDate(0, 0, i*9)
+		yearly = append(yearly, Trade{BuyTime: buy, SellTime: buy.AddDate(0, 0, 1)})
+	}
+	if got := annualizationPeriods(yearly); got < 38 || got > 45 {
+		t.Fatalf("全年 40 笔的年化期数 = %d, 期望接近 40", got)
+	}
+
+	// 相同笔数压缩到两个月内：年化期数应按实际频率显著提高
+	var dense []Trade
+	for i := 0; i < 40; i++ {
+		buy := start.AddDate(0, 0, i)
+		dense = append(dense, Trade{BuyTime: buy, SellTime: buy.AddDate(0, 0, 1)})
+	}
+	if got := annualizationPeriods(dense); got < 200 {
+		t.Fatalf("两个月 40 笔的年化期数 = %d, 期望按实际频率放大", got)
+	}
+}
+
+func TestAnalyzeCalmarUsesDecimalDrawdown(t *testing.T) {
+	sell := time.Date(2025, 1, 5, 15, 0, 0, 0, time.Local)
+	trades := []Trade{
+		{Code: "sh600000", BuyTime: sell.AddDate(0, 0, -4), SellTime: sell,
+			BuyPrice: 10, SellPrice: 11, BuyCost: 1000, SellIncome: 1100, Quantity: 100},
+		{Code: "sh600001", BuyTime: sell.AddDate(0, 0, -3), SellTime: sell.AddDate(0, 0, -2),
+			BuyPrice: 10, SellPrice: 9.5, BuyCost: 1000, SellIncome: 950, Quantity: 100},
+	}
+	// 峰值并发本金 2000，总盈亏 50，最大回撤 50（比例 0.025），Calmar = 0.025 / 0.025 = 1
+	r := Analyze(2025, trades, nil, nil, Cost{}, DefaultPositionConfig())
+	if math.Abs(r.Calmar-1) > 1e-9 {
+		t.Fatalf("Calmar = %v, 期望 1（回撤应按小数而非百分数参与计算）", r.Calmar)
+	}
+}
+
+func TestAnalyzeCalmarInfiniteWithoutDrawdown(t *testing.T) {
+	buy := time.Date(2025, 1, 1, 15, 0, 0, 0, time.Local)
+	trade := Trade{
+		Code: "sh600000", BuyTime: buy, SellTime: buy.AddDate(0, 0, 1),
+		BuyPrice: 10, SellPrice: 11, BuyCost: 1000, SellIncome: 1100, Quantity: 100,
+	}
+	r := Analyze(2025, []Trade{trade}, nil, nil, Cost{}, DefaultPositionConfig())
+	if !math.IsInf(r.Calmar, 1) {
+		t.Fatalf("无回撤且有正收益时 Calmar = %v, 期望 +Inf", r.Calmar)
+	}
+}

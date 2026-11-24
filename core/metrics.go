@@ -72,9 +72,13 @@ func SortinoRatio(returns []float64, periodsPerYear int) float64 {
 
 // CalmarRatio 计算卡玛比率 = 年化收益率 / 最大回撤。
 // annualReturn 为年化收益率（小数），maxDrawdown 为最大回撤（正数，小数）。
-// 最大回撤为 0 时返回 0（避免除零）。
+// 最大回撤为 0 时：正收益返回 +Inf（无回撤风险，与 ProfitFactor 的无亏损约定一致），
+// 否则返回 0（无收益或数据不足）。
 func CalmarRatio(annualReturn, maxDrawdown float64) float64 {
 	if maxDrawdown == 0 {
+		if annualReturn > 0 {
+			return math.Inf(1)
+		}
 		return 0
 	}
 	return annualReturn / maxDrawdown
