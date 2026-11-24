@@ -99,6 +99,14 @@ export default {
   },
   methods: {
     accountReturn(v) { return v.account?.points?.at(-1)?.return ?? null; },
+    // 年化收益：以账户每日收益点数（交易日）折算，252 交易日/年，
+    // 公式 (1+累计收益)^(252/交易日数)-1；点数不足或累计跌破 -100% 时不展示。
+    annualReturn(v) {
+      const points = v.account?.points ?? [];
+      const last = points.at(-1);
+      if (points.length < 2 || last == null || last.return <= -100) return null;
+      return (Math.pow(1 + last.return / 100, 252 / points.length) - 1) * 100;
+    },
     excessReturn(v) {
       const r = this.accountReturn(v);
       return r != null && this.benchmarkReturn != null ? r - this.benchmarkReturn : null;
@@ -251,7 +259,7 @@ export default {
     <p v-if="nextBarExecution">收盘买入信号次日开盘执行。开盘先处理待卖仓位，{{ rep.strategySpec?.factorScores?.length ? '评分变体按综合分优先买入，其余变体按代码升序' : '买入按代码升序' }}。盘中卖出信号使用后续可成交分钟的收盘价，收盘信号从次日开盘起执行。</p>
     <p v-else>历史口径，收盘信号按同日收盘价买入。</p>
     <p>每笔预算含买入费用，资金不足时减少股数，按 100 股取整。单票只持有一笔，跨年保留现金与持仓，按每日收盘价估值。</p>
-    <p>账户收益率 =（现金 + 持仓市值）÷ 初始资金 − 1。上证指数以回测首个交易日收盘价为基准，按同期买入持有价格涨幅计算；指数不扣交易成本，策略含费用与滑点。超额列为两者之差（百分点）。</p>
+    <p>账户收益率 =（现金 + 持仓市值）÷ 初始资金 − 1。年化收益按账户每日收益点数折算（252 交易日/年）：(1+累计收益)^(252/交易日数) − 1，仅用于与其他区间结果横向比较。上证指数以回测首个交易日收盘价为基准，按同期买入持有价格涨幅计算；指数不扣交易成本，策略含费用与滑点。超额列为两者之差（百分点）。</p>
     <p v-if="showCmp">各变体使用独立账户；成交数比是实际成交笔数相对基准的比例，不代表买入信号筛选比例。</p>
     <p>模拟账户收益。分红现金流、涨跌停排队和成交容量未纳入。</p>
   </details>
@@ -272,7 +280,7 @@ export default {
 
   <div class="detail-wrap">
     <table>
-      <thead><tr><th>#</th><th>变体</th><th v-if="accountMode">账户收益%</th><th v-if="accountMode">上证收益%</th><th v-if="accountMode">超额(百分点)</th><th>笔数</th><th>胜率%</th><th>单笔平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
+      <thead><tr><th>#</th><th>变体</th><th v-if="accountMode">账户收益%</th><th v-if="accountMode">年化%</th><th v-if="accountMode">上证收益%</th><th v-if="accountMode">超额(百分点)</th><th>笔数</th><th>胜率%</th><th>单笔平均%</th><th>盈亏比</th><th>最大%</th><th>最小%</th><th>收益额(万)</th></tr></thead>
       <tbody>
         <template v-if="vs.length">
           <tr v-for="(v, i) in vs" :key="v.name"
@@ -281,6 +289,7 @@ export default {
             <td>{{ i + 1 }}</td>
             <td>{{ v.name }}</td>
             <td v-if="accountMode" :class="returnCls(accountReturn(v))">{{ returnFmt(accountReturn(v)) }}</td>
+            <td v-if="accountMode" :class="returnCls(annualReturn(v))">{{ returnFmt(annualReturn(v)) }}</td>
             <td v-if="accountMode" :class="returnCls(benchmarkReturn)">{{ returnFmt(benchmarkReturn) }}</td>
             <td v-if="accountMode" :class="returnCls(excessReturn(v))">{{ returnFmt(excessReturn(v)) }}</td>
             <td>{{ v.stats.total }}</td>
@@ -292,7 +301,7 @@ export default {
             <td :class="profitWan(v) != null ? (profitWan(v) >= 0 ? 'pos' : 'neg') : ''">{{ profitWan(v) != null ? profitWan(v).toFixed(1) : '-' }}</td>
           </tr>
         </template>
-        <tr v-else><td :colspan="accountMode ? 12 : 9" class="empty">暂无报告，先在回测配置中运行回测</td></tr>
+        <tr v-else><td :colspan="accountMode ? 13 : 9" class="empty">暂无报告，先在回测配置中运行回测</td></tr>
       </tbody>
     </table>
   </div>

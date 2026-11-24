@@ -12,6 +12,7 @@ import (
 func writeHistoryReport(t *testing.T, at string) *Report {
 	t.Helper()
 	rep := &Report{Config: RunConfig{ScriptName: "builder", StartYear: 2025, EndYear: 2025,
+		SampleMode: "random", SampleSize: 100,
 		Builder: &BuilderSpec{Name: "历史策略"}}, FinishedAt: at, Source: sourceBuilder,
 		Variants: []VariantReport{{Name: "策略/一"}}}
 	dir := filepath.Join("output", "trades", rep.RunID())
@@ -47,7 +48,7 @@ func TestReportHistorySurvivesRestartAndDeletesOnlySelectedRun(t *testing.T) {
 	if err := json.Unmarshal(doReq(t, h, http.MethodGet, "/api/reports", nil, http.StatusOK), &items); err != nil {
 		t.Fatal(err)
 	}
-	if len(items) != 2 || items[0].ID != newer.RunID() || items[0].Name != "历史策略" {
+	if len(items) != 2 || items[0].ID != newer.RunID() || items[0].Name != "历史策略" || items[0].Scope != "随机100只" {
 		t.Fatalf("history = %+v", items)
 	}
 	var got Report
@@ -81,6 +82,26 @@ func TestReportHistorySurvivesRestartAndDeletesOnlySelectedRun(t *testing.T) {
 		t.Fatalf("empty history = %s", data)
 	}
 	doReq(t, h, http.MethodGet, "/api/report/latest", nil, http.StatusNotFound)
+}
+
+func TestReportScopeSummary(t *testing.T) {
+	cases := []struct {
+		cfg  RunConfig
+		want string
+	}{
+		{RunConfig{SampleMode: "all"}, "沪深主板"},
+		{RunConfig{SampleMode: "all_stocks"}, "全部股票"},
+		{RunConfig{SampleMode: "random", SampleSize: 50}, "随机50只"},
+		{RunConfig{SampleMode: "random"}, "随机样本"},
+		{RunConfig{SampleMode: "codes", SampleCodes: []string{"sh600000", "sz000001"}}, "指定2只"},
+		{RunConfig{SampleMode: "codes"}, "指定代码"},
+		{RunConfig{}, ""}, // 旧报告未记录范围
+	}
+	for _, c := range cases {
+		if got := reportScope(c.cfg); got != c.want {
+			t.Fatalf("reportScope(%+v) = %q, want %q", c.cfg, got, c.want)
+		}
+	}
 }
 
 func TestReportHistoryDeleteGuards(t *testing.T) {

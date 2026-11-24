@@ -52,7 +52,23 @@ test('账户图只消费每日账户收益，指数共用区间，未交易账�
   assert.equal(ctx.returnCls(0), '');
   const headers = elements(render(ctx), 'th').map(v => v.children);
   assert.ok(headers.includes('账户收益%'));
+  assert.ok(headers.includes('年化%'));
   assert.ok(headers.includes('超额(百分点)'));
+});
+
+test('年化收益按每日账户点数折算，点数不足或历史报告不展示', () => {
+  const v = variant('全年', 15);
+  v.account.points = Array.from({length: 252}, (_, i) => ({date: `d${i}`, return: i === 251 ? 15 : 0}));
+  const ctx = instance(report([v]));
+  assert.ok(Math.abs(ctx.annualReturn(v) - 15) < 1e-9);
+  // 两个交易日折算为 252/2 次方，值被放大但公式保持一致。
+  const short = variant('短周期', 15);
+  assert.ok(Math.abs(ctx.annualReturn(short) - (Math.pow(1.15, 126) - 1) * 100) < 1e-6);
+  assert.equal(ctx.annualReturn({account: {points: [{date: 'd0', return: 0}]}}), null);
+  const old = report([{...variant('历史', 0), account: undefined}]);
+  delete old.config.account;
+  state.currentReport = old;
+  assert.ok(!elements(render(ctx), 'th').map(v => v.children).includes('年化%'));
 });
 
 test('历史报告保留原图并提示重跑，账户报告缺失资金曲线时不回退逐笔累计', () => {

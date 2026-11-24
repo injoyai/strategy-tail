@@ -26,7 +26,8 @@ export default {
   beforeUnmount() { this.request++; },
   methods: {
     label(item) {
-      return `${item.name || item.script || '回测'} · ${item.startYear}–${item.endYear} · ${new Date(item.time).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hour12: false})}`;
+      const scope = item.scope ? ` · ${item.scope}` : '';
+      return `${item.name || item.script || '回测'} · ${item.startYear}–${item.endYear}${scope} · ${new Date(item.time).toLocaleString('zh-CN', {timeZone: 'Asia/Shanghai', hour12: false})}`;
     },
     async refresh() {
       if (this.busy) return;

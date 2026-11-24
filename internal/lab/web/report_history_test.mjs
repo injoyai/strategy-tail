@@ -11,7 +11,7 @@ const source = read('./lab/js/components/ReportHistory.js').replace(/^import (\{
   'const $1 = globalThis.reportHistoryTest;');
 const {default: History} = await import(moduleURL(source));
 const report = id => ({config: {scriptName: 'builder'}, finishedAt: id, variants: []});
-const item = id => ({id, time: id, script: 'builder', name: '策略一', startYear: '2025', endYear: '2026'});
+const item = id => ({id, time: id, script: 'builder', name: '策略一', startYear: '2025', endYear: '2026', scope: '随机100只'});
 function instance() {
   Object.assign(state, {currentReport: null, selectedVariant: 'old', taskRunning: false});
   for (const k of Object.keys(Api)) delete Api[k];
@@ -34,6 +34,14 @@ test('首次从磁盘历史加载最新结果，切换历史同时清除变体�
   assert.equal(ctx.selected.id, 'old');
   await ctx.refresh();
   assert.equal(ctx.selected.id, 'old'); // 刷新不把用户切回最新。
+});
+
+test('历史名称包含股票范围，旧报告缺少范围时不产生空段', () => {
+  const ctx = instance();
+  assert.match(ctx.label(item('one')), /策略一 · 2025–2026 · 随机100只 · /);
+  const legacy = item('two'); delete legacy.scope;
+  assert.match(ctx.label(legacy), /策略一 · 2025–2026 · /);
+  assert.ok(!ctx.label(legacy).includes('·  ·'));
 });
 
 test('详情读取失败保留旧结果并重试原目标；旧响应不覆盖新的选择或完成报告', async () => {

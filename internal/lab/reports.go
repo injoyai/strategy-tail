@@ -21,6 +21,28 @@ type reportItem struct {
 	Time   string `json:"time"`
 	Start  string `json:"startYear"`
 	End    string `json:"endYear"`
+	Scope  string `json:"scope"` // 股票范围摘要；旧报告未记录 sampleMode 时为空
+}
+
+// reportScope 将回测配置的股票范围转为历史列表可读摘要。
+func reportScope(c RunConfig) string {
+	switch c.SampleMode {
+	case "all":
+		return "沪深主板"
+	case "all_stocks":
+		return "全部股票"
+	case "random":
+		if c.SampleSize > 0 {
+			return fmt.Sprintf("随机%d只", c.SampleSize)
+		}
+		return "随机样本"
+	case "codes":
+		if n := len(c.SampleCodes); n > 0 {
+			return fmt.Sprintf("指定%d只", n)
+		}
+		return "指定代码"
+	}
+	return ""
 }
 
 func validReportID(id string) bool {
@@ -78,7 +100,8 @@ func listReports() ([]reportItem, error) {
 			name = rep.StrategySpec.Name
 		}
 		items = append(items, reportItem{ID: e.Name(), Name: name, Script: rep.Config.ScriptName,
-			Time: rep.FinishedAt, Start: fmt.Sprint(rep.Config.StartYear), End: fmt.Sprint(rep.Config.EndYear)})
+			Time: rep.FinishedAt, Start: fmt.Sprint(rep.Config.StartYear), End: fmt.Sprint(rep.Config.EndYear),
+			Scope: reportScope(rep.Config)})
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Time > items[j].Time })
 	return items, nil
